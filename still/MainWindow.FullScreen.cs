@@ -19,6 +19,7 @@ public partial class MainWindow
  [StructLayout(LayoutKind.Sequential)] struct NativeRect { public int Left, Top, Right, Bottom; }
  [StructLayout(LayoutKind.Sequential)] struct NativePoint { public int X, Y; }
  [StructLayout(LayoutKind.Sequential)] struct MonitorInfo { public int Size; public NativeRect Monitor, Work; public uint Flags; }
+ [StructLayout(LayoutKind.Sequential)] struct MinMaxInfo { public NativePoint Reserved, MaxSize, MaxPosition, MinTrackSize, MaxTrackSize; }
  [StructLayout(LayoutKind.Sequential)] struct WindowPlacement { public int Length; public uint Flags, ShowCmd; public NativePoint Min, Max; public NativeRect Normal; }
  [DllImport("user32.dll")] static extern IntPtr MonitorFromWindow(IntPtr hwnd, uint flags);
  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
@@ -42,6 +43,17 @@ public partial class MainWindow
   var hwnd=new WindowInteropHelper(this).Handle;
   HwndSource.FromHwnd(hwnd)?.AddHook((IntPtr window,int message,IntPtr wParam,IntPtr lParam,ref bool handled)=>{
    // Refit after Windows applies a display-layout or DPI change, without taking focus.
+   // Maximized (not full screen): fill the monitor's work area so the taskbar stays visible and nothing hides under it.
+   if(message==0x0024&&!IsFullScreen){
+    var monitor=MonitorFromWindow(window,2);var info=new MonitorInfo{Size=Marshal.SizeOf<MonitorInfo>()};
+    if(GetMonitorInfo(monitor,ref info)){
+     var mmi=Marshal.PtrToStructure<MinMaxInfo>(lParam);
+     mmi.MaxPosition=new NativePoint{X=info.Work.Left-info.Monitor.Left,Y=info.Work.Top-info.Monitor.Top};
+     mmi.MaxSize=new NativePoint{X=info.Work.Right-info.Work.Left,Y=info.Work.Bottom-info.Work.Top};
+     mmi.MaxTrackSize=mmi.MaxSize;
+     Marshal.StructureToPtr(mmi,lParam,true);handled=true;
+    }
+   }
    if(message is 0x007E or 0x02E0 && IsFullScreen)
     Dispatcher.BeginInvoke(DispatcherPriority.Loaded,()=>{if(IsFullScreen&&!closing)FitFullScreen(MonitorFromWindow(hwnd,2));});
    return IntPtr.Zero;

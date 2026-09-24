@@ -148,7 +148,7 @@ public partial class MainWindow
      case "copyText":{var text=S("text");if(text.Length is >0 and <=8192)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
      case "fullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
      case "exitFullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>{if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}});break;
-     case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
+     case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
      default:await HandleBrowserTool(op,data);break;
