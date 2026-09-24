@@ -164,3 +164,28 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .window-bar > .address-bar { flex:1 1 auto !important; width:auto !important; max-width:none !important; min-width:200px; height:36px; margin:0 10px !important;
   padding:0 16px; border-radius:10px; border:1px solid var(--border); font-size:13px; gap:10px; }
 .window-bar > .page-tools { margin-left:0 !important; }
+/* Address bar: a real input, with suggestions dropping down beneath it. */
+.window-bar { position: relative; z-index: 30; overflow: visible; }
+.window-bar > .address-bar { position: relative; display: flex; align-items: center; cursor: text; color: var(--muted-foreground);
+  background: color-mix(in srgb, var(--muted) 30%, transparent); transition: background-color 160ms, border-color 160ms, box-shadow 160ms; }
+.window-bar > .address-bar:hover { background: var(--muted); border-color: var(--input); }
+.window-bar > .address-bar.is-editing { background: var(--background); border-color: color-mix(in srgb, var(--foreground) 35%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--foreground) 8%, transparent); border-bottom-left-radius: 10px; }
+.address-bar > svg { width: 13px; height: 13px; opacity: .65; flex: none; }
+.address-input { flex: 1; min-width: 0; height: 100%; border: 0; outline: 0; background: transparent; color: var(--foreground); font: inherit; font-size: 13.5px; padding: 0; }
+.address-input::placeholder { color: var(--muted-foreground); }
+.address-input::selection { background: color-mix(in srgb, var(--foreground) 25%, transparent); }
+.address-suggest { position: absolute; left: -1px; right: -1px; top: calc(100% + 6px); padding: 6px; border-radius: 12px; background: var(--popover, var(--card));
+  border: 1px solid var(--border); box-shadow: 0 24px 60px rgba(0,0,0,.45); display: grid; gap: 2px; animation: still-suggest 160ms cubic-bezier(.22,1,.36,1); }
+@keyframes still-suggest { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+.address-option { display: flex; align-items: center; gap: 12px; height: 40px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent;
+  color: var(--foreground); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.address-option.is-picked { background: var(--muted); }
+.address-option-icon { width: 18px; display: grid; place-items: center; color: var(--muted-foreground); flex: none; }
+.address-option-icon img { width: 16px; height: 16px; border-radius: 3px; }
+.address-option-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.address-option small { color: var(--muted-foreground); font-size: 11.5px; flex: none; }
+@media (prefers-reduced-motion: reduce) { .address-suggest { animation: none; } }
+.permission-bar { display:flex; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid var(--border); background:color-mix(in srgb,var(--muted) 55%,var(--background)); font-size:13px; flex-shrink:0; }
+.permission-bar > svg { width:16px; height:16px; opacity:.8; }
+.permission-bar > span { flex:1; min-width:0; }

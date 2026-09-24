@@ -26,7 +26,7 @@ import type { ToolData } from "./BrowserTools"
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number }
-type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -104,9 +104,36 @@ export default function App() {
  const commandChoice = useRef(false)
  const active = state.tabs.find(t => t.id === state.activeId) ?? state.tabs[0]
  const suggestions = useMemo(() => rankSuggestions(query, state.history, state.bookmarks, active?.isPrivate), [query, state.history, state.bookmarks, active?.isPrivate])
+ const addressRef = useRef<HTMLInputElement>(null)
+ const paneRef = useRef("")
+ const [pick, setPick] = useState(-1)
+ const [completion, setCompletion] = useState("")
+ const typedRef = useRef(false)
+ useEffect(() => {
+  if (pane !== "address" || !typedRef.current) { setCompletion(""); return }
+  const q = query.toLowerCase()
+  const hit = q.length > 0 && !/\s/.test(q) ? suggestions.find(v => v.host.toLowerCase().startsWith(q.replace(/^https?:\/\//, "").replace(/^www\./, ""))) : undefined
+  const bare = query.replace(/^https?:\/\//i, "").replace(/^www\./i, "")
+  setCompletion(hit ? hit.host.slice(bare.length) : "")
+ }, [query, suggestions, pane])
+ useLayoutEffect(() => {
+  const el = addressRef.current
+  if (el && pane === "address" && completion && document.activeElement === el) el.setSelectionRange(query.length, query.length + completion.length)
+ }, [completion, query, pane])
+ const addressItems = useMemo(() => {
+  if (pane !== "address") return []
+  const q = query.trim(), items: { key: string; icon: React.ReactNode; title: string; sub: string; value?: string; run: () => void }[] = []
+  if (q && q !== active?.url && !completion) items.push({ key: "go", icon: <Search size={15} />, title: q, sub: /^[^\s]+\.[^\s]+$/.test(q) || /^https?:/.test(q) ? "Go to address" : "Search " + state.preferences.search, run: () => go(q) })
+  suggestions.forEach(v => items.push({ key: "s" + v.url, icon: <Globe2 size={15} />, title: v.host, sub: v.bookmark ? v.title + " · Bookmark" : "Visited", value: prettyUrl(v.url), run: () => go(v.url) }))
+  const lower = q.toLowerCase()
+  state.tabs.filter(t => t.url && t.id !== state.activeId && (!q || q === active?.url || (t.title + t.url).toLowerCase().includes(lower))).slice(0, 4)
+   .forEach(t => items.push({ key: "t" + t.id, icon: t.favicon ? <img className="tab-favicon" src={t.favicon} alt="" /> : <Globe2 size={15} />, title: t.title, sub: "Switch to tab", run: () => action("select", { id: t.id }) }))
+  return items.slice(0, 9)
+ }, [pane, query, completion, suggestions, state.tabs, state.activeId, active?.url, state.preferences.search])
  const sidebar = state.preferences.layout === "Sidebar" && !state.focusMode && !state.fullScreen
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned)
+ useEffect(() => { paneRef.current = pane }, [pane])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm
  const findOpen = pane === "find"
 
@@ -139,7 +166,8 @@ export default function App() {
   return () => clearTimeout(timer)
  }, [modal, reduced])
  useEffect(() => {
-  if (pane === "address" || pane === "tabs") {
+  if (pane === "address") { const t = setTimeout(() => { if (document.activeElement !== addressRef.current) { addressRef.current?.focus(); addressRef.current?.select() } }, 30); return () => clearTimeout(t) }
+  if (pane === "tabs") {
    const t = setTimeout(() => { commandRef.current?.focus(); commandRef.current?.select() }, 90)
    return () => clearTimeout(t)
   }
@@ -162,23 +190,9 @@ export default function App() {
   window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler)
  }, [active?.url])
 
- const commandOpen = pane === "address" || pane === "tabs"
- const [anchored, setAnchored] = useState(false)
- const anchorAddress = (el?: Element | null) => {
-  const target = el ?? document.querySelector(active?.url ? ".address-bar" : ".start-search") ?? document.querySelector(".address-bar")
-  const r = target?.getBoundingClientRect()
-  if (r && r.width > 0) {
-   const width = Math.max(r.width, Math.min(560, window.innerWidth - 24))
-   const left = Math.min(Math.max(12, r.left), window.innerWidth - width - 12)
-   const root = document.documentElement.style
-   root.setProperty("--cmd-top", Math.max(4, r.top - 4) + "px"); root.setProperty("--cmd-left", left + "px"); root.setProperty("--cmd-width", width + "px")
-   setAnchored(true)
-  } else setAnchored(false)
- }
- const lastAnchor = useRef<Element | null>(null)
- const openAddress = (el?: Element | null) => { lastAnchor.current = el ?? null; anchorAddress(el); open("address", active?.url ?? "") }
- useEffect(() => { if (pane === "address") { anchorAddress(lastAnchor.current); lastAnchor.current = null } }, [pane])
- const dialogOpen = !!pane && !commandOpen && pane !== "find"
+ const commandOpen = pane === "tabs"
+ const openAddress = (_el?: Element | null) => { addressRef.current?.focus() }
+ const dialogOpen = !!pane && !commandOpen && pane !== "find" && pane !== "address"
  const title = ({ profiles:"Profiles", import:"Import browsing data", passwords:"Passwords", extensions:"Extensions", cookies:"Cookies", security:"Privacy & security", settings: "Settings", history: "History", bookmarks: "Bookmarks", downloads: "Downloads", site: host(active?.url ?? "") || "Site controls", shortcuts: "Keyboard shortcuts", about: "Still" } as Record<string, string>)[displayPane] ?? ""
  const filtered = (displayPane === "bookmarks" ? state.bookmarks : state.history).filter(v => (v.title + v.url).toLowerCase().includes(filter.toLowerCase())).slice(0, 100)
  const windowControls = (
@@ -198,11 +212,30 @@ export default function App() {
      <IconButton label={active?.loading ? "Stop loading" : "Reload"} caption={active?.loading?"Stop":"Reload"} onClick={() => send("reload")}>{active?.loading ? <X /> : <RotateCw />}</IconButton>
     </nav>
     <ContextMenu onOpenChange={setContext}><ContextMenuTrigger asChild>
-    <Button variant="ghost" className="address-bar" aria-label="Address bar" onClick={e => openAddress(e.currentTarget)}>
+    <div className={cn("address-bar", pane === "address" && "is-editing")} onMouseDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); addressRef.current?.focus() } }}>
      {active?.isPrivate ? <LockKeyhole /> : active?.secure ? <Shield /> : <Search />}
-     <span aria-live="polite" title={notice||active?.url} className="address-text">{notice || (active?.url ? <AddressText url={active.url} /> : "Search or enter an address")}</span>
-     <kbd>Ctrl L</kbd>
-    </Button>
+     <input ref={addressRef} className="address-input" aria-label="Search or enter an address" spellCheck={false} autoComplete="off"
+      placeholder="Search or enter an address"
+      value={pane === "address" ? (pick >= 0 && addressItems[pick]?.value ? addressItems[pick].value! : query + completion) : (notice || (active?.url ? prettyUrl(active.url) : ""))}
+      onFocus={e => { if (pane !== "address") { typedRef.current = false; setQuery(active?.url ?? ""); setPick(-1); setPane("address"); setDisplayPane("address"); send("openPanel", { name: "address", value: active?.url ?? "" }) } requestAnimationFrame(() => e.target.select()) }}
+      onChange={e => { const ne = e.nativeEvent as InputEvent; const del = (ne.inputType ?? "").startsWith("delete"); typedRef.current = !del; if (del) setCompletion(""); setQuery(e.target.value); setPick(-1) }}
+      onKeyDown={e => {
+       const count = addressItems.length
+       if (e.key === "ArrowDown") { e.preventDefault(); setPick(p => Math.min(count - 1, p + 1)) }
+       else if (e.key === "ArrowUp") { e.preventDefault(); setPick(p => Math.max(-1, p - 1)) }
+       else if ((e.key === "Tab" && !e.shiftKey || e.key === "ArrowRight") && completion) { e.preventDefault(); typedRef.current = false; setQuery(query + completion); setCompletion("") }
+       else if (e.key === "Tab" && !e.shiftKey && suggestions.length) { e.preventDefault(); typedRef.current = false; setQuery(suggestions[0].host) }
+       else if (e.key === "Enter") { e.preventDefault(); const item = pick >= 0 ? addressItems[pick] : null; if (item) item.run(); else if (completion) go(query + completion); else if (query.trim()) go(query); addressRef.current?.blur() }
+       else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); addressRef.current?.blur() }
+      }}
+      onBlur={() => { setTimeout(() => { if (document.activeElement !== addressRef.current && paneRef.current === "address") close() }, 120) }} />
+     {pane !== "address" && <kbd>Ctrl L</kbd>}
+     {pane === "address" && addressItems.length > 0 && <div className="address-suggest" role="listbox" onMouseDown={e => e.preventDefault()}>
+      {addressItems.map((item, i) => <button key={item.key} role="option" aria-selected={i === pick} className={cn("address-option", i === pick && "is-picked")} onMouseEnter={() => setPick(i)} onClick={() => { item.run(); addressRef.current?.blur() }}>
+       <span className="address-option-icon">{item.icon}</span><span className="address-option-main">{item.title}</span><small>{item.sub}</small>
+      </button>)}
+     </div>}
+    </div>
     </ContextMenuTrigger><ContextMenuContent className="w-48">
      <ContextMenuItem disabled={!active?.url} onSelect={() => { send("copyText", { text: active?.url ?? "" }); setNotice("Link copied") }}><Copy />Copy link</ContextMenuItem>
      <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
@@ -270,6 +303,11 @@ export default function App() {
       <div className="bookmarks-bar-list">{state.bookmarks.slice(0, 40).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><Button variant="ghost" size="sm" className="bookmark-chip" title={b.title + " · " + b.url} onClick={() => send("navigate", { url: b.url })}><span className="bookmark-letter">{(host(b.url)[0] ?? "•").toUpperCase()}</span><span className="bookmark-name">{b.title || host(b.url)}</span></Button></BookmarkMenu>)}</div>
       <Button variant="ghost" size="sm" className="bookmark-chip bookmark-all" onClick={() => open("bookmarks")}><Bookmark />All bookmarks</Button>
      </nav>}
+     {state.permission && <div className="permission-bar" role="alertdialog" aria-label="Site permission">
+      <ShieldCheck /><span><b>{state.permission.site}</b> wants to {state.permission.kind}.</span>
+      <Button variant="ghost" size="sm" onClick={() => send("permissionAnswer", { id: state.permission!.id, allow: false })}>Block</Button>
+      <Button size="sm" onClick={() => send("permissionAnswer", { id: state.permission!.id, allow: true })}>Allow</Button>
+     </div>}
      <div className="page-slot" ref={pageRef}>
       {active?.url ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : <motion.div key={active?.id} className="new-tab-page" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <div className="still-mark" aria-hidden><i /><i /></div>
@@ -286,7 +324,7 @@ export default function App() {
   </div>
 
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
-   <DialogContent className={cn("command-dialog", anchored && pane === "address" && "is-anchored")} showCloseButton={false}>
+   <DialogContent className={"command-dialog"} showCloseButton={false}>
     <DialogTitle className="sr-only">{displayPane === "tabs" ? "Find a tab" : "Go somewhere"}</DialogTitle>
     <DialogDescription className="sr-only">Search the web, enter an address, or switch to an open tab.</DialogDescription>
     <Command shouldFilter={displayPane === "tabs"}>
@@ -341,7 +379,7 @@ export default function App() {
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.1 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.2 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
@@ -371,11 +409,8 @@ function BookmarkMenu({b,onEdit,children}:{b:{title:string;url:string};onEdit:(b
  </ContextMenu>
 }
 
-function AddressText({ url }: { url: string }) {
- try {
-  const u = new URL(url)
-  if (u.protocol !== "http:" && u.protocol !== "https:") return <>{url}</>
-  const rest = (u.pathname === "/" ? "" : u.pathname) + u.search + u.hash
-  return <><span className="address-host">{u.host.replace(/^www\./, "")}</span>{rest && <span className="address-rest">{rest}</span>}</>
- } catch { return <>{url}</> }
+
+function prettyUrl(url: string) {
+ try { const u = new URL(url); if (u.protocol === "http:" || u.protocol === "https:") return u.host.replace(/^www\./, "") + (u.pathname === "/" ? "" : u.pathname) + u.search + u.hash } catch { /* not a URL */ }
+ return url
 }
