@@ -13,6 +13,8 @@ No clutter, no account, no telemetry. Just the web, and room to breathe.
 
 ---
 
+![Still browsing GitHub](docs/browsing.png)
+
 ## Why Still?
 
 Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored tiles and pop-ups. Still goes the other way. It's a true-black, keyboard-first browser that shows the page and nothing else, and it moves over from your old browser in one click.
