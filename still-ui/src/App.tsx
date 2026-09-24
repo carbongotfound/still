@@ -189,11 +189,16 @@ export default function App() {
      <IconButton label="Forward" disabled={!state.canForward} onClick={() => send("forward")}><ArrowRight /></IconButton>
      <IconButton label={active?.loading ? "Stop loading" : "Reload"} caption={active?.loading?"Stop":"Reload"} onClick={() => send("reload")}>{active?.loading ? <X /> : <RotateCw />}</IconButton>
     </nav>
+    <ContextMenu onOpenChange={setContext}><ContextMenuTrigger asChild>
     <Button variant="ghost" className="address-bar" aria-label="Address bar" onClick={e => openAddress(e.currentTarget)}>
      {active?.isPrivate ? <LockKeyhole /> : active?.secure ? <Shield /> : <Search />}
-     <span aria-live="polite" title={notice||active?.url}>{notice || (active?.url ? host(active.url) : "Search or enter an address")}</span>
+     <span aria-live="polite" title={notice||active?.url} className="address-text">{notice || (active?.url ? <AddressText url={active.url} /> : "Search or enter an address")}</span>
      <kbd>Ctrl L</kbd>
     </Button>
+    </ContextMenuTrigger><ContextMenuContent className="w-48">
+     <ContextMenuItem disabled={!active?.url} onSelect={() => { send("copyText", { text: active?.url ?? "" }); setNotice("Link copied") }}><Copy />Copy link</ContextMenuItem>
+     <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
+    </ContextMenuContent></ContextMenu>
     <div className="page-tools">
      <IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label="Site controls" caption="Site" onClick={() => open("site")}><Shield /></IconButton>
@@ -360,4 +365,13 @@ function BookmarkMenu({b,onEdit,children}:{b:{title:string;url:string};onEdit:(b
    <ContextMenuItem variant="destructive" onSelect={()=>send("removeBookmark",{url:b.url})}><Trash2/>Delete bookmark</ContextMenuItem>
   </ContextMenuContent>
  </ContextMenu>
+}
+
+function AddressText({ url }: { url: string }) {
+ try {
+  const u = new URL(url)
+  if (u.protocol !== "http:" && u.protocol !== "https:") return <>{url}</>
+  const rest = (u.pathname === "/" ? "" : u.pathname) + u.search + u.hash
+  return <><span className="address-host">{u.host.replace(/^www\./, "")}</span>{rest && <span className="address-rest">{rest}</span>}</>
+ } catch { return <>{url}</> }
 }

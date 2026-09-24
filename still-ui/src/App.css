@@ -151,3 +151,4 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 @media(max-width:700px){ .speed-dial{grid-template-columns:repeat(2,96px)} }
 .import-locked{display:grid;gap:8px;margin:10px 0;padding:12px;border-radius:10px;border:1px solid color-mix(in srgb,#e0a030 45%,transparent);background:color-mix(in srgb,#e0a030 8%,transparent)}.import-locked p{margin:0}
 .about-points{display:grid;gap:6px;margin:4px 0 10px;padding-left:18px;list-style:disc;font-size:13px;color:var(--muted-foreground)}
+.address-text{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.address-host{color:var(--foreground)}.address-rest{color:var(--muted-foreground);opacity:.75}

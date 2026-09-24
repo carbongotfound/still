@@ -143,6 +143,7 @@ public partial class MainWindow
      case "focus":focusMode=!focusMode;ApplyLayout();break;
      case "panel":panel=S("name");break;
      case "drag":ReleaseCapture();SendMessage(new WindowInteropHelper(this).Handle,0xA1,new IntPtr(2),IntPtr.Zero);break;
+     case "copyText":{var text=S("text");if(text.Length is >0 and <=8192)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
      case "fullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
      case "exitFullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>{if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}});break;
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
