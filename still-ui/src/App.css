@@ -160,3 +160,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .horizontal-layout .top-tab-strip { display:flex;align-items:center;overflow:visible; }
 .horizontal-layout .top-tab-strip > [data-layout-group], .horizontal-layout .top-tab-list { flex:1;min-width:0;overflow-x:auto;scrollbar-width:none; }
 .horizontal-layout .top-tab-strip .window-controls { flex:none;margin-left:8px; }
+/* The address bar fills everything between Reload and the Bookmark button (selector works with the context-menu wrapper). */
+.window-bar > .address-bar { flex:1 1 auto !important; width:auto !important; max-width:none !important; min-width:200px; height:36px; margin:0 10px !important;
+  padding:0 16px; border-radius:10px; border:1px solid var(--border); font-size:13px; gap:10px; }
+.window-bar > .page-tools { margin-left:0 !important; }
