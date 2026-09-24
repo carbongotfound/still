@@ -41,6 +41,7 @@ public partial class MainWindow : Window
   tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
   saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
+  WindowState = WindowState.Maximized; // open maximized by default (above the taskbar)
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    try { await InitializeShell(); }
