@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+ <PropertyGroup>
+  <OutputType>WinExe</OutputType><TargetFramework>net10.0-windows</TargetFramework>
+  <Nullable>enable</Nullable><ImplicitUsings>enable</ImplicitUsings><UseWPF>true</UseWPF>
+  <Version>0.0.0</Version><Authors>Still</Authors><Product>Still</Product>
+  <DefineConstants Condition="'$(StillQa)' == 'true'">$(DefineConstants);STILL_QA</DefineConstants>
+  <Deterministic>true</Deterministic>
+  <Description>A quieter window onto the internet. A minimalist Windows browser.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
+ </PropertyGroup>
+ <ItemGroup>
+  <Content Include="Shell\**\*" CopyToOutputDirectory="PreserveNewest" />
+  <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
+  <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
+  <Content Include="Assets\Readability.js" CopyToOutputDirectory="PreserveNewest" />
+  <Content Include="Assets\LoginObserver.js" CopyToOutputDirectory="PreserveNewest" />
+  <Content Include="Assets\Readability-LICENSE" CopyToOutputDirectory="PreserveNewest" />
+
+ </ItemGroup>
+</Project>
+
