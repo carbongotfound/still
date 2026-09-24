@@ -203,6 +203,7 @@ public partial class MainWindow : Window
  }
  void DisposeView(BrowserTab tab)
  {
+  DropPermissions(tab);
   if(tab==active&&contentFullScreen){contentFullScreen=false;ApplyFullScreen();}
   if (tab.View is { } view) { WebHost.Children.Remove(view); view.Dispose(); tab.View = null; }
   tab.LoadingTask = null; tab.Loading = false; tab.Reader = false; tab.HideScriptId = null;tab.LoginScriptId=null;tab.LoginDetected=false;tab.LoginFilled=false;
@@ -307,11 +308,12 @@ public partial class MainWindow : Window
    };
    core.PermissionRequested += async (_, e) => {
     using var deferral=e.GetDeferral();
-    var label = e.PermissionKind.ToString();
-    var answer=await Dispatcher.InvokeAsync(()=>MessageBox.Show(this, $"{Host(e.Uri)} wants access to {label.ToLowerInvariant()}.\n\nAllow this request?", "Site permission", MessageBoxButton.YesNo, MessageBoxImage.Question),DispatcherPriority.Background);
-    e.State = answer==MessageBoxResult.Yes ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+    // Ask inside Still (a bar above the page), never with a separate Windows dialog.
+    var allow=await AskPermission(tab,Host(e.Uri),e.PermissionKind);
+    e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+    e.SavesInProfile = false;
     // Dispose completes this deferral. Completing it explicitly as well causes
-    // WebView2's E_ILLEGAL_METHOD_CALL after the permission dialog closes.
+    // WebView2's E_ILLEGAL_METHOD_CALL after the prompt closes.
    };
    core.ProcessFailed += (_, e) => Dispatcher.BeginInvoke(() => { if (!tab.Closed) { DisposeView(tab); Toast("This page stopped responding. Reload it to continue."); UpdateChrome(); } });
    core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=active||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
