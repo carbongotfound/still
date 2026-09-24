@@ -1,0 +1,17 @@
+Still 1.3 — Copyright 2026 Carbon. Original application code: MIT (see LICENSE).
+
+Interface: React, shadcn/ui (MIT), Radix, Motion, Sonner, cmdk and related packages.
+Font: Geist (SIL Open Font License). Icons: Lucide (ISC).
+Article extraction: Mozilla Readability (Apache 2.0).
+Native host/runtime: .NET 10 and Windows Desktop (licenses included).
+Browser integration: Microsoft WebView2 SDK (Microsoft license and notices included).
+Setup engine: Inno Setup, copyright Jordan Russell and Martijn Laan (license included).
+WebView2 runtime bootstrapper: signed Microsoft binary; its own license applies.
+
+See Licenses for the retained upstream license texts and package inventory.
+uBlock Origin Lite is downloaded separately from its official upstream release only
+after user review. Its GPL-3.0 license and source are provided by the extension
+publisher: https://github.com/uBlockOrigin/uBOL-home . It is not bundled in Still.
+
+Visual inspiration: Search by Office Commun, https://officecommun.com/search .
+No Office Commun source code or brand assets are included. Still is independent.

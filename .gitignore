@@ -1,0 +1,7 @@
+bin/
+obj/
+node_modules/
+artifacts/
+tools/
+*.user
+.vs/
