@@ -26,7 +26,7 @@ import type { ToolData } from "./BrowserTools"
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number }
-type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -181,8 +181,16 @@ export default function App() {
  const dialogOpen = !!pane && !commandOpen && pane !== "find"
  const title = ({ profiles:"Profiles", import:"Import browsing data", passwords:"Passwords", extensions:"Extensions", cookies:"Cookies", security:"Privacy & security", settings: "Settings", history: "History", bookmarks: "Bookmarks", downloads: "Downloads", site: host(active?.url ?? "") || "Site controls", shortcuts: "Keyboard shortcuts", about: "Still" } as Record<string, string>)[displayPane] ?? ""
  const filtered = (displayPane === "bookmarks" ? state.bookmarks : state.history).filter(v => (v.title + v.url).toLowerCase().includes(filter.toLowerCase())).slice(0, 100)
+ const windowControls = (
+<div className="window-controls" aria-label="Window controls">
+     <AnimatedButton variant="ghost" size="icon" className="window-control" aria-label="Minimize" onClick={()=>send("minimize")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><Minus /></AnimatedButton>
+     <AnimatedButton variant="ghost" size="icon" className="window-control" aria-label={state.appFullScreen ? "Exit full screen" : "Full screen"} onClick={()=>send("maximize")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}>{state.appFullScreen?<Copy/>:<Square/>}</AnimatedButton>
+     <AnimatedButton variant="ghost" size="icon" className="window-control window-close" aria-label="Close Still" onClick={()=>send("closeWindow")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><X /></AnimatedButton>
+    </div>
+ )
  return <UICtx.Provider value={{state,setContext,open}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
   <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen")} data-reduced-motion={!!reduced}>
+   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list"><FlowTabs tabs={[...pinned, ...ordinary]} top /><Button variant="ghost" size="icon-sm" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -234,13 +242,8 @@ export default function App() {
       </DropdownMenuContent>
      </DropdownMenu>
     </div>
-    <div className="window-controls" aria-label="Window controls">
-     <AnimatedButton variant="ghost" size="icon" className="window-control" aria-label="Minimize" onClick={()=>send("minimize")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><Minus /></AnimatedButton>
-     <AnimatedButton variant="ghost" size="icon" className="window-control" aria-label={state.appFullScreen ? "Exit full screen" : "Full screen"} onClick={()=>send("maximize")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}>{state.appFullScreen?<Copy/>:<Square/>}</AnimatedButton>
-     <AnimatedButton variant="ghost" size="icon" className="window-control window-close" aria-label="Close Still" onClick={()=>send("closeWindow")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><X /></AnimatedButton>
-    </div>
+    {sidebar && windowControls}
    </header>
-   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip"><LayoutGroup id="top"><div className="top-tab-list"><FlowTabs tabs={[...pinned, ...ordinary]} top /><Button variant="ghost" size="icon-sm" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup></div>}
    <div className="workspace">
     {sidebar && <aside className="browser-sidebar">
      <div className="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0}
@@ -317,6 +320,7 @@ export default function App() {
      <TabsContent value="browsing" className="settings-content">
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
+      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
       {state.preferences.startupDisabled && <p className="tool-caption">Windows has disabled this startup entry. <Button variant="link" onClick={() => send("startupSettings")}>Open Windows startup settings</Button></p>}
       <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
       <Separator /><div className="setting-row"><div><strong>Block common ads & trackers</strong><p>A small built-in list. Some ads may remain.</p></div><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></div>

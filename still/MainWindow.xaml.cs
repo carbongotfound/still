@@ -49,6 +49,7 @@ public partial class MainWindow : Window
    ApplyTheme(); ApplyLayout();
    if (tabs.Count == 0) tabs.Add(new BrowserTab());
    await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First());
+   if (LaunchUrl != null) await NewTab(LaunchUrl, false, false);
    if (store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA
    if (App.IsQa) StartQa();
@@ -65,6 +66,15 @@ public partial class MainWindow : Window
   StateChanged+=(_,_)=>{RestorePageWindow();ShellPublish();};
   SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
   Closed += (_, _) => SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
+ }
+ public string? LaunchUrl { get; init; }
+ // A link opened from another app while Still is running.
+ public async void OpenFromOutside(string url)
+ {
+  if (closing) return;
+  if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+  Activate(); Topmost = !Topmost; Topmost = !Topmost;
+  if (url.Length > 0 && shellReady) await NewTab(url, false, false);
  }
  void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) { if (Prefs.Theme == "System") Dispatcher.BeginInvoke(ApplyTheme); }
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
