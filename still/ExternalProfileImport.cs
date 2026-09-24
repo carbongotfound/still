@@ -44,6 +44,9 @@ public sealed class ExternalProfileImport : IDisposable
   string bookmarks=Path.Combine(folder,"Bookmarks"),history=Path.Combine(folder,"History");
   if(!File.Exists(bookmarks)&&!File.Exists(history))throw new IOException("No Chromium bookmarks or history were found in that folder.");
   var result=new ExternalProfileImport();
+  // Remove leftovers from an import that was interrupted by a crash or power loss.
+  string snapshots=Path.Combine(App.DataRoot,"ImportSnapshot");
+  if(Directory.Exists(snapshots))foreach(var stale in Directory.EnumerateDirectories(snapshots))try{Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
   string snapshot=Path.Combine(App.DataRoot,"ImportSnapshot",result.Id);
   Directory.CreateDirectory(snapshot);
   try{

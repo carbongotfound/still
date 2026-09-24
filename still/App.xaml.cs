@@ -25,6 +25,7 @@ public partial class App : Application
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) { if(!e.Args.Contains("--startup"))MessageBox.Show("Still is already open. Look for it in your taskbar.", "Still"); Shutdown(); return; }
   Directory.CreateDirectory(DataRoot);
+  try{var stale=Path.Combine(DataRoot,"ImportSnapshot");if(Directory.Exists(stale))Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
   DispatcherUnhandledException += (_, ev) => { Log(ev.Exception); MessageBox.Show("Still couldn't finish that action. Your saved tabs are kept.\n\n" + ev.Exception.Message, "Still"); ev.Handled = true; };
   MainWindow = new MainWindow { ShowActivated=!IsQa }; MainWindow.Show();
  }

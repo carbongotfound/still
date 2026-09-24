@@ -82,7 +82,7 @@ cd still
 
 ## Security
 
-See [SECURITY.md](SECURITY.md). Still hasn't had an independent security audit yet, so please report vulnerabilities privately.
+See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md). Still has had an internal code review but no independent third-party audit yet, so please report vulnerabilities privately.
 
 ## Credits
 
