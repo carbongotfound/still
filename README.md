@@ -21,6 +21,7 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 
 - **True black by default.** An OLED-friendly interface with Light and System themes. Motion is smooth but restrained, and reduced-motion settings are respected.
 - **One-click import from Opera GX, Chrome, Edge, Brave and Vivaldi.** Bookmarks, history, saved passwords and **signed-in sessions** (cookies) come across, so you stay logged in.
+- **A real Windows app and default browser.** One `Still.exe`, a Start Menu entry, and it can be set as the default browser so links open in the Still window you already have open.
 - **Real full screen.** Hides the Windows taskbar for videos and games, with your tabs still visible if you want them.
 - **Built-in blocking.** Tracker and ad-domain blocking, native tracking prevention and a one-click [uBlock Origin Lite](https://github.com/uBlockOrigin/uBOL-home) installer that checks the download's hash.
 - **Password vault.** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
@@ -43,10 +44,13 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 
 ## Install
 
-1. Download `Still-Windows-x64.zip` from the [latest release](https://github.com/carbongotfound/still/releases/latest).
-2. Extract it anywhere and run **`Still.exe`**. Keep the folder together.
+1. Download **`Still-Setup-x64.exe`** from the [latest release](https://github.com/carbongotfound/still/releases/latest) and run it. No admin rights are needed.
+2. Still installs as a normal Windows app, with a Start Menu entry and an entry in Settings → Apps. Installing a newer setup updates the same `Still.exe` in place, and your data is kept.
+3. To make Still your default browser, choose **Settings → Make default** in Still (or tick the option at the end of setup), then pick Still in Windows Default apps. Links from other apps will then open in Still.
 
-Requires Windows 10/11 x64 with the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/), which is already installed on Windows 11. The .NET runtime is bundled.
+Prefer portable? Download the single **`Still.exe`** and run it.
+
+Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Windows 11 already has it, and setup installs it if it's missing. The .NET runtime is built into `Still.exe`.
 
 > Still isn't code-signed yet, so Windows SmartScreen may warn you on first launch. Choose **More info → Run anyway**, or build it yourself from source.
 
@@ -77,7 +81,7 @@ Requires the .NET 10 SDK and Node 22.12+.
 ```powershell
 git clone https://github.com/carbongotfound/still
 cd still
-./build.ps1          # builds the UI, then publishes to artifacts/Still
+./build.ps1          # builds the UI, then publishes a single Still.exe to artifacts/Still
 ```
 
 ## Security

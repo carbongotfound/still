@@ -123,6 +123,7 @@ public partial class MainWindow
      case "removeBookmark": state.Bookmarks.RemoveAll(v=>v.Url==S("url"));SaveLater();break;
      case "removeHistory":state.History.RemoveAll(v=>v.Url==S("url"));SaveLater();break;
      case "startup":StartupRegistration.Set(data.GetProperty("enabled").GetBoolean());break;
+     case "defaultBrowser":BrowserRegistration.Register();BrowserRegistration.OpenDefaultAppsSettings();break;
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;
      case "clearHistory":state.History.Clear();Save();Toast("History cleared.");break;
      case "clearCookies":
@@ -169,7 +170,7 @@ public partial class MainWindow
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
     kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
-    preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,startupDisabled=StartupRegistration.DisabledByWindows},
+    preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url}),

@@ -22,12 +22,20 @@ public partial class App : Application
   int root=Array.IndexOf(e.Args,"--profiles-root");
   ProfileHome=root>=0&&e.Args.Length>root+1?Path.GetFullPath(e.Args[root+1]):DataRoot;
   if(profile<0)try{DataRoot=ProfileCatalog.Folder(ProfileCatalog.Read().Single(p=>p.Id==ProfileCatalog.LaunchId));}catch(Exception ex){MessageBox.Show(ex.Message,"Still");Shutdown();return;}
+  var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
-  if (!first) { if(!e.Args.Contains("--startup"))MessageBox.Show("Still is already open. Look for it in your taskbar.", "Still"); Shutdown(); return; }
+  if (!first) {
+   // Already running: hand the link (or a plain "bring to front") to the open window.
+   if (!e.Args.Contains("--startup") && !BrowserRegistration.Forward(InstanceName(DataRoot), launchUrl))
+    MessageBox.Show("Still is already open. Look for it in your taskbar.", "Still");
+   Shutdown(); return;
+  }
   Directory.CreateDirectory(DataRoot);
   try{var stale=Path.Combine(DataRoot,"ImportSnapshot");if(Directory.Exists(stale))Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
   DispatcherUnhandledException += (_, ev) => { Log(ev.Exception); MessageBox.Show("Still couldn't finish that action. Your saved tabs are kept.\n\n" + ev.Exception.Message, "Still"); ev.Handled = true; };
-  MainWindow = new MainWindow { ShowActivated=!IsQa }; MainWindow.Show();
+  var window = new MainWindow { ShowActivated=!IsQa, LaunchUrl = launchUrl }; MainWindow = window; window.Show();
+  BrowserRegistration.Register();
+  BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => window.OpenFromOutside(url)));
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
  protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
