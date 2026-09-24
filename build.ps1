@@ -30,5 +30,5 @@ if ($Installer) {
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation,') { throw 'Microsoft bootstrapper signature verification failed.' }
   $appSource = Join-Path $PSScriptRoot $destination
   $outputRoot = Join-Path $PSScriptRoot 'artifacts'
-  Invoke-Checked { & $InnoCompiler "/DAppSource=$appSource" "/DOutputRoot=$outputRoot" "/DBootstrapper=$bootstrapper" installer/Still.iss }
+  Invoke-Checked { & $InnoCompiler "/DAppExe=$(Join-Path $appSource 'Still.exe')" "/DOutputRoot=$outputRoot" "/DBootstrapper=$bootstrapper" installer/Still.iss }
 }
