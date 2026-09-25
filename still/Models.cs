@@ -53,6 +53,7 @@ public sealed class Preferences
  public string Tracking { get; set; } = "Balanced";
  public bool MemorySaver { get; set; } = true;
  public bool TabTearOff { get; set; }
+ public bool AgentsEnabled { get; set; }
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

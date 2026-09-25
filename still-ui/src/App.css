@@ -240,3 +240,15 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .browser-shell.window-enter { animation: window-enter 420ms cubic-bezier(.22,1.3,.36,1); transform-origin: 18% 4%; }
 @keyframes window-enter { from { transform: scale(.93); opacity: 0; } to { transform: none; opacity: 1; } }
 @media (prefers-reduced-motion: reduce) { .tab-row.is-tearing, .tab-row.is-arriving, .browser-shell.window-enter { animation: none; } }
+/* Bookmarks bar expand/collapse (5+ bookmarks) */
+.bookmarks-bar.is-expanded { height:auto; align-items:flex-start; padding-top:4px; padding-bottom:4px; }
+.bookmarks-bar.is-expanded .bookmarks-bar-list { flex-wrap:wrap; row-gap:2px; overflow:visible; max-height:30vh; overflow-y:auto; }
+.bookmark-toggle[data-slot="button"] { width:24px; height:24px; flex-shrink:0; color:var(--muted-foreground); }
+.bookmark-toggle svg { width:14px; height:14px; transition:transform 260ms cubic-bezier(.22,1,.36,1); }
+.bookmark-toggle[aria-expanded="true"] svg { transform:rotate(90deg); }
+/* AI agent bar + MCP config */
+.agent-bar.is-asking { background:color-mix(in srgb,var(--foreground) 10%,var(--background)); }
+.agent-bar > svg { width:16px; height:16px; }
+.mcp-config { display:grid; gap:8px; margin:4px 0 8px; }
+.mcp-config pre { margin:0; padding:10px 12px; border-radius:10px; background:var(--muted); font:12px/1.5 ui-monospace,Consolas,monospace; overflow-x:auto; white-space:pre; }
+.mcp-config button { justify-self:start; }
