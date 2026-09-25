@@ -28,7 +28,7 @@ public partial class MainWindow
         activeId = active?.Id, panel, dark, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, layout = Prefs.Layout, shellErrors,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
-        windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), w.secondary }),
+        windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),
         title = Title, width = ActualWidth, height = ActualHeight, left = Left, top = Top,
         tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
         history = state.History, bookmarks = state.Bookmarks, hidden = state.Hidden,

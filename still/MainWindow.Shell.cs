@@ -94,6 +94,7 @@ public partial class MainWindow
      case "moveTab":if(Target() is {} mv){var dest=Windows.FirstOrDefault(w=>w.WindowId==S("window")&&!w.closing);if(dest!=null||S("window")=="new")await MoveTab(mv,dest,null);}break;
      case "agentAnswer":AnswerAgent(data.TryGetProperty("allow",out var ag)&&ag.ValueKind==JsonValueKind.True);break;
      case "agentStop":StopAgent();break;
+     case "incognitoWindow":OpenIncognito();break;
      case "reorder":
       var move=tabs.FirstOrDefault(t=>t.Id==S("id"));var before=tabs.FirstOrDefault(t=>t.Id==S("before"));
       if(move!=null&&before!=null&&move!=before){tabs.Remove(move);tabs.Insert(tabs.IndexOf(before),move);SaveLater();}break;
@@ -181,7 +182,7 @@ public partial class MainWindow
    shellQueued=false;
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
-    kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),agent=AgentData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
+    kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),

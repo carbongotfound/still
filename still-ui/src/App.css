@@ -253,3 +253,20 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .mcp-config pre { margin:0; padding:10px 12px; border-radius:10px; background:var(--muted); font:12px/1.5 ui-monospace,Consolas,monospace; overflow-x:auto; white-space:pre; }
 .mcp-config button { justify-self:start; }
 .update-pill.is-busy[data-slot="button"] { opacity:.92; font-variant-numeric:tabular-nums; }
+
+/* Tab drag ghost: follows the pointer; lifts into a "New window" card outside the tab list. */
+.tab-ghost { position:fixed; z-index:60; pointer-events:none; display:flex; align-items:center; gap:8px; max-width:260px; padding:8px 12px; border-radius:10px;
+  background:var(--popover,var(--card)); border:1px solid var(--border); box-shadow:0 12px 30px rgba(0,0,0,.45); font-size:12.5px;
+  transition:transform 200ms cubic-bezier(.3,1.6,.5,1), box-shadow 200ms, padding 200ms; transform:rotate(-1.5deg); }
+.tab-ghost.is-tearing { transform:scale(1.12) rotate(0deg); box-shadow:0 26px 60px rgba(0,0,0,.6); padding:12px 16px; }
+.tab-ghost-icon { width:16px; height:16px; display:grid; place-items:center; flex:none; }
+.tab-ghost-icon img, .tab-ghost-icon svg { width:16px; height:16px; }
+.tab-ghost-title { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.tab-ghost-hint { display:inline-flex; align-items:center; gap:5px; margin-left:4px; padding:2px 8px; border-radius:100px; background:var(--foreground); color:var(--background); font-size:11px; font-weight:600; white-space:nowrap; animation:ghost-hint 220ms cubic-bezier(.3,1.6,.5,1); }
+.tab-ghost-hint svg { width:11px; height:11px; }
+@keyframes ghost-hint { from { transform:scale(.6); opacity:0; } to { transform:none; opacity:1; } }
+.tab-row { touch-action:none; }
+/* Incognito window */
+.browser-shell.is-incognito .window-bar, .browser-shell.is-incognito .browser-sidebar, .browser-shell.is-incognito .top-tab-strip { background:#120e17; }
+.incognito-badge { display:inline-flex; align-items:center; gap:6px; flex:none; padding:4px 10px; border-radius:100px; background:#2a2233; color:#e6ddf2; font-size:12px; font-weight:600; }
+.incognito-badge svg { width:13px; height:13px; }

@@ -206,7 +206,7 @@ public partial class MainWindow
   else if (key == Key.K) ShowAddress("", true);
   else if (key == Key.T && shift) ReopenTab();
   else if (key == Key.T) await NewTab();
-  else if (key == Key.N && shift) await NewTab("", true);
+  else if (key == Key.N && shift) OpenIncognito();
   else if (key == Key.W && active != null) await CloseTab(active);
   else if (key == Key.Tab && tabs.Count > 0) await SelectTab(tabs[(tabs.IndexOf(active!) + (shift ? -1 : 1) + tabs.Count) % tabs.Count]);
   else if (key >= Key.D1 && key <= Key.D9 && tabs.Count > 0) { int index = key == Key.D9 ? tabs.Count - 1 : Math.Min((int)key - (int)Key.D1, tabs.Count - 1); await SelectTab(tabs[index]); }
