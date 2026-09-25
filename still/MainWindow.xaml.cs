@@ -61,6 +61,7 @@ public partial class MainWindow : Window
    ApplyTheme(); ApplyLayout();
    if (tabs.Count == 0) tabs.Add(new BrowserTab());
    await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First());
+   StartUpdateChecks();
    if (LaunchUrl != null) await NewTab(LaunchUrl, false, false);
    if (store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA

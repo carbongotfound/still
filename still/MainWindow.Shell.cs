@@ -140,6 +140,8 @@ public partial class MainWindow
       if(int.TryParse(S("id"),out int index)&&index>=0&&index<downloads.Count)System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe","/select,\""+downloads[index].Path+"\""){UseShellExecute=true});break;
      case "openDownload":if(int.TryParse(S("id"),out int oi)&&oi>=0&&oi<downloads.Count&&downloads[oi].Operation.State==CoreWebView2DownloadState.Completed&&File.Exists(downloads[oi].Path))
        try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(downloads[oi].Path){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){Toast("Windows couldn't open this file.");}break;
+     case "openUpdate":if(update!=null)await NewTab(update.Url,false,false);break;
+     case "checkUpdate":await CheckForUpdate();if(update==null)Toast("Still is up to date.");break;
      case "cancelDownload":if(int.TryParse(S("id"),out int ci)&&ci>=0&&ci<downloads.Count)downloads[ci].Operation.Cancel();break;
      case "importBookmarks":ChooseImport("bookmarks");break;
      case "exportBookmarks":_ = Dispatcher.BeginInvoke(ExportBookmarks);break;
@@ -172,7 +174,7 @@ public partial class MainWindow
    shellQueued=false;
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
-    kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
+    kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),

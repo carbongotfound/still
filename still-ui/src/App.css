@@ -222,3 +222,6 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .dl-mini { position:absolute; left:50%; bottom:-6px; width:18px; height:3px; margin-left:-9px; border-radius:3px; background:color-mix(in srgb,var(--foreground) 22%,transparent); overflow:hidden; }
 .dl-mini b { display:block; height:100%; background:var(--foreground); border-radius:3px; transition:width 300ms; }
 .chrome-icon:has(.dl-mini) { overflow:visible; }
+.update-pill[data-slot="button"] { height:28px; padding:0 12px; gap:6px; border-radius:100px; font-size:12px; font-weight:600; margin-right:4px; background:var(--foreground); color:var(--background); animation:update-in 400ms cubic-bezier(.22,1,.36,1); }
+.update-pill svg { width:13px; height:13px; }
+@keyframes update-in { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
