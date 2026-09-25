@@ -146,7 +146,8 @@ public partial class MainWindow
       if(int.TryParse(S("id"),out int index)&&index>=0&&index<downloads.Count)System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe","/select,\""+downloads[index].Path+"\""){UseShellExecute=true});break;
      case "openDownload":if(int.TryParse(S("id"),out int oi)&&oi>=0&&oi<downloads.Count&&downloads[oi].Operation.State==CoreWebView2DownloadState.Completed&&File.Exists(downloads[oi].Path))
        try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(downloads[oi].Path){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){Toast("Windows couldn't open this file.");}break;
-     case "openUpdate":if(update!=null)await NewTab(update.Url,false,false);break;
+     case "openUpdate":RestartToUpdate();break;
+     case "releaseNotes":if(update!=null)await NewTab(update.Url,false,false);break;
      case "checkUpdate":await CheckForUpdate();if(update==null)Toast("Still is up to date.");break;
      case "cancelDownload":if(int.TryParse(S("id"),out int ci)&&ci>=0&&ci<downloads.Count)downloads[ci].Operation.Cancel();break;
      case "importBookmarks":ChooseImport("bookmarks");break;

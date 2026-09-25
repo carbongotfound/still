@@ -37,6 +37,7 @@ public partial class MainWindow
         back = active?.View?.CoreWebView2?.CanGoBack, forward = active?.View?.CoreWebView2?.CanGoForward,
         processMemory = System.Diagnostics.Process.GetCurrentProcess().WorkingSet64
        });
+       if (op == "checkUpdate") { await CheckForUpdate(); return JsonSerializer.Serialize(new { update = UpdateData(), installer = update?.Installer, exists = update?.Installer != null && File.Exists(update.Installer) }); }
        if (op == "eval" && active?.View?.CoreWebView2 is { } core) return await core.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
