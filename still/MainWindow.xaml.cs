@@ -15,30 +15,34 @@ using Microsoft.Win32;
 namespace Still;
 public partial class MainWindow : Window
 {
- readonly StateStore store = new();
+ StateStore store => sharedStore;
  readonly SavedState state;
  readonly List<BrowserTab> tabs = [];
  readonly Stack<BrowserTab> closedTabs = [];
  readonly List<DownloadItem> downloads = [];
  readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
  readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(5) };
- readonly string privateProfile = "Private" + Guid.NewGuid().ToString("N");
+ string privateProfile => sharedPrivateProfile;
  BrowserTab? active;
  bool dark, closing, focusMode;
  string panel = "";
  Preferences Prefs => state.Preferences;
  [DllImport("dwmapi.dll")] static extern int DwmSetWindowAttribute(IntPtr hwnd, int attr, ref int value, int size);
- public MainWindow()
+ public MainWindow() : this(secondaryWindow: false) { }
+ MainWindow(bool secondaryWindow)
  {
   InitializeComponent();
   Frame.Visibility=Visibility.Collapsed;Background=Brushes.Black;
-  state = store.Load();
+  secondary = secondaryWindow;
+  Windows.Add(this);
+  Activated += (_, _) => LastActive = this;
+  state = sharedState ??= store.Load();
   if(state.UiVersion<2){state.Preferences.Theme="Dark";state.UiVersion=2;}
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
-  tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
+  if (!secondary) tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
   saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };
   // Memory saver: background tabs idle for 5+ minutes are suspended (scripts frozen, page kept intact, no reload).
   var suspendTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
@@ -52,7 +56,7 @@ public partial class MainWindow : Window
   };
   suspendTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
-  WindowState = WindowState.Maximized; // open maximized by default (above the taskbar)
+  WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    try { await InitializeShell(); }
@@ -61,24 +65,29 @@ public partial class MainWindow : Window
    ApplyTheme(); ApplyLayout();
    if (tabs.Count == 0) tabs.Add(new BrowserTab());
    await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First());
-   StartUpdateChecks();
+   if (!secondary) StartUpdateChecks();
    if (LaunchUrl != null) await NewTab(LaunchUrl, false, false);
-   if (store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
+   if (!secondary && store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA
-   if (App.IsQa) StartQa();
+   if (App.IsQa && !secondary) StartQa();
 #endif
   };
   Closing += (_, _) => {
    closing = true; saveTimer.Stop();
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
-   else if (WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
+   else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
    Save(); foreach (var tab in tabs) { tab.Closed = true; tab.View?.Dispose(); }
    managementView?.Dispose();shellView?.Dispose();loginOffer=null;importBatch=null;ClearOwnedPasswordClipboard();
   };
   SizeChanged += (_, _) => { Sheet.Width = Math.Max(320, Math.Min(550, ContentArea.ActualWidth - 40)); Sheet.MaxHeight = Math.Max(250, PageArea.ActualHeight - 60); };
   StateChanged+=(_,_)=>{RestorePageWindow();ShellPublish();};
   SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
-  Closed += (_, _) => SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
+  Closed += (_, _) => {
+   SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
+   Windows.Remove(this); if (LastActive == this) LastActive = Windows.LastOrDefault();
+   // Keep the app alive in the remaining windows and save without this window's tabs.
+   if (Windows.Count > 0) { if (Application.Current.MainWindow == this) Application.Current.MainWindow = Windows[0]; Windows[0].Save(); }
+  };
  }
  public string? LaunchUrl { get; init; }
  DateTime lastDownloadPublish;
@@ -94,8 +103,9 @@ public partial class MainWindow : Window
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
  void Save()
  {
-  state.Tabs = tabs.Where(t => !t.Private).ToList();
-  state.ActiveId = active?.Private == false ? active.Id : tabs.FirstOrDefault(t => !t.Private)?.Id;
+  state.Tabs = SavedTabs().ToList();
+  var main = Windows.FirstOrDefault(w => !w.closing) ?? this;
+  state.ActiveId = main.active?.Private == false ? main.active.Id : state.Tabs.FirstOrDefault()?.Id;
   store.Save(state);
  }
  void Toast(string message) { if(shellReady){ShellSend(new{kind="toast",message});return;} ToastText.Text = message; ToastBar.Visibility = Visibility.Visible; toastTimer.Stop(); toastTimer.Start(); }
@@ -301,6 +311,7 @@ public partial class MainWindow : Window
     tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
     tab.Loading = false; if (tab == active) UpdateChrome();
     if(ok)_=InspectLogin(tab);
+    if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.ExecuteScriptAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
     if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
      state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
      state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });

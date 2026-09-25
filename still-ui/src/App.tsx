@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from "@/components/ui/dropdown-menu"
-import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuSub, ContextMenuSubTrigger, ContextMenuSubContent } from "@/components/ui/context-menu"
 import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -26,7 +26,7 @@ import type { ToolData } from "./BrowserTools"
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
-type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string}; version?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -44,7 +44,7 @@ function FlowTabs({ tabs, top = false }: { tabs: Tab[]; top?: boolean }) {
   <TabView tab={tab} top={top} />
  </motion.div>)}</AnimatePresence>
 }
-const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name:string,value?:string)=>void}|null>(null)
+const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name:string,value?:string)=>void;arriving:string}|null>(null)
  function Hint({ label, children }: { label: string; children: ReactNode }) {
   return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent side="bottom" sideOffset={8} collisionPadding={6}>{label}</TooltipContent></Tooltip>
  }
@@ -52,12 +52,25 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
   return <AnimatedButton variant="ghost" size="icon-sm" className="chrome-button expanding-button" aria-label={label} disabled={disabled} onClick={onClick} whileTap={{ scale: .97 }} transition={FLOW}><span className="chrome-icon">{children}</span><span className="chrome-label" aria-hidden="true"><span>{caption}</span></span></AnimatedButton>
  }
  function TabView({ tab, top = false }: { tab: Tab; top?: boolean }) {
-  const {state,setContext}=useContext(UICtx)!
+  const {state,setContext,arriving}=useContext(UICtx)!
   const selected = tab.id === state.activeId
+  const [tearing, setTearing] = useState(false)
+  const listRef = useRef<HTMLDivElement>(null)
+  // Drag a tab outside the tab list (and let go) to give it its own window.
+  const onDragEnd = (e: React.DragEvent) => {
+   if (!state.preferences.tearOff || e.dataTransfer.dropEffect !== "none") return
+   const list = listRef.current?.closest(".tabs-scroll, .top-tab-strip")?.getBoundingClientRect()
+   const x = e.screenX - window.screenX, y = e.screenY - window.screenY
+   const outsideWindow = x < 0 || y < 0 || x > window.outerWidth || y > window.outerHeight
+   const far = list ? (e.clientX < list.left - 60 || e.clientX > list.right + 60 || e.clientY < list.top - 60 || e.clientY > list.bottom + 60) : false
+   if (!outsideWindow && !far) return
+   setTearing(true)
+   setTimeout(() => send("tearOff", { id: tab.id, x: e.screenX, y: e.screenY }), 190)
+  }
   return <ContextMenu onOpenChange={setContext}>
    <ContextMenuTrigger asChild>
-    <div className={cn("tab-row", tab.pinned && "pin-tab", selected && "is-selected", top && "top-tab")}
-     draggable onDragStart={e => e.dataTransfer.setData("text/still-tab", tab.id)} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); send("reorder", { id: e.dataTransfer.getData("text/still-tab"), before: tab.id }) }}
+    <div ref={listRef} className={cn("tab-row", tab.pinned && "pin-tab", selected && "is-selected", top && "top-tab", tearing && "is-tearing", arriving === tab.id && "is-arriving")}
+     draggable onDragStart={e => { e.dataTransfer.setData("text/still-tab", tab.id); e.dataTransfer.effectAllowed = "move" }} onDragEnd={onDragEnd} onDragOver={e => e.preventDefault()} onDrop={e => { e.preventDefault(); send("reorder", { id: e.dataTransfer.getData("text/still-tab"), before: tab.id }) }}
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
@@ -72,6 +85,11 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
     <ContextMenuItem onSelect={() => send("duplicate", { id: tab.id })}><Copy />Duplicate</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("mute", { id: tab.id })}><VolumeX />{tab.muted ? "Unmute" : "Mute"}</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("sleep", { id: tab.id })}><MoonStar />Put to sleep</ContextMenuItem>
+    <ContextMenuSub><ContextMenuSubTrigger><PanelLeft />Move to window</ContextMenuSubTrigger>
+     <ContextMenuSubContent className="w-56">
+      <ContextMenuItem onSelect={() => send("moveTab", { id: tab.id, window: "new" })}><Plus />New window</ContextMenuItem>
+      {(state.windows ?? []).map(w => <ContextMenuItem key={w.id} onSelect={() => send("moveTab", { id: tab.id, window: w.id })}><Copy /><span className="truncate">{w.name}{w.title ? " · " + w.title : ""}</span></ContextMenuItem>)}
+     </ContextMenuSubContent></ContextMenuSub>
     <ContextMenuSeparator />
     <ContextMenuItem onSelect={() => send("closeTab", { id: tab.id, force: true })}><X />Close tab</ContextMenuItem>
    </ContextMenuContent>
@@ -107,6 +125,8 @@ export default function App() {
  const addressRef = useRef<HTMLInputElement>(null)
  const paneRef = useRef("")
  const [pick, setPick] = useState(-1)
+ const [arriving, setArriving] = useState("")
+ const [entering, setEntering] = useState(true)
  const activeDownloads = state.downloads.filter(d => d.status === "InProgress")
  const dlProgress = (() => { const t = activeDownloads.reduce((n, d) => n + (d.total || 0), 0); return t > 0 ? activeDownloads.reduce((n, d) => n + d.bytes, 0) / t : 0.15 })()
  const [shownPermission, setShownPermission] = useState<State["permission"]>()
@@ -137,6 +157,7 @@ export default function App() {
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned)
  useEffect(() => { paneRef.current = pane }, [pane])
+ useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm
@@ -156,6 +177,7 @@ export default function App() {
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage("appearance") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
    if (data.kind === "snapshot") setSnapshot(data.data)
+   if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
    if (data.kind === "escape") { setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
   }
   window.chrome?.webview?.addEventListener("message", listener)
@@ -207,8 +229,8 @@ export default function App() {
      <AnimatedButton variant="ghost" size="icon" className="window-control window-close" aria-label="Close Still" onClick={()=>send("closeWindow")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><X /></AnimatedButton>
     </div>
  )
- return <UICtx.Provider value={{state,setContext,open}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
-  <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen")} data-reduced-motion={!!reduced}>
+ return <UICtx.Provider value={{state,setContext,open,arriving}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
+  <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter")} data-reduced-motion={!!reduced}>
    {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list"><FlowTabs tabs={[...pinned, ...ordinary]} top /><Button variant="ghost" size="icon-sm" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
@@ -379,6 +401,7 @@ export default function App() {
      </TabsContent>
      <TabsContent value="browsing" className="settings-content">
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
+      <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
       <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
       {state.preferences.startupDisabled && <p className="tool-caption">Windows has disabled this startup entry. <Button variant="link" onClick={() => send("startupSettings")}>Open Windows startup settings</Button></p>}
@@ -401,7 +424,7 @@ export default function App() {
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <Button onClick={() => send("openUpdate")}><Download />Get Still {state.update.version}</Button> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.1"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <Button onClick={() => send("openUpdate")}><Download />Get Still {state.update.version}</Button> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.2"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
