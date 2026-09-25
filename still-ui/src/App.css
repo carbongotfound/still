@@ -270,3 +270,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .browser-shell.is-incognito .window-bar, .browser-shell.is-incognito .browser-sidebar, .browser-shell.is-incognito .top-tab-strip { background:#120e17; }
 .incognito-badge { display:inline-flex; align-items:center; gap:6px; flex:none; padding:4px 10px; border-radius:100px; background:#2a2233; color:#e6ddf2; font-size:12px; font-weight:600; }
 .incognito-badge svg { width:13px; height:13px; }
+/* Big panels: tool lists grow with the panel and cut long text instead of scrolling sideways. */
+.library-dialog .tools-list { height:min(56vh, 560px); }
+.library-dialog .tools-list [data-radix-scroll-area-viewport] > div { display:block !important; min-width:0 !important; }
+.library-dialog .tool-row { min-width:0; }
+.library-dialog .tool-copy { min-width:0; }
+.library-dialog .tool-copy strong, .library-dialog .tool-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

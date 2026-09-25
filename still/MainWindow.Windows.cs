@@ -1,4 +1,7 @@
+using System.Runtime.InteropServices;
 using System.Windows;
+using System.Windows.Interop;
+using System.Windows.Media;
 namespace Still;
 
 // Several Still windows in one process. They share one saved state (history, bookmarks, settings)
@@ -29,6 +32,25 @@ public partial class MainWindow
   Width = 1120; Height = 760;
   if (screenPoint is { } p) { WindowStartupLocation = WindowStartupLocation.Manual; Left = Math.Max(0, p.X - 140); Top = Math.Max(0, p.Y - 24); }
   else { WindowStartupLocation = WindowStartupLocation.CenterScreen; }
+ }
+
+ [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
+ [DllImport("user32.dll")] static extern bool IsIconic(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern IntPtr GetWindow(IntPtr hwnd, uint cmd);
+ [DllImport("user32.dll")] static extern IntPtr GetTopWindow(IntPtr hwnd);
+
+ // The other Still window whose frame contains a screen point (drop target for a dragged tab).
+ // When windows overlap, the one highest in the z-order wins.
+ MainWindow? WindowAt(Point dip)
+ {
+  var dpi = VisualTreeHelper.GetDpi(this);
+  int x = (int)Math.Round(dip.X * dpi.DpiScaleX), y = (int)Math.Round(dip.Y * dpi.DpiScaleY);
+  var candidates = Windows.Where(w => w != this && !w.closing).Select(w => (w, h: new WindowInteropHelper(w).Handle))
+   .Where(c => c.h != IntPtr.Zero && !IsIconic(c.h) && GetWindowRect(c.h, out var r) && x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom).ToList();
+  if (candidates.Count <= 1) return candidates.FirstOrDefault().w;
+  for (var h = GetTopWindow(IntPtr.Zero); h != IntPtr.Zero; h = GetWindow(h, 2)) // GW_HWNDNEXT, top to bottom
+   foreach (var c in candidates) if (c.h == h) return c.w;
+  return candidates[0].w;
  }
 
  int WindowNumber => Windows.IndexOf(this) + 1;

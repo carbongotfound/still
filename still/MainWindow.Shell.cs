@@ -90,7 +90,7 @@ public partial class MainWindow
      case "duplicate": if(Target() is {} duplicate)await NewTab(duplicate.Url,duplicate.Private,false);break;
      case "sleep": if(Target() is {} sleep){DisposeView(sleep);if(sleep==active)await NewTab("",false,false);SaveLater();}break;
      case "mute": if(Target()?.View?.CoreWebView2 is {} mute)mute.IsMuted=!mute.IsMuted;break;
-     case "tearOff":if(Prefs.TabTearOff&&Target() is {} torn&&data.TryGetProperty("x",out var tx)&&data.TryGetProperty("y",out var ty))await MoveTab(torn,null,new Point(tx.GetDouble(),ty.GetDouble()));break;
+     case "tearOff":if(Prefs.TabTearOff&&Target() is {} torn&&data.TryGetProperty("x",out var tx)&&data.TryGetProperty("y",out var ty)){var drop=new Point(tx.GetDouble(),ty.GetDouble());await MoveTab(torn,WindowAt(drop),drop);};break;
      case "moveTab":if(Target() is {} mv){var dest=Windows.FirstOrDefault(w=>w.WindowId==S("window")&&!w.closing);if(dest!=null||S("window")=="new")await MoveTab(mv,dest,null);}break;
      case "agentAnswer":AnswerAgent(data.TryGetProperty("allow",out var ag)&&ag.ValueKind==JsonValueKind.True);break;
      case "agentStop":StopAgent();break;
