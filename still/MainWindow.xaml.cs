@@ -69,6 +69,7 @@ public partial class MainWindow : Window
   Closed += (_, _) => SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
  }
  public string? LaunchUrl { get; init; }
+ DateTime lastDownloadPublish;
  // A link opened from another app while Still is running.
  public async void OpenFromOutside(string url)
  {
@@ -308,7 +309,8 @@ public partial class MainWindow : Window
      if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
      ShellPublish();
     };
-    operation.BytesReceivedChanged += (_, _) => { if(panel=="downloads")ShellPublish(); };
+    // Keep the toolbar progress ring moving, at most ~4 updates a second.
+    operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
     e.Handled=true;
     Toast("Downloading " + name);
     ShellPublish();
