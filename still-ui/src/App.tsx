@@ -107,6 +107,7 @@ export default function App() {
  const addressRef = useRef<HTMLInputElement>(null)
  const paneRef = useRef("")
  const [pick, setPick] = useState(-1)
+ const [shownPermission, setShownPermission] = useState<State["permission"]>()
  const [completion, setCompletion] = useState("")
  const typedRef = useRef(false)
  useEffect(() => {
@@ -134,6 +135,7 @@ export default function App() {
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned)
  useEffect(() => { paneRef.current = pane }, [pane])
+ useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm
  const findOpen = pane === "find"
 
@@ -303,11 +305,11 @@ export default function App() {
       <div className="bookmarks-bar-list">{state.bookmarks.slice(0, 40).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><Button variant="ghost" size="sm" className="bookmark-chip" title={b.title + " · " + b.url} onClick={() => send("navigate", { url: b.url })}><span className="bookmark-letter">{(host(b.url)[0] ?? "•").toUpperCase()}</span><span className="bookmark-name">{b.title || host(b.url)}</span></Button></BookmarkMenu>)}</div>
       <Button variant="ghost" size="sm" className="bookmark-chip bookmark-all" onClick={() => open("bookmarks")}><Bookmark />All bookmarks</Button>
      </nav>}
-     {state.permission && <div className="permission-bar" role="alertdialog" aria-label="Site permission">
-      <ShieldCheck /><span><b>{state.permission.site}</b> wants to {state.permission.kind}.</span>
-      <Button variant="ghost" size="sm" onClick={() => send("permissionAnswer", { id: state.permission!.id, allow: false })}>Block</Button>
-      <Button size="sm" onClick={() => send("permissionAnswer", { id: state.permission!.id, allow: true })}>Allow</Button>
-     </div>}
+     <div className={cn("permission-wrap", state.permission && "is-open")}><div className="permission-bar" role="alertdialog" aria-label="Site permission" aria-hidden={!state.permission}>
+      <ShieldCheck /><span><b>{shownPermission?.site}</b> wants to {shownPermission?.kind}.</span>
+      <Button variant="ghost" size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: false })}>Block</Button>
+      <Button size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: true })}>Allow</Button>
+     </div></div>
      <div className="page-slot" ref={pageRef}>
       {active?.url ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : <motion.div key={active?.id} className="new-tab-page" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <div className="still-mark" aria-hidden><i /><i /></div>
@@ -379,7 +381,7 @@ export default function App() {
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.3 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.4 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
