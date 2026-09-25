@@ -221,6 +221,9 @@ public partial class MainWindow : Window
  {
   DropPermissions(tab);
   if(tab==active&&contentFullScreen){contentFullScreen=false;ApplyFullScreen();}
+  // A closed tab that is still downloading keeps its (hidden) engine until the downloads finish;
+  // disposing it now would cancel them. The download's StateChanged handler finishes the job.
+  if (tab.Closed && tab.ActiveDownloads > 0 && tab.View is { } busy) { busy.Visibility = Visibility.Hidden; return; }
   if (tab.View is { } view) { WebHost.Children.Remove(view); view.Dispose(); tab.View = null; }
   tab.LoadingTask = null; tab.Loading = false; tab.Reader = false; tab.HideScriptId = null;tab.LoginScriptId=null;tab.LoginDetected=false;tab.LoginFilled=false;
  }
@@ -276,18 +279,29 @@ public partial class MainWindow : Window
     RenderTabs(); if (tab == active) UpdateChrome(); SaveLater();
    };
    core.HistoryChanged += (_, _) => { if (tab == active) UpdateChrome(); };
-   core.NavigationCompleted += (_, e) => {
+   core.NavigationCompleted += async (_, e) => {
+    bool ok=e.IsSuccess;var status=e.WebErrorStatus;var navId=e.NavigationId;
+    // A link that turns into a download ends its navigation as "aborted", sometimes just before the
+    // download is announced. Give it a moment so a download is never shown as "connection lost".
+    if(!ok&&status==CoreWebView2WebErrorStatus.ConnectionAborted&&navId==tab.NavigationId)await Task.Delay(800);
     // A replaced navigation can finish with ConnectionAborted after a new page starts.
-    if(e.NavigationId!=tab.NavigationId)return;
+    if(navId!=tab.NavigationId)return;
     // Cancelling a certificate error can leave the previous document displayed.
     // Keep the address tied to that document, not to the failed destination.
     var failedUrl=tab.Url;
-    bool showError=!e.IsSuccess&&e.WebErrorStatus!=CoreWebView2WebErrorStatus.OperationCanceled;
-    if(!e.IsSuccess&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
-    tab.Secure=e.IsSuccess&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
+    bool becameDownload=!ok&&DateTime.UtcNow-tab.DownloadStartedAt<TimeSpan.FromSeconds(10);
+    bool showError=!ok&&!becameDownload&&status!=CoreWebView2WebErrorStatus.OperationCanceled;
+    if(becameDownload){
+     tab.Loading=false;
+     // Pages whose only job was to hand over a file (a new tab/pop-up with nothing loaded) close, like Chrome.
+     if(string.IsNullOrEmpty(core.Source)||core.Source=="about:blank"){_=Dispatcher.BeginInvoke(async()=>{if(!tab.Closed)await CloseTab(tab,true);if(shellReady)ShellOpen("downloads");});return;}
+     tab.Url=core.Source;
+    }
+    if(!ok&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
+    tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
     tab.Loading = false; if (tab == active) UpdateChrome();
-    if(e.IsSuccess)_=InspectLogin(tab);
-    if (e.IsSuccess && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
+    if(ok)_=InspectLogin(tab);
+    if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
      state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
      state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });
      if (state.History.Count > 2000) state.History.RemoveRange(2000, state.History.Count - 2000);
@@ -296,7 +310,7 @@ public partial class MainWindow : Window
     if(showError){
      // Show a full-page error for this cause; keep the address on the page that failed.
      tab.ShowingError=true;tab.Url=failedUrl;
-     core.NavigateToString(ErrorPages.Html(e.WebErrorStatus,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
+     core.NavigateToString(ErrorPages.Html(status,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
      if(tab==active)UpdateChrome();
     }
    };
@@ -310,6 +324,7 @@ public partial class MainWindow : Window
     finally { deferral.Complete(); }
    };
    core.DownloadStarting += (_, e) => {
+    tab.DownloadStartedAt = DateTime.UtcNow;
     var operation = e.DownloadOperation;
     Directory.CreateDirectory(Prefs.DownloadFolder);
     string name = Path.GetFileName(e.ResultFilePath);
@@ -318,7 +333,9 @@ public partial class MainWindow : Window
     for (int i = 1; File.Exists(path); i++) path = Path.Combine(Prefs.DownloadFolder, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
     e.ResultFilePath = path;
     downloads.Insert(0, new DownloadItem { Path = path, Operation = operation, Private = tab.Private });
+    tab.ActiveDownloads++;
     operation.StateChanged += (_, _) => {
+     if (operation.State != CoreWebView2DownloadState.InProgress && --tab.ActiveDownloads <= 0 && tab.Closed) { tab.ActiveDownloads = 0; DisposeView(tab); }
      if (operation.State == CoreWebView2DownloadState.Completed) Toast("Downloaded " + Path.GetFileName(path));
      if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
      ShellPublish();
@@ -339,7 +356,25 @@ public partial class MainWindow : Window
     // Dispose completes this deferral. Completing it explicitly as well causes
     // WebView2's E_ILLEGAL_METHOD_CALL after the prompt closes.
    };
-   core.ProcessFailed += (_, e) => Dispatcher.BeginInvoke(() => { if (!tab.Closed) { DisposeView(tab); Toast("This page stopped responding. Reload it to continue."); UpdateChrome(); } });
+   core.ProcessFailed += (_, e) => Dispatcher.BeginInvoke(() => {
+    if (tab.Closed || closing) return;
+    switch (e.ProcessFailedKind) {
+     // The page's own renderer died: show a crash screen in place. It is not reloaded until you choose to.
+     case CoreWebView2ProcessFailedKind.RenderProcessExited:
+      tab.ShowingError = true; tab.Loading = false;
+      try { core.NavigateToString(ErrorPages.Crashed(tab.Url, dark)); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { DisposeView(tab); }
+      if (tab == active) UpdateChrome(); break;
+     // The whole engine exited: this view can't be reused; it reloads when you next open the tab.
+     case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+      DisposeView(tab); if (tab == active) { Toast("The browser engine restarted. Reload to continue."); UpdateChrome(); } break;
+     // A hung page usually recovers; an iframe/GPU/utility process restart is handled by the engine itself.
+     case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+      if (tab == active) Toast("This page isn't responding. Wait, or reload it."); break;
+     default: break;
+    }
+   });
+   // A page that closes itself (window.close) closes its tab, e.g. download hand-off pages.
+   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(async () => { if (!tab.Closed) await CloseTab(tab, true); });
    core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=active||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
    SetupBlocking(tab, core);
    await InstallHiddenRules(tab);

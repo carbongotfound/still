@@ -39,9 +39,13 @@ internal static class ErrorPages
   };
  }
 
+ public static string Crashed(string url, bool dark) => Render(new(Alert, "This page crashed", "Something on this page made it stop working. Your other tabs are fine."), url, dark, "", false, "RenderProcessExited");
+
  public static string Html(CoreWebView2WebErrorStatus status, bool certificate, string url, bool dark, string searchEngine)
+  => Render(Pick(status, certificate), url, dark, searchEngine, certificate, status.ToString());
+
+ static string Render(Kind k, string url, bool dark, string searchEngine, bool certificate, string code)
  {
-  var k = Pick(status, certificate);
   string host = Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url;
   string e(string s) => WebUtility.HtmlEncode(s);
   // Only link back to web URLs; never echo other schemes into an href.
@@ -69,7 +73,7 @@ code{{display:block;margin-top:28px;color:{muted};font:12px ui-monospace,Consola
 <p><span class='host'>{e(host)}</span></p>
 <p>{e(k.Body)}</p>
 <div class='row'>{(retry.Length > 0 && !certificate ? $"<a class='btn primary' href='{e(retry)}'>Try again</a>" : "")}{(k.Search ? $"<a class='btn ghost' href='{e(search)}'>Search for {e(host)}</a>" : "")}</div>
-<code>{e(status.ToString())}</code>
+<code>{e(code)}</code>
 </div></main></body></html>";
  }
 }
