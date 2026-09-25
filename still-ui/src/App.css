@@ -232,3 +232,11 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .library-row { min-width:0; }
 .library-open[data-slot="button"] > span:last-child { display:grid; min-width:0; text-align:left; }
 .library-open strong, .library-open small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* Tab tear-off: a squash-and-pop "click" before the tab leaves; a spring when it lands. */
+.tab-row.is-tearing { animation: tab-tear 200ms cubic-bezier(.3,1.6,.5,1) forwards; pointer-events: none; }
+@keyframes tab-tear { 0% { transform: scale(1); } 35% { transform: scale(.9, .86); } 70% { transform: scale(1.07); opacity: 1; } 100% { transform: scale(.8) translateX(24px); opacity: 0; } }
+.tab-row.is-arriving { animation: tab-land 520ms cubic-bezier(.3,1.5,.5,1); }
+@keyframes tab-land { 0% { transform: scale(.7) translateY(-8px); opacity: 0; } 55% { transform: scale(1.06); opacity: 1; } 80% { transform: scale(.98); } 100% { transform: none; } }
+.browser-shell.window-enter { animation: window-enter 420ms cubic-bezier(.22,1.3,.36,1); transform-origin: 18% 4%; }
+@keyframes window-enter { from { transform: scale(.93); opacity: 0; } to { transform: none; opacity: 1; } }
+@media (prefers-reduced-motion: reduce) { .tab-row.is-tearing, .tab-row.is-arriving, .browser-shell.window-enter { animation: none; } }

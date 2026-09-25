@@ -26,6 +26,7 @@ public sealed class BrowserTab
  [JsonIgnore] public bool ShowingError { get; set; }
  [JsonIgnore] public DateTime DownloadStartedAt { get; set; }
  [JsonIgnore] public int ActiveDownloads { get; set; }
+ [JsonIgnore] public double RestoreScroll { get; set; }
  [JsonIgnore] public bool Secure { get; set; }
  [JsonIgnore] public ulong NavigationId { get; set; }
  [JsonIgnore] public string? LoginScriptId { get; set; }
@@ -51,6 +52,7 @@ public sealed class Preferences
  public double SidebarWidth { get; set; } = 248;
  public string Tracking { get; set; } = "Balanced";
  public bool MemorySaver { get; set; } = true;
+ public bool TabTearOff { get; set; }
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

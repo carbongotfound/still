@@ -35,7 +35,7 @@ public partial class App : Application
   DispatcherUnhandledException += (_, ev) => { Log(ev.Exception); MessageBox.Show("Still couldn't finish that action. Your saved tabs are kept.\n\n" + ev.Exception.Message, "Still"); ev.Handled = true; };
   var window = new MainWindow { ShowActivated=!IsQa, LaunchUrl = launchUrl }; MainWindow = window; window.Show();
   BrowserRegistration.Register();
-  BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => window.OpenFromOutside(url)));
+  BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => (Still.MainWindow.LastActive ?? window).OpenFromOutside(url)));
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
  protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
