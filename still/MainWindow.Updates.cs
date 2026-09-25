@@ -17,7 +17,8 @@ public partial class MainWindow
  const string ReleasePage = "https://github.com/carbongotfound/still/releases/";
  record UpdateInfo(string Version, string Url, string? Installer);
  static UpdateInfo? update;
- static bool updateDownloading, updateOnExitArmed;
+ static bool updateDownloading, updateOnExitArmed, applyWhenReady, applying;
+ static int updateProgress;
  static Version CurrentVersion =>
 #if STILL_QA
   Environment.GetEnvironmentVariable("STILL_QA_VERSION") is { } fake ? Version.Parse(fake) :
@@ -78,14 +79,23 @@ public partial class MainWindow
    var final = download.RequestMessage?.RequestUri;
    if (final == null || final.Scheme != "https" || !(final.Host == "github.com" || final.Host.EndsWith(".githubusercontent.com", StringComparison.Ordinal))) return;
    if (download.Content.Headers.ContentLength is > 300_000_000) return;
-   await using (var file = File.Create(target)) await download.Content.CopyToAsync(file);
+   long total = download.Content.Headers.ContentLength ?? 0, got = 0; var lastPublish = DateTime.MinValue;
+   await using (var file = File.Create(target)) {
+    await using var input = await download.Content.ReadAsStreamAsync();
+    var buffer = new byte[81920]; int read;
+    while ((read = await input.ReadAsync(buffer)) > 0) {
+     await file.WriteAsync(buffer.AsMemory(0, read)); got += read;
+     if (total > 0 && DateTime.UtcNow - lastPublish > TimeSpan.FromMilliseconds(300)) { updateProgress = (int)(got * 100 / total); lastPublish = DateTime.UtcNow; PublishAll(); }
+    }
+   }
    string hash;
    await using (var file = File.OpenRead(target)) hash = Convert.ToHexString(await SHA256.HashDataAsync(file)).ToLowerInvariant();
    if (hash != digest[7..].ToLowerInvariant()) { File.Delete(target); App.Log(new InvalidDataException("Update download failed its SHA-256 check and was deleted.")); return; }
    update = update! with { Installer = target };
-   updateOnExitArmed = true;
+   updateOnExitArmed = true; updateProgress = 100;
    PublishAll();
-  } finally { updateDownloading = false; }
+   if (applyWhenReady) Home.RestartToUpdate();
+  } finally { updateDownloading = false; if (update?.Installer == null && applyWhenReady) { applyWhenReady = false; PublishAll(); Home.Toast("The update couldn't be downloaded. Still will try again later."); } }
  }
 
  static void RunInstaller(string setup, bool relaunch)
@@ -99,12 +109,20 @@ public partial class MainWindow
 
  void RestartToUpdate()
  {
-  if (update?.Installer is not { } setup) { if (update != null) _ = NewTab(update.Url, false, false); return; }
+  if (update == null || applying) return;
+  if (!CanSelfUpdate) { _ = NewTab(update.Url, false, false); return; }
+  // Clicked before the download finished: finish it, then update automatically.
+  if (update.Installer is not { } setup) {
+   applyWhenReady = true; PublishAll();
+   if (!updateDownloading) _ = CheckForUpdate();
+   return;
+  }
+  applying = true; PublishAll();
   updateOnExitArmed = false;
   foreach (var w in Windows.ToArray()) w.Save();
   RunInstaller(setup, relaunch: true);
   Application.Current.Shutdown();
  }
 
- object? UpdateData() => update == null ? null : new { version = update.Version, current = CurrentVersion.ToString(3), ready = update.Installer != null };
+ object? UpdateData() => update == null ? null : new { version = update.Version, current = CurrentVersion.ToString(3), ready = update.Installer != null, progress = updateProgress, busy = applyWhenReady || applying, selfUpdate = CanSelfUpdate };
 }
