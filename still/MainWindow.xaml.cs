@@ -326,7 +326,8 @@ public partial class MainWindow : Window
     // Keep the toolbar progress ring moving, at most ~4 updates a second.
     operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
     e.Handled=true;
-    Toast("Downloading " + name);
+    // Show the downloads card as soon as a download starts, like Chrome/Opera.
+    if (shellReady) Dispatcher.BeginInvoke(() => ShellOpen("downloads")); else Toast("Downloading " + name);
     ShellPublish();
    };
    core.PermissionRequested += async (_, e) => {
