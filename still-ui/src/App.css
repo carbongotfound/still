@@ -225,3 +225,10 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .update-pill[data-slot="button"] { height:28px; padding:0 12px; gap:6px; border-radius:100px; font-size:12px; font-weight:600; margin-right:4px; background:var(--foreground); color:var(--background); animation:update-in 400ms cubic-bezier(.22,1,.36,1); }
 .update-pill svg { width:13px; height:13px; }
 @keyframes update-in { from { opacity:0; transform:scale(.9); } to { opacity:1; transform:none; } }
+/* History & Bookmarks: a big panel, and long titles are cut with "…" instead of scrolling sideways. */
+.app-dialog.library-dialog[data-slot="dialog-content"] { max-width:min(860px, calc(100vw - 48px)); width:min(860px, calc(100vw - 48px)); }
+.library-dialog .library-scroll { height:min(62vh, 620px); }
+.library-scroll [data-radix-scroll-area-viewport] > div { display:block !important; min-width:0 !important; }
+.library-row { min-width:0; }
+.library-open[data-slot="button"] > span:last-child { display:grid; min-width:0; text-align:left; }
+.library-open strong, .library-open small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
