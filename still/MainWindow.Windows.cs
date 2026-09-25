@@ -12,7 +12,14 @@ public partial class MainWindow
  static SavedState? sharedState;
  static readonly string sharedPrivateProfile = "Private" + Guid.NewGuid().ToString("N");
  internal readonly string WindowId = Guid.NewGuid().ToString("N");
- bool secondary;
+ bool secondary, incognito;
+
+ // A separate window where every tab is private (not saved, isolated InPrivate session).
+ internal static void OpenIncognito()
+ {
+  var w = new MainWindow(new BrowserTab { Private = true, Title = "New tab" }, null) { incognito = true };
+  w.WindowState = WindowState.Maximized; w.Show(); w.Activate();
+ }
 
  // A secondary window, opened by dragging a tab out or "Move to → New window".
  internal MainWindow(BrowserTab moved, Point? screenPoint) : this(secondaryWindow: true)
@@ -53,7 +60,7 @@ public partial class MainWindow
   RenderTabs(); SaveLater();
 
   if (target == null) {
-   var window = new MainWindow(moved, screenPoint);
+   var window = new MainWindow(moved, screenPoint) { incognito = moved.Private && incognito };
    window.Show(); window.Activate();
   } else {
    target.AcceptTab(moved);

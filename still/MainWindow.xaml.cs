@@ -189,6 +189,7 @@ public partial class MainWindow : Window
  }
  async Task<BrowserTab> NewTab(string url = "", bool isPrivate = false, bool prompt = true)
  {
+  isPrivate |= incognito; // every tab in an incognito window is private
   var tab = new BrowserTab { Url = url, Private = isPrivate, Title = isPrivate ? "Private tab" : "New tab" };
   tabs.Add(tab); await SelectTab(tab);
   if (prompt && url.Length == 0) ShowAddress("");
@@ -436,7 +437,7 @@ public partial class MainWindow : Window
   AddressButton.ToolTip = url.Length == 0 ? "Search or enter an address · Ctrl + L" : url + "\nCtrl + L to edit";
   SecurityGlyph.Text = url.StartsWith("https://") ? "\uE72E" : "\uE721";
   BookmarkButton.Content = state.Bookmarks.Any(b => b.Url == url) ? "\uE735" : "\uE734";
-  Title = active == null || active.Url.Length == 0 ? "Still" : active.Title + " · Still";
+  Title = (active == null || active.Url.Length == 0 ? "Still" : active.Title + " · Still") + (incognito ? " (Incognito)" : "");
   if(App.IsQa)Title+=" · Test";
   Title+=" · "+ProfileCatalog.CurrentName();
   ShellPublish();
