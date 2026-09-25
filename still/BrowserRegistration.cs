@@ -17,6 +17,13 @@ internal static class BrowserRegistration
  public static void Register()
  {
   if (App.IsQa) return;
+  // Never let a second copy (dev build, portable exe) steal link handling from a working install.
+  using (var current = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + UrlProgId + @"\shell\open\command")) {
+   if (current?.GetValue("") is string cmd && cmd.StartsWith('"') && cmd.IndexOf('"', 1) is var end and > 1) {
+    string registered = cmd[1..end];
+    if (!string.Equals(registered, Exe, StringComparison.OrdinalIgnoreCase) && File.Exists(registered)) return;
+   }
+  }
   try {
    foreach (var (id, name) in new[] { (UrlProgId, "Still URL"), (HtmlProgId, "Still HTML Document") }) {
     using var k = Registry.CurrentUser.CreateSubKey(@"Software\Classes\" + id);
