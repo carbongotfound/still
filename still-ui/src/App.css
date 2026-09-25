@@ -189,3 +189,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .permission-bar { display:flex; align-items:center; gap:12px; padding:8px 14px; border-bottom:1px solid var(--border); background:color-mix(in srgb,var(--muted) 55%,var(--background)); font-size:13px; flex-shrink:0; }
 .permission-bar > svg { width:16px; height:16px; opacity:.8; }
 .permission-bar > span { flex:1; min-width:0; }
+/* Permission bar slides open/closed; the page area follows it smoothly. */
+.permission-wrap { display:grid; grid-template-rows:0fr; flex-shrink:0; transition:grid-template-rows 240ms cubic-bezier(.22,1,.36,1); }
+.permission-wrap.is-open { grid-template-rows:1fr; }
+.permission-wrap > .permission-bar { overflow:hidden; min-height:0; opacity:0; transform:translateY(-6px); transition:opacity 180ms ease, transform 240ms cubic-bezier(.22,1,.36,1); border-bottom-width:0; padding-top:0; padding-bottom:0; }
+.permission-wrap.is-open > .permission-bar { opacity:1; transform:none; border-bottom-width:1px; padding-top:8px; padding-bottom:8px; transition:opacity 180ms ease 60ms, transform 240ms cubic-bezier(.22,1,.36,1), padding 240ms; }
+@media (prefers-reduced-motion: reduce) { .permission-wrap, .permission-wrap > .permission-bar { transition:none; } }

@@ -310,9 +310,9 @@ public partial class MainWindow : Window
    core.PermissionRequested += async (_, e) => {
     using var deferral=e.GetDeferral();
     // Ask inside Still (a bar above the page), never with a separate Windows dialog.
-    var allow=await AskPermission(tab,Host(e.Uri),e.PermissionKind);
+    var site=Host(e.Uri);var allow=await AskPermission(tab,string.IsNullOrWhiteSpace(site)?"This page":site,e.PermissionKind);
     e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
-    e.SavesInProfile = false;
+    e.SavesInProfile = !tab.Private; // remember the choice per site, like Chrome (reset in Privacy & security)
     // Dispose completes this deferral. Completing it explicitly as well causes
     // WebView2's E_ILLEGAL_METHOD_CALL after the prompt closes.
    };
