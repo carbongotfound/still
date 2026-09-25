@@ -23,6 +23,8 @@ public partial class App : Application
   ProfileHome=root>=0&&e.Args.Length>root+1?Path.GetFullPath(e.Args[root+1]):DataRoot;
   if(profile<0)try{DataRoot=ProfileCatalog.Folder(ProfileCatalog.Read().Single(p=>p.Id==ProfileCatalog.LaunchId));}catch(Exception ex){MessageBox.Show(ex.Message,"Still");Shutdown();return;}
   var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
+  // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
+  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.Run(InstanceName(DataRoot)); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) {
    // Already running: hand the link (or a plain "bring to front") to the open window.
@@ -35,6 +37,7 @@ public partial class App : Application
   DispatcherUnhandledException += (_, ev) => { Log(ev.Exception); MessageBox.Show("Still couldn't finish that action. Your saved tabs are kept.\n\n" + ev.Exception.Message, "Still"); ev.Handled = true; };
   var window = new MainWindow { ShowActivated=!IsQa, LaunchUrl = launchUrl }; MainWindow = window; window.Show();
   BrowserRegistration.Register();
+  Still.MainWindow.StartAgentServer(InstanceName(DataRoot));
   BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => (Still.MainWindow.LastActive ?? window).OpenFromOutside(url)));
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
