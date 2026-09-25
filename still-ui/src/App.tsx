@@ -25,7 +25,7 @@ import type { ToolData } from "./BrowserTools"
 
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; at?: string }
-type DownloadItem = { id: string; name: string; status: string; bytes: number }
+type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
 type State = { profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
@@ -107,6 +107,8 @@ export default function App() {
  const addressRef = useRef<HTMLInputElement>(null)
  const paneRef = useRef("")
  const [pick, setPick] = useState(-1)
+ const activeDownloads = state.downloads.filter(d => d.status === "InProgress")
+ const dlProgress = (() => { const t = activeDownloads.reduce((n, d) => n + (d.total || 0), 0); return t > 0 ? activeDownloads.reduce((n, d) => n + d.bytes, 0) / t : 0.15 })()
  const [shownPermission, setShownPermission] = useState<State["permission"]>()
  const [completion, setCompletion] = useState("")
  const typedRef = useRef(false)
@@ -135,6 +137,7 @@ export default function App() {
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned)
  useEffect(() => { paneRef.current = pane }, [pane])
+ useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm
  const findOpen = pane === "find"
@@ -194,7 +197,7 @@ export default function App() {
 
  const commandOpen = pane === "tabs"
  const openAddress = (_el?: Element | null) => { addressRef.current?.focus() }
- const dialogOpen = !!pane && !commandOpen && pane !== "find" && pane !== "address"
+ const dialogOpen = !!pane && !commandOpen && pane !== "find" && pane !== "address" && pane !== "downloads"
  const title = ({ profiles:"Profiles", import:"Import browsing data", passwords:"Passwords", extensions:"Extensions", cookies:"Cookies", security:"Privacy & security", settings: "Settings", history: "History", bookmarks: "Bookmarks", downloads: "Downloads", site: host(active?.url ?? "") || "Site controls", shortcuts: "Keyboard shortcuts", about: "Still" } as Record<string, string>)[displayPane] ?? ""
  const filtered = (displayPane === "bookmarks" ? state.bookmarks : state.history).filter(v => (v.title + v.url).toLowerCase().includes(filter.toLowerCase())).slice(0, 100)
  const windowControls = (
@@ -246,6 +249,7 @@ export default function App() {
      <IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label="Site controls" caption="Site" onClick={() => open("site")}><Shield /></IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton>
+     <IconButton label="Downloads" onClick={() => open("downloads")}><span className="dl-icon"><Download />{activeDownloads.length > 0 && <i className="dl-mini"><b style={{ width: Math.max(8, dlProgress * 100) + "%" }} /></i>}</span></IconButton>
      <IconButton label="Passwords" onClick={()=>open("passwords")}><KeyRound />{state.loginOffer&&<i className="login-dot" aria-label="Login ready to save"/>}</IconButton>
      <IconButton label="Extensions" onClick={()=>open("extensions")}><Puzzle /></IconButton>
      <DropdownMenu open={menu} onOpenChange={setMenu}><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Menu" className="chrome-button expanding-button"><span className="chrome-icon"><MoreHorizontal /></span><span className="chrome-label" aria-hidden="true"><span>Menu</span></span></Button></DropdownMenuTrigger>
@@ -325,6 +329,21 @@ export default function App() {
    </div>
   </div>
 
+
+  {pane === "downloads" && <><div className="dl-backdrop" onMouseDown={close} />
+   <div className="dl-card" role="dialog" aria-label="Downloads">
+    <div className="dl-head"><strong>Downloads</strong><Button variant="ghost" size="sm" onClick={() => send("downloadsFolder")}><FolderOpen />Open folder</Button></div>
+    <div className="dl-list">{state.downloads.length ? state.downloads.slice(0, 8).map(d => {
+     const pct = d.total ? Math.min(100, Math.round(d.bytes / d.total * 100)) : null
+     const size = (n: number) => n > 1048576 ? (n / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(n / 1024)) + " KB"
+     return <div className="dl-row" key={d.id}>
+      <Download className="dl-file" />
+      <div className="dl-meta"><button className="dl-name" disabled={d.status !== "Completed"} onClick={() => send("openDownload", { id: d.id })}>{d.name}</button>
+       <small>{d.status === "InProgress" ? `${size(d.bytes)}${d.total ? " of " + size(d.total) : ""}${pct !== null ? " · " + pct + "%" : ""}` : d.status === "Completed" ? size(d.bytes) + " · Done" : d.status === "Interrupted" ? "Failed or cancelled" : d.status}</small>
+       {d.status === "InProgress" && <div className="dl-bar"><i style={{ width: (pct ?? 30) + "%" }} className={pct === null ? "is-indeterminate" : ""} /></div>}</div>
+      <Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button>
+     </div> }) : <p className="dl-empty">Files you download will show up here.</p>}</div>
+   </div></>}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
     <DialogTitle className="sr-only">{displayPane === "tabs" ? "Find a tab" : "Go somewhere"}</DialogTitle>
@@ -377,11 +396,11 @@ export default function App() {
       <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear cookies and website data</Button>
      </TabsContent>
     </Tabs>}
-    {(displayPane === "history" || displayPane === "bookmarks") && <>{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
+    {(displayPane === "history" || displayPane === "bookmarks") && <>{displayPane === "history" && state.history.length > 0 && <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>}{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.6 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul><p className="text-xs text-muted-foreground">Version 1.5.7 · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 

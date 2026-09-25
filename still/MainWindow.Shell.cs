@@ -138,6 +138,8 @@ public partial class MainWindow
      case "downloadsFolder":Directory.CreateDirectory(Prefs.DownloadFolder);System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe",Prefs.DownloadFolder){UseShellExecute=true});break;
      case "showDownload":
       if(int.TryParse(S("id"),out int index)&&index>=0&&index<downloads.Count)System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe","/select,\""+downloads[index].Path+"\""){UseShellExecute=true});break;
+     case "openDownload":if(int.TryParse(S("id"),out int oi)&&oi>=0&&oi<downloads.Count&&downloads[oi].Operation.State==CoreWebView2DownloadState.Completed&&File.Exists(downloads[oi].Path))
+       try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(downloads[oi].Path){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){Toast("Windows couldn't open this file.");}break;
      case "cancelDownload":if(int.TryParse(S("id"),out int ci)&&ci>=0&&ci<downloads.Count)downloads[ci].Operation.Cancel();break;
      case "importBookmarks":ChooseImport("bookmarks");break;
      case "exportBookmarks":_ = Dispatcher.BeginInvoke(ExportBookmarks);break;
@@ -175,7 +177,7 @@ public partial class MainWindow
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url}),
-    downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
+    downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
     canBack=active?.View?.CoreWebView2?.CanGoBack==true,canForward=active?.View?.CoreWebView2?.CanGoForward==true,
     siteBlocking=Prefs.Blocking&&!Prefs.UnblockedHosts.Contains(host)
    });
