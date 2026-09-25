@@ -252,3 +252,4 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .mcp-config { display:grid; gap:8px; margin:4px 0 8px; }
 .mcp-config pre { margin:0; padding:10px 12px; border-radius:10px; background:var(--muted); font:12px/1.5 ui-monospace,Consolas,monospace; overflow-x:auto; white-space:pre; }
 .mcp-config button { justify-self:start; }
+.update-pill.is-busy[data-slot="button"] { opacity:.92; font-variant-numeric:tabular-nums; }
