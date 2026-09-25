@@ -252,10 +252,10 @@ public partial class MainWindow : Window
     }
     if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
     tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
-    if (uri.Scheme is "http" or "https" or "file") tab.Url = e.Uri;
+    if (uri.Scheme is "http" or "https" or "file") { tab.Url = e.Uri; tab.ShowingError = false; }
     if (tab == active) UpdateChrome();
    };
-   core.SourceChanged += (_, _) => { if (!tab.Reader && core.Source != "about:blank") tab.Url = core.Source; if (tab == active) UpdateChrome(); SaveLater(); };
+   core.SourceChanged += (_, _) => { if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == active) UpdateChrome(); SaveLater(); };
    core.DocumentTitleChanged += (_, _) => {
     if (!tab.Reader) tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? Host(tab.Url) : core.DocumentTitle;
     RenderTabs(); if (tab == active) UpdateChrome(); SaveLater();
@@ -266,18 +266,24 @@ public partial class MainWindow : Window
     if(e.NavigationId!=tab.NavigationId)return;
     // Cancelling a certificate error can leave the previous document displayed.
     // Keep the address tied to that document, not to the failed destination.
-    if(!e.IsSuccess&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
+    var failedUrl=tab.Url;
+    bool showError=!e.IsSuccess&&e.WebErrorStatus!=CoreWebView2WebErrorStatus.OperationCanceled;
+    if(!e.IsSuccess&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
     tab.Secure=e.IsSuccess&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
     tab.Loading = false; if (tab == active) UpdateChrome();
     if(e.IsSuccess)_=InspectLogin(tab);
-    if (e.IsSuccess && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
+    if (e.IsSuccess && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
      state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
      state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });
      if (state.History.Count > 2000) state.History.RemoveRange(2000, state.History.Count - 2000);
      SaveLater();
     }
-    if(tab.CertificateError)Toast("This website's certificate couldn't be verified. The connection was blocked.");
-    else if (!e.IsSuccess && e.WebErrorStatus != CoreWebView2WebErrorStatus.OperationCanceled) Toast(e.WebErrorStatus==CoreWebView2WebErrorStatus.ConnectionAborted?"The website closed the connection. Reload to try again.":"Couldn't load this page: " + e.WebErrorStatus + ". Use reload to try again.");
+    if(showError){
+     // Show a full-page error for this cause; keep the address on the page that failed.
+     tab.ShowingError=true;tab.Url=failedUrl;
+     core.NavigateToString(ErrorPages.Html(e.WebErrorStatus,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
+     if(tab==active)UpdateChrome();
+    }
    };
    core.NewWindowRequested += async (_, e) => {
     var deferral = e.GetDeferral(); e.Handled = true;
@@ -384,7 +390,7 @@ public partial class MainWindow : Window
  void MaximizeWindow(object s, RoutedEventArgs e) => ToggleMaximize();
  void BackClick(object s, RoutedEventArgs e) { if (active?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
  void ForwardClick(object s, RoutedEventArgs e) { if (active?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
- async void ReloadClick(object s, RoutedEventArgs e) { if (active is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
+ async void ReloadClick(object s, RoutedEventArgs e) { if (active is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
  void AddressClick(object s, RoutedEventArgs e) => ShowAddress(active?.Url ?? "");
  async void NewTabClick(object s, RoutedEventArgs e) => await NewTab();
  void ThemeClick(object s, RoutedEventArgs e) { Prefs.Theme = dark ? "Light" : "Dark"; ApplyTheme(); }

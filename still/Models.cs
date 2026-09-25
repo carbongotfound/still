@@ -23,6 +23,7 @@ public sealed class BrowserTab
  [JsonIgnore] public DateTime HideExpires { get; set; }
  [JsonIgnore] public DateTime LastActive { get; set; } = DateTime.UtcNow;
  [JsonIgnore] public bool CertificateError { get; set; }
+ [JsonIgnore] public bool ShowingError { get; set; }
  [JsonIgnore] public bool Secure { get; set; }
  [JsonIgnore] public ulong NavigationId { get; set; }
  [JsonIgnore] public string? LoginScriptId { get; set; }
