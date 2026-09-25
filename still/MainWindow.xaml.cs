@@ -40,6 +40,17 @@ public partial class MainWindow : Window
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
   tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
   saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };
+  // Memory saver: background tabs idle for 5+ minutes are suspended (scripts frozen, page kept intact, no reload).
+  var suspendTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+  suspendTimer.Tick += async (_, _) => {
+   if (!Prefs.MemorySaver || closing) return;
+   foreach (var t in tabs.ToArray()) {
+    if (t == active || t.Loading || t.View?.CoreWebView2 is not { } c || c.IsSuspended || c.IsDocumentPlayingAudio) continue;
+    if (DateTime.UtcNow - t.LastActive < TimeSpan.FromMinutes(5) || permissions.Any(p => p.Tab == t)) continue;
+    try { if (await c.TrySuspendAsync()) ShellPublish(); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { }
+   }
+  };
+  suspendTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
   WindowState = WindowState.Maximized; // open maximized by default (above the taskbar)
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
@@ -178,7 +189,9 @@ public partial class MainWindow : Window
   if(active!=tab&&contentFullScreen)await ExitContentFullScreen();
   CloseSheet(false);
   foreach (var t in tabs) if (t.View != null) t.View.Visibility = Visibility.Hidden;
+  var leaving=active; if(leaving!=null)leaving.LastActive=DateTime.UtcNow;
   active = tab;tab.LastActive=DateTime.UtcNow;
+  if(tab.View?.CoreWebView2 is {IsSuspended:true} sleeping)sleeping.Resume(); // instant: page state was kept
   foreach(var t in tabs)if(t.View?.CoreWebView2 is {} memory)memory.MemoryUsageTargetLevel=Prefs.MemorySaver&&t!=tab?CoreWebView2MemoryUsageTargetLevel.Low:CoreWebView2MemoryUsageTargetLevel.Normal;
   StartPage.Visibility = tab.Url.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
