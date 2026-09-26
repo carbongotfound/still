@@ -37,6 +37,7 @@ public partial class MainWindow : Window
   Windows.Add(this);
   Activated += (_, _) => LastActive = this;
   state = sharedState ??= store.Load();
+  if(state.UiVersion==0)state.Welcome=true; // brand-new install: show the welcome setup
   if(state.UiVersion<2){state.Preferences.Theme="Dark";state.UiVersion=2;}
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));

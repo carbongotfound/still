@@ -65,6 +65,7 @@ public sealed class Preferences
 public sealed class SavedState
 {
  public int UiVersion { get; set; }
+ public bool Welcome { get; set; }
  public Preferences Preferences { get; set; } = new();
  public List<BrowserTab> Tabs { get; set; } = [];
  public string? ActiveId { get; set; }

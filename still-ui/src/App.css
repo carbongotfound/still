@@ -278,3 +278,42 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .library-dialog .tool-copy strong, .library-dialog .tool-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
 .bookmark-letter img, .speed-dial-letter img { width:60%; height:60%; object-fit:contain; }
+
+/* First-run welcome */
+.welcome { position:fixed; inset:0; z-index:80; display:grid; place-items:center; padding:16px; background:color-mix(in oklab, var(--background) 82%, transparent); backdrop-filter:blur(14px); animation:welcome-in 320ms ease-out; }
+@keyframes welcome-in { from { opacity:0; } to { opacity:1; } }
+.welcome-card { width:min(560px,100%); padding:34px 34px 26px; border-radius:18px; background:var(--card); border:1px solid var(--border); box-shadow:0 30px 80px rgba(0,0,0,.5); overflow:hidden; }
+.welcome-dots { display:flex; gap:6px; margin-bottom:22px; }
+.welcome-dots i { width:6px; height:6px; border-radius:6px; background:color-mix(in oklab, var(--foreground) 25%, transparent); transition:width 240ms, background 240ms; }
+.welcome-dots i.is-on { width:22px; background:var(--foreground); }
+.welcome-step h1 { font-size:24px; font-weight:600; letter-spacing:-.02em; margin:0 0 8px; }
+.welcome-step p { color:var(--muted-foreground); font-size:14px; line-height:1.6; margin:0 0 22px; }
+.welcome-step .still-mark { justify-content:flex-start; }
+.welcome-actions { display:flex; justify-content:space-between; gap:8px; margin-top:24px; }
+.welcome-layouts { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
+.welcome-layout { display:flex; flex-direction:column; gap:4px; padding:12px; border-radius:14px; border:1px solid var(--border); background:transparent; color:inherit; text-align:left; cursor:pointer; transition:border-color 160ms, transform 160ms cubic-bezier(.3,1.6,.5,1); }
+.welcome-layout:hover { transform:translateY(-2px); }
+.welcome-layout.is-picked { border-color:var(--foreground); }
+.welcome-layout strong { display:flex; align-items:center; gap:6px; margin-top:8px; font-size:14px; }
+.welcome-layout strong svg { width:15px; height:15px; }
+.welcome-layout small { color:var(--muted-foreground); font-size:12px; }
+.mini-browser { display:flex; height:104px; border-radius:9px; border:1px solid var(--border); background:var(--background); overflow:hidden; }
+.mini-browser.is-top { flex-direction:column; }
+.mini-tabs { display:flex; gap:4px; padding:6px; background:var(--muted); }
+.mini-browser.is-side .mini-tabs { flex-direction:column; width:30%; }
+.mini-tabs i { display:block; height:8px; flex:none; border-radius:3px; background:color-mix(in oklab, var(--foreground) 22%, transparent); }
+.mini-browser.is-top .mini-tabs i { width:26%; }
+.mini-tabs i.is-active { background:var(--foreground); }
+.mini-main { flex:1; display:flex; flex-direction:column; gap:6px; padding:6px; }
+.mini-address { height:8px; border-radius:6px; background:var(--muted); }
+.mini-page { display:flex; flex-direction:column; gap:5px; padding-top:4px; }
+.mini-page i { height:5px; border-radius:3px; background:color-mix(in oklab, var(--foreground) 12%, transparent); }
+.mini-page i:nth-child(2) { width:80%; } .mini-page i:nth-child(3) { width:55%; }
+.welcome-options { display:flex; flex-direction:column; gap:8px; }
+.welcome-option { display:flex; align-items:center; gap:12px; padding:13px 14px; border-radius:12px; border:1px solid var(--border); background:transparent; color:inherit; text-align:left; cursor:pointer; transition:background 140ms; }
+.welcome-option:hover:not(:disabled) { background:var(--muted); }
+.welcome-option:disabled { cursor:default; opacity:.75; }
+.welcome-option > svg { width:17px; height:17px; flex:none; }
+.welcome-option span { flex:1; display:flex; flex-direction:column; gap:2px; }
+.welcome-option strong { font-size:13.5px; } .welcome-option small { color:var(--muted-foreground); font-size:12px; }
+@media (max-width:520px) { .welcome-layouts { grid-template-columns:1fr; } .welcome-card { padding:24px 20px 20px; } }
