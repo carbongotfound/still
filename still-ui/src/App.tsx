@@ -68,6 +68,8 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
   const onPointerDown = (e: React.PointerEvent) => { if (e.button === 0) drag.current = { sx: e.clientX, sy: e.clientY, active: false } }
   const onPointerMove = (e: React.PointerEvent) => {
    const d = drag.current; if (!d) return
+   // Button no longer held (the release happened elsewhere, e.g. a pop-up took the mouse): end the drag.
+   if (!(e.buttons & 1)) { drag.current = null; setGhost(null); return }
    if (!d.active) { if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 7) return; d.active = true; e.currentTarget.setPointerCapture(e.pointerId) }
    const tear = !!state.preferences.tearOff && outsideList(e.currentTarget, e.clientX, e.clientY)
    setGhost({ title: tab.title, favicon: tab.favicon, x: e.clientX, y: e.clientY, tearing: tear })
@@ -90,7 +92,7 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
   return <ContextMenu onOpenChange={setContext}>
    <ContextMenuTrigger asChild>
     <div className={cn("tab-row", tab.pinned && "pin-tab", selected && "is-selected", top && "top-tab", tearing && "is-tearing", arriving === tab.id && "is-arriving")}
-     data-tab-id={tab.id} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; setGhost(null) }} onClickCapture={onClickCapture}
+     data-tab-id={tab.id} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; setGhost(null) }} onLostPointerCapture={() => { if (drag.current?.active) { drag.current = null; setGhost(null) } }} onClickCapture={onClickCapture}
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
@@ -141,6 +143,14 @@ export default function App() {
  const paneRef = useRef("")
  const [pick, setPick] = useState(-1)
  const [ghost, setGhost] = useState<Ghost | null>(null)
+ // A drag preview hides the page, so it must never outlive the drag: clear it on any release, focus loss or Esc.
+ useEffect(() => {
+  if (!ghost) return
+  const clear = () => setGhost(null)
+  const key = (e: KeyboardEvent) => { if (e.key === "Escape") clear() }
+  addEventListener("pointerup", clear); addEventListener("blur", clear); addEventListener("keydown", key)
+  return () => { removeEventListener("pointerup", clear); removeEventListener("blur", clear); removeEventListener("keydown", key) }
+ }, [!!ghost])
  const [barOpen, setBarOpenState] = useState(() => { try { return localStorage.getItem("still.bookmarksBar") === "open" } catch { return false } })
  const setBarOpen = (v: boolean) => { setBarOpenState(v); try { localStorage.setItem("still.bookmarksBar", v ? "open" : "closed") } catch { /* storage unavailable */ } }
  const [arriving, setArriving] = useState("")
@@ -463,7 +473,7 @@ export default function App() {
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.11"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.12"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
