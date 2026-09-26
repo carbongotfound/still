@@ -34,11 +34,31 @@ public partial class App : Application
   }
   Directory.CreateDirectory(DataRoot);
   try{var stale=Path.Combine(DataRoot,"ImportSnapshot");if(Directory.Exists(stale))Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
+  // Crashes off the UI thread and UI freezes were never recorded; log them so a "random crash" leaves a trace.
+  AppDomain.CurrentDomain.UnhandledException += (_, ev) => Log(ev.ExceptionObject as Exception ?? new Exception("Unhandled: " + ev.ExceptionObject));
+  TaskScheduler.UnobservedTaskException += (_, ev) => { Log(ev.Exception); ev.SetObserved(); };
+  WatchForFreezes();
   DispatcherUnhandledException += (_, ev) => { Log(ev.Exception); MessageBox.Show("Still couldn't finish that action. Your saved tabs are kept.\n\n" + ev.Exception.Message, "Still"); ev.Handled = true; };
   var window = new MainWindow { ShowActivated=!IsQa, LaunchUrl = launchUrl }; MainWindow = window; window.Show();
   BrowserRegistration.Register();
   Still.MainWindow.StartAgentServer(InstanceName(DataRoot));
   BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => (Still.MainWindow.LastActive ?? window).OpenFromOutside(url)));
+ }
+ // What the UI thread was last asked to do; written to the log if it freezes.
+ public static volatile string Breadcrumb = "startup";
+ void WatchForFreezes()
+ {
+  var ui = Dispatcher;
+  new System.Threading.Thread(() => {
+   while (true) {
+    System.Threading.Thread.Sleep(2000);
+    var ping = ui.BeginInvoke(System.Windows.Threading.DispatcherPriority.Send, () => { });
+    if (ping.Wait(TimeSpan.FromSeconds(5)) == System.Windows.Threading.DispatcherOperationStatus.Completed) continue;
+    string during = Breadcrumb; var started = DateTime.Now.AddSeconds(-5);
+    ping.Wait();
+    Log(new TimeoutException($"Still froze for {(DateTime.Now - started).TotalSeconds:0.0}s while handling: {during}"));
+   }
+  }) { IsBackground = true, Name = "Freeze watchdog" }.Start();
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
  protected override void OnExit(ExitEventArgs e) { instance?.Dispose(); base.OnExit(e); }
