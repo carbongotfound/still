@@ -276,3 +276,5 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .library-dialog .tool-row { min-width:0; }
 .library-dialog .tool-copy { min-width:0; }
 .library-dialog .tool-copy strong, .library-dialog .tool-copy small { display:block; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+
+.bookmark-letter img, .speed-dial-letter img { width:60%; height:60%; object-fit:contain; }

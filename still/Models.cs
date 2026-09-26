@@ -38,6 +38,7 @@ public sealed class Visit
 {
  public string Title { get; set; } = "";
  public string Url { get; set; } = "";
+ public string? Favicon { get; set; }
  public DateTime At { get; set; } = DateTime.Now;
 }
 public sealed class Preferences
