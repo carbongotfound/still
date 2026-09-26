@@ -67,6 +67,7 @@ public partial class MainWindow
     using var document=JsonDocument.Parse(e.WebMessageAsJson);
     var data=document.RootElement;
     string op=data.GetProperty("op").GetString()??"";
+    App.Breadcrumb="shell "+op;
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
     BrowserTab? Target()=>tabs.FirstOrDefault(t=>t.Id==S("id"))??active;
     switch(op) {

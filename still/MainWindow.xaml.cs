@@ -229,6 +229,23 @@ public partial class MainWindow : Window
   else if (active == tab) await SelectTab(tabs[Math.Min(index, tabs.Count - 1)]);
   RenderTabs(); SaveLater();
  }
+ // The WPF WebView2 control closes the whole app window when a page calls window.close() (e.g. a Google
+ // sign-in pop-up finishing). Still closes just that tab instead (WindowCloseRequested below), so remove the control's handler.
+ static void DetachWindowClose(WebView2 view, CoreWebView2 core)
+ {
+  const System.Reflection.BindingFlags Any = System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Public;
+  // The handler lives on the control or on its internal WebView2Base helper, depending on the SDK version.
+  foreach (object? owner in new object?[] { view }.Concat(typeof(WebView2).GetFields(Any).Select(f => f.GetValue(view)))) {
+   if (owner == null) continue;
+   for (var type = owner.GetType(); type != null; type = type.BaseType) {
+    var method = type.GetMethod("CoreWebView2_WindowCloseRequested", Any | System.Reflection.BindingFlags.DeclaredOnly);
+    if (method == null) continue;
+    core.WindowCloseRequested -= (EventHandler<object>)Delegate.CreateDelegate(typeof(EventHandler<object>), owner, method);
+    return;
+   }
+  }
+  App.Log(new MissingMethodException("WebView2 window-close handler not found; a page calling window.close() may close Still."));
+ }
  void DisposeView(BrowserTab tab)
  {
   DropPermissions(tab);
@@ -263,6 +280,7 @@ public partial class MainWindow : Window
    if (tab.Closed || tab.View != view || closing) return;
    view.UpdateWindowPos();RestorePageWindow();
    var core = view.CoreWebView2;
+   DetachWindowClose(view, core);
    core.Settings.IsStatusBarEnabled = false;
    core.Settings.IsZoomControlEnabled = true;
    core.Settings.AreBrowserAcceleratorKeysEnabled = true;
@@ -272,6 +290,7 @@ public partial class MainWindow : Window
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
    core.NavigationStarting += (_, e) => {
+    App.Breadcrumb="page navigating "+Host(e.Uri);
     tab.NavigationId=e.NavigationId;
     tab.LoginFilled=false;tab.LoginDetected=false;
     if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
@@ -292,6 +311,7 @@ public partial class MainWindow : Window
    };
    core.HistoryChanged += (_, _) => { if (tab == active) UpdateChrome(); };
    core.NavigationCompleted += async (_, e) => {
+    App.Breadcrumb="page loaded "+Host(tab.Url);
     bool ok=e.IsSuccess;var status=e.WebErrorStatus;var navId=e.NavigationId;
     // A link that turns into a download ends its navigation as "aborted", sometimes just before the
     // download is announced. Give it a moment so a download is never shown as "connection lost".

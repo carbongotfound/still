@@ -33,7 +33,9 @@ public partial class MainWindow
   clipboardImage = HasClipboardImage();
  }
 
- static bool HasClipboardImage() { try { return Clipboard.ContainsImage(); } catch (COMException) { return false; } }
+ [DllImport("user32.dll")] static extern bool IsClipboardFormatAvailable(uint format);
+ // Checks formats without opening the clipboard, so another app holding it can never freeze Still.
+ static bool HasClipboardImage() => IsClipboardFormatAvailable(2 /*CF_BITMAP*/) || IsClipboardFormatAvailable(8 /*CF_DIB*/) || IsClipboardFormatAvailable(17 /*CF_DIBV5*/);
 
  async Task InterceptFilePicker(CoreWebView2 core)
  {
