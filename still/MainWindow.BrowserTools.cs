@@ -30,7 +30,9 @@ public partial class MainWindow
  }
  async Task UpdateFavicon(BrowserTab tab,CoreWebView2 core)
  {
-  try{string page=core.Source;using var source=await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);if(source==null||tab.Closed)return;using var data=new MemoryStream();await source.CopyToAsync(data);if(core.Source==page&&tab.View?.CoreWebView2==core&&data.Length is >0 and <131072){tab.Favicon="data:image/png;base64,"+Convert.ToBase64String(data.ToArray());SaveLater();}}catch(Exception){/* A missing or cancelled favicon uses the globe fallback. */}
+  try{string page=core.Source;using var source=await core.GetFaviconAsync(CoreWebView2FaviconImageFormat.Png);if(source==null||tab.Closed)return;using var data=new MemoryStream();await source.CopyToAsync(data);if(core.Source==page&&tab.View?.CoreWebView2==core&&data.Length is >0 and <131072){tab.Favicon="data:image/png;base64,"+Convert.ToBase64String(data.ToArray());SaveLater();
+   // Bookmarks for this site pick up its icon (regular tabs only).
+   if(!tab.Private)foreach(var b in state.Bookmarks)if(Host(b.Url)==Host(page)&&b.Favicon!=tab.Favicon){b.Favicon=tab.Favicon;ShellPublish();}}}catch(Exception){/* A missing or cancelled favicon uses the globe fallback. */}
  }
  async Task<CoreWebView2> ManagementCore()
  {
@@ -58,7 +60,7 @@ public partial class MainWindow
      // The runtime also returns internal PDF/clipboard extensions. Only expose
      // user-installed extensions here, not engine components.
      if(File.Exists(Path.Combine(App.DataRoot,"Extensions",extension.Id+".path")))extensionInventory[extension.Id]=extension;
-    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null,officialVersion=OfficialVersion(e.Id)}),candidate=extensionCandidate,official=officialCandidate==null?null:new{version=officialCandidate.Version,sha256=officialCandidate.Sha256},downloading=extensionDownload};
+    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null}),candidate=extensionCandidate,downloading=extensionDownload};
    }
    if(name=="security"){
     var core=active?.View?.CoreWebView2??await ManagementCore();var permissions=await core.Profile.GetNonDefaultPermissionSettingsAsync();
@@ -85,8 +87,8 @@ public partial class MainWindow
    case "importConfirm":await CompleteImport(S("id"),data.TryGetProperty("replace",out var replace)&&replace.GetBoolean());break;
    case "importCancel":importBatch=null;await PublishBrowserTools("import");break;
    case "exportData":ExportBrowserData();break;
-   case "officialBlocker":await PrepareOfficialBlocker();break;
-   case "officialSource":await NewTab("https://github.com/uBlockOrigin/uBOL-home",false,false);break;
+   case "storeExtension":await PrepareStoreExtension(active?.Url??"");break;
+   case "openStore":await NewTab("https://chromewebstore.google.com/",false,false);break;
    case "loginAccept":await AcceptLoginOffer(S("id"),S("username"));break;
    case "loginDismiss":loginOffer=null;ShellPublish();await PublishBrowserTools("passwords");break;
    case "passwordPermission":{
@@ -121,7 +123,7 @@ public partial class MainWindow
     var core=active?.View?.CoreWebView2??await ManagementCore();if(Enum.TryParse<CoreWebView2PermissionKind>(S("kind"),out var kind))await core.Profile.SetPermissionStateAsync(kind,S("origin"),CoreWebView2PermissionState.Default);await PublishBrowserTools("security");break;
    }
    case "extensionChoose":_ = Dispatcher.BeginInvoke(async()=>{var folder=new OpenFolderDialog{Title="Choose an unpacked extension folder"};if(folder.ShowDialog(this)==true)try{await StageExtension(folder.FolderName);}catch(Exception ex){Toast(ex.Message);}});break;
-   case "extensionCancel":extensionCandidate=null;extensionCandidatePath=null;officialCandidate=null;await PublishBrowserTools("extensions");break;
+   case "extensionCancel":extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");break;
    case "extensionInstall":if(!extensionInstalling){extensionInstalling=true;try{await InstallExtension();}catch(IOException ex){Toast(ex.Message);}finally{extensionInstalling=false;}}break;
    case "extensionToggle":if(extensionInventory.TryGetValue(S("id"),out var toggle)){await toggle.EnableAsync(!toggle.IsEnabled);await PublishBrowserTools("extensions");}break;
    case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){await remove.RemoveAsync();await PublishBrowserTools("extensions");}break;
@@ -157,7 +159,7 @@ public partial class MainWindow
   int review=++extensionReviewVersion;
   var path=Path.GetFullPath(folder);string manifestPath=Path.Combine(path,"manifest.json");if(new FileInfo(manifestPath).Length>1024*1024)throw new IOException("The extension manifest is too large.");
   byte[] manifestBytes=await File.ReadAllBytesAsync(manifestPath);using var manifest=JsonDocument.Parse(manifestBytes);
-  var root=manifest.RootElement;string name=ExtensionName(root,path);var permissions=new List<string>();officialCandidate=null;
+  var root=manifest.RootElement;string name=ExtensionName(root,path);var permissions=new List<string>();
   foreach(string key in new[]{"permissions","host_permissions","optional_permissions","optional_host_permissions"})if(root.TryGetProperty(key,out var list))permissions.AddRange(list.EnumerateArray().Select(v=>v.GetString()??""));
   if(root.TryGetProperty("content_scripts",out var scripts))foreach(var script in scripts.EnumerateArray())if(script.TryGetProperty("matches",out var matches))permissions.AddRange(matches.EnumerateArray().Select(v=>v.GetString()??""));
   string contentHash=await Task.Run(()=>ExtensionTreeHash(path));
@@ -183,7 +185,7 @@ public partial class MainWindow
   if(extensionCandidatePath==null)return;
   string source=extensionCandidatePath,destination=Path.Combine(App.DataRoot,"Extensions",Guid.NewGuid().ToString("N"));
   string? expectedManifest=extensionManifestHash;
-  string? expectedContent=extensionContentHash;var reviewedOfficial=officialCandidate;
+  string? expectedContent=extensionContentHash;
   await Task.Run(()=>{
    var dirs=new Queue<string>();dirs.Enqueue(source);long total=0;int count=0;var files=new List<(string Source,string Relative)>();
    while(dirs.Count>0){string current=dirs.Dequeue();if((File.GetAttributes(current)&FileAttributes.ReparsePoint)!=0)throw new IOException("Extension folders cannot contain links.");foreach(var path in Directory.EnumerateFileSystemEntries(current)){var attr=File.GetAttributes(path);if((attr&FileAttributes.ReparsePoint)!=0)throw new IOException("Extension folders cannot contain links.");if((attr&FileAttributes.Directory)!=0)dirs.Enqueue(path);else{total+=new FileInfo(path).Length;if(++count>20000||total>200*1024*1024)throw new IOException("Extension folder exceeds 200 MB or 20,000 files.");files.Add((path,Path.GetRelativePath(source,path)));}}}
@@ -191,11 +193,10 @@ public partial class MainWindow
   });
   if(expectedManifest==null||Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(destination,"manifest.json"))))!=expectedManifest)throw new IOException("The extension permissions changed. Choose the folder again to review them.");
   if(expectedContent==null||await Task.Run(()=>ExtensionTreeHash(destination))!=expectedContent)throw new IOException("The extension files changed after review. Review the extension again.");
-  var core=await ManagementCore();var previousOfficial=reviewedOfficial==null?[]:(await core.Profile.GetBrowserExtensionsAsync()).Where(e=>OfficialVersion(e.Id)!=null).ToArray();
+  var core=await ManagementCore();
   var installed=await core.Profile.AddBrowserExtensionAsync(destination);
   File.WriteAllText(Path.Combine(destination,"..",installed.Id+".path"),destination);
-  if(reviewedOfficial!=null){File.WriteAllText(Path.Combine(App.DataRoot,"Extensions",installed.Id+".official.json"),JsonSerializer.Serialize(reviewedOfficial));foreach(var prior in previousOfficial)if(prior.Id!=installed.Id)await prior.RemoveAsync();}
-  extensionCandidate=null;extensionCandidatePath=null;officialCandidate=null;await PublishBrowserTools("extensions");Toast("Extension added. Reload open pages to use it.");
+  extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");Toast("Extension added. Reload open pages to use it.");
  }
  string? GetExtensionPage(string id)
  {

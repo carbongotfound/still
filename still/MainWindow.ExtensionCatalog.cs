@@ -6,32 +6,12 @@ using System.Text.Json;
 namespace Still;
 public partial class MainWindow
 {
- sealed record OfficialExtension(string Version,string Url,string Sha256);
- OfficialExtension? officialCandidate;
  bool extensionDownload;
  static readonly HttpClient ExtensionHttp=new(new HttpClientHandler{AllowAutoRedirect=true,MaxAutomaticRedirections=5}){Timeout=TimeSpan.FromSeconds(90)};
- const string OfficialReleases="https://api.github.com/repos/uBlockOrigin/uBOL-home/releases/latest";
- async Task PrepareOfficialBlocker()
+ // Unpacks a zipped extension into a fresh cache folder, refusing links, odd paths and oversized archives.
+ static async Task<string> ExtractExtension(MemoryStream data)
  {
-  if(extensionDownload||extensionInstalling)return;
-  extensionDownload=true;await PublishBrowserTools("extensions");
-  try{
-   using var request=new HttpRequestMessage(HttpMethod.Get,OfficialReleases);request.Headers.UserAgent.ParseAdd("Still/1.3");
-   using var response=await ExtensionHttp.SendAsync(request);response.EnsureSuccessStatusCode();
-   using var release=JsonDocument.Parse(await response.Content.ReadAsStringAsync());
-   var root=release.RootElement;string version=root.GetProperty("tag_name").GetString()!;
-   var core=await ManagementCore();if((await core.Profile.GetBrowserExtensionsAsync()).Any(e=>OfficialVersion(e.Id)==version)){Toast("uBlock Origin Lite is up to date.");return;}
-   var asset=root.GetProperty("assets").EnumerateArray().First(a=>a.GetProperty("name").GetString()!.EndsWith(".chromium.zip",StringComparison.Ordinal));
-   string url=asset.GetProperty("browser_download_url").GetString()!,digest=asset.GetProperty("digest").GetString()??"";
-   if(!url.StartsWith("https://github.com/uBlockOrigin/uBOL-home/releases/download/",StringComparison.Ordinal)||!digest.StartsWith("sha256:")||digest.Length!=71||!digest[7..].All(Uri.IsHexDigit)||asset.GetProperty("size").GetInt64()>30*1024*1024)throw new IOException("The official release could not be verified.");
-   using var download=await ExtensionHttp.GetAsync(url,HttpCompletionOption.ResponseHeadersRead);download.EnsureSuccessStatusCode();
-   var final=download.RequestMessage?.RequestUri;
-   if(final==null||final.Scheme!="https"||!(final.Host=="github.com"||final.Host.EndsWith(".githubusercontent.com",StringComparison.Ordinal)))throw new IOException("Unexpected download location.");
-   using var data=new MemoryStream();using var input=await download.Content.ReadAsStreamAsync();byte[] buffer=new byte[65536];int count;
-   while((count=await input.ReadAsync(buffer))>0){if(data.Length+count>30*1024*1024)throw new IOException("Extension download is larger than expected.");await data.WriteAsync(buffer.AsMemory(0,count));}
-   string actual=Convert.ToHexString(SHA256.HashData(data.GetBuffer().AsSpan(0,(int)data.Length))).ToLowerInvariant();
-   if(actual!=digest[7..].ToLowerInvariant())throw new IOException("The extension download did not match the publisher's SHA-256 digest.");
-   string directory=Path.Combine(App.DataRoot,"ExtensionCache",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);data.Position=0;
+  string directory=Path.Combine(App.DataRoot,"ExtensionCache",Guid.NewGuid().ToString("N"));Directory.CreateDirectory(directory);data.Position=0;
    await Task.Run(()=>{
     using var zip=new ZipArchive(data,ZipArchiveMode.Read,true);long total=0;if(zip.Entries.Count>20000)throw new IOException("Too many extension files.");
     foreach(var entry in zip.Entries){
@@ -43,13 +23,33 @@ public partial class MainWindow
      Directory.CreateDirectory(Path.GetDirectoryName(target)!);entry.ExtractToFile(target);
     }
    });
-   await StageExtension(directory);officialCandidate=new(version,url,actual);await PublishBrowserTools("extensions");
-  }catch(Exception ex){Toast("Couldn't prepare uBlock Origin Lite: "+ex.Message);}
-  finally{extensionDownload=false;await PublishBrowserTools("extensions");}
+  return directory;
  }
- string? OfficialVersion(string id)
+ // Chrome Web Store: download the extension's CRX from Google's update service, strip the CRX header, then use the normal review.
+ // ponytail: trusts Google's HTTPS download instead of verifying the CRX3 signature; add signature checks if extensions ever come from other hosts.
+ async Task PrepareStoreExtension(string page)
  {
-  try{return JsonSerializer.Deserialize<OfficialExtension>(File.ReadAllText(Path.Combine(App.DataRoot,"Extensions",id+".official.json")))?.Version;}catch{return null;}
+  var match=System.Text.RegularExpressions.Regex.Match(page,@"^https://(chromewebstore\.google\.com/detail/(?:[^/?#]+/)?|chrome\.google\.com/webstore/detail/(?:[^/?#]+/)?)([a-p]{32})(?:[/?#]|$)");
+  if(!match.Success){Toast("Open an extension's page in the Chrome Web Store first.");return;}
+  if(extensionDownload||extensionInstalling)return;
+  string id=match.Groups[2].Value;
+  extensionDownload=true;ShellOpen("extensions");await PublishBrowserTools("extensions");
+  try{
+   string url="https://clients2.google.com/service/update2/crx?response=redirect&prodversion=140.0&acceptformat=crx2,crx3&x=id%3D"+id+"%26uc";
+   using var download=await ExtensionHttp.GetAsync(url,HttpCompletionOption.ResponseHeadersRead);download.EnsureSuccessStatusCode();
+   var final=download.RequestMessage?.RequestUri;
+   if(final==null||final.Scheme!="https"||!(final.Host.EndsWith(".google.com",StringComparison.Ordinal)||final.Host.EndsWith(".googleusercontent.com",StringComparison.Ordinal)||final.Host.EndsWith(".gvt1.com",StringComparison.Ordinal)))throw new IOException("Unexpected download location.");
+   using var crx=new MemoryStream();using var input=await download.Content.ReadAsStreamAsync();byte[] buffer=new byte[65536];int count;
+   while((count=await input.ReadAsync(buffer))>0){if(crx.Length+count>100*1024*1024)throw new IOException("Extension download is too large.");await crx.WriteAsync(buffer.AsMemory(0,count));}
+   var bytes=crx.GetBuffer().AsSpan(0,(int)crx.Length);
+   if(bytes.Length<16||!bytes[..4].SequenceEqual("Cr24"u8))throw new IOException("That extension isn't available to download.");
+   uint version=BitConverter.ToUInt32(bytes[4..]);
+   long start=version==3?12+(long)BitConverter.ToUInt32(bytes[8..]):version==2?16+(long)BitConverter.ToUInt32(bytes[8..])+BitConverter.ToUInt32(bytes[12..]):-1;
+   if(start<0||start>=bytes.Length)throw new IOException("Unsupported extension package.");
+   using var zip=new MemoryStream(bytes[(int)start..].ToArray());
+   await StageExtension(await ExtractExtension(zip));
+  }catch(Exception ex)when(ex is IOException or HttpRequestException or TaskCanceledException or InvalidDataException or JsonException or KeyNotFoundException){Toast("Couldn't add this extension: "+ex.Message);}
+  finally{extensionDownload=false;await PublishBrowserTools("extensions");}
  }
  static string ExtensionName(JsonElement manifest,string folder)
  {

@@ -186,7 +186,7 @@ public partial class MainWindow
     preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
-    bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url}),
+    bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),
     downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
     canBack=active?.View?.CoreWebView2?.CanGoBack==true,canForward=active?.View?.CoreWebView2?.CanGoForward==true,
     siteBlocking=Prefs.Blocking&&!Prefs.UnblockedHosts.Contains(host)

@@ -26,7 +26,8 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 - **A real Windows app and default browser.** One `Still.exe`, a Start Menu entry, and it can be set as the default browser so links open in the Still window you already have open.
 - **AI agents (MCP).** Turn on *Settings → Let AI agents control Still*, then add `Still.exe --mcp` to Claude Desktop, Cursor or any MCP app. Agents can open, read, click, type and screenshot pages. You approve each app first, a bar shows what it is doing with a Stop button, and private tabs, passwords and cookies are never exposed.
 - **Real full screen.** Hides the Windows taskbar for videos and games, with your tabs still visible if you want them.
-- **Built-in blocking.** Tracker and ad-domain blocking, native tracking prevention and a one-click [uBlock Origin Lite](https://github.com/uBlockOrigin/uBOL-home) installer that checks the download's hash.
+- **Built-in blocking.** Tracker and ad-domain blocking, native tracking prevention.
+- **Chrome Web Store extensions.** Open any extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs.
 - **Password vault.** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
 - **Bookmarks bar and Speed Dial.** Right-click a bookmark to edit, move, copy or delete it.
 - **Profiles and private tabs.** Separate profiles for work and personal use, and isolated InPrivate tabs.

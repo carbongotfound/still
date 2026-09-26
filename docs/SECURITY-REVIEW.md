@@ -21,7 +21,7 @@ No critical issues were found. Two medium-risk issues were found and fixed in 1.
 - **Browser import.** Only the current Windows user's own data is decrypted, with that browser's DPAPI-wrapped key. Chrome's app-bound (v20) values are detected and skipped. Source files are read-only and never modified. URLs are allow-listed to http/https, and sizes and counts are capped.
 - **TLS.** Pages with invalid certificates are always blocked, with no click-through.
 - **Navigation.** Non-web schemes are blocked; `mailto:` and `tel:` ask first. Pop-ups need a user gesture.
-- **Extensions.** uBlock Origin Lite downloads come only from the official GitHub release URL and are checked against the publisher's SHA-256. ZIP extraction rejects path traversal, symlinks, absolute paths and oversized archives, and shows a permission review before installing.
+- **Extensions.** Chrome Web Store installs download the CRX over HTTPS from Google's update service only (the CRX signature itself is not verified). ZIP extraction rejects path traversal, symlinks, absolute paths and oversized archives, and shows a permission review before installing.
 - **Permissions.** Camera, microphone, location and similar requests use a native Yes/No prompt per request.
 - **Automation interface.** The QA named pipe is compiled only into builds with `StillQa=true`. It doesn't exist in release builds.
 

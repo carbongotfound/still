@@ -167,7 +167,7 @@ public partial class MainWindow
  {
   if (active == null || active.Url.Length == 0) return;
   if (state.Bookmarks.Any(b => b.Url == active.Url)) { state.Bookmarks.RemoveAll(b => b.Url == active.Url); Toast("Bookmark removed."); }
-  else { state.Bookmarks.Add(new Visit { Title = active.Title, Url = active.Url }); Toast("Page bookmarked."); }
+  else { state.Bookmarks.Add(new Visit { Title = active.Title, Url = active.Url, Favicon = active.Private || active.Favicon.Length == 0 ? null : active.Favicon }); Toast("Page bookmarked."); }
   SaveLater(); UpdateChrome();
  }
  void ShowLibrary(bool bookmarks)
