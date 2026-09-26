@@ -68,7 +68,7 @@ public partial class MainWindow
   string digest = asset.TryGetProperty("digest", out var d) ? d.GetString() ?? "" : "";
   // Only official release downloads with a published SHA-256; otherwise the user updates by hand.
   if (!url.StartsWith("https://github.com/carbongotfound/still/releases/download/", StringComparison.Ordinal) || !digest.StartsWith("sha256:") || digest.Length != 71) return;
-  updateDownloading = true;
+  updateDownloading = true; updateProgress = 0; PublishAll();
   try {
    string dir = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Still", "Updates");
    Directory.CreateDirectory(dir);
@@ -124,5 +124,5 @@ public partial class MainWindow
   Application.Current.Shutdown();
  }
 
- object? UpdateData() => update == null ? null : new { version = update.Version, current = CurrentVersion.ToString(3), ready = update.Installer != null, progress = updateProgress, busy = applyWhenReady || applying, selfUpdate = CanSelfUpdate };
+ object? UpdateData() => update == null ? null : new { version = update.Version, current = CurrentVersion.ToString(3), ready = update.Installer != null, progress = updateProgress, busy = applyWhenReady || applying, selfUpdate = CanSelfUpdate, downloading = updateDownloading };
 }
