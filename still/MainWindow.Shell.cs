@@ -47,6 +47,7 @@ public partial class MainWindow
   pageCanvas.Children.Add(WebHost);
   shellRoot.Children.Add(shellView);shellRoot.Children.Add(pageCanvas);
   Content=shellRoot;
+  ApplyResizeEdge();
   var environment=await App.BrowserEnvironment;
   var shellOptions=environment.CreateCoreWebView2ControllerOptions();shellOptions.ProfileName="Shell";
   await shellView.EnsureCoreWebView2Async(environment,shellOptions);

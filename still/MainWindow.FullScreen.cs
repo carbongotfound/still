@@ -82,6 +82,7 @@ public partial class MainWindow
  }
  void ApplyFullScreen()
  {
+  ApplyResizeEdge();
   if(closing||IsFullScreen==fullScreenApplied)return;
   var hwnd=new WindowInteropHelper(this).Handle;
   if(IsFullScreen){

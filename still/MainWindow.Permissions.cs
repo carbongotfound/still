@@ -21,9 +21,10 @@ public partial class MainWindow
   _=>"use a device feature"};
 
  // Shows the request in Still's own permission bar; unanswered requests are denied after 90s or when the tab closes.
- async Task<bool> AskPermission(BrowserTab tab,string site,CoreWebView2PermissionKind kind)
+ Task<bool> AskPermission(BrowserTab tab,string site,CoreWebView2PermissionKind kind)=>AskPermission(tab,site,PermissionLabel(kind));
+ async Task<bool> AskPermission(BrowserTab tab,string site,string what)
  {
-  var pending=new PendingPermission(Guid.NewGuid().ToString("N"),tab,site,PermissionLabel(kind),new(TaskCreationOptions.RunContinuationsAsynchronously));
+  var pending=new PendingPermission(Guid.NewGuid().ToString("N"),tab,site,what,new(TaskCreationOptions.RunContinuationsAsynchronously));
   permissions.Add(pending);ShellPublish();
   var done=await Task.WhenAny(pending.Answer.Task,Task.Delay(TimeSpan.FromSeconds(90)));
   permissions.Remove(pending);ShellPublish();
