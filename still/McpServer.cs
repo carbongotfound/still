@@ -19,12 +19,12 @@ internal static class McpServer
   Tool("go_back", "Go back in a tab's history.", new { tabId = Str("Tab id (optional)") }),
   Tool("go_forward", "Go forward in a tab's history.", new { tabId = Str("Tab id (optional)") }),
   Tool("reload", "Reload a tab.", new { tabId = Str("Tab id (optional)") }),
-  Tool("read_page", "Get a tab's title, URL, visible text (up to 30,000 characters) and links.", new { tabId = Str("Tab id (optional)") }),
+  Tool("read_page", "Snapshot of a tab: title, URL, one line per visible clickable/typeable element as [id] kind \"label\" (→ link, =value, {options}), then the page text. Use the ids with click/type/scroll/wait_for. Ids change on every read.", new { text = Bool("Include page text (default true; false = elements only, fewer tokens)"), tabId = Str("Tab id (optional)") }),
   Tool("screenshot", "Take a PNG screenshot of a tab (brings it to the front).", new { tabId = Str("Tab id (optional)") }),
-  Tool("click", "Click an element found by CSS selector or by its visible text.", new { selector = Str("CSS selector (optional)"), text = Str("Visible text of a link or button (optional)"), tabId = Str("Tab id (optional)") }),
-  Tool("type", "Type text into a field (by CSS selector, or the focused field). Optionally clear it first and press Enter.", new { text = Str("Text to type"), selector = Str("CSS selector (optional)"), clear = Bool("Clear the field first"), submit = Bool("Press Enter afterwards"), tabId = Str("Tab id (optional)") }, "text"),
-  Tool("scroll", "Scroll a tab up or down.", new { direction = new { type = "string", @enum = new[] { "up", "down" } }, amount = new { type = "number", description = "Pixels (default 800)" }, tabId = Str("Tab id (optional)") }),
-  Tool("wait_for", "Wait until a CSS selector or some text appears on the page.", new { selector = Str("CSS selector (optional)"), text = Str("Text to wait for (optional)"), timeoutMs = new { type = "number", description = "Max wait, up to 30000 (default 10000)" }, tabId = Str("Tab id (optional)") }),
+  Tool("click", "Click an element by id from read_page (or CSS selector, or visible text).", new { id = Str("Element id from read_page"), selector = Str("CSS selector (optional)"), text = Str("Visible text of a link or button (optional)"), tabId = Str("Tab id (optional)") }),
+  Tool("type", "Type into a field by id (or CSS selector, or the focused field). On a dropdown, picks the option with that text. Optionally clear first and press Enter.", new { text = Str("Text to type, or option to pick"), id = Str("Element id from read_page"), selector = Str("CSS selector (optional)"), clear = Bool("Clear the field first"), submit = Bool("Press Enter afterwards"), tabId = Str("Tab id (optional)") }, "text"),
+  Tool("scroll", "Scroll a tab up/down, or to an element id.", new { id = Str("Element id to scroll into view (optional)"), direction = new { type = "string", @enum = new[] { "up", "down" } }, amount = new { type = "number", description = "Pixels (default 800)" }, tabId = Str("Tab id (optional)") }),
+  Tool("wait_for", "Wait until an element (id or CSS selector) or some text appears.", new { id = Str("Element id (optional)"), selector = Str("CSS selector (optional)"), text = Str("Text to wait for (optional)"), timeoutMs = new { type = "number", description = "Max wait, up to 30000 (default 10000)" }, tabId = Str("Tab id (optional)") }),
  ];
  static object Str(string d) => new { type = "string", description = d };
  static object Bool(string d) => new { type = "boolean", description = d };
