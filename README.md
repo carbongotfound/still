@@ -72,6 +72,29 @@ Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://dev
 | Full screen | <kbd>F11</kbd> |
 | Settings | <kbd>Ctrl ,</kbd> |
 
+## AI agents
+
+Turn on *Settings → Let AI agents control Still*. MCP apps (Claude Desktop, Cursor…) run `Still.exe --mcp`; terminal agents (Claude Code, Codex…) run one command per step:
+
+```powershell
+Still.exe --cli read_page                       # title, url, numbered elements, page text
+Still.exe --cli click id=7
+Still.exe --cli type id=13 text="hello" submit=true
+Still.exe --cli read_page text=false            # elements only, fewer tokens
+Still.exe --cli help                            # every tool
+```
+
+`read_page` gives each clickable or typeable element a short numbered line:
+
+```
+[7] link "Reserved Domains" → /domains/reserved
+[13] textbox "Email" =me@x.com
+[14] select "Country" =Canada {Canada|France}
+[15] checkbox "Remember me" ☐
+```
+
+Ids work with `click`, `type` (picks dropdown options too), `scroll` and `wait_for`, and change on every read. Settings has a ready-made prompt to paste into your agent. You approve each agent first, and private tabs, passwords and cookies are never exposed.
+
 ## How it's built
 
 - **Engine:** Microsoft Edge WebView2 (Chromium), hosted in a native **WPF / .NET 10** window.
