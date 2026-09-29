@@ -122,7 +122,7 @@ public partial class MainWindow
        case "blocking":Prefs.Blocking=value=="true";break;
        case "tracking":if(new[]{"Basic","Balanced","Strict"}.Contains(value)){Prefs.Tracking=value;foreach(var t in tabs)if(t.View?.CoreWebView2 is {} tc)ApplyProtection(tc);}break;
        case "tearOff":Prefs.TabTearOff=value=="true";SaveLater();foreach(var w in Windows)w.ShellPublish();break;
-       case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();agentApproval?.TrySetResult(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
+       case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();agentApproval?.TrySetResult(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "memory":Prefs.MemorySaver=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is{} mc)mc.MemoryUsageTargetLevel=Prefs.MemorySaver&&t!=active?CoreWebView2MemoryUsageTargetLevel.Low:CoreWebView2MemoryUsageTargetLevel.Normal;break;
        case "autofill":Prefs.Autofill=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is {} ac)ac.Settings.IsGeneralAutofillEnabled=Prefs.Autofill;break;
       }SaveLater();break;

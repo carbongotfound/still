@@ -53,13 +53,14 @@ public partial class MainWindow
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let AI agents control Still.");
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent for this session.");
+   if (Prefs.ApprovedAgents.Contains(client)) approvedAgents.Add(client); // approved once = remembered across restarts/updates
    if (!approvedAgents.Contains(client)) {
     if (agentApproval == null) {
      agentApproval = new(TaskCreationOptions.RunContinuationsAsynchronously); agentName = client; PublishAll();
      var answered = await Task.WhenAny(agentApproval.Task, Task.Delay(TimeSpan.FromMinutes(2)));
      bool ok = answered == agentApproval.Task && agentApproval.Task.Result;
      agentApproval = null;
-     if (ok) approvedAgents.Add(client); else blockedAgents.Add(client);
+     if (ok) { approvedAgents.Add(client); Prefs.ApprovedAgents.Add(client); SaveLater(); } else blockedAgents.Add(client);
      PublishAll();
     } else await agentApproval.Task;
     if (!approvedAgents.Contains(client)) return Fail("The user did not allow this agent to control Still.");
@@ -76,7 +77,7 @@ public partial class MainWindow
  object? AgentData() => agentApproval != null ? new { client = agentName, pending = true, action = "" }
   : approvedAgents.Contains(agentName) && DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2) ? new { client = agentName, pending = false, action = agentAction } : null;
  void AnswerAgent(bool allow) => agentApproval?.TrySetResult(allow);
- void StopAgent() { if (agentName.Length > 0) { approvedAgents.Remove(agentName); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
+ void StopAgent() { if (agentName.Length > 0) { approvedAgents.Remove(agentName); Prefs.ApprovedAgents.Remove(agentName); SaveLater(); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
  static double N(JsonElement args, string key, double fallback) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : fallback;
