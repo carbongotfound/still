@@ -80,4 +80,47 @@ internal static class McpServer
    stdout.WriteLine(error != null ? JsonSerializer.Serialize(new { jsonrpc = "2.0", id, error }) : JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }));
   }
  }
+
+ [System.Runtime.InteropServices.DllImport("kernel32.dll")] static extern bool AttachConsole(int pid);
+
+ // `Still.exe --cli <tool> [key=value ...]`: one tool call from a terminal. Prints JSON; screenshots are saved as PNG.
+ public static int Cli(string instance, string[] argv)
+ {
+  AttachConsole(-1); // WPF exe: borrow the caller's console so output shows in a terminal
+  var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
+  if (argv.Length == 0 || argv[0] is "help" or "--help" or "-h") {
+   stdout.WriteLine("Usage: Still.exe --cli <tool> [key=value ...]\n\nTools:");
+   foreach (var t in JsonSerializer.SerializeToNode(Tools)!.AsArray()) {
+    var props = t!["inputSchema"]!["properties"]!.AsObject().Select(p => p.Key + "=");
+    stdout.WriteLine($"  {t["name"]} {string.Join(" ", props)}\n      {t["description"]}");
+   }
+   return 0;
+  }
+  var args = new JsonObject();
+  foreach (var a in argv.Skip(1)) {
+   int eq = a.IndexOf('='); if (eq < 1) { stdout.WriteLine($"Arguments are key=value, got: {a}"); return 2; }
+   string k = a[..eq].TrimStart('-'), v = a[(eq + 1)..];
+   args[k] = v is "true" or "false" ? bool.Parse(v) : double.TryParse(v, out var n) && k is "amount" or "timeoutMs" ? n : v;
+  }
+  string reply;
+  try {
+   using var pipe = new NamedPipeClientStream(".", MainWindow.AgentPipe(instance), PipeDirection.InOut, PipeOptions.CurrentUserOnly);
+   pipe.Connect(3000);
+   var pw = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
+   pw.WriteLine(JsonSerializer.Serialize(new { client = "Terminal agent", tool = argv[0], args }));
+   reply = new StreamReader(pipe, new UTF8Encoding(false)).ReadLine() ?? throw new IOException();
+  } catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException) {
+   stdout.WriteLine("Still isn't running, or Settings → Let AI agents control Still is off."); return 1;
+  }
+  var r = JsonNode.Parse(reply)!;
+  if (r["ok"]?.GetValue<bool>() != true) { stdout.WriteLine("Error: " + (r["error"]?.GetValue<string>() ?? "Failed.")); return 1; }
+  var data = r["result"];
+  if (data is JsonObject obj && obj["image"] is { } img) {
+   string file = Path.Combine(Path.GetTempPath(), $"still-screenshot-{DateTime.Now:yyyyMMdd-HHmmss}.png");
+   File.WriteAllBytes(file, Convert.FromBase64String(img.GetValue<string>()));
+   stdout.WriteLine(file); return 0;
+  }
+  stdout.WriteLine(data?.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}");
+  return 0;
+ }
 }

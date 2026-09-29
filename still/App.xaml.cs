@@ -27,6 +27,7 @@ public partial class App : Application
   if(profile<0)try{DataRoot=ProfileCatalog.Folder(ProfileCatalog.Read().Single(p=>p.Id==ProfileCatalog.LaunchId));}catch(Exception ex){MessageBox.Show(ex.Message,"Still");Shutdown();return;}
   var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
   // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
+  if (e.Args.FirstOrDefault() == "--cli") { var cliArgs = e.Args.Skip(1).ToArray(); new Thread(() => { int code = 1; try { code = McpServer.Cli(InstanceName(DataRoot), cliArgs); } finally { Dispatcher.Invoke(() => Shutdown(code)); } }) { IsBackground = true }.Start(); return; }
   if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.Run(InstanceName(DataRoot)); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) {
