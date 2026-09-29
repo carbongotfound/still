@@ -81,7 +81,7 @@ public partial class MainWindow : Window
    managementView?.Dispose();shellView?.Dispose();loginOffer=null;importBatch=null;ClearOwnedPasswordClipboard();
   };
   SizeChanged += (_, _) => { Sheet.Width = Math.Max(320, Math.Min(550, ContentArea.ActualWidth - 40)); Sheet.MaxHeight = Math.Max(250, PageArea.ActualHeight - 60); };
-  StateChanged+=(_,_)=>{RestorePageWindow();ShellPublish();};
+  StateChanged+=(_,_)=>{ApplyResizeEdge();RestorePageWindow();ShellPublish();};
   SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
   Closed += (_, _) => {
    SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
@@ -286,6 +286,7 @@ public partial class MainWindow : Window
    core.Settings.AreBrowserAcceleratorKeysEnabled = true;
    ApplyProtection(core);
    core.FaviconChanged+=async(_,_)=>await UpdateFavicon(tab,core);
+   core.LaunchingExternalUriScheme+=(_,e)=>{e.Cancel=true;var uri=e.Uri;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri));};
    core.ServerCertificateErrorDetected+=(_,e)=>{e.Action=CoreWebView2ServerCertificateErrorAction.Cancel;tab.CertificateError=true;tab.Secure=false;ShellPublish();};
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
@@ -296,7 +297,7 @@ public partial class MainWindow : Window
     if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
     if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension")) {
      e.Cancel = true;
-     Dispatcher.BeginInvoke(() => ConfirmExternal(e.Uri));
+     Dispatcher.BeginInvoke(() => OpenAppLink(tab, e.Uri));
      return;
     }
     if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
@@ -468,12 +469,10 @@ public partial class MainWindow : Window
   Title+=" · "+ProfileCatalog.CurrentName();
   ShellPublish();
  }
- void ConfirmExternal(string uri)
- {
-  if (!Uri.TryCreate(uri, UriKind.Absolute, out var u) || u.Scheme is not ("mailto" or "tel")) { Toast("This link uses an unsupported application protocol."); return; }
-  if (MessageBox.Show(this, "Open this link in the associated Windows app?\n\n" + uri, "Open external app", MessageBoxButton.YesNo) == MessageBoxResult.Yes) Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true });
- }
  void DragWindow(object s, MouseButtonEventArgs e) { if (e.ChangedButton != MouseButton.Left) return; if (e.ClickCount == 2) ToggleMaximize(); else try { DragMove(); } catch (InvalidOperationException) { } }
+ // Pages are native windows that swallow the mouse, so the window edge needs a thin strip of plain WPF
+ // for Windows to offer resizing. Only when the window is a normal (not maximized/full-screen) window.
+ void ApplyResizeEdge(){if(shellRoot!=null)shellRoot.Margin=WindowState==WindowState.Normal&&!IsFullScreen?new Thickness(5):new Thickness(0);}
  void ToggleMaximize() => WindowState = WindowState == WindowState.Maximized ? WindowState.Normal : WindowState.Maximized;
  void CloseWindow(object s, RoutedEventArgs e) => Close();
  void MinimizeWindow(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
