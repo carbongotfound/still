@@ -71,7 +71,7 @@ internal static class McpServer
      if (r["ok"]?.GetValue<bool>() != true) { result = new { content = new[] { new { type = "text", text = r["error"]?.GetValue<string>() ?? "Failed." } }, isError = true }; break; }
      var data = r["result"];
      if (data is JsonObject obj && obj["image"] is { } img) result = new { content = new object[] { new { type = "image", data = img.GetValue<string>(), mimeType = "image/png" } } };
-     else result = new { content = new[] { new { type = "text", text = data?.ToJsonString(new JsonSerializerOptions { WriteIndented = true }) ?? "{}" } } };
+     else result = new { content = new[] { new { type = "text", text = data?.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}" } } };
      break;
     }
     default: error = new { code = -32601, message = "Method not found: " + method }; break;
@@ -120,7 +120,7 @@ internal static class McpServer
    File.WriteAllBytes(file, Convert.FromBase64String(img.GetValue<string>()));
    stdout.WriteLine(file); return 0;
   }
-  stdout.WriteLine(data?.ToJsonString(new JsonSerializerOptions { WriteIndented = true, Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}");
+  stdout.WriteLine(data?.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}");
   return 0;
  }
 }

@@ -60,6 +60,7 @@ public sealed class Preferences
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
  public List<string> UnblockedHosts { get; set; } = [];
  public List<string> AllowedAppLinks { get; set; } = [];
+ public List<string> ApprovedAgents { get; set; } = [];
  public double Width { get; set; } = 1260;
  public double Height { get; set; } = 810;
 }
