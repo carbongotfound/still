@@ -80,6 +80,40 @@ public partial class MainWindow
  void StopAgent() { if (agentName.Length > 0) { approvedAgents.Remove(agentName); Prefs.ApprovedAgents.Remove(agentName); SaveLater(); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+ // Element ids come from read_page ("[12] button ..."); the id is stored on the element as data-still-id.
+ static string Sel(JsonElement args) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty("id", out var v) && (v.ValueKind == JsonValueKind.Number ? v.GetRawText() : v.GetString() ?? "").Trim('[', ']', ' ') is { Length: > 0 } id && id.All(char.IsAsciiDigit)
+  ? $"[data-still-id=\"{id}\"]" : S(args, "selector");
+ // read_page: one line per visible interactive element ("[3] input[email] \"Email\" =me@x.com"), then the page text.
+ const string SnapshotScript = """
+ (withText) => {
+  const vis = e => { const r = e.getClientRects(); if (!r.length) return false; const cs = getComputedStyle(e); return cs.visibility !== 'hidden' && cs.display !== 'none' && +cs.opacity !== 0; };
+  const clip = (s, n) => { s = (s || '').replace(/\s+/g, ' ').trim(); return s.length > n ? s.slice(0, n - 1) + '…' : s; };
+  const q = 'a[href],button,input:not([type=hidden]),select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=option],[role=switch],[role=combobox],[role=textbox],[contenteditable=""],[contenteditable=true],[onclick],[tabindex]:not([tabindex="-1"])';
+  document.querySelectorAll('[data-still-id]').forEach(e => e.removeAttribute('data-still-id'));
+  const out = []; let n = 0;
+  for (const e of document.querySelectorAll(q)) {
+   if (n >= 500) { out.push('… more elements; scroll and read again'); break; }
+   if (!vis(e) || e.disabled || e.parentElement?.closest('a[data-still-id]')) continue;
+   const tag = e.tagName.toLowerCase(), role = e.getAttribute('role');
+   let kind = role || (tag === 'a' ? 'link' : tag), label = e.getAttribute('aria-label') || '';
+   if (tag === 'input') { kind = 'input[' + (e.type || 'text') + ']'; label = label || e.labels?.[0]?.innerText || e.placeholder || e.name || e.title; }
+   else if (tag === 'textarea' || tag === 'select') label = label || e.labels?.[0]?.innerText || e.placeholder || e.name;
+   else label = label || e.innerText || e.title || e.querySelector('img[alt]')?.alt || '';
+   e.setAttribute('data-still-id', ++n);
+   let line = '[' + n + '] ' + kind + (label ? ' "' + clip(label, 80) + '"' : '');
+   if (tag === 'a') { const h = e.getAttribute('href') || ''; if (!h.startsWith('javascript:') && h !== '#') line += ' → ' + clip(e.href.startsWith(location.origin) ? e.href.slice(location.origin.length) : e.href, 100); }
+   if (tag === 'select') line += ' =' + clip(e.selectedOptions[0]?.text, 40) + ' {' + [...e.options].slice(0, 30).map(o => clip(o.text, 30)).join('|') + (e.options.length > 30 ? '|…' : '') + '}';
+   else if (e.type === 'checkbox' || e.type === 'radio') line += e.checked ? ' ✓' : ' ☐';
+   else if ((tag === 'input' || tag === 'textarea') && e.value && e.type !== 'password') line += ' =' + clip(e.value, 60);
+   if (e.getAttribute('aria-expanded')) line += ' expanded=' + e.getAttribute('aria-expanded');
+   out.push(line);
+  }
+  let s = document.title + '\n' + location.href + '\n\n' + out.join('\n');
+  if (withText) s += '\n\n--- text ---\n' + clip2(document.body?.innerText || '');
+  return s;
+  function clip2(t) { t = t.replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n'); return t.length > 20000 ? t.slice(0, 20000) + '\n… (cut; scroll and read again)' : t; }
+ }
+ """;
  static double N(JsonElement args, string key, double fallback) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.Number ? v.GetDouble() : fallback;
 
  // Finds a tab the agent may use: never private tabs.
@@ -133,8 +167,8 @@ public partial class MainWindow
    }
    case "read_page": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);
-    string json = await core.ExecuteScriptAsync("JSON.stringify({title:document.title,url:location.href,text:(document.body?.innerText||'').slice(0,30000),links:[...document.querySelectorAll('a[href]')].slice(0,150).map(a=>({text:(a.innerText||a.getAttribute('aria-label')||'').trim().slice(0,80),href:a.href}))})");
-    Did("Read " + Host(t.Url)); return Reply(JsonDocument.Parse(JsonSerializer.Deserialize<string>(json) ?? "{}").RootElement.Clone());
+    string snap = JsonSerializer.Deserialize<string>(await core.ExecuteScriptAsync("(" + SnapshotScript + ")(" + (args.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.False ? "false" : "true") + ")")) ?? "";
+    Did("Read " + Host(t.Url)); return Reply(new { page = snap });
    }
    case "screenshot": {
     var (w, t) = AgentTab(args); if (t != w.active) await w.SelectTab(t); var core = await Core(w, t);
@@ -143,7 +177,7 @@ public partial class MainWindow
    }
    case "click": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);
-    string find = JsonSerializer.Serialize(new { selector = S(args, "selector"), text = S(args, "text") });
+    string find = JsonSerializer.Serialize(new { selector = Sel(args), text = S(args, "text") });
     string res = await core.ExecuteScriptAsync("((q)=>{let el=null;if(q.selector)el=document.querySelector(q.selector);if(!el&&q.text){const want=q.text.trim().toLowerCase();el=[...document.querySelectorAll('a,button,[role=button],input[type=submit],input[type=button],summary,label,[onclick]')].find(e=>(e.innerText||e.value||e.getAttribute('aria-label')||'').trim().toLowerCase().includes(want)&&e.getClientRects().length)}if(!el)return null;el.scrollIntoView({block:'center'});const r=el.getBoundingClientRect();return {x:r.left+r.width/2,y:r.top+r.height/2,label:(el.innerText||el.value||el.getAttribute('aria-label')||el.tagName).trim().slice(0,60)}})(" + find + ")");
     if (res == "null") throw new InvalidOperationException("Couldn't find that element on the page.");
     using var target = JsonDocument.Parse(res); double x = target.RootElement.GetProperty("x").GetDouble(), y = target.RootElement.GetProperty("y").GetDouble();
@@ -155,8 +189,10 @@ public partial class MainWindow
    }
    case "type": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);
-    string sel = JsonSerializer.Serialize(S(args, "selector"));
-    string ok = await core.ExecuteScriptAsync("((s)=>{const el=s?document.querySelector(s):document.activeElement;if(!el)return false;el.scrollIntoView({block:'center'});el.focus();if('select' in el&&el.value!==undefined){el.select?.()}return true})(" + sel + ")");
+    string sel = JsonSerializer.Serialize(Sel(args)), val = JsonSerializer.Serialize(S(args, "text"));
+    string ok = await core.ExecuteScriptAsync("((s,v)=>{const el=s?document.querySelector(s):document.activeElement;if(!el)return false;if(el.tagName==='SELECT'){const o=[...el.options].find(o=>o.value===v||o.text.trim().toLowerCase()===v.trim().toLowerCase());if(!o)return 'nooption';el.value=o.value;el.dispatchEvent(new Event('input',{bubbles:true}));el.dispatchEvent(new Event('change',{bubbles:true}));return 'select'}el.scrollIntoView({block:'center'});el.focus();if('select' in el&&el.value!==undefined){el.select?.()}return true})(" + sel + "," + val + ")");
+    if (ok == "\"select\"") { Did("Picked an option"); return Reply(new { selected = S(args, "text") }); }
+    if (ok == "\"nooption\"") throw new InvalidOperationException("That dropdown has no option matching the text.");
     if (ok != "true") throw new InvalidOperationException("Couldn't find that field on the page.");
     if (args.TryGetProperty("clear", out var clr) && clr.ValueKind == JsonValueKind.True) await core.ExecuteScriptAsync("document.activeElement&&('value' in document.activeElement)&&(document.activeElement.value='')");
     await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text = S(args, "text") }));
@@ -169,13 +205,17 @@ public partial class MainWindow
    }
    case "scroll": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);
+    if (Sel(args) is { Length: > 0 } to) {
+     if (await core.ExecuteScriptAsync("(s=>{const e=document.querySelector(s);e&&e.scrollIntoView({block:'center'});return !!e})(" + JsonSerializer.Serialize(to) + ")") != "true") throw new InvalidOperationException("Couldn't find that element on the page.");
+     Did("Scrolled to an element"); return Reply(new { scrolled = "to" });
+    }
     double amount = Math.Clamp(N(args, "amount", 800), -20000, 20000) * (S(args, "direction") == "up" ? -1 : 1);
     await core.ExecuteScriptAsync("window.scrollBy(0," + amount.ToString(System.Globalization.CultureInfo.InvariantCulture) + ")");
     Did("Scrolled " + (amount < 0 ? "up" : "down")); return Reply(new { scrolled = amount });
    }
    case "wait_for": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);
-    string q = JsonSerializer.Serialize(new { selector = S(args, "selector"), text = S(args, "text") });
+    string q = JsonSerializer.Serialize(new { selector = Sel(args), text = S(args, "text") });
     var until = DateTime.UtcNow.AddMilliseconds(Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000));
     while (DateTime.UtcNow < until) {
      if (await core.ExecuteScriptAsync("((q)=>q.selector?!!document.querySelector(q.selector):(document.body?.innerText||'').toLowerCase().includes(q.text.toLowerCase()))(" + q + ")") == "true") { Did("Waited for the page"); return Reply(new { found = true }); }
