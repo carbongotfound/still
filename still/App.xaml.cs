@@ -8,7 +8,10 @@ public partial class App : Application
  public static bool IsQa { get; private set; }
  public static string ProfileHome { get; private set; }="";
  private static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment>? browserEnvironment;
- public static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> BrowserEnvironment => browserEnvironment ??= Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null,Path.Combine(DataRoot,"WebView"),new(){AreBrowserExtensionsEnabled=true,EnableTrackingPrevention=true});
+ public static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> BrowserEnvironment => browserEnvironment ??= Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null,Path.Combine(DataRoot,"WebView"),new(){AreBrowserExtensionsEnabled=true,EnableTrackingPrevention=true,
+  // Play audio from the engine's main process (a direct child of Still.exe) instead of a separate audio-service
+  // process one level deeper, so per-app audio tools (Discord screen share, SteelSeries Sonar, OBS) can find it.
+  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess"});
  private Mutex? instance;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
  protected override void OnStartup(StartupEventArgs e)
