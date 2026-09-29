@@ -58,7 +58,7 @@ public partial class MainWindow : Window
   suspendTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
-  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchClipboard(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
+  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchClipboard(); WatchDefaultOutput(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    try { await InitializeShell(); }
    catch(Exception ex) { if(closing)return;App.Log(ex);MessageBox.Show(this,"Still couldn't start its interface.\n\n"+(ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message),"Still");Close();return; }
@@ -416,6 +416,7 @@ public partial class MainWindow : Window
    await InstallHiddenRules(tab);
    await InstallLoginObserver(tab);
    await SetupFilePaste(tab, core);
+   await InstallAudioReroute(core);
    core.WebMessageReceived += async (_, e) => await ReceiveHidden(tab, e);
    core.WebMessageReceived += async (_, e) => await ReceiveLogin(tab, e);
    core.Navigate(tab.Url);
