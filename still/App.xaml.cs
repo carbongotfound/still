@@ -37,6 +37,7 @@ public partial class App : Application
    Shutdown(); return;
   }
   Directory.CreateDirectory(DataRoot);
+  _ = BrowserEnvironment; // start the engine while the window is still being built
   try{var stale=Path.Combine(DataRoot,"ImportSnapshot");if(Directory.Exists(stale))Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
   // Crashes off the UI thread and UI freezes were never recorded; log them so a "random crash" leaves a trace.
   AppDomain.CurrentDomain.UnhandledException += (_, ev) => Log(ev.ExceptionObject as Exception ?? new Exception("Unhandled: " + ev.ExceptionObject));
