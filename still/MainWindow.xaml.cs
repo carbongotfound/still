@@ -64,10 +64,10 @@ public partial class MainWindow : Window
    catch(Exception ex) { if(closing)return;App.Log(ex);MessageBox.Show(this,"Still couldn't start its interface.\n\n"+(ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message),"Still");Close();return; }
    if(closing)return;
    ApplyTheme(); ApplyLayout();
-   if (tabs.Count == 0) tabs.Add(new BrowserTab());
-   await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First());
+   // Opened from a link: go straight to it instead of loading the restored tab first.
+   if ((pendingUrl ?? LaunchUrl) is { Length: > 0 } link) await NewTab(link, false, false);
+   else { if (tabs.Count == 0) tabs.Add(new BrowserTab()); await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First()); }
    if (!secondary) StartUpdateChecks();
-   if (LaunchUrl != null) await NewTab(LaunchUrl, false, false);
    if (!secondary && store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA
    if (App.IsQa && !secondary) StartQa();
@@ -91,6 +91,7 @@ public partial class MainWindow : Window
   };
  }
  public string? LaunchUrl { get; init; }
+ string? pendingUrl;
  DateTime lastDownloadPublish;
  // A link opened from another app while Still is running.
  public async void OpenFromOutside(string url)
@@ -98,7 +99,8 @@ public partial class MainWindow : Window
   if (closing) return;
   if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
   Activate(); Topmost = !Topmost; Topmost = !Topmost;
-  if (url.Length > 0 && shellReady) await NewTab(url, false, false);
+  if (url.Length == 0) return;
+  if (shellReady) await NewTab(url, false, false); else pendingUrl = url;
  }
  void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) { if (Prefs.Theme == "System") Dispatcher.BeginInvoke(ApplyTheme); }
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
