@@ -32,11 +32,13 @@ public partial class MainWindow : Window
  MainWindow(bool secondaryWindow)
  {
   InitializeComponent();
+  StartupMetrics.Mark("window-xaml");
   Frame.Visibility=Visibility.Collapsed;Background=Brushes.Black;
   secondary = secondaryWindow;
   Windows.Add(this);
   Activated += (_, _) => LastActive = this;
   state = sharedState ??= store.Load();
+  StartupMetrics.Mark("session-loaded");
   if(state.UiVersion==0)state.Welcome=true; // brand-new install: show the welcome setup
   if(state.UiVersion<2){state.Preferences.Theme="Dark";state.UiVersion=2;}
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
@@ -45,28 +47,29 @@ public partial class MainWindow : Window
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
   if (!secondary) tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
   saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };
-  // Memory saver: background tabs idle for 5+ minutes are suspended (scripts frozen, page kept intact, no reload).
-  var suspendTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
-  suspendTimer.Tick += async (_, _) => {
-   if (!Prefs.MemorySaver || closing) return;
-   foreach (var t in tabs.ToArray()) {
-    if (t == active || t.Loading || t.View?.CoreWebView2 is not { } c || c.IsSuspended || c.IsDocumentPlayingAudio) continue;
-    if (DateTime.UtcNow - t.LastActive < TimeSpan.FromMinutes(5) || permissions.Any(p => p.Tab == t)) continue;
-    try { if (await c.TrySuspendAsync()) ShellPublish(); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { }
-   }
-  };
-  suspendTimer.Start();
+  memoryTimer.Tick += async (_, _) => await ReduceBackgroundMemory();
+  memoryTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchClipboard(); WatchDefaultOutput(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
-   try { await InitializeShell(); }
+   StartupMetrics.Mark("window-loaded");
+   Task firstPage;
+   try {
+    // InitializeShell attaches the native page host before its first await. Start both controllers
+    // together instead of making the first website wait for the interface controller to initialize.
+    var shell = InitializeShell();
+    ApplyTheme();
+    if (LaunchUrl is { Length: > 0 } link) firstPage = NewTab(link, false, false);
+    else { if (tabs.Count == 0) tabs.Add(new BrowserTab()); firstPage = SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First()); }
+    await Task.WhenAll(shell, firstPage);
+   }
    catch(Exception ex) { if(closing)return;App.Log(ex);MessageBox.Show(this,"Still couldn't start its interface.\n\n"+(ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message),"Still");Close();return; }
    if(closing)return;
    ApplyTheme(); ApplyLayout();
-   // Opened from a link: go straight to it instead of loading the restored tab first.
-   if ((pendingUrl ?? LaunchUrl) is { Length: > 0 } link) await NewTab(link, false, false);
-   else { if (tabs.Count == 0) tabs.Add(new BrowserTab()); await SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First()); }
+   browserReady = true;
+   StartupMetrics.Mark("controllers-ready");
+   await DrainExternalLinks();
    if (!secondary) StartUpdateChecks();
    if (!secondary && store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA
@@ -74,14 +77,14 @@ public partial class MainWindow : Window
 #endif
   };
   Closing += (_, _) => {
-   closing = true; saveTimer.Stop();
+   closing = true; saveTimer.Stop(); memoryTimer.Stop();
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
    else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
    Save(); foreach (var tab in tabs) { tab.Closed = true; tab.View?.Dispose(); }
-   managementView?.Dispose();shellView?.Dispose();loginOffer=null;importBatch=null;ClearOwnedPasswordClipboard();
+   managementView?.Dispose();shellView?.Dispose();snapshotCapture=null;snapshotCore=null;loginOffer=null;importBatch=null;ClearOwnedPasswordClipboard();
   };
   SizeChanged += (_, _) => { Sheet.Width = Math.Max(320, Math.Min(550, ContentArea.ActualWidth - 40)); Sheet.MaxHeight = Math.Max(250, PageArea.ActualHeight - 60); };
-  StateChanged+=(_,_)=>{ApplyResizeEdge();RestorePageWindow();ShellPublish();};
+  StateChanged+=(_,_)=>{ApplyResizeEdge();RestorePageWindow();ApplyMemoryPolicy();ShellPublish();};
   SystemEvents.UserPreferenceChanged += SystemPreferenceChanged;
   Closed += (_, _) => {
    SystemEvents.UserPreferenceChanged -= SystemPreferenceChanged;
@@ -91,7 +94,8 @@ public partial class MainWindow : Window
   };
  }
  public string? LaunchUrl { get; init; }
- string? pendingUrl;
+ readonly Queue<string> externalLinks = new();
+ bool browserReady, drainingLinks;
  DateTime lastDownloadPublish;
  // A link opened from another app while Still is running.
  public async void OpenFromOutside(string url)
@@ -100,7 +104,15 @@ public partial class MainWindow : Window
   if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
   Activate(); Topmost = !Topmost; Topmost = !Topmost;
   if (url.Length == 0) return;
-  if (shellReady) await NewTab(url, false, false); else pendingUrl = url;
+  externalLinks.Enqueue(url);
+  try { await DrainExternalLinks(); } catch (Exception ex) { App.Log(ex); Toast("Couldn't open that link."); }
+ }
+ async Task DrainExternalLinks()
+ {
+  if (!browserReady || drainingLinks || closing) return;
+  drainingLinks = true;
+  try { while (!closing && externalLinks.TryDequeue(out var url)) await NewTab(url, false, false); }
+  finally { drainingLinks = false; }
  }
  void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) { if (Prefs.Theme == "System") Dispatcher.BeginInvoke(ApplyTheme); }
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
@@ -207,7 +219,7 @@ public partial class MainWindow : Window
   var leaving=active; if(leaving!=null)leaving.LastActive=DateTime.UtcNow;
   active = tab;tab.LastActive=DateTime.UtcNow;
   if(tab.View?.CoreWebView2 is {IsSuspended:true} sleeping)sleeping.Resume(); // instant: page state was kept
-  foreach(var t in tabs)if(t.View?.CoreWebView2 is {} memory)memory.MemoryUsageTargetLevel=Prefs.MemorySaver&&t!=tab?CoreWebView2MemoryUsageTargetLevel.Low:CoreWebView2MemoryUsageTargetLevel.Normal;
+  ApplyMemoryPolicy();
   StartPage.Visibility = tab.Url.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
@@ -279,9 +291,11 @@ public partial class MainWindow : Window
   try {
    var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=tab.Private?privateProfile:"Default";options.IsInPrivateModeEnabled=tab.Private;
    await view.EnsureCoreWebView2Async(environment,options);
+   StartupMetrics.Mark("page-controller");
    if (tab.Closed || tab.View != view || closing) return;
    view.UpdateWindowPos();RestorePageWindow();
    var core = view.CoreWebView2;
+   ApplyMemoryPolicy(); // includes views initialized after a quick tab switch
    DetachWindowClose(view, core);
    core.Settings.IsStatusBarEnabled = false;
    core.Settings.IsZoomControlEnabled = true;
@@ -420,9 +434,11 @@ public partial class MainWindow : Window
    await InstallLoginObserver(tab);
    await SetupFilePaste(tab, core);
    await InstallAudioReroute(core);
+   await core.AddScriptToExecuteOnDocumentCreatedAsync(MemoryActivityScript);
    core.WebMessageReceived += async (_, e) => await ReceiveHidden(tab, e);
    core.WebMessageReceived += async (_, e) => await ReceiveLogin(tab, e);
    core.Navigate(tab.Url);
+   StartupMetrics.Mark("page-navigation");
   } catch (Exception ex) {
    if (closing || tab.Closed || tab.View != view) return;
    App.Log(ex); DisposeView(tab);

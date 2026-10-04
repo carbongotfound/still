@@ -15,7 +15,7 @@ public partial class MainWindow
   tab.LoginScriptId=null;
   if(!Prefs.OfferPasswordSave&&!Prefs.OfferPasswordUpdate&&!Prefs.AutoFillPasswords){await core.ExecuteScriptAsync("window.__stillLoginCleanup?.()");tab.LoginToken="";return;}
   tab.LoginToken=Guid.NewGuid().ToString("N");
-  string js=(await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory,"Assets","LoginObserver.js"))).Replace("__STILL_LOGIN_CONFIG__",JsonSerializer.Serialize(new{token=tab.LoginToken,capture=Prefs.OfferPasswordSave||Prefs.OfferPasswordUpdate}));
+  string js=(await AppContent.ReadAsset("LoginObserver.js")).Replace("__STILL_LOGIN_CONFIG__",JsonSerializer.Serialize(new{token=tab.LoginToken,capture=Prefs.OfferPasswordSave||Prefs.OfferPasswordUpdate}));
   tab.LoginScriptId=await core.AddScriptToExecuteOnDocumentCreatedAsync(js);
   await core.ExecuteScriptAsync(js);
  }

@@ -27,11 +27,12 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 - **AI agents (MCP).** Turn on *Settings → Let AI agents control Still*, then add `Still.exe --mcp` to Claude Desktop, Cursor or any MCP app. Agents can open, read, click, type and screenshot pages. You approve each app first, a bar shows what it is doing with a Stop button, and private tabs, passwords and cookies are never exposed.
 - **Real full screen.** Hides the Windows taskbar for videos and games, with your tabs still visible if you want them.
 - **Built-in blocking.** Tracker and ad-domain blocking, native tracking prevention.
-- **Chrome Web Store extensions.** Open any extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs.
+- **Chrome Web Store extensions.** Open an extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs. Signed store packages retain their publisher identity, and extension popup and settings pages can be opened from Extensions. Compatibility depends on WebView2 and the extension's desktop companion, where required.
 - **Password vault.** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
 - **Bookmarks bar and Speed Dial.** Right-click a bookmark to edit, move, copy or delete it.
 - **Profiles and private tabs.** Separate profiles for work and personal use, and isolated InPrivate tabs.
-- **Vertical or top tabs.** You can resize, pin, sleep and mute tabs, and memory saver releases tabs you aren't using.
+- **Vertical or top tabs.** You can resize, pin, sleep and mute tabs. Memory saver sleeps idle background tabs after a minute while retaining page state; media, calls and downloads stay awake.
+- **Downloads.** Double-click a completed download to open its file with your Windows default app.
 - **Keyboard first.** <kbd>Ctrl L</kbd> address bar, <kbd>Ctrl K</kbd> find any tab, <kbd>Ctrl Shift T</kbd> reopen a closed tab, <kbd>F11</kbd> full screen.
 - **Extras.** Reader mode, "hide an element" on any page, picture-in-picture and find in page.
 

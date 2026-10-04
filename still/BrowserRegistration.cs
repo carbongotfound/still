@@ -72,7 +72,9 @@ internal static class BrowserRegistration
 
  public static string? UrlFromArgs(string[] args)
  {
-  foreach (var a in args) {
+  for (int i = 0; i < args.Length; i++) {
+   var a = args[i];
+   if (a is "--profile" or "--profiles-root") { i++; continue; }
    if (a.StartsWith("--")) continue;
    if (Uri.TryCreate(a, UriKind.Absolute, out var u) && u.Scheme is "http" or "https") return u.AbsoluteUri;
    try { if (File.Exists(a)) return new Uri(Path.GetFullPath(a)).AbsoluteUri; } catch (Exception) { }
@@ -89,21 +91,44 @@ internal static class BrowserRegistration
   } catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException) { return false; }
  }
 
- public static void Listen(string instance, Action<string> onUrl)
+ public static IDisposable Listen(string instance, Action<string> onUrl) => new LinkListener(instance, onUrl);
+
+ sealed class LinkListener : IDisposable
  {
-  var thread = new Thread(() => {
-   while (true) {
+  const int MaximumBytes = 16384;
+  readonly CancellationTokenSource stop = new();
+  public LinkListener(string instance, Action<string> onUrl)
+  {
+   // Create the first pipe synchronously, before a second launch can find the instance mutex.
+   _ = Run(new NamedPipeServerStream(PipeName(instance), PipeDirection.In, 1, PipeTransmissionMode.Byte,
+    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly), instance, onUrl);
+  }
+  async Task Run(NamedPipeServerStream first, string instance, Action<string> onUrl)
+  {
+   NamedPipeServerStream? next = first;
+   while (!stop.IsCancellationRequested) {
     try {
-     using var pipe = new NamedPipeServerStream(PipeName(instance), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.CurrentUserOnly);
-     pipe.WaitForConnection();
+     using var pipe = next ?? new NamedPipeServerStream(PipeName(instance), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+     next = null;
+     await pipe.WaitForConnectionAsync(stop.Token).ConfigureAwait(false);
+     using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);
+     deadline.CancelAfter(TimeSpan.FromSeconds(3));
      using var ms = new MemoryStream(); var buf = new byte[4096]; int n;
-     while ((n = pipe.Read(buf)) > 0 && ms.Length < 16384) ms.Write(buf, 0, n);
+     while ((n = await pipe.ReadAsync(buf, deadline.Token).ConfigureAwait(false)) > 0) {
+      if (ms.Length + n > MaximumBytes) break;
+      ms.Write(buf, 0, n);
+     }
+     if (n > 0) continue; // oversized requests are refused, never truncated into a different URL
      var text = Encoding.UTF8.GetString(ms.ToArray());
      // Accept only a web or file URL (or empty = just bring the window forward).
      if (text.Length == 0 || Uri.TryCreate(text, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" or "file") onUrl(text);
-    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException) { Thread.Sleep(200); }
+    } catch (OperationCanceledException) { if (stop.IsCancellationRequested) break; }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException) {
+     if (stop.IsCancellationRequested) break;
+     await Task.Delay(200).ConfigureAwait(false);
+    }
    }
-  }) { IsBackground = true, Name = "Still link hand-off" };
-  thread.Start();
+  }
+  public void Dispose() => stop.Cancel();
  }
 }

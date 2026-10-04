@@ -51,13 +51,14 @@ public partial class MainWindow
   var environment=await App.BrowserEnvironment;
   var shellOptions=environment.CreateCoreWebView2ControllerOptions();shellOptions.ProfileName="Shell";
   await shellView.EnsureCoreWebView2Async(environment,shellOptions);
+  StartupMetrics.Mark("shell-controller");
   var core=shellView.CoreWebView2;
   core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.IsStatusBarEnabled=false;
   core.Settings.IsZoomControlEnabled=false;core.Settings.AreDevToolsEnabled=App.IsQa;
   core.Settings.IsPasswordAutosaveEnabled=false;core.Settings.IsGeneralAutofillEnabled=false;
   core.Settings.AreBrowserAcceleratorKeysEnabled=false;core.Settings.AreHostObjectsAllowed=false;
   core.FrameNavigationStarting+=(_,e)=>e.Cancel=true;
-  core.SetVirtualHostNameToFolderMapping("still.internal",Path.Combine(AppContext.BaseDirectory,"Shell"),CoreWebView2HostResourceAccessKind.DenyCors);
+  core.SetVirtualHostNameToFolderMapping("still.internal",await AppContent.ShellFolder,CoreWebView2HostResourceAccessKind.DenyCors);
   core.NavigationStarting+=(_,e)=> { if (e.Uri!="https://still.internal/index.html")e.Cancel=true; };
   core.NewWindowRequested+=(_,e)=>e.Handled=true;
   core.PermissionRequested+=(_,e)=>e.State=CoreWebView2PermissionState.Deny;
@@ -72,7 +73,7 @@ public partial class MainWindow
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
     BrowserTab? Target()=>tabs.FirstOrDefault(t=>t.Id==S("id"))??active;
     switch(op) {
-     case "ready": shellReady=true;ShellPublish();break;
+     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();break;
      case "bounds":
       double ratio=data.TryGetProperty("viewportWidth",out var vp)&&vp.GetDouble()>0?shellView.ActualWidth/vp.GetDouble():1;
       pageX=Math.Clamp(data.GetProperty("x").GetDouble()*ratio,0,ActualWidth);
@@ -123,7 +124,7 @@ public partial class MainWindow
        case "tracking":if(new[]{"Basic","Balanced","Strict"}.Contains(value)){Prefs.Tracking=value;foreach(var t in tabs)if(t.View?.CoreWebView2 is {} tc)ApplyProtection(tc);}break;
        case "tearOff":Prefs.TabTearOff=value=="true";SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();agentApproval?.TrySetResult(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
-       case "memory":Prefs.MemorySaver=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is{} mc)mc.MemoryUsageTargetLevel=Prefs.MemorySaver&&t!=active?CoreWebView2MemoryUsageTargetLevel.Low:CoreWebView2MemoryUsageTargetLevel.Normal;break;
+       case "memory":Prefs.MemorySaver=value=="true";foreach(var w in Windows)w.ApplyMemoryPolicy();break;
        case "autofill":Prefs.Autofill=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is {} ac)ac.Settings.IsGeneralAutofillEnabled=Prefs.Autofill;break;
       }SaveLater();break;
      case "bookmarkMove":{
@@ -229,6 +230,7 @@ public partial class MainWindow
    WebHost.Visibility=Visibility.Visible;
    foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==active?Visibility.Visible:Visibility.Hidden;
    ShellSend(new{kind="snapshot",data=""});
+   if(snapshotCapture?.IsCompleted==true){snapshotCapture=null;snapshotCore=null;}
    RestorePageWindow();
   }
  }

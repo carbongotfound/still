@@ -17,6 +17,7 @@ $artifactBoundary = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot 'artifacts')
 if (-not $resolvedDestination.StartsWith($artifactBoundary, [StringComparison]::OrdinalIgnoreCase)) { throw 'Invalid artifact destination.' }
 if (Test-Path -LiteralPath $resolvedDestination) { Remove-Item -LiteralPath $resolvedDestination -Recurse -Force }
 Invoke-Checked { dotnet publish still/Still.csproj -c Release -r win-x64 --self-contained true "-p:StillQa=$qaProperty" -p:DebugType=None -o $destination }
+New-Item -ItemType Directory -Force "$destination/Assets" | Out-Null
 Copy-Item still/Assets/still.ico "$destination/Assets/still.ico"
 Copy-Item LICENSE,README.md,SECURITY.md,THIRD-PARTY-NOTICES.txt $destination
 New-Item -ItemType Directory -Force "$destination/Licenses" | Out-Null
@@ -30,5 +31,7 @@ if ($Installer) {
   if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation,') { throw 'Microsoft bootstrapper signature verification failed.' }
   $appSource = Join-Path $PSScriptRoot $destination
   $outputRoot = Join-Path $PSScriptRoot 'artifacts'
-  Invoke-Checked { & $InnoCompiler "/DAppExe=$(Join-Path $appSource 'Still.exe')" "/DOutputRoot=$outputRoot" "/DBootstrapper=$bootstrapper" installer/Still.iss }
+  [xml]$stillProject = Get-Content -Raw still/Still.csproj
+  $appVersion = $stillProject.Project.PropertyGroup.Version | Where-Object { $_ } | Select-Object -First 1
+  Invoke-Checked { & $InnoCompiler "/DAppVersion=$appVersion" "/DAppExe=$(Join-Path $appSource 'Still.exe')" "/DOutputRoot=$outputRoot" "/DBootstrapper=$bootstrapper" installer/Still.iss }
 }

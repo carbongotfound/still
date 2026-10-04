@@ -40,7 +40,7 @@ public partial class MainWindow
   if(managementView?.CoreWebView2 is {} existing)return existing;
   managementView=new WebView2{Visibility=Visibility.Hidden};WebHost.Children.Add(managementView);
   var env=await App.BrowserEnvironment;var options=env.CreateCoreWebView2ControllerOptions();options.ProfileName="Default";
-  await managementView.EnsureCoreWebView2Async(env,options);ApplyProtection(managementView.CoreWebView2);return managementView.CoreWebView2;
+  await managementView.EnsureCoreWebView2Async(env,options);ApplyProtection(managementView.CoreWebView2);ApplyMemoryPolicy();return managementView.CoreWebView2;
  }
  async Task PublishBrowserTools(string name)
  {
@@ -60,7 +60,7 @@ public partial class MainWindow
      // The runtime also returns internal PDF/clipboard extensions. Only expose
      // user-installed extensions here, not engine components.
      if(File.Exists(Path.Combine(App.DataRoot,"Extensions",extension.Id+".path")))extensionInventory[extension.Id]=extension;
-    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null}),candidate=extensionCandidate,downloading=extensionDownload};
+    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null,hasPopup=GetExtensionPage(e.Id,true)!=null}),candidate=extensionCandidate,downloading=extensionDownload};
    }
    if(name=="security"){
     var core=active?.View?.CoreWebView2??await ManagementCore();var permissions=await core.Profile.GetNonDefaultPermissionSettingsAsync();
@@ -126,8 +126,9 @@ public partial class MainWindow
    case "extensionCancel":extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");break;
    case "extensionInstall":if(!extensionInstalling){extensionInstalling=true;try{await InstallExtension();}catch(IOException ex){Toast(ex.Message);}finally{extensionInstalling=false;}}break;
    case "extensionToggle":if(extensionInventory.TryGetValue(S("id"),out var toggle)){await toggle.EnableAsync(!toggle.IsEnabled);await PublishBrowserTools("extensions");}break;
-   case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){await remove.RemoveAsync();await PublishBrowserTools("extensions");}break;
+   case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){await remove.RemoveAsync();extensionPages.Remove(remove.Id+":page");extensionPages.Remove(remove.Id+":popup");await PublishBrowserTools("extensions");}break;
    case "extensionPage":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id")) is{} entryPage)await NewTab(entryPage,false,false);break;
+   case "extensionPopup":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id"),true) is{} popupPage)await NewTab(popupPage,false,false);break;
    case "bookmarkEdit":{
     var bookmark=state.Bookmarks.FirstOrDefault(b=>b.Url==S("oldUrl"));if(bookmark!=null&&Uri.TryCreate(S("url"),UriKind.Absolute,out var u)&&u.Scheme is "http" or "https"){bookmark.Title=S("title").Trim();bookmark.Url=u.AbsoluteUri;SaveLater();}break;
    }
@@ -164,7 +165,7 @@ public partial class MainWindow
   if(root.TryGetProperty("content_scripts",out var scripts))foreach(var script in scripts.EnumerateArray())if(script.TryGetProperty("matches",out var matches))permissions.AddRange(matches.EnumerateArray().Select(v=>v.GetString()??""));
   string contentHash=await Task.Run(()=>ExtensionTreeHash(path));
   if(review!=extensionReviewVersion)return;
-  extensionCandidatePath=path;extensionContentHash=contentHash;extensionManifestHash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes));extensionCandidate=new{name,permissions=permissions.Distinct().ToArray()};await PublishBrowserTools("extensions");
+  extensionCandidatePath=path;extensionContentHash=contentHash;extensionManifestHash=Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(manifestBytes));extensionCandidate=new{name,permissions=permissions.Distinct().ToArray(),desktopCompanion=permissions.Contains("nativeMessaging")};await PublishBrowserTools("extensions");
  }
  static string ExtensionTreeHash(string folder)
  {
@@ -195,18 +196,20 @@ public partial class MainWindow
   if(expectedContent==null||await Task.Run(()=>ExtensionTreeHash(destination))!=expectedContent)throw new IOException("The extension files changed after review. Review the extension again.");
   var core=await ManagementCore();
   var installed=await core.Profile.AddBrowserExtensionAsync(destination);
+  extensionPages.Remove(installed.Id+":page");extensionPages.Remove(installed.Id+":popup");
   File.WriteAllText(Path.Combine(destination,"..",installed.Id+".path"),destination);
   extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");Toast("Extension added. Reload open pages to use it.");
  }
- string? GetExtensionPage(string id)
+ string? GetExtensionPage(string id,bool popupOnly=false)
  {
   try{
-   if(extensionPages.TryGetValue(id,out var cached))return cached;
+   var cacheKey=id+(popupOnly?":popup":":page");
+   if(extensionPages.TryGetValue(cacheKey,out var cached))return cached;
    var folder=File.ReadAllText(Path.Combine(App.DataRoot,"Extensions",id+".path"));using var json=JsonDocument.Parse(File.ReadAllText(Path.Combine(folder,"manifest.json")));var m=json.RootElement;string? page=null;
-   if(m.TryGetProperty("options_page",out var option))page=option.GetString();
-   else if(m.TryGetProperty("options_ui",out var options)&&options.TryGetProperty("page",out var op))page=op.GetString();
-   else if(m.TryGetProperty("action",out var action)&&action.TryGetProperty("default_popup",out var popup))page=popup.GetString();
-   if(page!=null&&!page.Contains("..")&&!page.Contains(':'))return extensionPages[id]="chrome-extension://"+id+"/"+page.TrimStart('/');
+   if(!popupOnly&&m.TryGetProperty("options_page",out var option))page=option.GetString();
+   else if(!popupOnly&&m.TryGetProperty("options_ui",out var options)&&options.TryGetProperty("page",out var op))page=op.GetString();
+   if(popupOnly)foreach(var key in new[]{"action","browser_action","page_action"})if(m.TryGetProperty(key,out var action)&&action.TryGetProperty("default_popup",out var popup)){page=popup.GetString();break;}
+   if(page!=null&&!page.Contains("..")&&!page.Contains(':')&&!page.Contains('\\'))return extensionPages[cacheKey]="chrome-extension://"+id+"/"+page.TrimStart('/');
   }catch(Exception){}
   return null;
  }

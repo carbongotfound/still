@@ -133,7 +133,7 @@ public partial class MainWindow
   var tab = active;
   if (tab.Reader) { tab.Reader = false; core.Reload(); return; }
   try {
-   string readability = await File.ReadAllTextAsync(Path.Combine(AppContext.BaseDirectory, "Assets", "Readability.js"));
+   string readability = await AppContent.ReadAsset("Readability.js");
    await core.ExecuteScriptAsync(readability);
    string result = await core.ExecuteScriptAsync($$"""
    (() => {
