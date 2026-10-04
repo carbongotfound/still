@@ -5,20 +5,20 @@
   <Authors>Still</Authors><Product>Still</Product>
   <DefineConstants Condition="'$(StillQa)' == 'true'">$(DefineConstants);STILL_QA</DefineConstants>
   <Deterministic>true</Deterministic>
-  <Version>1.6.20</Version>
+  <Version>1.6.22</Version>
   <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
   <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-  <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO>
+  <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><StartupObject>Still.Program</StartupObject>
   <DebugType>embedded</DebugType>
   <Description>A quieter window onto the internet. A minimalist Windows browser.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>
  <ItemGroup>
-  <Content Include="Shell\**\*" CopyToOutputDirectory="PreserveNewest" /><Content Include="Assets\still.ico" CopyToOutputDirectory="PreserveNewest" />
+  <EmbeddedResource Include="Shell\**\*" LogicalName="Still.Content.Shell/%(RecursiveDir)%(Filename)%(Extension)" />
+  <EmbeddedResource Include="Assets\Readability.js;Assets\LoginObserver.js" LogicalName="Still.Content.Assets/%(Filename)%(Extension)" />
+  <Content Include="Assets\still.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />
-  <Content Include="Assets\Readability.js" CopyToOutputDirectory="PreserveNewest" />
-  <Content Include="Assets\LoginObserver.js" CopyToOutputDirectory="PreserveNewest" />
-  <Content Include="Assets\Readability-LICENSE" CopyToOutputDirectory="PreserveNewest" />
+  <Content Include="Assets\Readability-LICENSE" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
 
  </ItemGroup>
 </Project>

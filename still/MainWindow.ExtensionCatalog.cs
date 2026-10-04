@@ -3,6 +3,7 @@ using System.IO.Compression;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 namespace Still;
 public partial class MainWindow
 {
@@ -26,7 +27,7 @@ public partial class MainWindow
   return directory;
  }
  // Chrome Web Store: download the extension's CRX from Google's update service, strip the CRX header, then use the normal review.
- // ponytail: trusts Google's HTTPS download instead of verifying the CRX3 signature; add signature checks if extensions ever come from other hosts.
+ // Verify the developer signature and preserve the public key before the normal permission review.
  async Task PrepareStoreExtension(string page)
  {
   var match=System.Text.RegularExpressions.Regex.Match(page,@"^https://(chromewebstore\.google\.com/detail/(?:[^/?#]+/)?|chrome\.google\.com/webstore/detail/(?:[^/?#]+/)?)([a-p]{32})(?:[/?#]|$)");
@@ -41,15 +42,22 @@ public partial class MainWindow
    if(final==null||final.Scheme!="https"||!(final.Host.EndsWith(".google.com",StringComparison.Ordinal)||final.Host.EndsWith(".googleusercontent.com",StringComparison.Ordinal)||final.Host.EndsWith(".gvt1.com",StringComparison.Ordinal)))throw new IOException("Unexpected download location.");
    using var crx=new MemoryStream();using var input=await download.Content.ReadAsStreamAsync();byte[] buffer=new byte[65536];int count;
    while((count=await input.ReadAsync(buffer))>0){if(crx.Length+count>100*1024*1024)throw new IOException("Extension download is too large.");await crx.WriteAsync(buffer.AsMemory(0,count));}
-   var bytes=crx.GetBuffer().AsSpan(0,(int)crx.Length);
-   if(bytes.Length<16||!bytes[..4].SequenceEqual("Cr24"u8))throw new IOException("That extension isn't available to download.");
-   uint version=BitConverter.ToUInt32(bytes[4..]);
-   long start=version==3?12+(long)BitConverter.ToUInt32(bytes[8..]):version==2?16+(long)BitConverter.ToUInt32(bytes[8..])+BitConverter.ToUInt32(bytes[12..]):-1;
-   if(start<0||start>=bytes.Length)throw new IOException("Unsupported extension package.");
-   using var zip=new MemoryStream(bytes[(int)start..].ToArray());
-   await StageExtension(await ExtractExtension(zip));
+   var bytes=crx.GetBuffer().AsMemory(0,(int)crx.Length);
+   await StageStorePackage(bytes,id);
   }catch(Exception ex)when(ex is IOException or HttpRequestException or TaskCanceledException or InvalidDataException or JsonException or KeyNotFoundException){Toast("Couldn't add this extension: "+ex.Message);}
   finally{extensionDownload=false;await PublishBrowserTools("extensions");}
+ }
+ async Task StageStorePackage(ReadOnlyMemory<byte> bytes,string id)
+ {
+  var verified=await Task.Run(()=>CrxPackage.Verify(bytes,id));
+  using var zip=new MemoryStream(bytes[verified.ArchiveOffset..].ToArray());
+  var folder=await ExtractExtension(zip);
+  var manifestPath=Path.Combine(folder,"manifest.json");
+  if(new FileInfo(manifestPath).Length>1024*1024)throw new IOException("The extension manifest is too large.");
+  var manifest=JsonNode.Parse(await File.ReadAllTextAsync(manifestPath)) as JsonObject??throw new InvalidDataException("Invalid extension manifest.");
+  manifest["key"]=verified.PublicKey;
+  await File.WriteAllTextAsync(manifestPath,manifest.ToJsonString());
+  await StageExtension(folder);
  }
  static string ExtensionName(JsonElement manifest,string folder)
  {

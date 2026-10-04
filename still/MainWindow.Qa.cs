@@ -25,12 +25,12 @@ public partial class MainWindow
        using var doc = JsonDocument.Parse(line);
        string op = doc.RootElement.GetProperty("op").GetString() ?? "";
        if (op == "state") return JsonSerializer.Serialize(new {
-        activeId = active?.Id, panel, dark, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, layout = Prefs.Layout, shellErrors,
+        activeId = active?.Id, panel, dark, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, layout = Prefs.Layout, shellErrors,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
         windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),
         title = Title, width = ActualWidth, height = ActualHeight, left = Left, top = Top,
-        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
+        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
         history = state.History, bookmarks = state.Bookmarks, hidden = state.Hidden,
         downloads = downloads.Select(d => new { d.Path, status = d.Operation.State.ToString(), bytes = d.Operation.BytesReceived }),
         profilePrivate = active?.View?.CoreWebView2?.Profile.IsInPrivateModeEnabled,
@@ -41,6 +41,7 @@ public partial class MainWindow
        if (op == "checkUpdate") { await CheckForUpdate(); return JsonSerializer.Serialize(new { update = UpdateData(), installer = update?.Installer, exists = update?.Installer != null && File.Exists(update.Installer) }); }
        if (op == "eval" && active?.View?.CoreWebView2 is { } core) return await core.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
+       if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,"Opera GX");return "{\"ok\":true}"; }
        if (op == "shellEval" && shellView?.CoreWebView2 is { } ui) return await ui.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");

@@ -10,6 +10,7 @@ Still 1.3 is a preview, not an audited or certified browser. Do not advertise it
 - Profile deletion is never a background cleanup action. The native dialog requires the exact profile name. Open profiles are locked. Default cannot be deleted through Still; resetting it requires the same confirmation from another profile. Links/junctions are rejected before deletion. No claim is made that Still prevents external filesystem tools or malware from deleting files.
 - Suggestions use local history and bookmarks. Typing sends no search-provider request. Private tabs exclude normal history suggestions and do not persist visits. Clearing history clears its suggestion source.
 - Official uBlock Origin Lite downloads come from the upstream GitHub release, with a matching publisher SHA-256 digest and permission review. Installed files must match the reviewed content. This protects transfer integrity; it is not independent authentication of a compromised upstream account. Unpacked extensions are code chosen and trusted by the user.
+- Chrome Web Store CRX packages have their developer signature and requested extension identity checked before permission review. The signed developer public key is retained in the installed manifest. This verifies package integrity and identity, not that the extension's behavior is safe or fully compatible.
 - Test automation is compiled out of production. Building with `-p:StillQa=true` intentionally exposes a current-user named pipe for testing; never distribute that build.
 
 ## Known boundaries
