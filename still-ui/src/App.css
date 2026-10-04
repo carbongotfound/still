@@ -58,7 +58,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .pin-tab .tab-main { padding:0;justify-content:center; }
 .pin-tab .tab-letter { background:transparent;width:auto;height:auto;font-size:15px;font-weight:500; }
 .pin-tab.is-selected .tab-letter { color:var(--foreground); }
-.new-tab[data-slot="button"] { width:100%;justify-content:flex-start;height:36px;flex:none;gap:11px;padding:0 10px;margin-top:5px;color:var(--muted-foreground);font-size:13px;font-weight:400;opacity:.7; }
+.new-tab[data-slot="button"] { width:100%;justify-content:flex-start;height:36px;gap:11px;padding:0 10px;margin-top:5px;color:var(--muted-foreground);font-size:13px;font-weight:400;opacity:.7; }
 .new-tab:hover { opacity:1; }
 .new-tab svg { width:15px;height:15px; }
 .new-tab kbd { margin-left:auto;opacity:0;transition:opacity 150ms; }

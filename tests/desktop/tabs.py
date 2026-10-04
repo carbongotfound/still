@@ -62,6 +62,24 @@ SELECTED = """(() => {
  return r.top>=p.top-1&&r.bottom<=p.bottom+1&&r.left>=p.left-1&&r.right<=p.right+1;
 })()"""
 
+INLINE = """(() => {
+ const b=document.querySelector('.browser-sidebar .new-tab, .top-tab-strip [aria-label="New tab"]');
+ const v=b?.closest('.top-tab-list, [data-slot="scroll-area-viewport"]');
+ const last=[...v?.querySelectorAll('[data-tab-id]')??[]].at(-1);
+ if(!v||!last)return false;
+ const r=b.getBoundingClientRect(),p=last.getBoundingClientRect();
+ const gap=v.matches('.top-tab-list')?r.left-p.right:r.top-p.bottom;
+ return gap>=-1&&gap<=12;
+})()"""
+
+def wheel_to_new():
+    for _ in range(30):
+        if evaluate(CONTROL)['visible']: return
+        point=evaluate("(()=>{const v=document.querySelector('.top-tab-list, [data-slot=\"scroll-area-viewport\"]'),r=v.getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()")
+        rpc('shellCdp',method='Input.dispatchMouseEvent',parameters={'type':'mouseWheel',**point,'deltaX':0,'deltaY':600})
+        time.sleep(.1)
+    raise AssertionError('Mouse wheel cannot reach inline New tab control')
+
 def click_new():
     control = evaluate(CONTROL)
     check(control['visible'], 'New tab control remains visible and receives pointer input')
@@ -74,8 +92,9 @@ def click_new():
 
 try:
     profile = RUN / 'profile'; profile.mkdir()
-    fixture = [{'Id':'tab-'+str(i),'Title':'Fixture '+str(i),'Url':''} for i in range(10)]
-    (profile/'state.json').write_text(json.dumps({'UiVersion':3,'Welcome':False,'ActiveId':'tab-9',
+    count = 10 if '--baseline' in sys.argv else 3
+    fixture = [{'Id':'tab-'+str(i),'Title':'Fixture '+str(i),'Url':''} for i in range(count)]
+    (profile/'state.json').write_text(json.dumps({'UiVersion':3,'Welcome':False,'ActiveId':fixture[-1]['Id'],
         'Preferences':{'Layout':'Sidebar'},'Tabs':fixture}))
     process = subprocess.Popen([str(Path(sys.argv[1]).resolve()),'--qa','--profile',str(profile)])
     wait(lambda: (profile/'qa-pipe.txt').exists(),40)
@@ -90,19 +109,36 @@ try:
         RESULT['top_control'] = evaluate(CONTROL)
         print(json.dumps(RESULT),flush=True)
     else:
-        for _ in range(15): click_new()
+        wait(lambda: evaluate(INLINE))
+        check(evaluate(INLINE), 'Sidebar New tab sits immediately after three tabs')
+        send('preference',key='layout',value='Top')
+        wait(lambda: rpc()['layout']=='Top' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
+        check(True, 'Top New tab sits immediately after three tabs')
+        send('preference',key='layout',value='Sidebar')
+        wait(lambda: rpc()['layout']=='Sidebar' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
+        for _ in range(22): click_new()
         check(len(rpc()['tabs']) == 25, 'Sidebar creates 25 tabs through the visible button')
+        check(evaluate(INLINE), 'Sidebar New tab stays inside the scrolling list after 25 tabs')
+        evaluate("document.querySelector('.browser-shell').style.height='340px'")
+        wait(lambda: evaluate(CONTROL)['visible'] and evaluate(SELECTED))
+        check(True, 'Shrinking the window reveals the last tab and inline button')
+        evaluate("document.querySelector('.browser-shell').style.height='500px'")
         send('preference',key='layout',value='Top')
         wait(lambda: evaluate("!!document.querySelector('.top-tab-list')"))
         wait(lambda: evaluate(SELECTED))
         for _ in range(5): click_new()
         check(len(rpc()['tabs']) == 30, 'Top layout creates 30 tabs through the visible button')
+        check(evaluate(INLINE), 'Top New tab stays inside the scrolling list after 30 tabs')
         for layout in ['Sidebar','Top']:
             send('preference',key='layout',value=layout)
             wait(lambda: rpc()['layout'] == layout)
-            for identifier in ['tab-0',rpc()['tabs'][-1]['Id']]:
-                send('select',id=identifier)
-                wait(lambda: rpc()['activeId']==identifier and evaluate(SELECTED))
+            send('select',id='tab-0')
+            wait(lambda: rpc()['activeId']=='tab-0' and evaluate(SELECTED))
+            wheel_to_new()
+            check(evaluate(CONTROL)['visible'] and evaluate(INLINE), layout + ' mouse wheel reaches the inline New tab button')
+            identifier=rpc()['tabs'][-1]['Id']
+            send('select',id=identifier)
+            wait(lambda: rpc()['activeId']==identifier and evaluate(SELECTED) and evaluate(CONTROL)['visible'])
             check(True, layout + ' reveals first and last selected tabs')
         rpc('key',key='T',mods='Control')
         wait(lambda: len(rpc()['tabs']) == 31)
