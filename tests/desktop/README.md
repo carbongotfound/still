@@ -36,3 +36,9 @@ dotnet run --project tests/Still.ReleaseChecks -c Release -- still/bin/Release/n
 ```
 
 Profiles, downloaded packages, test native hosts, binaries, and results stay in `artifacts/` and must not be committed.
+
+Tab overflow regression (starts with ten tabs in a short window, clicks through to thirty, checks both layouts, Ctrl T, and session saving):
+
+```powershell
+python tests/desktop/tabs.py artifacts/Still-QA/Still.exe
+```

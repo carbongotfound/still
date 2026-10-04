@@ -10,7 +10,7 @@
   #define Bootstrapper "..\tools\MicrosoftEdgeWebview2Setup.exe"
 #endif
 #ifndef AppVersion
-  #define AppVersion "1.6.22"
+  #define AppVersion "1.6.23"
 #endif
 
 [Setup]
