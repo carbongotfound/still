@@ -188,15 +188,26 @@ export default function App() {
  useLayoutEffect(() => {
   const root = tabsRef.current
   const viewport = root?.matches('.top-tab-list') ? root : root?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
-  const selected = root?.querySelector<HTMLElement>('.is-selected')
-  if (!viewport || !selected) return
-  // Layout offsets ignore the tab's entrance animation and scroll only its own list.
-  let x = 0, y = 0, node: HTMLElement | null = selected
-  while (node && node !== viewport) { x += node.offsetLeft; y += node.offsetTop; node = node.offsetParent as HTMLElement | null }
-  if (node !== viewport) return
+  if (!root || !viewport) return
   const reveal = (start: number, size: number, scroll: number, available: number) => start < scroll ? start : start + size > scroll + available ? start + size - available : scroll
-  viewport.scrollTo({ left: reveal(x, selected.offsetWidth, viewport.scrollLeft, viewport.clientWidth), top: reveal(y, selected.offsetHeight, viewport.scrollTop, viewport.clientHeight) })
- }, [state.activeId, sidebar, active?.pinned, state.tabs.length])
+  const revealSelected = () => {
+   const selected = root.querySelector<HTMLElement>('.is-selected')
+   if (!selected) return
+   const last = [...root.querySelectorAll('[data-tab-id]')].at(-1)
+   const add = root.querySelector<HTMLElement>('[aria-label="New tab"]')
+   for (const element of selected === last && add ? [selected, add] : [selected]) {
+    // Layout offsets ignore entrance animations. At the end, reveal the inline button too.
+    let x = 0, y = 0, node: HTMLElement | null = element
+    while (node && node !== viewport) { x += node.offsetLeft; y += node.offsetTop; node = node.offsetParent as HTMLElement | null }
+    if (node === viewport) viewport.scrollTo({ left: reveal(x, element.offsetWidth, viewport.scrollLeft, viewport.clientWidth), top: reveal(y, element.offsetHeight, viewport.scrollTop, viewport.clientHeight) })
+   }
+  }
+  revealSelected()
+  let frame = 0
+  const observer = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(revealSelected) })
+  observer.observe(viewport)
+  return () => { observer.disconnect(); cancelAnimationFrame(frame) }
+ }, [state.activeId, sidebar, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen])
  useEffect(() => { paneRef.current = pane }, [pane])
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
@@ -272,7 +283,7 @@ export default function App() {
  )
  return <UICtx.Provider value={{state,setContext,open,arriving,setGhost}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
   <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
-   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef}><FlowTabs tabs={[...pinned, ...ordinary]} top /></div></LayoutGroup><Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button>{windowControls}</div>}
+   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top /><Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -364,8 +375,8 @@ export default function App() {
       <div className="pinned-tabs"><FlowTabs tabs={pinned} /></div>
       <div className="tab-list"><FlowTabs tabs={ordinary} /></div>
      </LayoutGroup>
-     </ScrollArea>
      <Button variant="ghost" className="new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>Ctrl T</kbd></Button>
+     </ScrollArea>
      <footer className="sidebar-footer">
       <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => open("settings")}><Settings2 /></Button>
       <Button variant="ghost" className="still-signature" onClick={() => open("about")}>still<span>{state.profileName}</span></Button>
@@ -502,7 +513,7 @@ Output is JSON. The first call waits for me to approve you in Still (up to 2 min
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id} onDoubleClick={e => { if (d.status === "Completed" && !(e.target as HTMLElement).closest("button")) send("openDownload", { id: d.id }) }}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.23"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.24"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
