@@ -12,11 +12,41 @@ public partial class MainWindow
   "outbrain.com", "scorecardresearch.com", "quantserve.com", "criteo.com", "criteo.net",
   "pubmatic.com", "rubiconproject.com", "openx.net", "casalemedia.com", "advertising.com",
   "amazon-adsystem.com", "hotjar.com", "hotjar.io", "clarity.ms", "connect.facebook.net",
-  "analytics.tiktok.com", "ads.linkedin.com", "snap.licdn.com", "bat.bing.com", "ads.twitter.com"
+  "analytics.tiktok.com", "ads.linkedin.com", "snap.licdn.com", "bat.bing.com", "ads.twitter.com",
+  "googletagservices.com", "pagead2.googlesyndication.com", "2mdn.net", "moatads.com", "adform.net",
+  "smartadserver.com", "3lift.com", "sharethrough.com", "media.net", "yieldmo.com", "teads.tv", "zemanta.com", "mgid.com",
+  "revcontent.com", "adcolony.com", "applovin.com", "unityads.unity3d.com", "ads.yahoo.com", "advertising.yahoo.com",
+  "adsafeprotected.com", "doubleverify.com", "chartbeat.com", "mixpanel.com", "segment.io", "fullstory.com", "newrelic.com"
  ];
+ // YouTube serves its ads from youtube.com itself, so blocking ad domains never touched them. This mutes an ad,
+ // plays it at 16x and presses Skip the moment it can, and hides the ad slots in the feed and next to the video.
+ const string YouTubeAdScript = """
+ (() => {
+  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__stillYtAds) return;
+  window.__stillYtAds = true;
+  const css = "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-promoted-sparkles-web-renderer,ytd-banner-promo-renderer,ytd-statement-banner-renderer,ytd-display-ad-renderer,ytd-companion-slot-renderer,ytd-player-legacy-desktop-watch-ads-renderer,ytd-engagement-panel-section-list-renderer[target-id=engagement-panel-ads],#player-ads,#masthead-ad,.ytp-ad-overlay-container,ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer){display:none!important}";
+  const tick = () => {
+   if (!document.getElementById("still-yt-ads") && document.head) { const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s); }
+   const player = document.querySelector("#movie_player");
+   const video = player?.querySelector("video");
+   if (!player || !video) return;
+   if (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting")) {
+    if (!video.__stillAd) { video.__stillAd = { muted: video.muted }; }
+    video.muted = true;
+    if (video.playbackRate < 16) video.playbackRate = 16;
+    if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.2) { try { video.currentTime = video.duration - 0.1; } catch {} }
+    document.querySelectorAll(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button").forEach(b => b.click());
+   } else if (video.__stillAd) {
+    video.muted = video.__stillAd.muted; video.playbackRate = 1; video.__stillAd = null;
+   }
+  };
+  setInterval(tick, 250);
+ })();
+ """;
  readonly Dictionary<string, List<string>> privateHidden = [];
  void SetupBlocking(BrowserTab tab, CoreWebView2 core)
  {
+  if (Prefs.Blocking && !Prefs.UnblockedHosts.Contains("www.youtube.com")) _ = core.AddScriptToExecuteOnDocumentCreatedAsync(YouTubeAdScript);
   foreach (string domain in BlockedDomains) {
    core.AddWebResourceRequestedFilter("*://" + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
    core.AddWebResourceRequestedFilter("*://*." + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);

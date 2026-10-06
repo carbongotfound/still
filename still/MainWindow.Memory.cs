@@ -69,7 +69,7 @@ public partial class MainWindow
     else continue;
    }
    // Low keeps scripts and network activity running until the tab is eligible for suspension.
-   core.MemoryUsageTargetLevel = Prefs.MemorySaver && (tab != active || WindowState == WindowState.Minimized)
+   core.MemoryUsageTargetLevel = Prefs.MemorySaver && !tab.Media && (tab != active || WindowState == WindowState.Minimized)
     ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
   }
   if (shellView?.CoreWebView2 is { } shell)
@@ -140,7 +140,7 @@ public partial class MainWindow
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
-  && tab != active && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
+  && tab != active && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
   && DateTime.UtcNow - tab.LastActive >= TimeSpan.FromMinutes(1)
   && !permissions.Any(p => p.Tab == tab) && tab.View?.CoreWebView2?.IsDocumentPlayingAudio == false;
 }

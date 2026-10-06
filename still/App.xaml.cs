@@ -13,7 +13,7 @@ public partial class App : Application
   // process one level deeper, so per-app audio tools (Discord screen share, SteelSeries Sonar, OBS) can find it.
   AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess"});
  private Mutex? instance;
- private IDisposable? linkListener;
+ private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
  internal static void ConfigureProfile(string[] args)
  {
@@ -45,9 +45,11 @@ public partial class App : Application
   Directory.CreateDirectory(DataRoot);
   StartupMetrics.Mark("profile-ready");
   // Accept links before constructing the window. Dispatcher callbacks wait until it is ready.
-  linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), url => Dispatcher.BeginInvoke(() => {
+  Action<string> open = url => Dispatcher.BeginInvoke(() => {
    if ((Still.MainWindow.LastActive ?? MainWindow as Still.MainWindow) is { } target) target.OpenFromOutside(url);
-  }));
+  });
+  linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
+  if (!e.Args.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
   _ = BrowserEnvironment; // start the engine while the window is still being built
   _ = AppContent.ShellFolder;
   StartupMetrics.Mark("environment-requested");
@@ -78,5 +80,5 @@ public partial class App : Application
   }) { IsBackground = true, Name = "Freeze watchdog" }.Start();
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
- protected override void OnExit(ExitEventArgs e) { linkListener?.Dispose(); instance?.Dispose(); base.OnExit(e); }
+ protected override void OnExit(ExitEventArgs e) { linkListener?.Dispose(); launcherListener?.Dispose(); instance?.Dispose(); base.OnExit(e); }
 }
