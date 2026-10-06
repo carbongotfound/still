@@ -126,8 +126,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important; } }
 
 .browser-shell.is-fullscreen { border:0; border-radius:0; }
-/* A page in fullscreen (e.g. a video) fills everything except the tab list, so you can still see and switch tabs. */
-.is-fullscreen .window-bar { display:none; }
+.is-fullscreen .window-bar, .is-fullscreen .top-tab-strip, .is-fullscreen .browser-sidebar { display:none; }
 
 .external-import{padding:18px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
 .external-import .tool-copy p{font-size:12px;line-height:1.65;color:var(--muted-foreground);margin:7px 0 0}
