@@ -12,7 +12,10 @@ internal static class BrowserRegistration
  const string Client = @"Software\Clients\StartMenuInternet\Still";
  const string UrlProgId = "StillURL", HtmlProgId = "StillHTML";
  static string Exe => Environment.ProcessPath!;
- static string Open => "\"" + Exe + "\" \"%1\"";
+ // Links go to the tiny StillOpen.exe next to Still.exe when it is installed: it hands a link to the open window without starting this 160 MB app.
+ static string Handler => Path.Combine(Path.GetDirectoryName(Exe)!, "StillOpen.exe") is var h && File.Exists(h) ? h : Exe;
+ static string Open => "\"" + Handler + "\" \"%1\"";
+ public static string LinkPipe => "Still-links-" + Environment.UserName;
 
  public static void Register()
  {
@@ -21,7 +24,7 @@ internal static class BrowserRegistration
   using (var current = Registry.CurrentUser.OpenSubKey(@"Software\Classes\" + UrlProgId + @"\shell\open\command")) {
    if (current?.GetValue("") is string cmd && cmd.StartsWith('"') && cmd.IndexOf('"', 1) is var end and > 1) {
     string registered = cmd[1..end];
-    if (!string.Equals(registered, Exe, StringComparison.OrdinalIgnoreCase) && File.Exists(registered)) return;
+    if (!string.Equals(registered, Exe, StringComparison.OrdinalIgnoreCase) && !string.Equals(registered, Handler, StringComparison.OrdinalIgnoreCase) && File.Exists(registered)) return;
    }
   }
   try {
@@ -91,24 +94,26 @@ internal static class BrowserRegistration
   } catch (Exception ex) when (ex is TimeoutException or IOException or UnauthorizedAccessException) { return false; }
  }
 
- public static IDisposable Listen(string instance, Action<string> onUrl) => new LinkListener(instance, onUrl);
+ public static IDisposable Listen(string instance, Action<string> onUrl) => new LinkListener(PipeName(instance), onUrl);
+ // StillOpen.exe hands clicked links to the launch profile on this fixed per-user pipe.
+ public static IDisposable ListenForLauncher(Action<string> onUrl) => new LinkListener(LinkPipe, onUrl);
 
  sealed class LinkListener : IDisposable
  {
   const int MaximumBytes = 16384;
   readonly CancellationTokenSource stop = new();
-  public LinkListener(string instance, Action<string> onUrl)
+  public LinkListener(string name, Action<string> onUrl)
   {
    // Create the first pipe synchronously, before a second launch can find the instance mutex.
-   _ = Run(new NamedPipeServerStream(PipeName(instance), PipeDirection.In, 1, PipeTransmissionMode.Byte,
-    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly), instance, onUrl);
+   _ = Run(new NamedPipeServerStream(name, PipeDirection.In, 1, PipeTransmissionMode.Byte,
+    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly), name, onUrl);
   }
-  async Task Run(NamedPipeServerStream first, string instance, Action<string> onUrl)
+  async Task Run(NamedPipeServerStream first, string name, Action<string> onUrl)
   {
    NamedPipeServerStream? next = first;
    while (!stop.IsCancellationRequested) {
     try {
-     using var pipe = next ?? new NamedPipeServerStream(PipeName(instance), PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
+     using var pipe = next ?? new NamedPipeServerStream(name, PipeDirection.In, 1, PipeTransmissionMode.Byte, PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
      next = null;
      await pipe.WaitForConnectionAsync(stop.Token).ConfigureAwait(false);
      using var deadline = CancellationTokenSource.CreateLinkedTokenSource(stop.Token);

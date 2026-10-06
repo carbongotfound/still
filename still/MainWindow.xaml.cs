@@ -429,6 +429,7 @@ public partial class MainWindow : Window
    // A page that closes itself (window.close) closes its tab, e.g. download hand-off pages.
    core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(async () => { if (!tab.Closed) await CloseTab(tab, true); });
    core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=active||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
+   core.IsDocumentPlayingAudioChanged += (_, _) => { if (core.IsDocumentPlayingAudio) { tab.Media = true; core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } };
    SetupBlocking(tab, core);
    await InstallHiddenRules(tab);
    await InstallLoginObserver(tab);

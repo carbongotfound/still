@@ -3,6 +3,9 @@
 #ifndef AppExe
   #define AppExe "..\artifacts\Still\Still.exe"
 #endif
+#ifndef LauncherExe
+  #define LauncherExe "..\artifacts\Still\StillOpen.exe"
+#endif
 #ifndef OutputRoot
   #define OutputRoot "..\artifacts"
 #endif
@@ -60,6 +63,7 @@ Type: filesandordirs; Name: "{app}\de"
 
 [Files]
 Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "{#LauncherExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#Bootstrapper}"; Flags: dontcopy
 
 [Icons]
@@ -71,10 +75,10 @@ Name: "{userdesktop}\Still"; Filename: "{app}\Still.exe"; Tasks: desktopicon
 Root: HKCU; Subkey: "Software\Classes\StillURL"; ValueType: string; ValueData: "Still URL"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\StillURL"; ValueType: string; ValueName: "URL Protocol"; ValueData: ""
 Root: HKCU; Subkey: "Software\Classes\StillURL\DefaultIcon"; ValueType: string; ValueData: """{app}\Still.exe"",0"
-Root: HKCU; Subkey: "Software\Classes\StillURL\shell\open\command"; ValueType: string; ValueData: """{app}\Still.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\StillURL\shell\open\command"; ValueType: string; ValueData: """{app}\StillOpen.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Classes\StillHTML"; ValueType: string; ValueData: "Still HTML Document"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Classes\StillHTML\DefaultIcon"; ValueType: string; ValueData: """{app}\Still.exe"",0"
-Root: HKCU; Subkey: "Software\Classes\StillHTML\shell\open\command"; ValueType: string; ValueData: """{app}\Still.exe"" ""%1"""
+Root: HKCU; Subkey: "Software\Classes\StillHTML\shell\open\command"; ValueType: string; ValueData: """{app}\StillOpen.exe"" ""%1"""
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still"; ValueType: string; ValueData: "Still"; Flags: uninsdeletekey
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\DefaultIcon"; ValueType: string; ValueData: """{app}\Still.exe"",0"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\shell\open\command"; ValueType: string; ValueData: """{app}\Still.exe"""
