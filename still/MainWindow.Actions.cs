@@ -35,12 +35,15 @@ public partial class MainWindow
     video.muted = true;
     if (video.playbackRate < 16) video.playbackRate = 16;
     if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.2) { try { video.currentTime = video.duration - 0.1; } catch {} }
-    document.querySelectorAll(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button").forEach(b => b.click());
+    document.querySelectorAll(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button,.ytp-ad-skip-button-container button,[id^=skip-button] button").forEach(b => b.click());
    } else if (video.__stillAd) {
     video.muted = video.__stillAd.muted; video.playbackRate = 1; video.__stillAd = null;
    }
   };
-  setInterval(tick, 250);
+  // React the moment an ad starts (new source, metadata, play) instead of waiting for the next poll.
+  for (const type of ["loadstart", "loadedmetadata", "durationchange", "playing", "timeupdate"]) document.addEventListener(type, tick, true);
+  new MutationObserver(tick).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["class"] });
+  setInterval(tick, 100);
  })();
  """;
  readonly Dictionary<string, List<string>> privateHidden = [];
