@@ -61,6 +61,7 @@ public partial class MainWindow
   // Stay above the taskbar only while focused, so Alt+Tab and other windows still work.
   Activated+=(_,_)=>{if(IsFullScreen){Topmost=true;MarkFullScreen(true);FitFullScreen(MonitorFromWindow(hwnd,2));}};
   Deactivated+=(_,_)=>{if(IsFullScreen)Topmost=false;};
+  SizeChanged+=(_,_)=>{if(contentFullScreen)PlacePage();};
   Closed+=(_,_)=>{MarkFullScreen(false);if(taskbar!=null){Marshal.FinalReleaseComObject(taskbar);taskbar=null;}};
  }
  void MarkFullScreen(bool value)
@@ -83,7 +84,9 @@ public partial class MainWindow
  void ApplyFullScreen()
  {
   ApplyResizeEdge();
-  if(closing||IsFullScreen==fullScreenApplied)return;
+  if(closing)return;
+  // Already fullscreen via F11 when a video enters/leaves fullscreen: only the page area and the interface change.
+  if(IsFullScreen==fullScreenApplied){PlacePage();ShellPublish();return;}
   var hwnd=new WindowInteropHelper(this).Handle;
   if(IsFullScreen){
    var monitor=MonitorFromWindow(hwnd,2);
@@ -95,13 +98,13 @@ public partial class MainWindow
    SetWindowLongPtr(hwnd,-16,new IntPtr(restoreStyle&~FrameStyles));SetWindowLongPtr(hwnd,-20,new IntPtr(restoreExStyle&~FrameExStyles));
    int square=1;DwmSetWindowAttribute(hwnd,33,ref square,4);
    Activate();SetForegroundWindow(hwnd);Topmost=true;
-   FitFullScreen(monitor);MarkFullScreen(true);
+   FitFullScreen(monitor);MarkFullScreen(true);PlacePage();
   }else{
    fullScreenApplied=false;MarkFullScreen(false);Topmost=false;
    SetWindowLongPtr(hwnd,-16,new IntPtr(restoreStyle));SetWindowLongPtr(hwnd,-20,new IntPtr(restoreExStyle));
    WindowChrome.SetWindowChrome(this,restoreChrome);ResizeMode=restoreResizeMode;
    SetWindowPlacement(hwnd,in restorePlacement);WindowState=restoreWindowState;
-   int round=2;DwmSetWindowAttribute(hwnd,33,ref round,4);RestorePageWindow();
+   int round=2;DwmSetWindowAttribute(hwnd,33,ref round,4);PlacePage();
   }
   ShellPublish();
  }
