@@ -25,6 +25,13 @@ public partial class MainWindow
  [DllImport("user32.dll")] static extern bool ReleaseCapture();
  [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr wp,IntPtr lp);
  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int cx,int cy,uint flags);
+ // A fullscreen video fills the window at once, without waiting for the interface to re-render and report new bounds.
+ void PlacePage()
+ {
+  bool fill=contentFullScreen&&shellRoot!=null;
+  WebHost.Width=fill?Math.Max(1,shellRoot!.ActualWidth):pageWidth;WebHost.Height=fill?Math.Max(1,shellRoot!.ActualHeight):pageHeight;
+  Canvas.SetLeft(WebHost,fill?0:pageX);Canvas.SetTop(WebHost,fill?0:pageY);RestorePageWindow();
+ }
  void RestorePageWindow()
  {
   if(closing||overlay||active?.View is not{} view||!view.IsVisible)return;
@@ -75,12 +82,13 @@ public partial class MainWindow
     switch(op) {
      case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();break;
      case "bounds":
+      if(contentFullScreen)return; // keep the normal layout bounds for when the video leaves fullscreen
       double ratio=data.TryGetProperty("viewportWidth",out var vp)&&vp.GetDouble()>0?shellView.ActualWidth/vp.GetDouble():1;
       pageX=Math.Clamp(data.GetProperty("x").GetDouble()*ratio,0,ActualWidth);
       pageY=Math.Clamp(data.GetProperty("y").GetDouble()*ratio,0,ActualHeight);
       pageWidth=Math.Clamp(data.GetProperty("width").GetDouble()*ratio,1,ActualWidth);
       pageHeight=Math.Clamp(data.GetProperty("height").GetDouble()*ratio,1,ActualHeight);
-      WebHost.Width=pageWidth;WebHost.Height=pageHeight;Canvas.SetLeft(WebHost,pageX);Canvas.SetTop(WebHost,pageY);RestorePageWindow();return;
+      PlacePage();return;
      case "overlay": await ShellOverlay(data.GetProperty("value").GetBoolean());return;
      case "openPanel": ShellOpen(S("name"),S("value"));break;
      case "sidebarResize": if(data.TryGetProperty("width",out var width)){Prefs.SidebarWidth=Math.Clamp(width.GetDouble(),190,360);SaveLater();}break;
