@@ -2,7 +2,7 @@
 
 # still.
 
-**A fast, low-RAM browser that AI agents can control.** Free and open source for Windows and Mac, with ads and trackers blocked (YouTube ads too), no account and no telemetry.
+**A fast browser that AI agents can control and that saves RAM.** Free and open source for Windows and Mac, with ads and trackers blocked (YouTube ads too), no account and no telemetry.
 
 On Windows, idle background tabs go to sleep to free RAM, Claude, Cursor or any MCP app can open, read, click and type in pages once you approve it, and switching takes one click: bookmarks, history, passwords and signed-in sessions come over from Opera GX, Chrome, Edge, Brave or Vivaldi, so you stay logged in everywhere.
 
