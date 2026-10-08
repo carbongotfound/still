@@ -2,9 +2,9 @@
 
 # still.
 
-**A lighter browser that blocks ads and trackers, YouTube ads included.** Free and open source for Windows and Mac, with no account, no telemetry and nothing on screen but the page.
+**A fast, low-RAM browser that AI agents can control.** Free and open source for Windows and Mac, with ads and trackers blocked (YouTube ads too), no account and no telemetry.
 
-On Windows, idle background tabs go to sleep to free RAM, and switching takes one click: bookmarks, history, passwords and signed-in sessions come over from Opera GX, Chrome, Edge, Brave or Vivaldi, so you stay logged in everywhere.
+On Windows, idle background tabs go to sleep to free RAM, Claude, Cursor or any MCP app can open, read, click and type in pages once you approve it, and switching takes one click: bookmarks, history, passwords and signed-in sessions come over from Opera GX, Chrome, Edge, Brave or Vivaldi, so you stay logged in everywhere.
 
 [**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
 
