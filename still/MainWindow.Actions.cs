@@ -22,9 +22,29 @@ public partial class MainWindow
  // plays it at 16x and presses Skip the moment it can, and hides the ad slots in the feed and next to the video.
  const string YouTubeAdScript = """
  (() => {
-  if (!/(^|\.)youtube\.com$/.test(location.hostname) || window.__stillYtAds) return;
+  if (!/(^|\.)(youtube\.com|youtube-nocookie\.com)$/.test(location.hostname) || window.__stillYtAds) return;
   window.__stillYtAds = true;
-  const css = "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-promoted-sparkles-web-renderer,ytd-banner-promo-renderer,ytd-statement-banner-renderer,ytd-display-ad-renderer,ytd-companion-slot-renderer,ytd-player-legacy-desktop-watch-ads-renderer,ytd-engagement-panel-section-list-renderer[target-id=engagement-panel-ads],#player-ads,#masthead-ad,.ytp-ad-overlay-container,ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer){display:none!important}";
+  // Strip ad data out of YouTube's own responses before the page reads them, so pre-roll, mid-roll, feed,
+  // search, masthead and sidebar ads are never requested. The skipper below handles any that still get through.
+  const adText = /adPlacements|adSlots|playerAds|adSlotRenderer|promotedSparklesWebRenderer|searchPyvRenderer|PromotedVideoRenderer|bannerPromoRenderer|brandVideo/;
+  const isAd = i => !!i && typeof i === "object" && !!(i.adSlotRenderer || i.richItemRenderer?.content?.adSlotRenderer || i.richSectionRenderer?.content?.statementBannerRenderer || i.promotedSparklesWebRenderer || i.searchPyvRenderer || i.promotedVideoRenderer || i.compactPromotedVideoRenderer || i.bannerPromoRenderer || i.statementBannerRenderer || i.brandVideoShelfRenderer || i.brandVideoSingletonRenderer);
+  const prune = (o, depth = 0) => {
+   if (!o || typeof o !== "object" || depth > 60) return o;
+   if (Array.isArray(o)) { for (let n = o.length - 1; n >= 0; n--) if (isAd(o[n])) o.splice(n, 1); else prune(o[n], depth + 1); return o; }
+   for (const key of ["adPlacements", "adSlots", "playerAds", "adBreakHeartbeatParams"]) delete o[key];
+   if (isAd(o.masthead)) delete o.masthead;
+   for (const key in o) prune(o[key], depth + 1);
+   return o;
+  };
+  const parse = JSON.parse;
+  JSON.parse = function (text, reviver) { const value = parse.call(this, text, reviver); return typeof text === "string" && adText.test(text) ? prune(value) : value; };
+  const json = Response.prototype.json;
+  Response.prototype.json = function () { return json.call(this).then(value => /\/youtubei\//.test(this.url) ? prune(value) : value); };
+  for (const name of ["ytInitialPlayerResponse", "ytInitialData"]) {
+   let value;
+   try { Object.defineProperty(window, name, { configurable: true, get: () => value, set: next => { value = prune(next); } }); } catch {}
+  }
+  const css = "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-promoted-sparkles-web-renderer,ytd-banner-promo-renderer,ytd-statement-banner-renderer,ytd-display-ad-renderer,ytd-companion-slot-renderer,ytd-player-legacy-desktop-watch-ads-renderer,ytd-engagement-panel-section-list-renderer[target-id=engagement-panel-ads],#player-ads,#masthead-ad,.ytp-ad-overlay-container,ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),ytd-search-pyv-renderer,ytd-promoted-video-renderer,ytd-compact-promoted-video-renderer,ytd-video-masthead-ad-v3-renderer,ytd-primetime-promo-renderer,ytd-brand-video-shelf-renderer,ytd-brand-video-singleton-renderer,ytd-merch-shelf-renderer,ytd-ads-engagement-panel-content-renderer,ytd-rich-section-renderer:has(ytd-statement-banner-renderer),ytd-reel-video-renderer:has(ytd-ad-slot-renderer),.ytp-ad-module .ytp-ad-image-overlay,.ytp-featured-product,ad-slot-renderer{display:none!important}";
   const tick = () => {
    if (!document.getElementById("still-yt-ads") && document.head) { const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s); }
    const player = document.querySelector("#movie_player");

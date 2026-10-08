@@ -11,7 +11,7 @@ public partial class App : Application
  public static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> BrowserEnvironment => browserEnvironment ??= Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null,Path.Combine(DataRoot,"WebView"),new(){AreBrowserExtensionsEnabled=true,EnableTrackingPrevention=true,
   // Play audio from the engine's main process (a direct child of Still.exe) instead of a separate audio-service
   // process one level deeper, so per-app audio tools (Discord screen share, SteelSeries Sonar, OBS) can find it.
-  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess"});
+  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess"+(IsQa?" --mute-audio":"")});
  private Mutex? instance;
  private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
