@@ -19,10 +19,20 @@ jobs:
         with:
           persist-credentials: false
       - run: sh mac/build.sh
+      - name: Smoke test
+        run: |
+          open mac/build/Still.app --args
+          sleep 8
+          open -a mac/build/Still.app https://en.wikipedia.org/wiki/Minimalism
+          sleep 12
+          screencapture -x mac/build/smoke.png
+          pgrep -x Still
       - uses: actions/upload-artifact@v4
         with:
           name: Still-mac
-          path: mac/build/Still-mac.zip
+          path: |
+            mac/build/Still-mac.zip
+            mac/build/smoke.png
       - name: Attach to the release
         if: github.event_name == 'release'
         run: gh release upload "$TAG" mac/build/Still-mac.zip --clobber --repo "$GITHUB_REPOSITORY"
