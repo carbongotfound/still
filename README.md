@@ -2,7 +2,7 @@
 
 # still.
 
-**A quiet, pitch-black browser for Windows and Mac.** No clutter, no account, no telemetry. Just the web, and room to breathe.
+**The browser that blocks ads everywhere, YouTube included.** Free and open source for Windows and Mac, with no account, no telemetry and nothing on screen but the page.
 
 It blocks ads everywhere, YouTube included, and on Windows it moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed-in sessions included.
 
