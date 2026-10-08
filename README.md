@@ -2,18 +2,32 @@
 
 # still.
 
-**A quiet, pitch-black browser for Windows.**
-No clutter, no account, no telemetry. Just the web, and room to breathe.
+**A quiet, pitch-black browser for Windows.** No clutter, no account, no telemetry. Just the web, and room to breathe.
 
-[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest) · [Features](#features) · [Build from source](#build-from-source)
+It moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed-in sessions included, and opens links from other apps instantly.
 
-![Still browser](docs/home.png)
+[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
+
+[![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
+[![Downloads](https://img.shields.io/github/downloads/carbongotfound/still/total)](https://github.com/carbongotfound/still/releases)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 
 </div>
 
----
+<p align="center"><img src="docs/demo.gif" alt="Still: typing an address, switching tabs, finding a tab with Ctrl K, top tabs, light theme and settings" width="900"></p>
 
-![Still browsing GitHub](docs/browsing.png)
+<div align="center">
+
+True black, keyboard first, and nothing on screen but the page. Vertical or top tabs,
+<kbd>Ctrl K</kbd> to jump to any tab, built-in blocking, real full screen, and a password
+vault that never leaves your PC. One `Still.exe`, no Still account, no telemetry.
+
+</div>
+
+> **Free and open source.** MIT licensed, built on Microsoft Edge WebView2 and .NET 10. Your bookmarks, history, passwords and sessions stay in `%LOCALAPPDATA%\Still`.
+
+> **Not code-signed yet.** Windows SmartScreen may warn on first launch. Choose **More info → Run anyway**, or [build it yourself](#build-from-source).
 
 ## Why Still?
 
@@ -56,8 +70,6 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 Prefer portable? Download the single **`Still.exe`** and run it.
 
 Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Windows 11 already has it, and setup installs it if it's missing. The .NET runtime is built into `Still.exe`.
-
-> Still isn't code-signed yet, so Windows SmartScreen may warn you on first launch. Choose **More info → Run anyway**, or build it yourself from source.
 
 ## Shortcuts
 
