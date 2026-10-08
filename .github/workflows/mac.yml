@@ -21,8 +21,11 @@ jobs:
       - run: sh mac/build.sh
       - name: Smoke test
         run: |
+          mkdir -p ~/Library/Application\ Support/Still
+          echo '{"Welcome":false,"ActiveId":"g","Tabs":[{"Id":"w","Title":"Wikipedia","Url":"https://en.wikipedia.org/wiki/Minimalism"},{"Id":"g","Title":"GitHub","Url":"https://github.com/carbongotfound/still"}]}' > ~/Library/Application\ Support/Still/state.json
           open "$PWD/mac/build/Still.app"
-          sleep 8
+          sleep 12
+          screencapture -x mac/build/smoke-start.png
           open -a "$PWD/mac/build/Still.app" https://en.wikipedia.org/wiki/Minimalism
           sleep 12
           screencapture -x mac/build/smoke.png
@@ -33,7 +36,7 @@ jobs:
           name: Still-mac
           path: |
             mac/build/Still-mac.zip
-            mac/build/smoke.png
+            mac/build/smoke*.png
       - name: Attach to the release
         if: github.event_name == 'release'
         run: gh release upload "$TAG" mac/build/Still-mac.zip --clobber --repo "$GITHUB_REPOSITORY"
