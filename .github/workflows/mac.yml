@@ -21,13 +21,14 @@ jobs:
       - run: sh mac/build.sh
       - name: Smoke test
         run: |
-          open mac/build/Still.app --args
+          open "$PWD/mac/build/Still.app"
           sleep 8
-          open -a mac/build/Still.app https://en.wikipedia.org/wiki/Minimalism
+          open -a "$PWD/mac/build/Still.app" https://en.wikipedia.org/wiki/Minimalism
           sleep 12
           screencapture -x mac/build/smoke.png
           pgrep -x Still
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: Still-mac
           path: |
