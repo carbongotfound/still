@@ -4,7 +4,7 @@
 
 **A quiet, pitch-black browser for Windows and Mac.** No clutter, no account, no telemetry. Just the web, and room to breathe.
 
-It moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed-in sessions included, and opens links from other apps instantly.
+It blocks ads everywhere, YouTube included, and on Windows it moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed-in sessions included.
 
 [**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
 
@@ -21,14 +21,14 @@ It moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed
 <div align="center">
 
 True black, keyboard first, and nothing on screen but the page. Vertical or top tabs,
-<kbd>Ctrl K</kbd> to jump to any tab, built-in blocking, real full screen, and a password
-vault that never leaves your PC. One `Still.exe`, no Still account, no telemetry.
+<kbd>Ctrl K</kbd> to jump to any tab, built-in blocking that takes out YouTube ads too,
+and real full screen. A native app on Windows and Mac, no Still account, no telemetry.
 
 </div>
 
-> **Free and open source.** MIT licensed, built on Microsoft Edge WebView2 and .NET 10. Your bookmarks, history, passwords and sessions stay in `%LOCALAPPDATA%\Still`.
+> **Free and open source.** MIT licensed, built on Microsoft Edge WebView2 and .NET 10 on Windows and on WebKit and Swift on Mac. Your bookmarks, history, passwords and sessions stay on your computer, in `%LOCALAPPDATA%\Still`.
 
-> **Not code-signed yet.** Windows SmartScreen may warn on first launch. Choose **More info → Run anyway**, or [build it yourself](#build-from-source).
+> **Not code-signed yet.** On Windows, SmartScreen may warn on first launch: choose **More info → Run anyway**. On Mac, right-click Still and choose **Open** the first time. Or [build it yourself](#build-from-source).
 
 ## Why Still?
 
@@ -37,13 +37,13 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 ## Features
 
 - **True black by default.** An OLED-friendly interface with Light and System themes. Motion is smooth but restrained, and reduced-motion settings are respected.
-- **One-click import from Opera GX, Chrome, Edge, Brave and Vivaldi.** Bookmarks, history, saved passwords and **signed-in sessions** (cookies) come across, so you stay logged in.
-- **A real Windows app and default browser.** One `Still.exe`, a Start Menu entry, and it can be set as the default browser so links open in the Still window you already have open.
-- **AI agents (MCP).** Turn on *Settings → Let AI agents control Still*, then add `Still.exe --mcp` to Claude Desktop, Cursor or any MCP app. Agents can open, read, click, type and screenshot pages. You approve each app first, a bar shows what it is doing with a Stop button, and private tabs, passwords and cookies are never exposed.
+- **One-click import from Opera GX, Chrome, Edge, Brave and Vivaldi** (Windows). Bookmarks, history, saved passwords and **signed-in sessions** (cookies) come across, so you stay logged in.
+- **A real desktop app and default browser.** One `Still.exe` with a Start Menu entry on Windows, a native Still.app on Mac, and either can be your default browser so links open in the Still window you already have open.
+- **AI agents (MCP, Windows).** Turn on *Settings → Let AI agents control Still*, then add `Still.exe --mcp` to Claude Desktop, Cursor or any MCP app. Agents can open, read, click, type and screenshot pages. You approve each app first, a bar shows what it is doing with a Stop button, and private tabs, passwords and cookies are never exposed.
 - **Real full screen.** Hides the Windows taskbar for videos and games, with your tabs still visible if you want them.
 - **Built-in blocking.** Tracker and ad-domain blocking and native tracking prevention. On YouTube, ads are stripped before the page sees them, so video, home-feed, search, banner and sidebar ads never load, and any ad that still slips through is muted and skipped automatically.
-- **Chrome Web Store extensions.** Open an extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs. Signed store packages retain their publisher identity, and extension popup and settings pages can be opened from Extensions. Compatibility depends on WebView2 and the extension's desktop companion, where required.
-- **Password vault.** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
+- **Chrome Web Store extensions (Windows).** Open an extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs. Signed store packages retain their publisher identity, and extension popup and settings pages can be opened from Extensions. Compatibility depends on WebView2 and the extension's desktop companion, where required.
+- **Password vault (Windows).** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
 - **Bookmarks bar and Speed Dial.** Right-click a bookmark to edit, move, copy or delete it.
 - **Profiles and private tabs.** Separate profiles for work and personal use, and isolated InPrivate tabs.
 - **Vertical or top tabs.** You can resize, pin, sleep and mute tabs. Memory saver sleeps idle background tabs after a minute while retaining page state; media, calls and downloads stay awake.
@@ -123,7 +123,7 @@ Ids work with `click`, `type` (picks dropdown options too), `scroll` and `wait_f
 
 - **Engine:** on Windows, Microsoft Edge WebView2 (Chromium) in a native **WPF / .NET 10** window. On Mac, Apple WebKit in a native **AppKit / Swift** window ([`mac/`](mac)), built on GitHub Actions.
 - **Interface:** React, [shadcn/ui](https://ui.shadcn.com), Radix, Motion and the Geist font, all packaged locally. No web server and no CDN calls.
-- **Privacy:** no Still account, no analytics and no update pings. Your data stays in `%LOCALAPPDATA%\Still`.
+- **Privacy:** no Still account, no analytics, and the only background request is a check of GitHub for a newer release. Your data stays in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on Mac.
 
 ## Build from source
 
