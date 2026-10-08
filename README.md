@@ -2,9 +2,9 @@
 
 # still.
 
-**The browser that blocks ads everywhere, YouTube included.** Free and open source for Windows and Mac, with no account, no telemetry and nothing on screen but the page.
+**A lighter browser that blocks ads and trackers, YouTube ads included.** Free and open source for Windows and Mac, with no account, no telemetry and nothing on screen but the page.
 
-Switching takes one click on Windows: bookmarks, history, passwords and signed-in sessions come over from Opera GX, Chrome, Edge, Brave or Vivaldi, so you stay logged in everywhere.
+On Windows, idle background tabs go to sleep to free RAM, and switching takes one click: bookmarks, history, passwords and signed-in sessions come over from Opera GX, Chrome, Edge, Brave or Vivaldi, so you stay logged in everywhere.
 
 [**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
 
