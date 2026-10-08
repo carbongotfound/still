@@ -5,3 +5,5 @@ artifacts/
 tools/
 *.user
 .vs/
+mac/.build/
+mac/build/

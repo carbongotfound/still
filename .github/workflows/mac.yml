@@ -1,0 +1,31 @@
+name: Mac
+
+on:
+  push:
+    branches: [main]
+    paths: ["mac/**", "still/Shell/**", "still/MainWindow.Actions.cs", "still/Still.csproj", ".github/workflows/mac.yml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - run: sh mac/build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Still-mac
+          path: mac/build/Still-mac.zip
+      - name: Attach to the release
+        if: github.event_name == 'release'
+        run: gh release upload "$TAG" mac/build/Still-mac.zip --clobber --repo "$GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
