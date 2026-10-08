@@ -2,16 +2,17 @@
 
 # still.
 
-**A quiet, pitch-black browser for Windows.** No clutter, no account, no telemetry. Just the web, and room to breathe.
+**A quiet, pitch-black browser for Windows and Mac.** No clutter, no account, no telemetry. Just the web, and room to breathe.
 
 It moves over from Opera GX, Chrome, Edge, Brave or Vivaldi in one click, signed-in sessions included, and opens links from other apps instantly.
 
-[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
+[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**Features**](#features) · [**Install**](#install) · [**AI agents**](#ai-agents) · [**Build from source**](#build-from-source)
 
 [![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/carbongotfound/still/total)](https://github.com/carbongotfound/still/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
+![macOS 12.3+](https://img.shields.io/badge/macOS-12.3%2B-111111)
 
 </div>
 
@@ -40,7 +41,7 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 - **A real Windows app and default browser.** One `Still.exe`, a Start Menu entry, and it can be set as the default browser so links open in the Still window you already have open.
 - **AI agents (MCP).** Turn on *Settings → Let AI agents control Still*, then add `Still.exe --mcp` to Claude Desktop, Cursor or any MCP app. Agents can open, read, click, type and screenshot pages. You approve each app first, a bar shows what it is doing with a Stop button, and private tabs, passwords and cookies are never exposed.
 - **Real full screen.** Hides the Windows taskbar for videos and games, with your tabs still visible if you want them.
-- **Built-in blocking.** Tracker and ad-domain blocking, native tracking prevention.
+- **Built-in blocking.** Tracker and ad-domain blocking and native tracking prevention. On YouTube, ads are stripped before the page sees them, so video, home-feed, search, banner and sidebar ads never load, and any ad that still slips through is muted and skipped automatically.
 - **Chrome Web Store extensions.** Open an extension in the Chrome Web Store and press **Add to Still**. You review its permissions before it installs. Signed store packages retain their publisher identity, and extension popup and settings pages can be opened from Extensions. Compatibility depends on WebView2 and the extension's desktop companion, where required.
 - **Password vault.** Passwords are encrypted with Windows DPAPI and filled in only on the exact site they belong to. Nothing is synced anywhere.
 - **Bookmarks bar and Speed Dial.** Right-click a bookmark to edit, move, copy or delete it.
@@ -63,6 +64,8 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 
 ## Install
 
+### Windows
+
 1. Download **`Still-Setup-x64.exe`** from the [latest release](https://github.com/carbongotfound/still/releases/latest) and run it. No admin rights are needed.
 2. Still installs as a normal Windows app, with a Start Menu entry and an entry in Settings → Apps. Installing a newer setup updates the same `Still.exe` in place, and your data is kept.
 3. To make Still your default browser, choose **Settings → Make default** in Still (or tick the option at the end of setup), then pick Still in Windows Default apps. Links from other apps will then open in Still.
@@ -70,6 +73,14 @@ Most browsers keep getting louder: sidebars full of apps, news feeds, sponsored 
 Prefer portable? Download the single **`Still.exe`** and run it.
 
 Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Windows 11 already has it, and setup installs it if it's missing. The .NET runtime is built into `Still.exe`.
+
+### Mac
+
+1. Download **`Still-mac.zip`** from the [latest release](https://github.com/carbongotfound/still/releases/latest), unzip it and drag **Still** into Applications. It runs natively on Apple silicon and Intel Macs with macOS 12.3 or later.
+2. Still isn't notarized yet, so the first time, right-click Still and choose **Open** (on macOS 15, open it once, then choose **Open Anyway** in System Settings → Privacy & Security).
+3. To make Still your default browser, choose **Settings → Make default** in Still.
+
+Still for Mac runs the same interface on Apple's WebKit, with tabs, private tabs, history, bookmarks, downloads, themes, both tab layouts, full screen and the same blocking. Importing from other browsers, the password vault, extensions, profiles, AI agents and in-app updates are Windows-only for now. Shortcuts use <kbd>⌘</kbd> in place of <kbd>Ctrl</kbd>.
 
 ## Shortcuts
 
@@ -110,7 +121,7 @@ Ids work with `click`, `type` (picks dropdown options too), `scroll` and `wait_f
 
 ## How it's built
 
-- **Engine:** Microsoft Edge WebView2 (Chromium), hosted in a native **WPF / .NET 10** window.
+- **Engine:** on Windows, Microsoft Edge WebView2 (Chromium) in a native **WPF / .NET 10** window. On Mac, Apple WebKit in a native **AppKit / Swift** window ([`mac/`](mac)), built on GitHub Actions.
 - **Interface:** React, [shadcn/ui](https://ui.shadcn.com), Radix, Motion and the Geist font, all packaged locally. No web server and no CDN calls.
 - **Privacy:** no Still account, no analytics and no update pings. Your data stays in `%LOCALAPPDATA%\Still`.
 
@@ -123,6 +134,8 @@ git clone https://github.com/carbongotfound/still
 cd still
 ./build.ps1          # builds the UI, then publishes a single Still.exe to artifacts/Still
 ```
+
+On a Mac with Xcode 15 or newer, `sh mac/build.sh` builds `mac/build/Still.app` from the same interface.
 
 ## Security
 
