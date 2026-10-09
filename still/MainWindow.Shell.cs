@@ -80,7 +80,7 @@ public partial class MainWindow
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
     BrowserTab? Target()=>tabs.FirstOrDefault(t=>t.Id==S("id"))??active;
     switch(op) {
-     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();break;
+     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();PublishAi();break;
      case "bounds":
       if(contentFullScreen)return; // keep the normal layout bounds for when the video leaves fullscreen
       double ratio=data.TryGetProperty("viewportWidth",out var vp)&&vp.GetDouble()>0?shellView.ActualWidth/vp.GetDouble():1;
@@ -176,7 +176,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "aiToggle" or "aiProvider" or "aiSend" or "aiStop" or "aiClear":await HandleAi(op,data);break;
+     case "aiToggle" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();

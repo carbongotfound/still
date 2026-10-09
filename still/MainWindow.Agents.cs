@@ -53,7 +53,7 @@ public partial class MainWindow
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let AI agents control Still.");
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent for this session.");
-   if (Prefs.ApprovedAgents.Contains(client)) approvedAgents.Add(client); // approved once = remembered across restarts/updates
+   if (Prefs.ApprovedAgents.Any(a => McpServer.AgentName(a).Equals(client, StringComparison.OrdinalIgnoreCase))) approvedAgents.Add(client); // approved once = remembered across restarts/updates
    if (!approvedAgents.Contains(client)) {
     if (agentApproval == null) {
      agentApproval = new(TaskCreationOptions.RunContinuationsAsynchronously); agentName = client; PublishAll();

@@ -59,6 +59,7 @@ public sealed class Preferences
  public bool MemorySaver { get; set; } = true;
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
+ public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

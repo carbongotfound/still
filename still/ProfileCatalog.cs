@@ -72,7 +72,7 @@ public static class ProfileCatalog
   throw new IOException("Another profile is being changed. Try again.");
  }
  static string? displayName;
- public static string CurrentName()=>displayName??=Read().FirstOrDefault(p=>string.Equals(Path.GetFullPath(Folder(p)),App.DataRoot,StringComparison.OrdinalIgnoreCase))?.Name??"Default";
+ public static string CurrentName()=>App.IsTemp?"Temporary":displayName??=Read().FirstOrDefault(p=>string.Equals(Path.GetFullPath(Folder(p)),App.DataRoot,StringComparison.OrdinalIgnoreCase))?.Name??"Default";
  public static async Task<BrowserProfile> Create(string name,SavedState? initial=null)
  {
   name=name.Trim();if(name.Length is <1 or >40||name.Any(char.IsControl))throw new ArgumentException("Use a profile name between 1 and 40 characters.");
