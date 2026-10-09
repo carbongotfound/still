@@ -46,12 +46,12 @@ public partial class MainWindow : Window
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
   if (!secondary) tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
-  saveTimer.Tick += (_, _) => { saveTimer.Stop(); Save(); };
-  memoryTimer.Tick += async (_, _) => await ReduceBackgroundMemory();
+  saveTimer.Tick += (_, _) => { saveTimer.Stop(); App.Breadcrumb = "saving tabs"; Save(); App.Breadcrumb = "idle, last: saving tabs"; };
+  memoryTimer.Tick += async (_, _) => { App.Breadcrumb = "memory saver"; await ReduceBackgroundMemory(); App.Breadcrumb = "idle, last: memory saver"; };
   memoryTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
-  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchClipboard(); WatchDefaultOutput(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
+  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    StartupMetrics.Mark("window-loaded");
    Task firstPage;
@@ -77,7 +77,7 @@ public partial class MainWindow : Window
 #endif
   };
   Closing += (_, _) => {
-   closing = true; saveTimer.Stop(); memoryTimer.Stop();
+   closing = true; saveTimer.Stop(); memoryTimer.Stop(); Hide(); // disappear at once; tearing down the pages can take a moment
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
    else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
    Save(); foreach (var tab in tabs) { tab.Closed = true; tab.View?.Dispose(); }
@@ -214,7 +214,7 @@ public partial class MainWindow : Window
  {
   if (tab.Closed || !tabs.Contains(tab)) return;
   if(active!=tab&&contentFullScreen)await ExitContentFullScreen();
-  CloseSheet(false);
+  CloseSheet(false); CancelUpload();
   foreach (var t in tabs) if (t.View != null) t.View.Visibility = Visibility.Hidden;
   var leaving=active; if(leaving!=null)leaving.LastActive=DateTime.UtcNow;
   active = tab;tab.LastActive=DateTime.UtcNow;

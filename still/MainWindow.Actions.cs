@@ -18,14 +18,14 @@ public partial class MainWindow
   "revcontent.com", "adcolony.com", "applovin.com", "unityads.unity3d.com", "ads.yahoo.com", "advertising.yahoo.com",
   "adsafeprotected.com", "doubleverify.com", "chartbeat.com", "mixpanel.com", "segment.io", "fullstory.com", "newrelic.com"
  ];
- // YouTube serves its ads from youtube.com itself, so blocking ad domains never touched them. This mutes an ad,
- // plays it at 16x and presses Skip the moment it can, and hides the ad slots in the feed and next to the video.
+ // YouTube serves its ads from youtube.com itself, so blocking ad domains never touched them. This strips the ads
+ // out of YouTube's own data and hides any ad slots left in the feed and next to the video. It never skips ads.
  const string YouTubeAdScript = """
  (() => {
   if (!/(^|\.)(youtube\.com|youtube-nocookie\.com)$/.test(location.hostname) || window.__stillYtAds) return;
   window.__stillYtAds = true;
   // Strip ad data out of YouTube's own responses before the page reads them, so pre-roll, mid-roll, feed,
-  // search, masthead and sidebar ads are never requested. The skipper below handles any that still get through.
+  // search, masthead and sidebar ads are never requested.
   const adText = /adPlacements|adSlots|playerAds|adSlotRenderer|promotedSparklesWebRenderer|searchPyvRenderer|PromotedVideoRenderer|bannerPromoRenderer|brandVideo/;
   const isAd = i => !!i && typeof i === "object" && !!(i.adSlotRenderer || i.richItemRenderer?.content?.adSlotRenderer || i.richSectionRenderer?.content?.statementBannerRenderer || i.promotedSparklesWebRenderer || i.searchPyvRenderer || i.promotedVideoRenderer || i.compactPromotedVideoRenderer || i.bannerPromoRenderer || i.statementBannerRenderer || i.brandVideoShelfRenderer || i.brandVideoSingletonRenderer);
   const prune = (o, depth = 0) => {
@@ -45,25 +45,11 @@ public partial class MainWindow
    try { Object.defineProperty(window, name, { configurable: true, get: () => value, set: next => { value = prune(next); } }); } catch {}
   }
   const css = "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-promoted-sparkles-web-renderer,ytd-banner-promo-renderer,ytd-statement-banner-renderer,ytd-display-ad-renderer,ytd-companion-slot-renderer,ytd-player-legacy-desktop-watch-ads-renderer,ytd-engagement-panel-section-list-renderer[target-id=engagement-panel-ads],#player-ads,#masthead-ad,.ytp-ad-overlay-container,ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),ytd-search-pyv-renderer,ytd-promoted-video-renderer,ytd-compact-promoted-video-renderer,ytd-video-masthead-ad-v3-renderer,ytd-primetime-promo-renderer,ytd-brand-video-shelf-renderer,ytd-brand-video-singleton-renderer,ytd-merch-shelf-renderer,ytd-ads-engagement-panel-content-renderer,ytd-rich-section-renderer:has(ytd-statement-banner-renderer),ytd-reel-video-renderer:has(ytd-ad-slot-renderer),.ytp-ad-module .ytp-ad-image-overlay,.ytp-featured-product,ad-slot-renderer{display:none!important}";
-  const tick = () => {
-   if (!document.getElementById("still-yt-ads") && document.head) { const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s); }
-   const player = document.querySelector("#movie_player");
-   const video = player?.querySelector("video");
-   if (!player || !video) return;
-   if (player.classList.contains("ad-showing") || player.classList.contains("ad-interrupting")) {
-    if (!video.__stillAd) { video.__stillAd = { muted: video.muted }; }
-    video.muted = true;
-    if (video.playbackRate < 16) video.playbackRate = 16;
-    if (isFinite(video.duration) && video.duration > 0 && video.currentTime < video.duration - 0.2) { try { video.currentTime = video.duration - 0.1; } catch {} }
-    document.querySelectorAll(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-ad-skip-button-slot button,.ytp-ad-skip-button-container button,[id^=skip-button] button").forEach(b => b.click());
-   } else if (video.__stillAd) {
-    video.muted = video.__stillAd.muted; video.playbackRate = 1; video.__stillAd = null;
-   }
+  const style = () => {
+   if (document.getElementById("still-yt-ads") || !document.head) return;
+   const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s);
   };
-  // React the moment an ad starts (new source, metadata, play) instead of waiting for the next poll.
-  for (const type of ["loadstart", "loadedmetadata", "durationchange", "playing", "timeupdate"]) document.addEventListener(type, tick, true);
-  new MutationObserver(tick).observe(document.documentElement, { subtree: true, attributes: true, attributeFilter: ["class"] });
-  setInterval(tick, 100);
+  if (document.head) style(); else document.addEventListener("DOMContentLoaded", style, { once: true });
  })();
  """;
  readonly Dictionary<string, List<string>> privateHidden = [];

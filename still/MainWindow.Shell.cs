@@ -94,6 +94,7 @@ public partial class MainWindow
      case "sidebarResize": if(data.TryGetProperty("width",out var width)){Prefs.SidebarWidth=Math.Clamp(width.GetDouble(),190,360);SaveLater();}break;
      case "navigate": await Navigate(S("url"));break;
      case "new": await NewTab(S("url"),data.TryGetProperty("private",out var pr)&&pr.GetBoolean(),S("url").Length==0);break;
+     case "uploadAnswer": AnswerUpload(S("id"),data.TryGetProperty("picked",out var picked)&&picked.ValueKind==JsonValueKind.Array?picked.EnumerateArray().Where(p=>p.ValueKind==JsonValueKind.Number).Select(p=>p.GetInt32()).ToArray():[],data.TryGetProperty("browse",out var br)&&br.ValueKind==JsonValueKind.True);break;
      case "permissionAnswer": AnswerPermission(S("id"),data.TryGetProperty("allow",out var al)&&al.ValueKind==JsonValueKind.True);break;
      case "select": if(Target() is {} selected)await SelectTab(selected);break;
      case "closeTab": if(Target() is {} closed)await CloseTab(closed,data.TryGetProperty("force",out var force)&&force.GetBoolean());break;
@@ -179,6 +180,7 @@ public partial class MainWindow
     }
     ShellPublish();
    }catch(Exception ex){App.Log(ex);Toast("Couldn't finish that action.");}
+   finally{if(!App.Breadcrumb.StartsWith("idle"))App.Breadcrumb="idle, last: "+App.Breadcrumb;}
   };
   core.Navigate("https://still.internal/index.html");
  }
