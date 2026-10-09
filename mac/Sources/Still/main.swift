@@ -204,6 +204,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["windows"] = [[String: Any]]()
   state["secondary"] = false
   state["noExtensions"] = true
+  state["noAi"] = true
   state["incognito"] = false
   state["welcome"] = welcome
   state["version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""

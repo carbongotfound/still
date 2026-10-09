@@ -341,3 +341,26 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .upload-tile i svg { width:12px;height:12px; }
 .upload-foot { display:flex;justify-content:flex-end;margin-top:6px; }
 @media (prefers-reduced-motion: reduce) { .upload-tile { transition:none; } }
+
+.ai-sidebar { width:340px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--background); font-size:13px; }
+.ai-head { display:flex; align-items:center; gap:4px; padding:8px; border-bottom:1px solid var(--border); }
+.ai-providers { flex:1; display:flex; gap:2px; padding:2px; border-radius:8px; background:var(--muted); }
+.ai-providers button { flex:1; padding:4px 0; border-radius:6px; font-weight:500; color:var(--muted-foreground); }
+.ai-providers button.is-on { background:var(--background); color:var(--foreground); box-shadow:0 1px 2px rgb(0 0 0 / .2); }
+.ai-key { display:flex; flex-direction:column; gap:10px; padding:16px; }
+.ai-key > svg { width:20px; height:20px; opacity:.7; }
+.ai-key p, .ai-empty { color:var(--muted-foreground); line-height:1.5; }
+.ai-row { display:flex; justify-content:flex-end; gap:6px; }
+.ai-model { display:flex; align-items:center; gap:8px; padding:8px; border-bottom:1px solid var(--border); }
+.ai-model select { flex:1; min-width:0; height:28px; border-radius:6px; border:1px solid var(--border); background:var(--background); color:var(--foreground); padding:0 6px; }
+.ai-link { color:var(--muted-foreground); font-size:12px; white-space:nowrap; }
+.ai-link:hover { color:var(--foreground); }
+.ai-log { flex:1; min-height:0; overflow-y:auto; padding:12px; display:flex; flex-direction:column; gap:8px; }
+.ai-msg { white-space:pre-wrap; overflow-wrap:anywhere; line-height:1.5; }
+.ai-msg.is-user { align-self:flex-end; max-width:85%; padding:6px 10px; border-radius:12px; background:var(--muted); }
+.ai-msg.is-tool, .ai-msg.is-note { color:var(--muted-foreground); font-size:12px; display:flex; gap:6px; align-items:center; }
+.ai-msg.is-note svg { width:12px; height:12px; }
+.ai-error { margin:0 12px 8px; color:var(--destructive); }
+.ai-compose { display:flex; align-items:flex-end; gap:6px; padding:8px; border-top:1px solid var(--border); }
+.ai-compose textarea { flex:1; resize:none; max-height:160px; border-radius:8px; border:1px solid var(--border); background:var(--background); color:var(--foreground); padding:6px 8px; font:inherit; outline:none; }
+.ai-compose textarea:focus { border-color:var(--ring); }

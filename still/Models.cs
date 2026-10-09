@@ -50,9 +50,9 @@ public sealed class Preferences
  public string Theme { get; set; } = "Dark";
  public string Layout { get; set; } = "Sidebar";
  public string SearchEngine { get; set; } = "Google";
- public bool OfferPasswordSave { get; set; }
+ public bool OfferPasswordSave { get; set; } = true;
  public bool AutoFillPasswords { get; set; }
- public bool OfferPasswordUpdate { get; set; }
+ public bool OfferPasswordUpdate { get; set; } = true;
  public bool Blocking { get; set; } = true;
  public double SidebarWidth { get; set; } = 248;
  public string Tracking { get; set; } = "Balanced";
