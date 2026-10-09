@@ -5,10 +5,10 @@
   <Authors>Still</Authors><Product>Still</Product>
   <DefineConstants Condition="'$(StillQa)' == 'true'">$(DefineConstants);STILL_QA</DefineConstants>
   <Deterministic>true</Deterministic>
-  <Version>1.6.29</Version>
+  <Version>1.6.30</Version>
   <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
   <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
-  <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><StartupObject>Still.Program</StartupObject>
+  <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><ConcurrentGarbageCollection>false</ConcurrentGarbageCollection><StartupObject>Still.Program</StartupObject>
   <DebugType>embedded</DebugType>
   <Description>A quieter window onto the internet. A minimalist Windows browser.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>

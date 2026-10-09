@@ -128,7 +128,8 @@ public partial class MainWindow
    case "extensionToggle":if(extensionInventory.TryGetValue(S("id"),out var toggle)){await toggle.EnableAsync(!toggle.IsEnabled);await PublishBrowserTools("extensions");}break;
    case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){await remove.RemoveAsync();extensionPages.Remove(remove.Id+":page");extensionPages.Remove(remove.Id+":popup");await PublishBrowserTools("extensions");}break;
    case "extensionPage":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id")) is{} entryPage)await NewTab(entryPage,false,false);break;
-   case "extensionPopup":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id"),true) is{} popupPage)await NewTab(popupPage,false,false);break;
+   case "extensionPopup":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id"),true) is{} popupPage)await ShowExtensionPopup(popupPage,data.TryGetProperty("anchor",out var anchor)&&anchor.ValueKind==JsonValueKind.Array?anchor.EnumerateArray().Select(v=>v.GetDouble()).ToArray():null);break;
+   case "extensionMenu":await PublishBrowserTools("extensions");break;
    case "bookmarkEdit":{
     var bookmark=state.Bookmarks.FirstOrDefault(b=>b.Url==S("oldUrl"));if(bookmark!=null&&Uri.TryCreate(S("url"),UriKind.Absolute,out var u)&&u.Scheme is "http" or "https"){bookmark.Title=S("title").Trim();bookmark.Url=u.AbsoluteUri;SaveLater();}break;
    }

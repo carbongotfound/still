@@ -1,6 +1,7 @@
 // Still for Mac: a native AppKit + WebKit host for the same React interface the Windows app uses.
 // The interface talks to its host through window.chrome.webview, which the bridge below provides on WebKit.
 import AppKit
+import SQLite3
 import WebKit
 
 let resources = Bundle.main.resourceURL!
@@ -49,6 +50,7 @@ final class FlippedView: NSView { override var isFlipped: Bool { true } }
 final class Tab: NSObject {
  var id = UUID().uuidString
  var title = "New tab", url = "", pinned = false, isPrivate = false, loading = false, muted = false
+ var lastSeen = Date()
  var view: WKWebView?
  var observers: [NSKeyValueObservation] = []
 }
@@ -78,6 +80,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  let youTube = (try? String(contentsOf: resources.appendingPathComponent("youtube.js"))) ?? ""
  var publishQueued = false, saveQueued = false, overlayVersion = 0
  var appearanceObserver: NSKeyValueObservation?
+ var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]])?
+ var importBusy = false, importError = "", importDone = ""
 
  func pref<T>(_ key: String, _ fallback: T) -> T { prefs[key] as? T ?? fallback }
  var unblocked: [String] { pref("UnblockedHosts", [String]()) }
@@ -112,6 +116,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   applyTheme()
   appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in DispatchQueue.main.async { self?.schedulePublish() } }
   compileRules()
+  Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
   window.makeKeyAndOrderFront(nil)
  }
 
@@ -174,7 +179,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let preferences: [String: Any] = [
    "theme": pref("Theme", "Dark"), "layout": pref("Layout", "Sidebar"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
-   "sidebarWidth": pref("SidebarWidth", 240.0), "tracking": "Balanced", "memory": false, "autofill": false,
+   "sidebarWidth": pref("SidebarWidth", 240.0), "tracking": "Balanced", "memory": pref("MemorySaver", true), "autofill": false,
    "startup": false, "startupDisabled": true, "tearOff": false, "agents": false
   ]
   let tabList: [[String: Any]] = tabs.map { tab in [
@@ -198,6 +203,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["profileName"] = "Default"
   state["windows"] = [[String: Any]]()
   state["secondary"] = false
+  state["noExtensions"] = true
   state["incognito"] = false
   state["welcome"] = welcome
   state["version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
@@ -296,6 +302,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "maximize": if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) } else { window.zoom(nil) }
   case "minimize": window.miniaturize(nil)
   case "closeWindow": window.close()
+  case "externalReview": if let source = importSources().first(where: { $0.id == text("id") }) { reviewImport(source.name, source.folder) }
+  case "externalChoose":
+   let picker = NSOpenPanel()
+   picker.canChooseDirectories = true; picker.canChooseFiles = false
+   picker.message = "Choose a browser profile folder, such as Chrome's Default folder or ~/Library/Safari."
+   picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(url.lastPathComponent, url) } }
+  case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; publishImport() }
+  case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false)
   case "checkUpdate", "openUpdate", "releaseNotes": newTab("https://github.com/carbongotfound/still/releases/latest")
   default: toast(unavailable)
   }
@@ -308,6 +322,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "search": if ["DuckDuckGo", "Google", "Bing"].contains(value) { prefs["SearchEngine"] = value }
   case "restore": prefs["RestoreTabs"] = value == "true"
   case "blocking": prefs["Blocking"] = value == "true"; for tab in tabs { if let view = tab.view { applyBlocking(view) } }
+  case "memory": prefs["MemorySaver"] = value == "true"
   default: toast(unavailable)
   }
   saveLater()
@@ -325,7 +340,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  // MARK: Panels and page placement
 
  func openPanel(_ name: String, _ value: String) {
-  if ["passwords", "extensions", "cookies", "security", "profiles", "import"].contains(name) { toast(unavailable); return }
+  if ["passwords", "extensions", "cookies", "security", "profiles"].contains(name) { toast(unavailable); return }
+  if name == "import" { importDone = ""; publishImport() }
   panel = name
   if name != "find" { setOverlay(true) }
   send(["kind": "panel", "name": name, "value": value])
@@ -409,6 +425,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func select(_ tab: Tab) {
+  active?.lastSeen = Date()
+  tab.lastSeen = Date()
   active = tab
   if tab.view == nil && !tab.url.isEmpty, let url = URL(string: tab.url) { load(url, in: createView(tab)) }
   layoutPages()
@@ -508,9 +526,159 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let controller = view.configuration.userContentController
   controller.removeAllContentRuleLists()
   controller.removeAllUserScripts()
+  controller.addUserScript(WKUserScript(source: editedCheck, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
   guard pref("Blocking", true), !unblocked.contains(host ?? view.url?.host ?? "") else { return }
   if let rules { controller.add(rules) }
   if !youTube.isEmpty { controller.addUserScript(WKUserScript(source: youTube, injectionTime: .atDocumentStart, forMainFrameOnly: false)) }
+ }
+
+ // MARK: Memory saver
+
+ let editedCheck = "window.__stillEdited = () => [...document.querySelectorAll('textarea,input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])')].some(e => e.value && e.value !== e.defaultValue)"
+ let busyCheck = "(() => [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.muted) || !!document.pictureInPictureElement || !!window.__stillEdited?.())()"
+
+ /// Background tabs left alone for five minutes give their page back to the system, the way Safari and Chrome do,
+ /// unless they're pinned, private, playing sound or holding typed text. Selecting one loads it again.
+ func sleepIdleTabs() {
+  guard pref("MemorySaver", true) else { return }
+  let cutoff = Date().addingTimeInterval(-300)
+  for tab in tabs where tab !== active && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff {
+   tab.view?.evaluateJavaScript(busyCheck) { [weak self, weak tab] result, _ in
+    guard let self, let tab, tab !== self.active, (result as? Bool) == false else { return }
+    self.unload(tab)
+    self.schedulePublish()
+   }
+  }
+ }
+
+ // MARK: Import from another browser
+
+ func importSources() -> [(id: String, name: String, folder: URL)] {
+  let home = FileManager.default.homeDirectoryForCurrentUser, support = home.appendingPathComponent("Library/Application Support")
+  let known: [(String, String, URL)] = [
+   ("safari", "Safari", home.appendingPathComponent("Library/Safari")),
+   ("chrome", "Chrome", support.appendingPathComponent("Google/Chrome/Default")),
+   ("brave", "Brave", support.appendingPathComponent("BraveSoftware/Brave-Browser/Default")),
+   ("edge", "Edge", support.appendingPathComponent("Microsoft Edge/Default")),
+   ("arc", "Arc", support.appendingPathComponent("Arc/User Data/Default")),
+   ("vivaldi", "Vivaldi", support.appendingPathComponent("Vivaldi/Default")),
+   ("opera", "Opera", support.appendingPathComponent("com.operasoftware.Opera"))
+  ]
+  return known.filter { FileManager.default.fileExists(atPath: $0.2.path) }.map { (id: $0.0, name: $0.1, folder: $0.2) }
+ }
+
+ func publishImport() {
+  var external: [String: Any] = ["busy": importBusy, "error": importError, "done": importDone, "profile": "Still",
+                                 "sources": importSources().map { ["id": $0.id, "name": $0.name] }]
+  if let preview = pendingImport {
+   external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
+                          "passwords": 0, "cookies": 0, "cookiesLocked": false, "skipped": 0, "warnings": [String]()]
+  }
+  send(["kind": "tools", "name": "import", "data": ["external": external]])
+ }
+
+ /// Reads bookmarks and history (never passwords or cookies, which macOS keeps locked to each browser) for review first.
+ func reviewImport(_ name: String, _ folder: URL) {
+  guard !importBusy else { return }
+  importBusy = true; importError = ""; importDone = ""; pendingImport = nil
+  publishImport()
+  DispatchQueue.global(qos: .userInitiated).async {
+   let safari = FileManager.default.fileExists(atPath: folder.appendingPathComponent("Bookmarks.plist").path) || folder.lastPathComponent == "Safari"
+   let result = Result { try safari ? Browser.readSafari(folder) : Browser.readChromium(folder) }
+   DispatchQueue.main.async {
+    self.importBusy = false
+    switch result {
+    case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty: self.importError = "No bookmarks or history were found in \(name)."
+    case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history)
+    case .failure(let error):
+     let denied = (error as NSError).code == NSFileReadNoPermissionError || (error as NSError).domain == NSPOSIXErrorDomain
+     self.importError = safari && denied ? "macOS keeps Safari's data private. Turn on Still in System Settings → Privacy & Security → Full Disk Access, then try again."
+      : "Couldn't read \(name): \(error.localizedDescription)"
+    }
+    self.publishImport()
+   }
+  }
+ }
+
+ func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool) {
+  guard let preview = pendingImport, !importBusy else { return }
+  var added = 0, visits = 0
+  if takeBookmarks {
+   var have = Set(bookmarks.compactMap { $0["Url"] as? String })
+   for mark in preview.bookmarks { if let url = mark["Url"] as? String, have.insert(url).inserted { bookmarks.append(mark); added += 1 } }
+  }
+  if takeHistory {
+   let have = Set(history.compactMap { $0["Url"] as? String })
+   let fresh = preview.history.filter { !have.contains($0["Url"] as? String ?? "") }
+   visits = fresh.count
+   history = Array((history + fresh).sorted { ($0["At"] as? String ?? "") > ($1["At"] as? String ?? "") }.prefix(5000))
+  }
+  pendingImport = nil
+  importDone = "Imported \(added) bookmarks and \(visits) history entries from \(preview.name)."
+  save()
+  publishImport()
+  schedulePublish()
+ }
+
+ static let stamp = ISO8601DateFormatter()
+
+ static func readChromium(_ folder: URL) throws -> (bookmarks: [[String: Any]], history: [[String: Any]]) {
+  var marks: [[String: Any]] = []
+  func walk(_ node: Any?) {
+   guard let node = node as? [String: Any] else { return }
+   if node["type"] as? String == "url", let url = node["url"] as? String { marks.append(["Title": node["name"] as? String ?? url, "Url": url]) }
+   for child in node["children"] as? [Any] ?? [] { walk(child) }
+  }
+  if let data = try? Data(contentsOf: folder.appendingPathComponent("Bookmarks")),
+     let roots = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["roots"] as? [String: Any] {
+   for root in roots.values { walk(root) }
+  }
+  let file = folder.appendingPathComponent("History")
+  guard FileManager.default.fileExists(atPath: file.path) else { return (marks, []) }
+  // Chromium counts microseconds from 1601.
+  let visits = try rows(file, "SELECT url, title, last_visit_time FROM urls WHERE hidden = 0 ORDER BY last_visit_time DESC LIMIT 5000").map { row -> [String: Any] in
+   ["Url": row[0], "Title": row[1].isEmpty ? row[0] : row[1], "At": stamp.string(from: Date(timeIntervalSince1970: (Double(row[2]) ?? 0) / 1_000_000 - 11_644_473_600))]
+  }
+  return (marks, visits)
+ }
+
+ static func readSafari(_ folder: URL) throws -> (bookmarks: [[String: Any]], history: [[String: Any]]) {
+  var marks: [[String: Any]] = []
+  func walk(_ node: Any?) {
+   guard let node = node as? [String: Any] else { return }
+   if node["WebBookmarkType"] as? String == "WebBookmarkTypeLeaf", let url = node["URLString"] as? String {
+    marks.append(["Title": (node["URIDictionary"] as? [String: Any])?["title"] as? String ?? url, "Url": url])
+   }
+   for child in node["Children"] as? [Any] ?? [] { walk(child) }
+  }
+  walk(try PropertyListSerialization.propertyList(from: Data(contentsOf: folder.appendingPathComponent("Bookmarks.plist")), format: nil))
+  // Safari counts seconds from 2001.
+  let visits = try rows(folder.appendingPathComponent("History.db"), "SELECT i.url, COALESCE(MAX(v.title), ''), MAX(v.visit_time) FROM history_items i JOIN history_visits v ON v.history_item = i.id GROUP BY i.id ORDER BY 3 DESC LIMIT 5000").map { row -> [String: Any] in
+   ["Url": row[0], "Title": row[1].isEmpty ? row[0] : row[1], "At": stamp.string(from: Date(timeIntervalSinceReferenceDate: Double(row[2]) ?? 0))]
+  }
+  return (marks, visits)
+ }
+
+ /// Queries a copy of a browser's database, so a running browser's lock doesn't get in the way and its file is never touched.
+ static func rows(_ file: URL, _ sql: String) throws -> [[String]] {
+  let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+  try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
+  defer { try? FileManager.default.removeItem(at: temp) }
+  let copy = temp.appendingPathComponent(file.lastPathComponent)
+  try FileManager.default.copyItem(at: file, to: copy)
+  for suffix in ["-wal", "-shm", "-journal"] { try? FileManager.default.copyItem(atPath: file.path + suffix, toPath: copy.path + suffix) }
+  var db: OpaquePointer?
+  defer { sqlite3_close(db) }
+  var statement: OpaquePointer?
+  guard sqlite3_open_v2(copy.path, &db, SQLITE_OPEN_READWRITE, nil) == SQLITE_OK, sqlite3_prepare_v2(db, sql, -1, &statement, nil) == SQLITE_OK else {
+   throw NSError(domain: "Still", code: 1, userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(db))])
+  }
+  defer { sqlite3_finalize(statement) }
+  var result: [[String]] = []
+  while sqlite3_step(statement) == SQLITE_ROW {
+   result.append((0..<sqlite3_column_count(statement)).map { column in sqlite3_column_text(statement, column).map { String(cString: $0) } ?? "" })
+  }
+  return result
  }
 
  // MARK: WebKit delegates
@@ -764,6 +932,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   add("Window", tabItems)
   return main
  }
+}
+
+// The CI smoke test checks the importer with: Still --read-profile <Chromium or Safari profile folder>
+if let index = CommandLine.arguments.firstIndex(of: "--read-profile"), index + 1 < CommandLine.arguments.count {
+ let folder = URL(fileURLWithPath: CommandLine.arguments[index + 1])
+ do {
+  let data = FileManager.default.fileExists(atPath: folder.appendingPathComponent("Bookmarks.plist").path) ? try Browser.readSafari(folder) : try Browser.readChromium(folder)
+  print(data.bookmarks.count, data.history.count, data.history.first?["At"] as? String ?? "")
+  exit(0)
+ } catch { print(error); exit(1) }
 }
 
 let app = NSApplication.shared

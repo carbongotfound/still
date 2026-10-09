@@ -19,6 +19,14 @@ jobs:
         with:
           persist-credentials: false
       - run: sh mac/build.sh
+      - name: Import test
+        run: |
+          mkdir -p /tmp/profile
+          echo '{"roots":{"bookmark_bar":{"type":"folder","children":[{"type":"url","name":"Example","url":"https://example.com/"},{"type":"folder","children":[{"type":"url","name":"Wiki","url":"https://wikipedia.org/"}]}]}}}' > /tmp/profile/Bookmarks
+          sqlite3 /tmp/profile/History "CREATE TABLE urls(id INTEGER PRIMARY KEY, url TEXT, title TEXT, last_visit_time INTEGER, hidden INTEGER DEFAULT 0); INSERT INTO urls(url, title, last_visit_time) VALUES ('https://example.com/', 'Example', 13400000000000000);"
+          out=$(mac/build/Still.app/Contents/MacOS/Still --read-profile /tmp/profile)
+          echo "$out"
+          test "$out" = "2 1 2025-08-18T14:13:20Z"
       - name: Smoke test
         run: |
           mkdir -p ~/Library/Application\ Support/Still
