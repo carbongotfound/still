@@ -176,6 +176,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
+     case "aiToggle" or "aiProvider" or "aiKey" or "aiModel" or "aiSend" or "aiStop" or "aiClear":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();

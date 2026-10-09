@@ -3,6 +3,7 @@ import type { ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { AiSidebar, type AiState } from "./AiSidebar"
 import { UploadCard, type Upload } from "./UploadCard"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
@@ -28,7 +29,7 @@ import type { ToolData } from "./BrowserTools"
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
-type State = { welcome?:boolean; noExtensions?:boolean; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -128,6 +129,7 @@ export default function App() {
  const [filter, setFilter] = useState("")
  const [menu, setMenu] = useState(false)
  const [extMenu, setExtMenu] = useState(false)
+ const [ai, setAi] = useState<AiState>()
  const extButton = useRef<HTMLButtonElement>(null)
  const [context, setContext] = useState(false)
  const [snapshot, setSnapshot] = useState("")
@@ -216,6 +218,8 @@ export default function App() {
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
+ const [shownLogin, setShownLogin] = useState<State["loginOffer"]>()
+ useEffect(() => { if (state.loginOffer) setShownLogin(state.loginOffer) }, [state.loginOffer])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu
  const findOpen = pane === "find"
 
@@ -229,6 +233,7 @@ export default function App() {
   const listener = (e: MessageEvent) => {
    const data = e.data
    if (data.kind === "state") setState(data)
+   if (data.kind === "ai") setAi(data.data)
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage("appearance") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
@@ -335,6 +340,7 @@ export default function App() {
       {state.update.busy && state.update.ready ? "Restarting…" : state.update.busy || state.update.downloading ? `Updating Still… ${state.update.progress ?? 0}%` : state.update.ready ? "Restart to update" : "Update"}
      </Button>}
      <IconButton label="Downloads" onClick={() => open("downloads")}><span className="dl-icon"><Download />{activeDownloads.length > 0 && <i className="dl-mini"><b style={{ width: Math.max(8, dlProgress * 100) + "%" }} /></i>}</span></IconButton>
+     {!state.noAi && <IconButton label="AI sidebar" onClick={() => send("aiToggle")}><Bot /></IconButton>}
      <IconButton label="Passwords" onClick={()=>open("passwords")}><KeyRound />{state.loginOffer&&<i className="login-dot" aria-label="Login ready to save"/>}</IconButton>
      {!state.noExtensions && <DropdownMenu open={extMenu} onOpenChange={o => { setExtMenu(o); if (o) send("extensionMenu") }}><DropdownMenuTrigger asChild><Button ref={extButton} variant="ghost" size="icon-sm" aria-label="Extensions" className="chrome-button expanding-button"><span className="chrome-icon"><Puzzle /></span><span className="chrome-label" aria-hidden="true"><span>Extensions</span></span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={10} className="w-60">
@@ -418,6 +424,11 @@ export default function App() {
       <Button variant="ghost" size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: false })}>Block</Button>
       <Button size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: true })}>Allow</Button>
      </div></div>
+     <div className={cn("permission-wrap", state.loginOffer && "is-open")}><div className="permission-bar" role="alertdialog" aria-label="Save password" aria-hidden={!state.loginOffer}>
+      <KeyRound /><span>{shownLogin?.update ? "Update" : "Save"} password for <b>{shownLogin?.username || "this login"}</b> on {shownLogin?.origin.replace(/^https?:\/\//, "")}?</span>
+      <Button variant="ghost" size="sm" disabled={!state.loginOffer} onClick={() => send("loginDismiss")}>Not now</Button>
+      <Button size="sm" disabled={!state.loginOffer} onClick={() => state.loginOffer && send("loginAccept", { id: state.loginOffer.id, username: state.loginOffer.username })}>{shownLogin?.update ? "Update" : "Save"}</Button>
+     </div></div>
      <div className="page-slot" ref={pageRef}>
       {active?.url ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : <motion.div key={active?.id} className="new-tab-page" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <div className="still-mark" aria-hidden><i /><i /></div>
@@ -430,6 +441,7 @@ export default function App() {
      </div>
      {active?.loading && <div className="loading-line" aria-label="Loading page"><i /></div>}
     </main>
+    {ai?.open && <AiSidebar ai={ai} send={send} />}
    </div>
   </div>
 
@@ -528,7 +540,7 @@ Output is JSON. The first call waits for me to approve you in Still (up to 2 min
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id} onDoubleClick={e => { if (d.status === "Completed" && !(e.target as HTMLElement).closest("button")) send("openDownload", { id: d.id }) }}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.30"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>A calm, fast browser for Windows. Black by default, quiet by design, and built to stay out of your way.</p><ul className="about-points"><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Built-in tracker blocking, private tabs and separate profiles.</li><li>Imports everything from Opera GX, Chrome, Edge and Brave, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.31"} · Powered by Microsoft Edge WebView2 · Design inspired by Search by Office Commun</p><Button variant="outline" onClick={() => action("new", { url: "https://officecommun.com/search" })}>See the inspiration<ExternalLink /></Button></div>}
    </DialogContent>
   </Dialog>
 
