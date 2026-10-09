@@ -13,6 +13,8 @@ public sealed class BrowserTab
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
  [JsonIgnore] public WebView2? View { get; set; }
+ // Held so the page's file-picker events keep arriving; an unreferenced receiver gets collected.
+ [JsonIgnore] public object? FileChooserEvents { get; set; }
  [JsonIgnore] public Task? LoadingTask { get; set; }
  [JsonIgnore] public bool Loading { get; set; }
  [JsonIgnore] public bool Closed { get; set; }

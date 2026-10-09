@@ -71,10 +71,12 @@ public partial class App : Application
   new System.Threading.Thread(() => {
    while (true) {
     System.Threading.Thread.Sleep(2000);
+    if (ui.HasShutdownStarted) return; // quitting stops the UI thread on purpose; that isn't a freeze
     var ping = ui.BeginInvoke(System.Windows.Threading.DispatcherPriority.Send, () => { });
     if (ping.Wait(TimeSpan.FromSeconds(5)) == System.Windows.Threading.DispatcherOperationStatus.Completed) continue;
     string during = Breadcrumb; var started = DateTime.Now.AddSeconds(-5);
     ping.Wait();
+    if (ui.HasShutdownStarted) return;
     Log(new TimeoutException($"Still froze for {(DateTime.Now - started).TotalSeconds:0.0}s while handling: {during}"));
    }
   }) { IsBackground = true, Name = "Freeze watchdog" }.Start();
