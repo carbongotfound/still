@@ -18,6 +18,7 @@ public sealed class BrowserTab
  [JsonIgnore] public Task? LoadingTask { get; set; }
  [JsonIgnore] public bool Loading { get; set; }
  [JsonIgnore] public bool Closed { get; set; }
+ [JsonIgnore] public bool Edited { get; set; } // has typed text: memory saver never unloads it, so nothing is lost
  [JsonIgnore] public bool Media { get; set; } // played sound: memory saver leaves it alone so video/music never breaks
  [JsonIgnore] public bool Reader { get; set; }
  [JsonIgnore] public int Blocked { get; set; }

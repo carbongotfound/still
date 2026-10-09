@@ -39,7 +39,7 @@ function ExternalImport({data,send}:{data:ToolData;send:Send}){
   {external?.error&&<p role="alert" className="import-error">{external.error}</p>}
   {preview&&<ExternalReview key={preview.id} preview={preview} busy={!!external?.busy} send={send}/>}
   {external?.done&&!preview&&<div className="extension-review" role="status"><strong><Check/> {external.done}</strong><p>Reload open websites to use imported sign-ins. The source browser was not changed.</p></div>}
-  <p className="tool-caption">Passwords are decrypted with your Windows account and immediately re-encrypted in Still's vault. Nothing leaves this PC. Extensions and browser settings are not transferred.</p>
+  <p className="tool-caption">Passwords are decrypted with your account on this computer and immediately re-encrypted in Still's vault. Nothing leaves this computer. Extensions and browser settings are not transferred.</p>
  </section>
 }
 function ExternalReview({preview,busy,send}:{preview:NonNullable<NonNullable<ToolData["external"]>["preview"]>;busy:boolean;send:Send}){

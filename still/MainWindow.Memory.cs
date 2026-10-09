@@ -46,14 +46,21 @@ public partial class MainWindow
     if (!peer) peers.delete(ref);
     else if (!['closed','failed','disconnected'].includes(peer.connectionState)) return true;
    }
-   // Cross-origin frames cannot be inspected safely. Leave these tabs running at the low target.
+   // Cross-origin frames cannot be inspected safely: such tabs keep running at the low target ("frames")
+   // and are only unloaded once they've been in the background a while.
+   let unknown = false;
    for (const frame of document.querySelectorAll('iframe')) {
-    try { if (!frame.contentWindow || frame.contentWindow.__stillMemoryBusy?.()) return true;
-     if (!frame.contentDocument) return true;
-    } catch { return true; }
+    try {
+     const inner = frame.contentWindow?.__stillMemoryBusy?.();
+     if (inner === true) return true;
+     if (!frame.contentWindow || !frame.contentDocument || inner === 'frames') unknown = true;
+    } catch { unknown = true; }
    }
-   return false;
+   return unknown ? 'frames' : false;
   };
+  // Typed text that a reload would lose (a draft, a half-filled form).
+  window.__stillEdited = () => [...document.querySelectorAll('textarea,input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])')].some(e => e.value && e.value !== e.defaultValue)
+   || [...document.querySelectorAll('[contenteditable=""],[contenteditable=true]')].some(e => e.textContent.trim());
  })();
  """;
 
@@ -83,16 +90,26 @@ public partial class MainWindow
  {
   if (!Prefs.MemorySaver || closing || memoryPassRunning) return;
   memoryPassRunning = true;
-  bool newlySuspended = false;
+  bool newlySuspended = false, discarded = false;
   try
   {
    foreach (var tab in tabs.ToArray())
    {
+    // A tab asleep for a while is unloaded completely, like Chrome's Memory Saver: its pages give back all
+    // their memory and it reloads when selected. Pinned tabs and tabs with typed text only sleep.
+    if (CanSuspend(tab) && !tab.Pinned && !tab.Edited && tab.View?.CoreWebView2?.IsSuspended == true && DateTime.UtcNow - tab.LastActive >= DiscardAfter)
+    { DisposeView(tab); discarded = true; continue; }
     if (!CanSuspend(tab) || tab.View?.CoreWebView2 is not { } core || core.IsSuspended) continue;
     try
     {
      // A hung page must not delay memory management for the other tabs.
-     if (await core.ExecuteScriptAsync("window.__stillMemoryBusy ? window.__stillMemoryBusy() : true").WaitAsync(TimeSpan.FromSeconds(2)) != "false") continue;
+     string activity = await core.ExecuteScriptAsync("(() => { const busy = window.__stillMemoryBusy ? window.__stillMemoryBusy() : true; if (busy === true) return 'busy'; const edited = !!window.__stillEdited?.(); return busy === 'frames' ? (edited ? 'busy' : 'frames') : edited ? 'edited' : 'idle' })()").WaitAsync(TimeSpan.FromSeconds(2));
+     if (activity == "\"busy\"") continue;
+     if (activity == "\"frames\"") {
+      if (CanSuspend(tab) && !tab.Pinned && tab.View?.CoreWebView2 == core && DateTime.UtcNow - tab.LastActive >= DiscardAfter) { DisposeView(tab); discarded = true; }
+      continue;
+     }
+     tab.Edited = activity == "\"edited\"";
      // Selecting/closing the tab, starting media or toggling memory saver can happen while awaiting.
      if (!CanSuspend(tab) || tab.View?.CoreWebView2 != core || core.IsDocumentPlayingAudio) continue;
      if (await core.TrySuspendAsync())
@@ -106,6 +123,8 @@ public partial class MainWindow
     catch (Exception ex) when (ex is InvalidOperationException or COMException or TimeoutException) { }
    }
    if (newlySuspended) await ReleaseSleepingWorkingSets();
+   if (discarded) ShellPublish();
+   await TrimWhileInBackground();
   }
   finally { memoryPassRunning = false; }
  }
@@ -137,6 +156,24 @@ public partial class MainWindow
   catch (Exception ex) when (ex is InvalidOperationException or COMException) { }
   // Windows can reuse these sleeping pages. Their private allocations and page state stay intact;
   // waking may incur page faults. This is a one-time trim on suspension, never a polling RAM cap.
+ }
+
+ static readonly TimeSpan DiscardAfter = TimeSpan.FromMinutes(App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_DISCARD_MINUTES") is { } qa ? double.Parse(qa) : 5);
+ static bool trimmedInBackground;
+ // While Still is in the background, hand its idle memory back to Windows once: Still itself, the engine's main,
+ // GPU and helper processes. It pages back in when you return. Renderers are handled per tab above.
+ async Task TrimWhileInBackground()
+ {
+  if (Windows.Any(w => w.IsActive)) { trimmedInBackground = false; return; }
+  if (trimmedInBackground) return;
+  trimmedInBackground = true;
+  try {
+   var processes = await (await App.BrowserEnvironment).GetProcessExtendedInfosAsync();
+   foreach (var id in processes.Where(p => p.ProcessInfo.Kind != CoreWebView2ProcessKind.Renderer).Select(p => p.ProcessInfo.ProcessId).Append(Environment.ProcessId)) {
+    using var handle = OpenProcess(0x0100 | 0x1000, false, id);
+    if (!handle.IsInvalid) _ = EmptyWorkingSet(handle);
+   }
+  } catch (Exception ex) when (ex is InvalidOperationException or COMException) { }
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
