@@ -6,6 +6,7 @@ public partial class App : Application
 {
  public static string DataRoot { get; private set; } = "";
  public static bool IsQa { get; private set; }
+ public static bool IsTemp { get; private set; } // a throwaway profile an MCP agent opened: no cookies, logins or history
  public static string ProfileHome { get; private set; }="";
  private static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment>? browserEnvironment;
  public static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> BrowserEnvironment => browserEnvironment ??= Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null,Path.Combine(DataRoot,"WebView"),new(){AreBrowserExtensionsEnabled=true,EnableTrackingPrevention=true,
@@ -17,6 +18,7 @@ public partial class App : Application
  private Mutex? instance;
  private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
+ static string? ArgAfter(string[] args, string flag) { int i = Array.IndexOf(args, flag); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
  internal static void ConfigureProfile(string[] args)
  {
   var profile = Array.IndexOf(args, "--profile");
@@ -32,11 +34,12 @@ public partial class App : Application
 #if STILL_QA
   IsQa = e.Args.Contains("--qa");
 #endif
+  IsTemp = e.Args.Contains("--temp");
   try { ConfigureProfile(e.Args); } catch(Exception ex) { MessageBox.Show(ex.Message,"Still");Shutdown();return; }
   var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
   // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
   if (e.Args.FirstOrDefault() == "--cli") { var cliArgs = e.Args.Skip(1).ToArray(); new Thread(() => { int code = 1; try { code = McpServer.Cli(InstanceName(DataRoot), cliArgs); } finally { Dispatcher.Invoke(() => Shutdown(code)); } }) { IsBackground = true }.Start(); return; }
-  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.Run(InstanceName(DataRoot)); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
+  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.Run(InstanceName(DataRoot), ArgAfter(e.Args, "--as"), e.Args.Contains("--this-profile")); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) {
    // Already running: hand the link (or a plain "bring to front") to the open window.
@@ -84,5 +87,12 @@ public partial class App : Application
   }) { IsBackground = true, Name = "Freeze watchdog" }.Start();
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
- protected override void OnExit(ExitEventArgs e) { linkListener?.Dispose(); launcherListener?.Dispose(); instance?.Dispose(); base.OnExit(e); }
+ protected override void OnExit(ExitEventArgs e)
+ {
+  linkListener?.Dispose(); launcherListener?.Dispose(); instance?.Dispose();
+  // A temporary profile is deleted once its browser processes have let go of the files (the next temp window sweeps leftovers).
+  if (IsTemp && DataRoot.StartsWith(Path.Combine(Path.GetTempPath(), "Still-temp"), StringComparison.OrdinalIgnoreCase))
+   System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(Path.Combine(Environment.SystemDirectory, "cmd.exe"), $"/d /c for /l %i in (1,1,15) do @if exist \"{DataRoot}\" (ping -n 3 127.0.0.1 >nul & rmdir /s /q \"{DataRoot}\" 2>nul)") { CreateNoWindow = true, UseShellExecute = false });
+  base.OnExit(e);
+ }
 }
