@@ -57,6 +57,7 @@ public sealed class Preferences
  public double SidebarWidth { get; set; } = 248;
  public string Tracking { get; set; } = "Balanced";
  public bool MemorySaver { get; set; } = true;
+ public List<string> PinnedExtensions { get; set; } = []; // extension ids shown in the toolbar
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
  public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen

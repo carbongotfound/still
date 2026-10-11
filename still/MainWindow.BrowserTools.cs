@@ -60,7 +60,7 @@ public partial class MainWindow
      // The runtime also returns internal PDF/clipboard extensions. Only expose
      // user-installed extensions here, not engine components.
      if(File.Exists(Path.Combine(App.DataRoot,"Extensions",extension.Id+".path")))extensionInventory[extension.Id]=extension;
-    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null,hasPopup=GetExtensionPage(e.Id,true)!=null}),candidate=extensionCandidate,downloading=extensionDownload};
+    data=new{extensions=extensionInventory.Values.Select(e=>new{id=e.Id,name=e.Name,enabled=e.IsEnabled,hasPage=GetExtensionPage(e.Id)!=null,hasPopup=GetExtensionPage(e.Id,true)!=null,icon=ExtensionIcon(e.Id)}),candidate=extensionCandidate,downloading=extensionDownload};
    }
    if(name=="security"){
     var core=active?.View?.CoreWebView2??await ManagementCore();var permissions=await core.Profile.GetNonDefaultPermissionSettingsAsync();
@@ -126,7 +126,11 @@ public partial class MainWindow
    case "extensionCancel":extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");break;
    case "extensionInstall":if(!extensionInstalling){extensionInstalling=true;try{await InstallExtension();}catch(IOException ex){Toast(ex.Message);}finally{extensionInstalling=false;}}break;
    case "extensionToggle":if(extensionInventory.TryGetValue(S("id"),out var toggle)){await toggle.EnableAsync(!toggle.IsEnabled);await PublishBrowserTools("extensions");}break;
-   case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){await remove.RemoveAsync();extensionPages.Remove(remove.Id+":page");extensionPages.Remove(remove.Id+":popup");await PublishBrowserTools("extensions");}break;
+   case "extensionAction":await ExtensionAction(S("id"),data.TryGetProperty("anchor",out var at)&&at.ValueKind==JsonValueKind.Array?at.EnumerateArray().Select(v=>v.GetDouble()).ToArray():null);break;
+   case "extensionPin":{string pin=S("id");if(!Prefs.PinnedExtensions.Remove(pin)&&ExtensionFolder(pin)!=null)Prefs.PinnedExtensions.Add(pin);SaveLater();break;}
+   case "sidePanelClose":CloseSidePanel();break;
+   case "sidePanelBounds":{double ratio=data.TryGetProperty("viewportWidth",out var vw)&&vw.GetDouble()>0&&shellView!=null?shellView.ActualWidth/vw.GetDouble():1;PlaceSidePanel(data.GetProperty("x").GetDouble()*ratio,data.GetProperty("y").GetDouble()*ratio,data.GetProperty("width").GetDouble()*ratio,data.GetProperty("height").GetDouble()*ratio);break;}
+   case "extensionRemove":if(extensionInventory.TryGetValue(S("id"),out var remove)){if(sidePanelExtension==remove.Id)CloseSidePanel();Prefs.PinnedExtensions.Remove(remove.Id);ExtensionIcons.Remove(remove.Id);SaveLater();await remove.RemoveAsync();extensionPages.Remove(remove.Id+":page");extensionPages.Remove(remove.Id+":popup");await PublishBrowserTools("extensions");}break;
    case "extensionPage":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id")) is{} entryPage)await NewTab(entryPage,false,false);break;
    case "extensionPopup":if(extensionInventory.ContainsKey(S("id"))&&GetExtensionPage(S("id"),true) is{} popupPage)await ShowExtensionPopup(popupPage,data.TryGetProperty("anchor",out var anchor)&&anchor.ValueKind==JsonValueKind.Array?anchor.EnumerateArray().Select(v=>v.GetDouble()).ToArray():null);break;
    case "extensionMenu":await PublishBrowserTools("extensions");break;
@@ -196,7 +200,8 @@ public partial class MainWindow
   if(expectedManifest==null||Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(destination,"manifest.json"))))!=expectedManifest)throw new IOException("The extension permissions changed. Choose the folder again to review them.");
   if(expectedContent==null||await Task.Run(()=>ExtensionTreeHash(destination))!=expectedContent)throw new IOException("The extension files changed after review. Review the extension again.");
   var core=await ManagementCore();
-  var installed=await core.Profile.AddBrowserExtensionAsync(destination);
+  try{PatchExtension(destination);}catch(Exception ex)when(ex is IOException or System.Text.Json.JsonException or InvalidDataException){App.Log(ex);}
+  var installed=await core.Profile.AddBrowserExtensionAsync(destination);ExtensionIcons.Remove(installed.Id);
   extensionPages.Remove(installed.Id+":page");extensionPages.Remove(installed.Id+":popup");
   File.WriteAllText(Path.Combine(destination,"..",installed.Id+".path"),destination);
   extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");Toast("Extension added. Reload open pages to use it.");
