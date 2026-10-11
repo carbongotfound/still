@@ -187,7 +187,7 @@ public partial class MainWindow
  }
  void ShellSend(object message)
  {
-  if(shellReady&&!closing&&shellView?.CoreWebView2 is {} core)try{core.PostWebMessageAsJson(JsonSerializer.Serialize(message));}catch(Exception ex){App.Log(ex);}
+  if(!shellReady||closing)return;try{shellView?.CoreWebView2?.PostWebMessageAsJson(JsonSerializer.Serialize(message));}catch(InvalidOperationException){}catch(Exception ex){App.Log(ex);} // a crashed engine throws; Still restarts
  }
  void ShellPublish()
  {

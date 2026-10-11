@@ -12,9 +12,9 @@ public partial class App : Application
  public static Task<Microsoft.Web.WebView2.Core.CoreWebView2Environment> BrowserEnvironment => browserEnvironment ??= Microsoft.Web.WebView2.Core.CoreWebView2Environment.CreateAsync(null,Path.Combine(DataRoot,"WebView"),new(){AreBrowserExtensionsEnabled=true,EnableTrackingPrevention=true,
   // Play audio from the engine's main process (a direct child of Still.exe) instead of a separate audio-service
   // process one level deeper, so per-app audio tools (Discord screen share, SteelSeries Sonar, OBS) can find it.
-  // GPU and network run inside the engine's main process: two fewer processes and about 190 MB less private memory
-  // with six tabs. Pages keep their own sandboxed processes (site isolation), so one crashing site stays contained.
-  AdditionalBrowserArguments="--in-process-gpu --enable-features=NetworkServiceInProcess2 --disable-features=AudioServiceOutOfProcess"+(IsQa?" --mute-audio "+Environment.GetEnvironmentVariable("STILL_QA_BROWSER_ARGS"):"")});
+  // GPU and network keep their own processes. Merged into the main one they saved ~190 MB, but then a GPU crash
+  // (an extension capturing the page, a driver hiccup) took down the whole engine and every window with it.
+  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess"+(IsQa?" --mute-audio "+Environment.GetEnvironmentVariable("STILL_QA_BROWSER_ARGS"):"")});
  private Mutex? instance;
  private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
@@ -34,7 +34,7 @@ public partial class App : Application
 #if STILL_QA
   IsQa = e.Args.Contains("--qa");
 #endif
-  IsTemp = e.Args.Contains("--temp");
+  IsTemp = e.Args.Contains("--temp"); launchArgs = e.Args;
   try { ConfigureProfile(e.Args); } catch(Exception ex) { MessageBox.Show(ex.Message,"Still");Shutdown();return; }
   var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
   // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
@@ -55,7 +55,9 @@ public partial class App : Application
   });
   linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
   if (!e.Args.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
-  _ = BrowserEnvironment; // start the engine while the window is still being built
+  _ = BrowserEnvironment.ContinueWith(t => t.Result.BrowserProcessExited += (_, ev) => {
+   if (ev.BrowserProcessExitKind == Microsoft.Web.WebView2.Core.CoreWebView2BrowserProcessExitKind.Failed) Dispatcher.BeginInvoke(RestartAfterEngineCrash);
+  }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.FromCurrentSynchronizationContext()); // start the engine while the window is still being built
   _ = AppContent.ShellFolder;
   StartupMetrics.Mark("environment-requested");
   try{var stale=Path.Combine(DataRoot,"ImportSnapshot");if(Directory.Exists(stale))Directory.Delete(stale,true);}catch(IOException){}catch(UnauthorizedAccessException){}
@@ -87,6 +89,29 @@ public partial class App : Application
   }) { IsBackground = true, Name = "Freeze watchdog" }.Start();
  }
  public static void Log(Exception ex) { try { File.AppendAllText(Path.Combine(DataRoot, "errors.log"), DateTime.Now.ToString("s") + " " + ex + Environment.NewLine); } catch { } }
+ static string[] launchArgs = [];
+ bool restarting;
+ // The engine's main process died: every page and Still's own UI died with it, and each click would only show an
+ // error. Save the tabs and start Still again. If it already crashed right after such a restart, stop instead.
+ void RestartAfterEngineCrash()
+ {
+  if (restarting || Dispatcher.HasShutdownStarted) return;
+  restarting = true;
+  Log(new Exception("The browser engine crashed; restarting Still."));
+  try { (Still.MainWindow.Windows.FirstOrDefault() ?? MainWindow as Still.MainWindow)?.Save(); } catch (Exception ex) { Log(ex); }
+  if (launchArgs.Contains("--recovered") && DateTime.Now - System.Diagnostics.Process.GetCurrentProcess().StartTime < TimeSpan.FromSeconds(90)) {
+   MessageBox.Show("Still's browser engine keeps crashing, so Still closed. Your tabs are saved; open Still again to continue.", "Still");
+   Environment.Exit(1);
+  }
+  linkListener?.Dispose(); launcherListener?.Dispose();
+  try { instance?.ReleaseMutex(); } catch (ApplicationException) { }
+  instance?.Dispose();
+  var start = new System.Diagnostics.ProcessStartInfo(Environment.ProcessPath!) { UseShellExecute = false };
+  foreach (var arg in launchArgs.Where(a => a != "--recovered" && !a.Contains("://"))) start.ArgumentList.Add(arg);
+  start.ArgumentList.Add("--recovered");
+  System.Diagnostics.Process.Start(start);
+  Environment.Exit(0);
+ }
  protected override void OnExit(ExitEventArgs e)
  {
   linkListener?.Dispose(); launcherListener?.Dispose(); instance?.Dispose();

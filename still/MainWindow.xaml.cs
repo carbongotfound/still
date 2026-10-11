@@ -117,7 +117,7 @@ public partial class MainWindow : Window
  }
  void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) { if (Prefs.Theme == "System") Dispatcher.BeginInvoke(ApplyTheme); }
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
- void Save()
+ internal void Save()
  {
   state.Tabs = SavedTabs().ToList();
   var main = Windows.FirstOrDefault(w => !w.closing) ?? this;
