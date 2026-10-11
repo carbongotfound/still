@@ -34,6 +34,7 @@ public partial class MainWindow
  }
  void RestorePageWindow()
  {
+  if(!closing&&!overlay&&sidePanelView is{} panel&&panel.Handle!=IntPtr.Zero){panel.UpdateWindowPos();SetWindowPos(panel.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);} // above the chrome too
   if(closing||overlay||active?.View is not{} view||!view.IsVisible)return;
   // HwndHost windows have native z-order, independent of WPF's visual tree.
   // Keep the live page above the full-window chrome so it receives pointer input.
@@ -197,7 +198,7 @@ public partial class MainWindow
    shellQueued=false;
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
-    kind="state",activeId=active?.Id,dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
+    kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
     preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
@@ -236,9 +237,9 @@ public partial class MainWindow
      if(snapshotCore==core){var bytes=await snapshotCapture.WaitAsync(TimeSpan.FromMilliseconds(180));if(version==overlayVersion)ShellSend(new{kind="snapshot",data="data:image/jpeg;base64,"+Convert.ToBase64String(bytes)});}
     }catch(Exception){}
    }
-   if(version==overlayVersion)WebHost.Visibility=Visibility.Hidden;
+   if(version==overlayVersion){WebHost.Visibility=Visibility.Hidden;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Hidden;}
   }else{
-   WebHost.Visibility=Visibility.Visible;
+   WebHost.Visibility=Visibility.Visible;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Visible;
    foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==active?Visibility.Visible:Visibility.Hidden;
    ShellSend(new{kind="snapshot",data=""});
    if(snapshotCapture?.IsCompleted==true){snapshotCapture=null;snapshotCore=null;}

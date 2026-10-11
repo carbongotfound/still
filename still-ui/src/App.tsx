@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
 import { UploadCard, type Upload } from "./UploadCard"
@@ -29,7 +29,25 @@ import type { ToolData } from "./BrowserTools"
 type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type ExtensionRef = { id:string; name:string; icon?:string|null }
+function ExtensionIcon({ icon }: { icon?: string | null }) { return icon ? <img className="ext-icon" src={icon} alt="" /> : <Puzzle /> }
+// An extension's side panel (chrome.sidePanel). The page itself is a separate web view that Still lays over the slot.
+function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
+ const slot = useRef<HTMLDivElement>(null)
+ useLayoutEffect(() => {
+  const element = slot.current
+  if (!element) return
+  const sync = () => { const r = element.getBoundingClientRect(); send("sidePanelBounds", { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: innerWidth }) }
+  const observer = new ResizeObserver(sync); observer.observe(element); addEventListener("resize", sync); sync()
+  return () => { observer.disconnect(); removeEventListener("resize", sync) }
+ }, [panel.id])
+ return <aside className="ext-panel" aria-label={panel.name + " side panel"}>
+  <header className="ai-head"><span className="ext-panel-icon"><ExtensionIcon icon={panel.icon} /></span><strong className="ai-title">{panel.name}</strong>
+   <Button variant="ghost" size="icon-sm" aria-label="Close side panel" onClick={() => send("sidePanelClose")}><X /></Button></header>
+  <div className="ext-panel-slot" ref={slot} />
+ </aside>
+}
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -52,7 +70,7 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
  function Hint({ label, children }: { label: string; children: ReactNode }) {
   return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent side="bottom" sideOffset={8} collisionPadding={6}>{label}</TooltipContent></Tooltip>
  }
- function IconButton({ label, caption = label, children, onClick, disabled = false }: { label: string; caption?:string; children: ReactNode; onClick: () => void; disabled?: boolean }) {
+ function IconButton({ label, caption = label, children, onClick, disabled = false }: { label: string; caption?:string; children: ReactNode; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; disabled?: boolean }) {
   return <AnimatedButton variant="ghost" size="icon-sm" className="chrome-button expanding-button" aria-label={label} disabled={disabled} onClick={onClick} whileTap={{ scale: .97 }} transition={FLOW}><span className="chrome-icon">{children}</span><span className="chrome-label" aria-hidden="true"><span>{caption}</span></span></AnimatedButton>
  }
  function TabView({ tab, top = false }: { tab: Tab; top?: boolean }) {
@@ -334,7 +352,6 @@ export default function App() {
      <IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label="Site controls" caption="Site" onClick={() => open("site")}><Shield /></IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton>
-     {/^https:\/\/(chromewebstore\.google\.com|chrome\.google\.com\/webstore)\/detail\/(?:[^/?#]+\/)?[a-p]{32}(?:[/?#]|$)/.test(active?.url ?? "") && <Button size="sm" className="update-pill" onClick={() => send("storeExtension")} title="Download this extension from the Chrome Web Store and review its permissions before adding it."><Puzzle />Add to Still</Button>}
      {state.update && <Button size="sm" className={cn("update-pill", state.update.busy && "is-busy")} disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")} title={state.update.downloading ? `Downloading Still ${state.update.version} in the background. It installs when you close Still, or click to install as soon as it’s ready.` : state.update.ready ? `Still ${state.update.version} is ready. Click to install now and reopen with your tabs, or it installs when you close Still.` : `Update Still to ${state.update.version}. It installs automatically and reopens with your tabs.`}>
       {state.update.busy || state.update.downloading ? <Loader2 className="spin" /> : <Download />}
       {state.update.busy && state.update.ready ? "Restarting…" : state.update.busy || state.update.downloading ? `Updating Still… ${state.update.progress ?? 0}%` : state.update.ready ? "Restart to update" : "Update"}
@@ -342,14 +359,15 @@ export default function App() {
      <IconButton label="Downloads" onClick={() => open("downloads")}><span className="dl-icon"><Download />{activeDownloads.length > 0 && <i className="dl-mini"><b style={{ width: Math.max(8, dlProgress * 100) + "%" }} /></i>}</span></IconButton>
      {!state.noAi && <IconButton label="AI sidebar" onClick={() => send("aiToggle")}><Bot /></IconButton>}
      <IconButton label="Passwords" onClick={()=>open("passwords")}><KeyRound />{state.loginOffer&&<i className="login-dot" aria-label="Login ready to save"/>}</IconButton>
+     {!state.noExtensions && state.pinnedExtensions?.map(x => <IconButton key={x.id} label={x.name} caption={x.name} onClick={e => { const r = e.currentTarget.getBoundingClientRect(); send("extensionAction", { id: x.id, anchor: [r.x, r.y, r.width, r.height] }) }}><ExtensionIcon icon={x.icon} /></IconButton>)}
      {!state.noExtensions && <DropdownMenu open={extMenu} onOpenChange={o => { setExtMenu(o); if (o) send("extensionMenu") }}><DropdownMenuTrigger asChild><Button ref={extButton} variant="ghost" size="icon-sm" aria-label="Extensions" className="chrome-button expanding-button"><span className="chrome-icon"><Puzzle /></span><span className="chrome-label" aria-hidden="true"><span>Extensions</span></span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={10} className="w-60">
        {toolData.extensions?.extensions === undefined ? <DropdownMenuItem disabled><Loader2 className="animate-spin" />Loading…</DropdownMenuItem>
         : toolData.extensions.extensions.filter(e => e.enabled).length === 0 ? <DropdownMenuItem disabled>No extensions turned on</DropdownMenuItem>
-        : toolData.extensions.extensions.filter(e => e.enabled).map(e => <DropdownMenuItem key={e.id} disabled={!e.hasPopup && !e.hasPage} onSelect={() => {
+        : toolData.extensions.extensions.filter(e => e.enabled).map(e => { const pinned = !!state.pinnedExtensions?.some(p => p.id === e.id); return <DropdownMenuItem key={e.id} className="ext-menu-item" onSelect={() => {
           const r = extButton.current?.getBoundingClientRect()
-          if (e.hasPopup) send("extensionPopup", { id: e.id, anchor: r ? [r.x, r.y, r.width, r.height] : null }); else send("extensionPage", { id: e.id })
-         }}><Puzzle /><span className="truncate">{e.name}</span>{!e.hasPopup && e.hasPage && <DropdownMenuShortcut>Options</DropdownMenuShortcut>}</DropdownMenuItem>)}
+          send("extensionAction", { id: e.id, anchor: r ? [r.x, r.y, r.width, r.height] : null })
+         }}><ExtensionIcon icon={e.icon} /><span className="truncate flex-1">{e.name}</span><Button variant="ghost" size="icon-xs" className={cn("ext-pin", pinned && "is-pinned")} aria-label={(pinned ? "Unpin " : "Pin ") + e.name} title={pinned ? "Unpin from toolbar" : "Pin to toolbar"} onClick={ev => { ev.preventDefault(); ev.stopPropagation(); send("extensionPin", { id: e.id }) }}>{pinned ? <PinOff /> : <Pin />}</Button></DropdownMenuItem> })}
        <DropdownMenuSeparator />
        <DropdownMenuItem onSelect={() => open("extensions")}><Settings2 />Manage extensions</DropdownMenuItem>
       </DropdownMenuContent></DropdownMenu>}
@@ -442,6 +460,7 @@ export default function App() {
      {active?.loading && <div className="loading-line" aria-label="Loading page"><i /></div>}
     </main>
     {ai?.open && <AiSidebar ai={ai} send={send} />}
+    {state.sidePanel && <ExtensionPanel panel={state.sidePanel} />}
    </div>
   </div>
 

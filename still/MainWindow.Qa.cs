@@ -25,7 +25,7 @@ public partial class MainWindow
        using var doc = JsonDocument.Parse(line);
        string op = doc.RootElement.GetProperty("op").GetString() ?? "";
        if (op == "state") return JsonSerializer.Serialize(new {
-        activeId = active?.Id, panel, dark, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, layout = Prefs.Layout, shellErrors,
+        activeId = active?.Id, panel, dark, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, layout = Prefs.Layout, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
         windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),

@@ -409,3 +409,11 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .md th, .md td { padding:6px 8px; text-align:left; vertical-align:top; border-bottom:1px solid var(--border); }
 .md th { font-weight:600; background:var(--muted); }
 .md tr:last-child td { border-bottom:0; }
+/* Extensions: toolbar pins, menu pin toggles and the docked side panel (chrome.sidePanel) */
+.ext-icon { width:16px; height:16px; object-fit:contain; }
+.ext-menu-item .ext-pin { margin-left:auto; opacity:0; }
+.ext-menu-item:hover .ext-pin, .ext-menu-item[data-highlighted] .ext-pin, .ext-pin.is-pinned { opacity:1; }
+.ext-panel { width:380px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); background:var(--background); font-size:13px; }
+.ext-panel-icon { display:flex; margin-right:8px; color:var(--muted-foreground); }
+.ext-panel-icon svg { width:16px; height:16px; }
+.ext-panel-slot { flex:1; min-height:0; }
