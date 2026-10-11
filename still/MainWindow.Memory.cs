@@ -66,6 +66,10 @@ public partial class MainWindow
 
  void ApplyMemoryPolicy()
  {
+  try { ApplyMemoryPolicyCore(); } catch (InvalidOperationException) { } // a crashed engine; Still restarts
+ }
+ void ApplyMemoryPolicyCore()
+ {
   if (closing) return;
   foreach (var tab in tabs)
   {
@@ -153,15 +157,15 @@ public partial class MainWindow
     if (!handle.IsInvalid) _ = EmptyWorkingSet(handle);
    }
   }
-  catch (Exception ex) when (ex is InvalidOperationException or COMException) { }
+  catch (Exception ex) when (ex is InvalidOperationException or COMException or System.IO.IOException) { }
   // Windows can reuse these sleeping pages. Their private allocations and page state stay intact;
   // waking may incur page faults. This is a one-time trim on suspension, never a polling RAM cap.
  }
 
  static readonly TimeSpan DiscardAfter = TimeSpan.FromMinutes(App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_DISCARD_MINUTES") is { } qa ? double.Parse(qa) : 5);
  static bool trimmedInBackground;
- // While Still is in the background, hand its idle memory back to Windows once: Still itself, the engine's main,
- // GPU and helper processes. It pages back in when you return. Renderers are handled per tab above.
+ // While Still is in the background, hand idle memory back to Windows once: the engine's main, GPU and helper
+ // processes. Not Still.exe itself: paging its UI back in froze Still for seconds when you returned. It pages back in when you return. Renderers are handled per tab above.
  async Task TrimWhileInBackground()
  {
   if (Windows.Any(w => w.IsActive)) { trimmedInBackground = false; return; }
@@ -169,11 +173,11 @@ public partial class MainWindow
   trimmedInBackground = true;
   try {
    var processes = await (await App.BrowserEnvironment).GetProcessExtendedInfosAsync();
-   foreach (var id in processes.Where(p => p.ProcessInfo.Kind != CoreWebView2ProcessKind.Renderer).Select(p => p.ProcessInfo.ProcessId).Append(Environment.ProcessId)) {
+   foreach (var id in processes.Where(p => p.ProcessInfo.Kind != CoreWebView2ProcessKind.Renderer).Select(p => p.ProcessInfo.ProcessId)) {
     using var handle = OpenProcess(0x0100 | 0x1000, false, id);
     if (!handle.IsInvalid) _ = EmptyWorkingSet(handle);
    }
-  } catch (Exception ex) when (ex is InvalidOperationException or COMException) { }
+  } catch (Exception ex) when (ex is InvalidOperationException or COMException or System.IO.IOException) { }
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
