@@ -12,9 +12,9 @@ internal static class McpServer
 {
  internal static readonly object[] BrowserTools = [
   Tool("list_tabs", "List the open (non-private) tabs in every Still window.", new { }),
-  Tool("open_tab", "Open a new tab with a URL or search terms and wait for it to load.", new { url = Str("URL or search terms") }, "url"),
-  Tool("navigate", "Load a URL or search in a tab (the active tab if tabId is omitted).", new { url = Str("URL or search terms"), tabId = Str("Tab id from list_tabs (optional)") }, "url"),
-  Tool("switch_tab", "Bring a tab to the front.", new { tabId = Str("Tab id") }, "tabId"),
+  Tool("open_tab", "Open a new tab in the background (the user keeps their own tab) with a URL or search terms, wait for it to load, and work in it from now on.", new { url = Str("URL or search terms") }, "url"),
+  Tool("navigate", "Load a URL or search in a tab (your current tab if tabId is omitted).", new { url = Str("URL or search terms"), tabId = Str("Tab id from list_tabs (optional)") }, "url"),
+  Tool("switch_tab", "Work in another tab from now on. It stays in the background unless show is true, which brings it to the front for the user.", new { tabId = Str("Tab id"), show = new { type = "boolean", description = "Bring it to the front (only when the user asked to see it)" } }, "tabId"),
   Tool("close_tab", "Close a tab.", new { tabId = Str("Tab id") }, "tabId"),
   Tool("go_back", "Go back in a tab's history.", new { tabId = Str("Tab id (optional)") }),
   Tool("go_forward", "Go forward in a tab's history.", new { tabId = Str("Tab id (optional)") }),

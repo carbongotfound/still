@@ -26,7 +26,7 @@ import { BrowserTools } from "./BrowserTools"
 import { Welcome } from "./Welcome"
 import type { ToolData } from "./BrowserTools"
 
-type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean }
+type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; aiGroup?: boolean }
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
 type ExtensionRef = { id:string; name:string; icon?:string|null }
@@ -116,7 +116,7 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
-      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
+      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{tab.agent && <span className="tab-agent" title={tab.agent + " is using this tab"}><Bot /></span>}{tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
@@ -208,7 +208,9 @@ export default function App() {
  }, [pane, query, completion, suggestions, state.tabs, state.activeId, active?.url, state.preferences.search])
  const sidebar = state.preferences.layout === "Sidebar" && !state.focusMode && !state.fullScreen
  const pinned = state.tabs.filter(t => t.pinned)
- const ordinary = state.tabs.filter(t => !t.pinned)
+ const ordinary = state.tabs.filter(t => !t.pinned && !t.aiGroup)
+ const aiTabs = state.tabs.filter(t => !t.pinned && t.aiGroup)
+ const aiGroup = (top: boolean) => aiTabs.length > 0 && <div className={cn("ai-tab-group", top && "is-top")}><span className="ai-tab-group-label"><Bot />AI</span><FlowTabs tabs={aiTabs} top={top} /></div>
  useLayoutEffect(() => {
   const root = tabsRef.current
   const viewport = root?.matches('.top-tab-list') ? root : root?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
@@ -311,7 +313,7 @@ export default function App() {
  )
  return <UICtx.Provider value={{state,setContext,open,arriving,setGhost}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
   <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
-   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top /><Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
+   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -413,6 +415,7 @@ export default function App() {
      <ScrollArea className="tabs-scroll" ref={tabsRef}><LayoutGroup id="side">
       <div className="pinned-tabs"><FlowTabs tabs={pinned} /></div>
       <div className="tab-list"><FlowTabs tabs={ordinary} /></div>
+      {aiGroup(false)}
      </LayoutGroup>
      <Button variant="ghost" className="new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>Ctrl T</kbd></Button>
      </ScrollArea>

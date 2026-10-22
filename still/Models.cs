@@ -9,6 +9,8 @@ public sealed class BrowserTab
  public string Id { get; set; } = Guid.NewGuid().ToString("N");
  public string Title { get; set; } = "New tab";
  public string Url { get; set; } = "";
+ [JsonIgnore] public string? Agent { get; set; } // the AI working in this tab right now (bot icon)
+ [JsonIgnore] public bool AgentGroup { get; set; } // opened by an AI: shown together in the AI group
  public bool Pinned { get; set; }
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
@@ -60,6 +62,8 @@ public sealed class Preferences
  public List<string> PinnedExtensions { get; set; } = []; // extension ids shown in the toolbar
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
+ public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
+ public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;

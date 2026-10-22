@@ -48,6 +48,38 @@ public partial class MainWindow
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
 
+ sealed record AiModel(string Id, string Name, string[] Efforts);
+ static readonly string[] Efforts = ["low", "medium", "high"];
+ static readonly Dictionary<string, AiModel[]> aiModels = new() {
+  ["claude"] = [new("", "Default", ["low", "medium", "high", "xhigh", "max"]), new("fable", "Fable", ["low", "medium", "high", "xhigh", "max"]), new("opus", "Opus", ["low", "medium", "high", "xhigh", "max"]), new("sonnet", "Sonnet", ["low", "medium", "high", "xhigh", "max"]), new("haiku", "Haiku", ["low", "medium", "high", "xhigh", "max"])],
+ };
+ static readonly Dictionary<string, string> aiUsage = []; // per AI: the latest usage the CLI reported
+ static bool aiModelsLoading;
+ /// Codex and Grok list their own models; asked once per run of Still, in the background.
+ async Task LoadAiModels(AiCli cli)
+ {
+  if (aiModels.ContainsKey(cli.Id) || aiModelsLoading || cli.Id == "claude" || FindCli(cli.Command) is not { } exe) return;
+  aiModelsLoading = true;
+  try {
+   var start = Launch(exe, AiFolder, cli.Id == "codex" ? ["debug", "models"] : ["models"]); start.RedirectStandardOutput = start.RedirectStandardError = true; start.StandardOutputEncoding = new UTF8Encoding(false);
+   Directory.CreateDirectory(AiFolder);
+   using var p = Process.Start(start)!; var err = p.StandardError.ReadToEndAsync();
+   string output = await p.StandardOutput.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(20)); await err;
+   List<AiModel> list = [new("", "Default", cli.Id == "codex" ? ["low", "medium", "high", "xhigh"] : Efforts)];
+   if (cli.Id == "codex") {
+    foreach (var m in JsonNode.Parse(output)?["models"] as JsonArray ?? [])
+     if (m?["visibility"]?.GetValue<string>() == "list" && m["slug"]?.GetValue<string>() is { } slug)
+      list.Add(new(slug, m["display_name"]?.GetValue<string>() ?? slug, (m["supported_reasoning_levels"] as JsonArray ?? []).Select(l => l?["effort"]?.GetValue<string>() ?? "").Where(l => l.Length > 0).ToArray()));
+   } else foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(output, @"^\s*[*-]\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Multiline))
+    list.Add(new(m.Groups[1].Value, m.Groups[1].Value, Efforts));
+   aiModels[cli.Id] = [.. list];
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
+  finally { aiModelsLoading = false; }
+  foreach (var w in Windows) w.PublishAi();
+ }
+ static string Pct(JsonNode? window) => window?["utilization"]?.GetValue<double>() is double u ? Math.Round(u * 100) + "%" : "?";
+ static string Tokens(long n) => n >= 1000 ? Math.Round(n / 1000.0, n >= 10000 ? 0 : 1) + "k" : n.ToString();
+
  bool aiOpen, aiBusy;
  string aiError = "";
  AiChat? aiChat; // null = a new, empty chat
@@ -68,6 +100,9 @@ public partial class MainWindow
 
  void PublishAi() => ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = aiBusy, error = aiError, profile = ProfileCatalog.CurrentName(),
+  models = aiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness)?.Select(m => new { id = m.Id, name = m.Name, efforts = m.Efforts }),
+  model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
+  usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, installed = FindCli(c.Command) != null, install = c.Install, login = c.Login }),
   chatId = aiChat?.Id, chatHarness = aiChat?.Harness,
   messages = (aiChat?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
@@ -76,7 +111,17 @@ public partial class MainWindow
  async Task HandleAi(string op, JsonElement data)
  {
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+  string harness = aiChat?.Harness ?? Prefs.AiHarness;
   switch (op) {
+   case "aiModel" when harness.Length > 0 && aiModels.GetValueOrDefault(harness) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
+    Prefs.AiModels[harness] = model.Id;
+    Prefs.AiEfforts[harness] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
+    SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
+    break;
+   case "aiLogin" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c && FindCli(c.Command) is { } cliExe:
+    // Sign in in a terminal of its own: the CLI's login opens the browser and may ask questions.
+    Process.Start(new ProcessStartInfo { FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"), Arguments = "/k \"\"" + cliExe + "\" " + (c.Id == "codex" ? "login" : "") + "\"", UseShellExecute = true });
+    aiError = ""; break;
    case "aiToggle": aiOpen = !aiOpen; break;
    case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)):
     Prefs.AiHarness = h; SaveLater(); aiError = "";
@@ -92,6 +137,7 @@ public partial class MainWindow
    case "aiSend" when !aiBusy && S("text").Trim() is { Length: > 0 and <= 20000 } text: await RunAi(text); break;
   }
   PublishAi();
+  if (AiClis.FirstOrDefault(c => c.Id == harness) is { } current) _ = LoadAiModels(current);
  }
 
  static string AiInstructions(AiCli cli, string profile) => $"""
@@ -118,7 +164,7 @@ public partial class MainWindow
   return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open.";
  }
 
- async Task RunAi(string text)
+ async Task RunAi(string text, string? shown = null)
  {
   var chat = aiChat;
   if (chat == null) {
@@ -130,7 +176,7 @@ public partial class MainWindow
   if (aiChat == null) { aiChat = chat; AiChats.Insert(0, chat); }
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = "Turned on Settings → Let AI agents control Still." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
-  aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = text }); chat.Updated = DateTime.UtcNow;
+  aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown ?? text }); chat.Updated = DateTime.UtcNow;
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
 
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName()) + "\n\n") + AiContext() + "\n\n" + text;
@@ -139,6 +185,9 @@ public partial class MainWindow
   List<string> mcp = ["--mcp", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   bool said = false, stopped = false; var errors = new List<string>();
+  string model = Prefs.AiModels.GetValueOrDefault(cli.Id, ""), effort = Prefs.AiEfforts.GetValueOrDefault(cli.Id, "");
+  // Only Still's own catalog values reach the command line (cmd.exe and TOML quoting).
+  if (!aiModels.GetValueOrDefault(cli.Id, []).Any(m => m.Id == model && (effort == "" || m.Efforts.Contains(effort)))) model = effort = "";
   try {
    List<string> args;
    switch (cli.Id) {
@@ -146,6 +195,8 @@ public partial class MainWindow
      File.WriteAllText(Path.Combine(folder, "mcp.json"), JsonSerializer.Serialize(new { mcpServers = new { still = new { command = Environment.ProcessPath, args = mcp } } }));
      chat.Session ??= Guid.NewGuid().ToString();
      args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", Path.Combine(folder, "mcp.json"), "--strict-mcp-config", "--tools", "", "--allowedTools", "mcp__still", chat.Started ? "--resume" : "--session-id", chat.Session];
+     if (model.Length > 0) args.AddRange(["--model", model]);
+     if (effort.Length > 0) args.AddRange(["--effort", effort]);
      break;
     case "grok":
      // Grok reads MCP servers from the folder's .grok/config.toml, and only starts them with --trust.
@@ -153,6 +204,8 @@ public partial class MainWindow
      File.WriteAllText(promptFile, prompt, new UTF8Encoding(false));
      chat.Session ??= Guid.NewGuid().ToString();
      args = ["--prompt-file", promptFile, "--output-format", "streaming-messages-json", "--trust", "--tools", "search_tool,use_tool", "--no-subagents", "--always-approve", chat.Started ? "-r" : "-s", chat.Session];
+     if (model.Length > 0) args.AddRange(["-m", model]);
+     if (effort.Length > 0) args.AddRange(["--reasoning-effort", effort]);
      break;
     default: // codex. TOML literal strings ('...') need no escaping but can't hold an apostrophe; cmd.exe eats "!".
      if (mcp.Append(Environment.ProcessPath!).Any(a => a.Contains('\'') || a.Contains('!'))) { aiError = "Codex can't run Still from a folder whose name has an apostrophe or !."; return; }
@@ -160,6 +213,8 @@ public partial class MainWindow
      bool resume = chat.Started && chat.Session != null;
      args = ["exec", .. resume ? new[] { "resume" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'",
       "-c", "mcp_servers.still.command=" + Q(Environment.ProcessPath!), "-c", "mcp_servers.still.args=[" + string.Join(",", mcp.Select(Q)) + "]"];
+     if (model.Length > 0) args.AddRange(["-c", "model=" + Q(model)]);
+     if (effort.Length > 0) args.AddRange(["-c", "model_reasoning_effort=" + Q(effort)]);
      if (resume) args.Add(chat.Session!);
      args.Add("-");
      break;
@@ -173,6 +228,7 @@ public partial class MainWindow
    process.StandardInput.Close();
    var stderr = Task.Run(async () => { while (await process.StandardError.ReadLineAsync() is { } line) lock (errors) { errors.Add(line); if (errors.Count > 20) errors.RemoveAt(0); } });
    while (await process.StandardOutput.ReadLineAsync() is { } line) {
+    if (line.Contains("No conversation found")) lock (errors) errors.Add(line);
     JsonNode? e; try { e = JsonNode.Parse(line); } catch (JsonException) { continue; }
     if (e is not JsonObject) continue;
     said |= cli.Id == "codex" ? CodexEvent(chat, e) : MessagesEvent(chat, cli, e);
@@ -181,11 +237,22 @@ public partial class MainWindow
    await process.WaitForExitAsync(); await stderr;
    chat.Started = chat.Session != null;
    stopped = chat.Messages.LastOrDefault()?.Text == "Stopped.";
+   bool lost; lock (errors) lost = errors.Any(l => l.Contains("No conversation found"));
+   if (lost && !said && !stopped && cli.Id != "codex") {
+    // The CLI never saved this chat (it was stopped before it could): start a new session that carries the chat over.
+    chat.Session = null; chat.Started = false; aiError = "";
+    chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
+    string earlier = string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(20).Select(m => (m.Role == "user" ? "User: " : "You: ") + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text)));
+    aiBusy = false; aiProcess = null;
+    await RunAi(earlier.Length > 0 ? "(Our conversation so far, for context:)\n" + earlier + "\n\n" + text : text, text);
+    return;
+   }
    if (process.ExitCode != 0 && !said && !stopped && aiError.Length == 0)
     lock (errors) aiError = $"{cli.App} stopped: " + (errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {process.ExitCode}");
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { aiError = $"{cli.App} failed: {ex.Message}"; }
   finally {
-   aiBusy = false; aiProcess = null; agentAction = ""; chat.Updated = DateTime.UtcNow; SaveAiChats();
+   if (aiBusy) { aiBusy = false; aiProcess = null; agentAction = ""; ReleaseAgentTabs(cli.Name); }
+   chat.Updated = DateTime.UtcNow; SaveAiChats();
    try { File.Delete(promptFile); } catch (IOException) { }
   }
  }
@@ -226,7 +293,11 @@ public partial class MainWindow
  bool MessagesEvent(AiChat chat, AiCli cli, JsonNode e)
  {
   string? type = e["type"]?.GetValue<string>();
-  if (type == "result" && e["is_error"]?.GetValue<bool>() == true) aiError = $"{cli.App}: " + (e["result"]?.ToString() ?? "failed");
+  if (type == "result" && e["is_error"]?.GetValue<bool>() == true && e["result"] != null) aiError = $"{cli.App}: " + e["result"];
+  if (type == "rate_limit_event" && e["rate_limit_info"]?["unifiedWindows"] is { } windows)
+   aiUsage[cli.Id] = $"5-hour limit {Pct(windows["five_hour"])} used · weekly {Pct(windows["seven_day"])}";
+  else if (type == "result" && cli.Id != "claude" && e["usage"] is { } u)
+   aiUsage[cli.Id] = $"Last reply: {Tokens((u["input_tokens"]?.GetValue<long>() ?? 0) + (u["cache_read_input_tokens"]?.GetValue<long>() ?? 0))} in, {Tokens(u["output_tokens"]?.GetValue<long>() ?? 0)} out";
   if (type != "assistant") return false;
   bool said = false;
   foreach (var block in e["message"]?["content"] as JsonArray ?? []) {
@@ -249,9 +320,12 @@ public partial class MainWindow
    case "thread.started": chat.Session = e["thread_id"]?.GetValue<string>(); break;
    case "item.started" when (item?["type"]?.GetValue<string>() == "mcp_tool_call"): chat.Messages.Add(new() { Role = "tool", Text = ToolLabel(item["tool"]?.GetValue<string>() ?? "", item["arguments"]) }); break;
    case "item.completed" when (item?["type"]?.GetValue<string>() == "agent_message" && item["text"]?.GetValue<string>() is { Length: > 0 } text): chat.Messages.Add(new() { Role = "assistant", Text = text }); return true;
+   case "turn.completed" when e["usage"] is { } u:
+    aiUsage["codex"] = $"Last reply: {Tokens(u["input_tokens"]?.GetValue<long>() ?? 0)} in ({Tokens(u["cached_input_tokens"]?.GetValue<long>() ?? 0)} cached), {Tokens(u["output_tokens"]?.GetValue<long>() ?? 0)} out";
+    break;
    case "turn.failed":
     string message = e["error"]?["message"]?.GetValue<string>() ?? "failed";
-    aiError = "Codex: " + (message.Contains("401") ? "not signed in. Run `codex login` in a terminal once, then try again." : message);
+    aiError = "Codex: " + (message.Contains("401") ? "not signed in. Sign in, then try again." : message);
     break;
   }
   return false;
