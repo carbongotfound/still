@@ -50,6 +50,23 @@ public partial class MainWindow
    const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s);
   };
   if (document.head) style(); else document.addEventListener("DOMContentLoaded", style, { once: true });
+  // Ads that still reach the player (signed-in accounts get some stitched into the video stream itself): mute,
+  // press Skip, jump to the end, and put the user's volume and speed back when the video returns.
+  // ponytail: an ad longer than 3 minutes counts as stitched and plays at 16x instead of being jumped over.
+  let inAd = false, muted = false, rate = 1;
+  setInterval(() => {
+   const p = document.querySelector("#movie_player"), v = p?.querySelector("video");
+   const wall = document.querySelector("ytd-enforcement-message-view-model");
+   if (wall) { wall.closest("tp-yt-paper-dialog")?.remove(); document.querySelector("tp-yt-iron-overlay-backdrop")?.remove(); v?.play?.().catch(() => {}); }
+   if (!p || !v) return;
+   if (p.classList.contains("ad-showing") || p.classList.contains("ad-interrupting")) {
+    if (!inAd) { inAd = true; muted = v.muted; rate = v.playbackRate || 1; }
+    v.muted = true;
+    p.querySelector(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern")?.click();
+    if (isFinite(v.duration) && v.duration > 0 && v.duration < 180) { if (v.currentTime < v.duration - 0.2) v.currentTime = v.duration - 0.1; }
+    else v.playbackRate = 16;
+   } else if (inAd) { inAd = false; v.muted = muted; v.playbackRate = rate; }
+  }, 250);
  })();
  """;
  readonly Dictionary<string, List<string>> privateHidden = [];

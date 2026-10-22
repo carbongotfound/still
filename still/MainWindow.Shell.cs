@@ -30,11 +30,13 @@ public partial class MainWindow
  {
   bool fill=contentFullScreen&&shellRoot!=null;
   WebHost.Width=fill?Math.Max(1,shellRoot!.ActualWidth):pageWidth;WebHost.Height=fill?Math.Max(1,shellRoot!.ActualHeight):pageHeight;
-  Canvas.SetLeft(WebHost,fill?0:pageX);Canvas.SetTop(WebHost,fill?0:pageY);RestorePageWindow();
+  Canvas.SetLeft(WebHost,fill?0:pageX);Canvas.SetTop(WebHost,fill?0:pageY);
+  if(sidePanelView!=null&&!overlay)sidePanelView.Visibility=fill?Visibility.Hidden:Visibility.Visible; // a docked extension panel never covers a fullscreen video
+  RestorePageWindow();
  }
  void RestorePageWindow()
  {
-  if(!closing&&!overlay&&sidePanelView is{} panel&&panel.Handle!=IntPtr.Zero){panel.UpdateWindowPos();SetWindowPos(panel.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);} // above the chrome too
+  if(!closing&&!overlay&&!contentFullScreen&&sidePanelView is{} panel&&panel.Handle!=IntPtr.Zero){panel.UpdateWindowPos();SetWindowPos(panel.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);} // above the chrome too
   if(closing||overlay||active?.View is not{} view||!view.IsVisible)return;
   // HwndHost windows have native z-order, independent of WPF's visual tree.
   // Keep the live page above the full-window chrome so it receives pointer input.
