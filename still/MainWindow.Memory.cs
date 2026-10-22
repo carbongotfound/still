@@ -181,7 +181,7 @@ public partial class MainWindow
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
-  && tab != active && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
+  && tab != active && tab.Agent == null && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
   && DateTime.UtcNow - tab.LastActive >= TimeSpan.FromMinutes(1)
   && !permissions.Any(p => p.Tab == tab) && tab.View?.CoreWebView2?.IsDocumentPlayingAudio == false;
 }

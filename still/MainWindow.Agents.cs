@@ -77,7 +77,7 @@ public partial class MainWindow
  object? AgentData() => agentApproval != null ? new { client = agentName, pending = true, action = "" }
   : approvedAgents.Contains(agentName) && DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2) ? new { client = agentName, pending = false, action = agentAction } : null;
  void AnswerAgent(bool allow) => agentApproval?.TrySetResult(allow);
- void StopAgent() { if (agentName.Length > 0) { approvedAgents.Remove(agentName); Prefs.ApprovedAgents.Remove(agentName); SaveLater(); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
+ void StopAgent() { if (agentName.Length > 0) { ReleaseAgentTabs(agentName); approvedAgents.Remove(agentName); Prefs.ApprovedAgents.Remove(agentName); SaveLater(); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
  // Element ids come from read_page ("[12] button ..."); the id is stored on the element as data-still-id.
@@ -119,12 +119,37 @@ public partial class MainWindow
  // Finds a tab the agent may use: never private tabs.
  (MainWindow window, BrowserTab tab) AgentTab(JsonElement args)
  {
+  // Without a tabId the agent keeps working in the tab it used last, even after the user switches to another one.
   string id = S(args, "tabId");
+  if (id.Length == 0 && agentTabs.TryGetValue(agentName, out var last) && Windows.Any(w => !w.closing && w.tabs.Any(t => t.Id == last))) id = last;
   foreach (var w in Windows.Where(w => !w.closing)) {
    var t = id.Length > 0 ? w.tabs.FirstOrDefault(x => x.Id == id) : (w == this ? w.active : null);
-   if (t != null) { if (t.Private) throw new InvalidOperationException("Private tabs are off-limits to agents."); return (w, t); }
+   if (t != null) { if (t.Private) throw new InvalidOperationException("Private tabs are off-limits to agents."); Claim(w, t); return (w, t); }
   }
   throw new InvalidOperationException(id.Length > 0 ? "No tab with that id." : "There is no active tab.");
+ }
+ static readonly Dictionary<string, string> agentTabs = []; // agent name -> the tab it is working in
+ static void Claim(MainWindow w, BrowserTab t)
+ {
+  agentTabs[agentName] = t.Id; t.LastActive = DateTime.UtcNow; // in use: memory saver leaves it awake
+  if (t.Agent != agentName) { t.Agent = agentName; w.ShellPublish(); }
+ }
+ /// The agent's work is done: its icon leaves the user's own tabs. Tabs it opened stay in the AI group.
+ internal static void ReleaseAgentTabs(string name)
+ {
+  agentTabs.Remove(name);
+  foreach (var w in Windows) { bool changed = false; foreach (var t in w.tabs.Where(t => t.Agent == name && !t.AgentGroup)) { t.Agent = null; changed = true; } if (changed) w.ShellPublish(); }
+ }
+ // Opens in the background, next to the other AI tabs, so the user can keep browsing.
+ async Task<BrowserTab> OpenAgentTab(string url)
+ {
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = agentName, AgentGroup = true };
+  int last = tabs.FindLastIndex(t => t.AgentGroup);
+  tabs.Insert(last >= 0 ? last + 1 : tabs.Count, tab);
+  if (active == null || active.Url.Length == 0 && !active.Pinned && tabs.Count == 2) await SelectTab(tab); // nothing to keep the user on
+  Claim(this, tab); ShellPublish(); SaveLater();
+  await EnsureView(tab);
+  return tab;
  }
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
  {
@@ -151,14 +176,18 @@ public partial class MainWindow
    case "list_tabs":
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { id = t.Id, title = t.Title, url = t.Url, active = t == w.active, window = wi + 1 })));
    case "open_tab": {
-    var tab = await NewTab(WebUrl(S(args, "url"), Prefs.SearchEngine), false, false); await WaitLoaded(tab);
+    var tab = await OpenAgentTab(WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(tab);
     Did("Opened " + Host(tab.Url)); return Reply(new { id = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {
     var (w, t) = AgentTab(args); var core = await Core(w, t); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(t);
     Did("Went to " + Host(t.Url)); return Reply(new { id = t.Id, title = t.Title, url = t.Url });
    }
-   case "switch_tab": { var (w, t) = AgentTab(args); await w.SelectTab(t); w.Activate(); Did("Switched to " + t.Title); return Reply(new { id = t.Id }); }
+   case "switch_tab": {
+    var (w, t) = AgentTab(args);
+    if (args.TryGetProperty("show", out var show) && show.ValueKind == JsonValueKind.True) { await w.SelectTab(t); w.Activate(); }
+    Did("Switched to " + t.Title); return Reply(new { id = t.Id });
+   }
    case "close_tab": { var (w, t) = AgentTab(args); await w.CloseTab(t, true); Did("Closed a tab"); return Reply(new { closed = true }); }
    case "go_back": case "go_forward": case "reload": {
     var (w, t) = AgentTab(args); var core = await Core(w, t);

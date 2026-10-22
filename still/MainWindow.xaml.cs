@@ -438,6 +438,7 @@ public partial class MainWindow : Window
    await InstallAudioReroute(core);
    await core.AddScriptToExecuteOnDocumentCreatedAsync(MemoryActivityScript);
    await core.AddScriptToExecuteOnDocumentCreatedAsync(StoreButtonScript);
+   if (!tab.Private) await core.AddScriptToExecuteOnDocumentCreatedAsync(DraftScript);
    core.WebMessageReceived += async (_, e) => {
     // "Add to Still" on a Chrome Web Store page; installing still goes through the permission review.
     if (e.Source.StartsWith("https://chromewebstore.google.com/", StringComparison.Ordinal) && e.WebMessageAsJson.Contains("\"still-store-add\"")) { await PrepareStoreExtension(e.Source); return; }

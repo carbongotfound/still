@@ -417,3 +417,19 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ext-panel-icon { display:flex; margin-right:8px; color:var(--muted-foreground); }
 .ext-panel-icon svg { width:16px; height:16px; }
 .ext-panel-slot { flex:1; min-height:0; }
+
+/* Tabs an AI is using get a bot badge; tabs it opened sit together in the AI group. */
+.tab-letter { position:relative; }
+.tab-agent { position:absolute;right:-5px;bottom:-4px;width:13px;height:13px;border-radius:50%;display:flex;align-items:center;justify-content:center;background:var(--primary);color:var(--primary-foreground);box-shadow:0 0 0 1.5px var(--background); }
+.tab-agent svg { width:9px;height:9px; }
+.ai-tab-group { margin:6px 0 2px;padding:4px 0 2px;border-top:1px solid var(--border); }
+.ai-tab-group-label { display:flex;align-items:center;gap:5px;padding:0 10px 4px;font-size:11px;font-weight:600;color:var(--muted-foreground);letter-spacing:.02em; }
+.ai-tab-group-label svg { width:12px;height:12px; }
+.ai-tab-group.is-top { display:flex;align-items:center;gap:2px;margin:0 0 0 6px;padding:0 0 0 6px;border-top:0;border-left:1px solid var(--border); }
+.ai-tab-group.is-top .ai-tab-group-label { padding:0 4px; }
+
+.ai-pick { height:26px;padding:0 8px;font-size:12px;gap:4px;border:0;background:transparent;box-shadow:none;max-width:9.5rem; }
+.ai-pick:hover { background:var(--muted); }
+.ai-usage { display:flex;align-items:center;gap:5px;margin:6px 2px 0;font-size:11px;color:var(--muted-foreground); }
+.ai-usage svg { width:12px;height:12px;flex:none; }
+.ai-signin { margin-top:8px; }

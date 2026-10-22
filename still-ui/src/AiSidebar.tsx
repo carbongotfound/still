@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, Bot, Check, ChevronRight, History, MessageSquarePlus, Settings2, Square, Terminal, Trash2, Wrench, X } from "lucide-react"
+import { ArrowLeft, ArrowUp, Bot, Gauge, LogIn, Check, ChevronRight, History, MessageSquarePlus, Settings2, Square, Terminal, Trash2, Wrench, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -14,6 +14,7 @@ import { Markdown } from "./Markdown"
 type Harness = { id: string; name: string; app: string; installed: boolean; install: string; login: string }
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
+ models?: { id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; messages: { role: string; text: string }[]; chats: { id: string; title: string; harness: string; updated: string }[]
 }
 type Send = (op: string, payload?: Record<string, unknown>) => void
@@ -114,17 +115,27 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
  </div>
 
  const canChat = view === "chat" && !setup && !!current?.installed
+ const model = ai.models?.find(m => m.id === ai.model)
  return <aside className="ai-sidebar" aria-label="AI sidebar">
   {header}
   {body}
-  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription></Alert>}
+  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}
+   {/not signed in|not logged in|log ?in|authenticat|401/i.test(ai.error) && <Button size="sm" variant="outline" className="ai-signin" onClick={() => send("aiLogin")}><LogIn />Sign in to {current?.app}</Button>}</AlertDescription></Alert>}
   {canChat && <div className="ai-compose"><InputGroup>
    <InputGroupTextarea aria-label="Message" placeholder={`Ask ${current.name} anything…`} rows={2} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
    <InputGroupAddon align="block-end">
-    <InputGroupText>{current.app}</InputGroupText>
+    {ai.models ? <>
+     <Select value={ai.model || "default"} onValueChange={v => send("aiModel", { model: v === "default" ? "" : v, effort: ai.effort })}>
+      <SelectTrigger size="sm" className="ai-pick" aria-label="Model"><SelectValue /></SelectTrigger>
+      <SelectContent>{ai.models.map(m => <SelectItem key={m.id || "default"} value={m.id || "default"}>{m.name}</SelectItem>)}</SelectContent></Select>
+     {!!model?.efforts.length && <Select value={ai.effort || "default"} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
+      <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
+      <SelectContent><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
+    </> : <InputGroupText>{current.app}</InputGroupText>}
     {ai.busy ? <InputGroupButton className="ml-auto" size="icon-xs" variant="default" aria-label="Stop" onClick={() => send("aiStop")}><Square /></InputGroupButton>
      : <InputGroupButton className="ml-auto rounded-full" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim()} onClick={() => submit()}><ArrowUp /></InputGroupButton>}
    </InputGroupAddon>
-  </InputGroup></div>}
+  </InputGroup>
+  {ai.usage && <p className="ai-usage"><Gauge />{ai.usage}</p>}</div>}
  </aside>
 }
