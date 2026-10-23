@@ -125,14 +125,14 @@ public partial class MainWindow
      case "unhide":
       if(active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var page)){state.Hidden.Remove(page.Host);privateHidden.Remove(page.Host);foreach(var t in tabs.Where(t=>t.View?.CoreWebView2!=null))await InstallHiddenRules(t);SaveLater();active.View?.CoreWebView2?.Reload();}break;
      case "siteBlocking":
-      if(active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var site)){if(!Prefs.UnblockedHosts.Remove(site.Host))Prefs.UnblockedHosts.Add(site.Host);SaveLater();active.View?.CoreWebView2?.Reload();}break;
+      if(active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var site)){if(!Prefs.UnblockedHosts.Remove(site.Host))Prefs.UnblockedHosts.Add(site.Host);SaveLater();var shown=active;await SyncYouTubeScripts();shown.View?.CoreWebView2?.Reload();}break;
      case "preference":
       string value=S("value");switch(S("key")){
        case "theme": if(new[]{"Light","Dark","System"}.Contains(value)){Prefs.Theme=value;ApplyTheme();}break;
        case "layout": if(new[]{"Sidebar","Top"}.Contains(value)){Prefs.Layout=value;ApplyLayout();}break;
        case "search":if(new[]{"DuckDuckGo","Google","Bing"}.Contains(value))Prefs.SearchEngine=value;break;
        case "restore":Prefs.RestoreTabs=value=="true";break;
-       case "blocking":Prefs.Blocking=value=="true";break;
+       case "blocking":Prefs.Blocking=value=="true";_=SyncYouTubeScripts();break;
        case "tracking":if(new[]{"Basic","Balanced","Strict"}.Contains(value)){Prefs.Tracking=value;foreach(var t in tabs)if(t.View?.CoreWebView2 is {} tc)ApplyProtection(tc);}break;
        case "tearOff":Prefs.TabTearOff=value=="true";SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();agentApproval?.TrySetResult(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;

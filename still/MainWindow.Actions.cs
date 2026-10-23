@@ -70,9 +70,20 @@ public partial class MainWindow
  })();
  """;
  readonly Dictionary<string, List<string>> privateHidden = [];
+ // The YouTube ad script follows the switches in open tabs too, so turning blocking back on works after a reload.
+ static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CoreWebView2, string> youTubeScripts = new();
+ async Task SyncYouTubeScript(CoreWebView2 core)
+ {
+  bool on = Prefs.Blocking && !Prefs.UnblockedHosts.Contains("www.youtube.com");
+  if (youTubeScripts.TryGetValue(core, out var id) == on) return;
+  if (!on) { youTubeScripts.Remove(core); if (id is { Length: > 0 }) core.RemoveScriptToExecuteOnDocumentCreated(id); return; }
+  youTubeScripts.AddOrUpdate(core, "");
+  youTubeScripts.AddOrUpdate(core, await core.AddScriptToExecuteOnDocumentCreatedAsync(YouTubeAdScript));
+ }
+ async Task SyncYouTubeScripts() { foreach (var w in Windows) foreach (var t in w.tabs) if (t.View?.CoreWebView2 is { } c) await w.SyncYouTubeScript(c); }
  void SetupBlocking(BrowserTab tab, CoreWebView2 core)
  {
-  if (Prefs.Blocking && !Prefs.UnblockedHosts.Contains("www.youtube.com")) _ = core.AddScriptToExecuteOnDocumentCreatedAsync(YouTubeAdScript);
+  _ = SyncYouTubeScript(core);
   foreach (string domain in BlockedDomains) {
    core.AddWebResourceRequestedFilter("*://" + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
    core.AddWebResourceRequestedFilter("*://*." + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);

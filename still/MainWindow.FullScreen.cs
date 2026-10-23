@@ -97,7 +97,7 @@ public partial class MainWindow
    restoreStyle=(long)GetWindowLongPtr(hwnd,-16);restoreExStyle=(long)GetWindowLongPtr(hwnd,-20);
    SetWindowLongPtr(hwnd,-16,new IntPtr(restoreStyle&~FrameStyles));SetWindowLongPtr(hwnd,-20,new IntPtr(restoreExStyle&~FrameExStyles));
    int square=1;DwmSetWindowAttribute(hwnd,33,ref square,4);
-   Activate();SetForegroundWindow(hwnd);Topmost=true;
+   if(!App.IsQa){Activate();SetForegroundWindow(hwnd);}Topmost=true; // QA windows never take focus from the user
    FitFullScreen(monitor);MarkFullScreen(true);PlacePage();
   }else{
    fullScreenApplied=false;MarkFullScreen(false);Topmost=false;
