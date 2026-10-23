@@ -53,6 +53,7 @@ public partial class MainWindow
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a : default;
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let AI agents control Still.");
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent for this session.");
+   if (stoppedAgents.TryGetValue(client, out var until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (Prefs.ApprovedAgents.Any(a => McpServer.AgentName(a).Equals(client, StringComparison.OrdinalIgnoreCase))) approvedAgents.Add(client); // approved once = remembered across restarts/updates
    if (!approvedAgents.Contains(client)) {
     if (agentApproval == null) {
@@ -77,7 +78,13 @@ public partial class MainWindow
  object? AgentData() => agentApproval != null ? new { client = agentName, pending = true, action = "" }
   : approvedAgents.Contains(agentName) && DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2) ? new { client = agentName, pending = false, action = agentAction } : null;
  void AnswerAgent(bool allow) => agentApproval?.TrySetResult(allow);
- void StopAgent() { if (agentName.Length > 0) { ReleaseAgentTabs(agentName); approvedAgents.Remove(agentName); Prefs.ApprovedAgents.Remove(agentName); SaveLater(); blockedAgents.Add(agentName); } agentAction = ""; PublishAll(); Toast("The AI agent was stopped. It can't control Still again until you restart Still."); }
+ // Stop cancels what the agent is doing now; it stays allowed, so its next task needs no new approval.
+ void StopAgent() {
+  if (agentName.Length > 0) { ReleaseAgentTabs(agentName); stoppedAgents[agentName] = DateTime.UtcNow.AddSeconds(30); }
+  foreach (var w in Windows) if (w.aiBusy && AiClis.FirstOrDefault(c => c.Id == (w.aiChat?.Harness ?? "")) is { } cli && cli.Name == agentName) _ = w.HandleAi("aiStop", default);
+  agentAction = ""; agentSeen = DateTime.MinValue; PublishAll(); Toast("Stopped " + (agentName.Length > 0 ? agentName : "the AI agent") + ".");
+ }
+ static readonly Dictionary<string, DateTime> stoppedAgents = new(StringComparer.OrdinalIgnoreCase);
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
  // Element ids come from read_page ("[12] button ..."); the id is stored on the element as data-still-id.

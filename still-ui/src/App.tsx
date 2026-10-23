@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
 import { UploadCard, type Upload } from "./UploadCard"
@@ -352,7 +352,7 @@ export default function App() {
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
      <IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
-     <IconButton label="Site controls" caption="Site" onClick={() => open("site")}><Shield /></IconButton>
+     <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton>
      {state.update && <Button size="sm" className={cn("update-pill", state.update.busy && "is-busy")} disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")} title={state.update.downloading ? `Downloading Still ${state.update.version} in the background. It installs when you close Still, or click to install as soon as it’s ready.` : state.update.ready ? `Still ${state.update.version} is ready. Click to install now and reopen with your tabs, or it installs when you close Still.` : `Update Still to ${state.update.version}. It installs automatically and reopens with your tabs.`}>
       {state.update.busy || state.update.downloading ? <Loader2 className="spin" /> : <Download />}

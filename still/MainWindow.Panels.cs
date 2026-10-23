@@ -109,7 +109,7 @@ public partial class MainWindow
   Choices("Tabs", ["Sidebar", "Top"], Prefs.Layout, s => { Prefs.Layout = s; ApplyLayout(); });
   Choices("Search with", ["DuckDuckGo", "Google", "Bing"], Prefs.SearchEngine, s => Prefs.SearchEngine = s);
   Choices("Restore tabs when Still opens", ["On", "Off"], Prefs.RestoreTabs ? "On" : "Off", s => Prefs.RestoreTabs = s == "On");
-  Choices("Block common ads and trackers", ["On", "Off"], Prefs.Blocking ? "On" : "Off", s => { Prefs.Blocking = s == "On"; Toast("Applies to new requests. Reload an open page to see the change."); });
+  Choices("Block common ads and trackers", ["On", "Off"], Prefs.Blocking ? "On" : "Off", s => { Prefs.Blocking = s == "On"; _ = SyncYouTubeScripts(); Toast("Applies to new requests. Reload an open page to see the change."); });
   Heading("Downloads");
   SheetContent.Children.Add(Note(Prefs.DownloadFolder, 12));
   SheetContent.Children.Add(ActionButton("Choose download folder", () => {
@@ -223,9 +223,9 @@ public partial class MainWindow
   Heading("Less noise");
   SheetContent.Children.Add(Note($"{tab.Blocked} common ad or tracker requests blocked on this page.\nThe built-in list is small; it does not block every ad.", 12));
   bool exempt = Prefs.UnblockedHosts.Contains(host);
-  SheetContent.Children.Add(ActionButton(exempt ? "Turn blocking on for this site" : "Turn blocking off for this site", () => {
+  SheetContent.Children.Add(ActionButton(exempt ? "Turn blocking on for this site" : "Turn blocking off for this site", async () => {
    if (exempt) Prefs.UnblockedHosts.Remove(host); else Prefs.UnblockedHosts.Add(host);
-   SaveLater(); CloseSheet(); tab.View?.CoreWebView2?.Reload();
+   SaveLater(); CloseSheet(); await SyncYouTubeScripts(); tab.View?.CoreWebView2?.Reload();
   }, true));
   SheetContent.Children.Add(ActionButton("Hide something on this page", async () => { CloseSheet(); await PickHidden(); }));
   SheetContent.Children.Add(ActionButton("Restore hidden elements on this site", async () => {
