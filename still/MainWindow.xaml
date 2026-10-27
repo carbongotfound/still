@@ -27,22 +27,7 @@
    </Grid>
    <Border Grid.Row="1" Background="{DynamicResource Ground}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,0,1"><ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled"><StackPanel x:Name="TopTabs" Orientation="Horizontal" Margin="12,3"/></ScrollViewer></Border>
    <Grid Grid.Row="2">
-    <Grid.ColumnDefinitions><ColumnDefinition x:Name="SideColumn" Width="220"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions>
-    <Border x:Name="SidebarPanel" Background="{DynamicResource Sidebar}" BorderBrush="{DynamicResource Line}" BorderThickness="0,0,1,0">
-     <DockPanel Margin="12,6,12,10">
-      <StackPanel DockPanel.Dock="Bottom">
-       <Border Height="1" Background="{DynamicResource Line}" Margin="4,14,4,10"/>
-       <Grid><Grid.ColumnDefinitions><ColumnDefinition/><ColumnDefinition Width="Auto"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions>
-        <StackPanel Margin="9,4"><TextBlock Text="still" FontSize="17" FontWeight="SemiBold"/><TextBlock Text="A quiet browser" FontSize="11" Margin="0,2,0,0" Foreground="{DynamicResource Muted}"/></StackPanel>
-        <Button Grid.Column="1" Style="{StaticResource IconButton}" Content="&#xE81C;" ToolTip="Switch light / dark" AutomationProperties.Name="Switch theme" Click="ThemeClick"/>
-        <Button Grid.Column="2" Style="{StaticResource IconButton}" Content="&#xE713;" ToolTip="Settings · Ctrl + ," AutomationProperties.Name="Settings" Click="SettingsClick"/>
-       </Grid>
-      </StackPanel>
-      <StackPanel DockPanel.Dock="Top"><WrapPanel x:Name="PinPanel" Margin="0,6,0,10"/><TextBlock x:Name="TabsCaption" Text="YOUR TABS" FontSize="10" FontWeight="SemiBold" Foreground="{DynamicResource Muted}" Margin="10,6,0,10"/></StackPanel>
-      <ScrollViewer><StackPanel><StackPanel x:Name="TabPanel"/><Button Margin="0,5,0,0" Padding="10,10" HorizontalContentAlignment="Left" Click="NewTabClick" AutomationProperties.Name="New tab"><StackPanel Orientation="Horizontal"><TextBlock Text="+" FontSize="18" Foreground="{DynamicResource Muted}" Margin="1,-3,12,0"/><TextBlock Text="New tab" Foreground="{DynamicResource Muted}"/><TextBlock Text="Ctrl T" FontSize="11" Foreground="{DynamicResource Muted}" Margin="43,1,0,0"/></StackPanel></Button></StackPanel></ScrollViewer>
-     </DockPanel>
-    </Border>
-    <Grid Grid.Column="1" x:Name="ContentArea" Background="{DynamicResource Surface}">
+    <Grid x:Name="ContentArea" Background="{DynamicResource Surface}">
      <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="*"/></Grid.RowDefinitions>
      <Border x:Name="FindBar" Visibility="Collapsed" Background="{DynamicResource Ground}" Padding="12,6"><DockPanel><Button DockPanel.Dock="Right" Content="×" Click="CloseFind"/><Button DockPanel.Dock="Right" Content="Next" Click="FindNext"/><TextBox x:Name="FindInput" Width="260" HorizontalAlignment="Right" KeyDown="FindKeyDown" AutomationProperties.Name="Find in page"/></DockPanel></Border>
      <Grid Grid.Row="1" x:Name="PageArea">

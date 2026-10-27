@@ -143,23 +143,14 @@ public partial class MainWindow : Window
  }
  void ApplyLayout()
  {
-  bool side = Prefs.Layout == "Sidebar" && !focusMode;
-  SideColumn.Width = new GridLength(side ? 220 : 0);
-  SidebarPanel.Visibility = side ? Visibility.Visible : Visibility.Collapsed;
-  StripRow.Height = new GridLength(!side && !focusMode ? 42 : 0);
+  StripRow.Height = new GridLength(focusMode ? 0 : 42);
   RenderTabs(); SaveLater();
  }
  void RenderTabs()
  {
   if(shellView!=null){ShellPublish();return;}
-  TabPanel.Children.Clear(); PinPanel.Children.Clear(); TopTabs.Children.Clear();
-  foreach (var tab in tabs.OrderByDescending(t => t.Pinned))
-  {
-   if (tab.Pinned) PinPanel.Children.Add(TabButton(tab, true, false));
-   else TabPanel.Children.Add(TabButton(tab, false, false));
-   TopTabs.Children.Add(TabButton(tab, tab.Pinned, true));
-  }
-  PinPanel.Visibility = tabs.Any(t => t.Pinned) ? Visibility.Visible : Visibility.Collapsed;
+  TopTabs.Children.Clear();
+  foreach (var tab in tabs.OrderByDescending(t => t.Pinned)) TopTabs.Children.Add(TabButton(tab, tab.Pinned, true));
   var add = new Button { Content = "+", FontSize = 20, Width = 34, Padding = new Thickness(0), ToolTip = "New tab · Ctrl + T" };
   add.Click += async (_, _) => await NewTab();
   TopTabs.Children.Add(add);
@@ -313,7 +304,10 @@ public partial class MainWindow : Window
    core.ServerCertificateErrorDetected+=(_,e)=>{e.Action=CoreWebView2ServerCertificateErrorAction.Cancel;tab.CertificateError=true;tab.Secure=false;ShellPublish();};
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
+   // Black while a page loads (no white flash in the dark theme), then the normal canvas: white unless the page asks for dark, as in Edge.
+   core.DOMContentLoaded += (_, _) => view.DefaultBackgroundColor = System.Drawing.Color.White;
    core.NavigationStarting += (_, e) => {
+    view.DefaultBackgroundColor = dark ? System.Drawing.Color.Black : System.Drawing.Color.White;
     App.Breadcrumb="page navigating "+Host(e.Uri);
     tab.NavigationId=e.NavigationId;
     tab.LoginFilled=false;tab.LoginDetected=false;
@@ -534,9 +528,6 @@ public partial class MainWindow : Window
  void ForwardClick(object s, RoutedEventArgs e) { if (active?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
  async void ReloadClick(object s, RoutedEventArgs e) { if (active is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
  void AddressClick(object s, RoutedEventArgs e) => ShowAddress(active?.Url ?? "");
- async void NewTabClick(object s, RoutedEventArgs e) => await NewTab();
- void ThemeClick(object s, RoutedEventArgs e) { Prefs.Theme = dark ? "Light" : "Dark"; ApplyTheme(); }
- void SettingsClick(object s, RoutedEventArgs e) => ShowSettings();
  void BookmarkClick(object s, RoutedEventArgs e) => ToggleBookmark();
  void ShieldClick(object s, RoutedEventArgs e) => ShowSiteControls();
  async void ReaderClick(object s, RoutedEventArgs e) => await ToggleReader();
