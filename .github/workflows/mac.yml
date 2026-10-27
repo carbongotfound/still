@@ -3,7 +3,7 @@ name: Mac
 on:
   push:
     branches: [main]
-    paths: ["mac/**", "still/Shell/**", "still/MainWindow.Actions.cs", "still/Still.csproj", ".github/workflows/mac.yml"]
+    paths: ["mac/**", "still/Shell/**", "still/MainWindow.Actions.cs", "still/MainWindow.Agents.cs", "still/Still.csproj", ".github/workflows/mac.yml"]
   release:
     types: [published]
   workflow_dispatch:
@@ -30,7 +30,7 @@ jobs:
       - name: Smoke test
         run: |
           mkdir -p ~/Library/Application\ Support/Still
-          echo '{"Welcome":false,"ActiveId":"g","Tabs":[{"Id":"w","Title":"Wikipedia","Url":"https://en.wikipedia.org/wiki/Minimalism"},{"Id":"g","Title":"GitHub","Url":"https://github.com/carbongotfound/still"}]}' > ~/Library/Application\ Support/Still/state.json
+          echo '{"Welcome":false,"Preferences":{"AgentsEnabled":true,"ApprovedAgents":["CI"]},"ActiveId":"g","Tabs":[{"Id":"w","Title":"Wikipedia","Url":"https://en.wikipedia.org/wiki/Minimalism"},{"Id":"g","Title":"GitHub","Url":"https://github.com/carbongotfound/still"}]}' > ~/Library/Application\ Support/Still/state.json
           open "$PWD/mac/build/Still.app"
           sleep 12
           screencapture -x mac/build/smoke-start.png
@@ -38,6 +38,17 @@ jobs:
           sleep 12
           screencapture -x mac/build/smoke.png
           pgrep -x Still
+      - name: Agent test
+        continue-on-error: true
+        run: |
+          still=mac/build/Still.app/Contents/MacOS/Still
+          $still --cli help | tee /dev/stderr | grep -q read_page
+          echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' | $still --mcp | grep -q upload_file
+          $still --cli list_tabs as=CI
+          $still --cli read_page as=CI text=false
+          $still --cli open_tab as=CI url=https://example.com
+          $still --cli find as=CI text=example
+          shot=$($still --cli screenshot as=CI) && cp "$shot" mac/build/smoke-agent.png
       - uses: actions/upload-artifact@v4
         if: always()
         with:

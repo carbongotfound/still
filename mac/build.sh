@@ -19,6 +19,11 @@ cp -R "$repo/still/Shell" "$resources/Shell"
 awk '/BlockedDomains = \[/ {on=1; next} on && /^ *\];/ {exit} on' "$repo/still/MainWindow.Actions.cs" | grep -o '"[^"]*"' | tr -d '"' > "$resources/blocked.txt"
 awk '/const string YouTubeAdScript = """/ {on=1; next} on && /^ *""";/ {exit} on' "$repo/still/MainWindow.Actions.cs" > "$resources/youtube.js"
 test -s "$resources/blocked.txt" && test -s "$resources/youtube.js"
+# So do the AI agent page scripts (read_page, find, click, ...).
+for name in Page Snapshot Find Click Focus Scroll Wait FileInput; do
+ awk -v start="const string ${name}Js = \"\"\"" 'index($0, start) {on=1; next} on && /^ *""";/ {exit} on' "$repo/still/MainWindow.Agents.cs" > "$resources/agent-$name.js"
+ test -s "$resources/agent-$name.js"
+done
 
 iconset=build/Still.iconset
 mkdir -p "$iconset"

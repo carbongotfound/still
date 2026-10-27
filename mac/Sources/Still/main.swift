@@ -53,6 +53,12 @@ final class Tab: NSObject {
  var lastSeen = Date()
  var view: WKWebView?
  var observers: [NSKeyValueObservation] = []
+ var agent: String? // the AI working in this tab right now (bot icon)
+ var aiGroup = false // opened by an AI: shown together in the AI group
+ var agentActedAt = Date.distantPast
+ var dialog: PageDialog? // an alert/confirm/prompt the page is paused on
+ var agentUpload: AgentUpload? // a file picker an AI's click opened, waiting for upload_file
+ var uploadFiles: [URL]? // files upload_file is handing to the next file picker
 }
 
 final class Download {
@@ -117,6 +123,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in DispatchQueue.main.async { self?.schedulePublish() } }
   compileRules()
   Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
+  startAgentServer()
   window.makeKeyAndOrderFront(nil)
  }
 
@@ -177,14 +184,15 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   guard ready else { return }
   let host = active?.view?.url?.host ?? ""
   let preferences: [String: Any] = [
-   "theme": pref("Theme", "Dark"), "layout": pref("Layout", "Sidebar"), "search": pref("SearchEngine", "Google"),
+   "theme": pref("Theme", "Dark"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
-   "sidebarWidth": pref("SidebarWidth", 240.0), "tracking": "Balanced", "memory": pref("MemorySaver", true), "autofill": false,
-   "startup": false, "startupDisabled": true, "tearOff": false, "agents": false
+   "tracking": "Balanced", "memory": pref("MemorySaver", true), "autofill": false,
+   "startup": false, "startupDisabled": true, "tearOff": false, "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true)
   ]
   let tabList: [[String: Any]] = tabs.map { tab in [
    "id": tab.id, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "isPrivate": tab.isPrivate, "loading": tab.loading,
-   "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": 0, "muted": tab.muted, "secure": tab.url.hasPrefix("https://"), "certificateError": false
+   "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": 0, "muted": tab.muted, "secure": tab.url.hasPrefix("https://"), "certificateError": false,
+   "agent": tab.agent ?? "", "aiGroup": tab.aiGroup
   ] }
   let source = active?.isPrivate == true && panel == "address" ? [] : history
   let visits: [[String: Any]] = source.prefix(panel == "history" || panel == "address" ? 2000 : 100).map { visit in
@@ -217,6 +225,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["canBack"] = active?.view?.canGoBack ?? false
   state["canForward"] = active?.view?.canGoForward ?? false
   state["siteBlocking"] = pref("Blocking", true) && !unblocked.contains(host)
+  state["mcpCommand"] = Bundle.main.executablePath ?? ""
+  if let agent = agentData() { state["agent"] = agent }
+  if let tab = active, let dialog = tab.dialog {
+   state["dialog"] = ["id": tab.id, "kind": dialog.kind, "message": dialog.message, "defaultText": dialog.defaultText, "site": dialog.site]
+  }
   send(state)
  }
 
@@ -240,7 +253,6 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "overlay": setOverlay(data["value"] as? Bool ?? false)
   case "openPanel": openPanel(text("name"), text("value"))
   case "panel": panel = text("name")
-  case "sidebarResize": prefs["SidebarWidth"] = min(360, max(190, number("width"))); saveLater()
   case "navigate": navigate(text("url"))
   case "new": newTab(text("url"), isPrivate: data["private"] as? Bool ?? false)
   case "incognitoWindow": newTab(isPrivate: true)
@@ -268,6 +280,16 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     let j = i + Int(number("delta")).signum()
     if j >= 0 && j < bookmarks.count && j != i { bookmarks.swapAt(i, j); saveLater() }
    }
+  case "bookmarkEdit":
+   let address = text("url").trimmingCharacters(in: .whitespacesAndNewlines), title = text("title").trimmingCharacters(in: .whitespacesAndNewlines)
+   if let i = bookmarks.firstIndex(where: { $0["Url"] as? String == text("oldUrl") }), let scheme = URL(string: address)?.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+    bookmarks[i]["Title"] = title.isEmpty ? address : title; bookmarks[i]["Url"] = address; saveLater()
+   }
+  case "exportBookmarks": exportBookmarks()
+  case "pip": pictureInPicture()
+  case "dialogAnswer": if let target { answerDialog(target, data["accept"] as? Bool ?? false, data["text"] as? String) }
+  case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
+  case "agentStop": stopAgent()
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()
   case "clearHistory": history.removeAll(); save(); toast("History cleared.")
   case "clearCookies":
@@ -319,11 +341,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func setPreference(_ key: String, _ value: String) {
   switch key {
   case "theme": if ["Light", "Dark", "System"].contains(value) { prefs["Theme"] = value; applyTheme() }
-  case "layout": if ["Sidebar", "Top"].contains(value) { prefs["Layout"] = value }
   case "search": if ["DuckDuckGo", "Google", "Bing"].contains(value) { prefs["SearchEngine"] = value }
   case "restore": prefs["RestoreTabs"] = value == "true"
   case "blocking": prefs["Blocking"] = value == "true"; for tab in tabs { if let view = tab.view { applyBlocking(view) } }
   case "memory": prefs["MemorySaver"] = value == "true"
+  case "agents":
+   prefs["AgentsEnabled"] = value == "true"
+   if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
+  case "askInChat": prefs["AgentsAskInChat"] = value == "true"
   default: toast(unavailable)
   }
   saveLater()
@@ -455,6 +480,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func unload(_ tab: Tab) {
+  releasePage(tab)
   tab.observers = []
   tab.view?.removeFromSuperview()
   tab.view = nil
@@ -543,7 +569,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func sleepIdleTabs() {
   guard pref("MemorySaver", true) else { return }
   let cutoff = Date().addingTimeInterval(-300)
-  for tab in tabs where tab !== active && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff {
+  for tab in tabs where tab !== active && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff && tab.agent == nil {
    tab.view?.evaluateJavaScript(busyCheck) { [weak self, weak tab] result, _ in
     guard let self, let tab, tab !== self.active, (result as? Bool) == false else { return }
     self.unload(tab)
@@ -717,9 +743,16 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if view !== shell && code != NSURLErrorCancelled && code != 102 { toast("Couldn't open that page: \(error.localizedDescription)") }
  }
 
- func webViewWebContentProcessDidTerminate(_ view: WKWebView) { view.reload() }
+ func webViewWebContentProcessDidTerminate(_ view: WKWebView) {
+  if let tab = tabs.first(where: { $0.view === view }) { releasePage(tab); schedulePublish() }
+  view.reload()
+ }
 
  func webView(_ view: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for action: WKNavigationAction, windowFeatures: WKWindowFeatures) -> WKWebView? {
+  // A pop-up from an agent's click opens as the agent's own background tab.
+  if let opener = tabs.first(where: { $0.view === view }), let who = opener.agent, Date().timeIntervalSince(opener.agentActedAt) < 10 {
+   return openAgentTab(who, "", configuration: configuration).view
+  }
   let tab = Tab()
   tab.isPrivate = tabs.first { $0.view === view }?.isPrivate ?? false
   tabs.append(tab)
@@ -730,35 +763,21 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func webViewDidClose(_ view: WKWebView) { if let tab = tabs.first(where: { $0.view === view }) { close(tab) } }
 
+ // Page dialogs show in Still's own dialog over the page (see openDialog), where an agent can answer them too.
  func webView(_ view: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
-  let alert = NSAlert()
-  alert.messageText = frame.request.url?.host ?? "Still"
-  alert.informativeText = message
-  alert.beginSheetModal(for: window) { _ in completionHandler() }
+  openDialog(view, "alert", message, "", frame) { _, _ in completionHandler() }
  }
 
  func webView(_ view: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (Bool) -> Void) {
-  let alert = NSAlert()
-  alert.messageText = frame.request.url?.host ?? "Still"
-  alert.informativeText = message
-  alert.addButton(withTitle: "OK")
-  alert.addButton(withTitle: "Cancel")
-  alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn) }
+  openDialog(view, "confirm", message, "", frame) { accept, _ in completionHandler(accept) }
  }
 
  func webView(_ view: WKWebView, runJavaScriptTextInputPanelWithPrompt prompt: String, defaultText: String?, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping (String?) -> Void) {
-  let alert = NSAlert()
-  alert.messageText = frame.request.url?.host ?? "Still"
-  alert.informativeText = prompt
-  let field = NSTextField(frame: NSRect(x: 0, y: 0, width: 280, height: 24))
-  field.stringValue = defaultText ?? ""
-  alert.accessoryView = field
-  alert.addButton(withTitle: "OK")
-  alert.addButton(withTitle: "Cancel")
-  alert.beginSheetModal(for: window) { completionHandler($0 == .alertFirstButtonReturn ? field.stringValue : nil) }
+  openDialog(view, "prompt", prompt, defaultText ?? "", frame) { accept, text in completionHandler(accept ? text ?? defaultText ?? "" : nil) }
  }
 
  func webView(_ view: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
+  if let tab = tabs.first(where: { $0.view === view }), agentPicker(tab, parameters.allowsMultipleSelection, completionHandler) { return }
   let picker = NSOpenPanel()
   picker.allowsMultipleSelection = parameters.allowsMultipleSelection
   picker.canChooseDirectories = parameters.allowsDirectories
@@ -944,6 +963,9 @@ if let index = CommandLine.arguments.firstIndex(of: "--read-profile"), index + 1
   exit(0)
  } catch { print(error); exit(1) }
 }
+// AI agents: `Still --mcp` is the MCP server their apps launch; `Still --cli <tool> as=<name> key=value ...` makes one call.
+if CommandLine.arguments.contains("--mcp") { Mcp.run(); exit(0) }
+if let index = CommandLine.arguments.firstIndex(of: "--cli") { exit(Mcp.cli(Array(CommandLine.arguments[(index + 1)...]))) }
 
 let app = NSApplication.shared
 let delegate = AppDelegate()
