@@ -2,6 +2,8 @@ Still 1.3 — Copyright 2026 Carbon. Original application code: MIT (see LICENSE
 
 Interface: React, shadcn/ui (MIT), Radix, Motion, Sonner, cmdk and related packages.
 Font: Geist (SIL Open Font License). Icons: Lucide (ISC).
+AI app logos: LobeHub Icons (MIT, Copyright 2023 LobeHub). The Claude, OpenAI and Grok marks
+belong to Anthropic, OpenAI and xAI and only identify their apps.
 Article extraction: Mozilla Readability (Apache 2.0).
 Native host/runtime: .NET 10 and Windows Desktop (licenses included).
 Browser integration: Microsoft WebView2 SDK (Microsoft license and notices included).

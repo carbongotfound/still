@@ -49,7 +49,7 @@ public partial class MainWindow
   shellRoot = new Grid { Background = Brushes.Black };
   shellView = new WebView2 {
    CreationProperties = new CoreWebView2CreationProperties { UserDataFolder=Path.Combine(App.DataRoot,"WebView"),ProfileName="Shell" },
-   DefaultBackgroundColor = System.Drawing.Color.Black
+   DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x16, 0x15, 0x13)
   };
   ((Panel)WebHost.Parent).Children.Remove(WebHost);
   pageCanvas = new Canvas { Background=null };
@@ -60,7 +60,7 @@ public partial class MainWindow
   ApplyResizeEdge();
   var environment=await App.BrowserEnvironment;
   var shellOptions=environment.CreateCoreWebView2ControllerOptions();shellOptions.ProfileName="Shell";
-  await shellView.EnsureCoreWebView2Async(environment,shellOptions);
+  await shellView.EnsureCoreWebView2Async(environment,shellOptions); ClearViewColor();
   StartupMetrics.Mark("shell-controller");
   var core=shellView.CoreWebView2;
   core.Settings.AreDefaultContextMenusEnabled=false;core.Settings.IsStatusBarEnabled=false;

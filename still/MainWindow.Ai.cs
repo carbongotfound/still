@@ -57,12 +57,11 @@ public partial class MainWindow
   ["claude"] = [new("", "Default", ["low", "medium", "high", "xhigh", "max"]), new("fable", "Fable", ["low", "medium", "high", "xhigh", "max"]), new("opus", "Opus", ["low", "medium", "high", "xhigh", "max"]), new("sonnet", "Sonnet", ["low", "medium", "high", "xhigh", "max"]), new("haiku", "Haiku", ["low", "medium", "high", "xhigh", "max"])],
  };
  static readonly Dictionary<string, string> aiUsage = []; // per AI: the latest usage the CLI reported
- static bool aiModelsLoading;
+ static readonly HashSet<string> aiModelsLoading = [];
  /// Codex and Grok list their own models; asked once per run of Still, in the background.
  async Task LoadAiModels(AiCli cli)
  {
-  if (aiModels.ContainsKey(cli.Id) || aiModelsLoading || cli.Id == "claude" || FindCli(cli.Command) is not { } exe) return;
-  aiModelsLoading = true;
+  if (aiModels.ContainsKey(cli.Id) || cli.Id == "claude" || FindCli(cli.Command) is not { } exe || !aiModelsLoading.Add(cli.Id)) return;
   try {
    var start = Launch(exe, AiFolder, cli.Id == "codex" ? ["debug", "models"] : ["models"]); start.RedirectStandardOutput = start.RedirectStandardError = true; start.StandardOutputEncoding = new UTF8Encoding(false);
    Directory.CreateDirectory(AiFolder);
@@ -77,7 +76,7 @@ public partial class MainWindow
     list.Add(new(m.Groups[1].Value, m.Groups[1].Value, Efforts));
    aiModels[cli.Id] = [.. list];
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
-  finally { aiModelsLoading = false; }
+  finally { aiModelsLoading.Remove(cli.Id); }
   foreach (var w in Windows) w.PublishAi();
  }
  static string Pct(JsonNode? window) => window?["utilization"]?.GetValue<double>() is double u ? Math.Round(u * 100) + "%" : "?";
@@ -104,7 +103,7 @@ public partial class MainWindow
 
  void PublishAi() => ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = aiBusy, error = aiError, profile = ProfileCatalog.CurrentName(),
-  models = aiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness)?.Select(m => new { id = m.Id, name = m.Name, efforts = m.Efforts }),
+  models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, site = c.Site }),
@@ -118,9 +117,11 @@ public partial class MainWindow
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
   string harness = aiChat?.Harness ?? Prefs.AiHarness;
   switch (op) {
-   case "aiModel" when harness.Length > 0 && aiModels.GetValueOrDefault(harness) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
-    Prefs.AiModels[harness] = model.Id;
-    Prefs.AiEfforts[harness] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
+   // One list holds every AI's models: picking another AI's model moves the chat to it.
+   case "aiModel" when AiClis.FirstOrDefault(c => c.Id == (S("harness") is { Length: > 0 } hh ? hh : harness)) is { } cli && aiModels.GetValueOrDefault(cli.Id) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
+    if (cli.Id != harness) { if (aiBusy) break; UseAi(cli.Id); harness = cli.Id; }
+    Prefs.AiModels[cli.Id] = model.Id;
+    Prefs.AiEfforts[cli.Id] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
     SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
    case "aiLogin" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c: _ = AiSignIn(c); break;
@@ -132,12 +133,7 @@ public partial class MainWindow
     aiOpen = true;
     if (!aiBusy) { aiChat = null; aiError = ""; await RunAi(ask); }
     break;
-   case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)):
-    Prefs.AiHarness = h; SaveLater(); aiError = "";
-    if (!aiBusy && aiChat?.Harness != h) aiChat = null; // a chat stays with the AI it started with
-    foreach (var w in Windows) if (w != this) w.PublishAi();
-    if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
-    break;
+   case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h); break;
    case "aiNew" when !aiBusy: aiChat = null; aiError = ""; break;
    case "aiOpenChat" when !aiBusy: aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
    case "aiDeleteChat" when !(aiBusy && aiChat?.Id == S("id")):
@@ -147,11 +143,22 @@ public partial class MainWindow
    case "aiSend" when !aiBusy && S("text").Trim() is { Length: > 0 and <= 20000 } text: await RunAi(text); break;
   }
   PublishAi();
-  if (AiClis.FirstOrDefault(c => c.Id == harness) is { } current) _ = LoadAiModels(current);
+  foreach (var c in AiClis) _ = LoadAiModels(c);
+ }
+ /// Picks the AI for new chats. The open chat moves along; its next message brings the conversation so far.
+ void UseAi(string h)
+ {
+  Prefs.AiHarness = h; SaveLater(); aiError = "";
+  if (!aiBusy && aiChat != null && aiChat.Harness != h) {
+   if (h == "") aiChat = null;
+   else { aiChat.Harness = h; aiChat.Session = null; aiChat.Started = false; SaveAiChats(); }
+  }
+  foreach (var w in Windows) if (w != this) w.PublishAi();
+  if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
  }
 
  static string AiInstructions(AiCli cli, string profile) => $"""
-  You are {cli.Name}, the AI assistant built into the sidebar of Still, the user's web browser. Always call yourself {cli.Name}.
+  You are the AI assistant built into the sidebar of Still, the user's web browser, running on {cli.App}.
   You are not in a terminal: you have no files or shell here, only the `still` browser tools, working in the user's "{profile}" Still profile.
 
   How to work:
@@ -185,9 +192,13 @@ public partial class MainWindow
   var cli = AiClis.FirstOrDefault(c => c.Id == chat.Harness) ?? AiClis[0];
   if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; aiPending = shown ?? text; return; }
   if (aiChat == null) { aiChat = chat; AiChats.Insert(0, chat); }
+  shown ??= text;
+  // A chat on a new session (moved to another AI, or its CLI lost it) brings what was said so far.
+  if (!chat.Started && chat.Messages.Any(m => m.Role is "user" or "assistant"))
+   text = "(Our conversation so far, for context:)\n" + string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(20).Select(m => (m.Role == "user" ? "User: " : "You: ") + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text))) + "\n\n" + text;
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
-  aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown ?? text }); chat.Updated = DateTime.UtcNow;
+  aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown }); chat.Updated = DateTime.UtcNow;
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
 
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName()) + "\n\n") + AiContext() + "\n\n" + text;
@@ -250,12 +261,11 @@ public partial class MainWindow
    stopped = chat.Messages.LastOrDefault()?.Text == "Stopped.";
    bool lost; lock (errors) lost = errors.Any(LostSession);
    if (lost && !said && !stopped && cli.Id != "codex") {
-    // The CLI never saved this chat (it was stopped before it could): start a new session that carries the chat over.
+    // The CLI never saved this chat (it was stopped before it could): a new session brings the chat over.
     chat.Session = null; chat.Started = false; aiError = "";
     chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
-    string earlier = string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(20).Select(m => (m.Role == "user" ? "User: " : "You: ") + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text)));
     aiBusy = false; aiProcess = null;
-    await RunAi(earlier.Length > 0 ? "(Our conversation so far, for context:)\n" + earlier + "\n\n" + text : text, text);
+    await RunAi(shown);
     return;
    }
    if (process.ExitCode != 0 && !said && !stopped && aiError.Length == 0)

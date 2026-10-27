@@ -210,7 +210,7 @@ public partial class MainWindow
    const t = e.localName, d = e.ownerDocument;
    let s = e.getAttribute('aria-label') || (e.getAttribute('aria-labelledby') || '').split(/\s+/).map(i => i && d.getElementById(i)?.innerText).filter(Boolean).join(' ');
    if (!s && (t === 'input' || t === 'textarea' || t === 'select')) s = e.labels?.[0]?.innerText || e.placeholder || e.title || (/^(submit|button|reset)$/.test(e.type) ? e.value : '') || e.name;
-   if (!s && editable(e)) s = e.getAttribute('aria-placeholder') || e.getAttribute('data-placeholder') || e.title;
+   if (!s && editable(e)) s = e.getAttribute('aria-placeholder') || e.getAttribute('data-placeholder') || e.getAttribute('placeholder') || e.title;
    if (!s && !editable(e) && t !== 'select') s = e.innerText || e.title || e.querySelector('img[alt]')?.alt || e.querySelector('svg title')?.textContent || '';
    return clip(s, 80);
   };
@@ -236,6 +236,8 @@ public partial class MainWindow
   const byText = text => { const want = text.trim().toLowerCase(); let best = null; walk(document, e => { const cs = view(e).getComputedStyle(e); if (!isControl(e, cs) || !visible(e, cs)) return; const l = label(e).toLowerCase(); if (l === want) { best = e; return false; } if (!best && l.includes(want)) best = e; }); return best; };
   const target = o => o.id ? byId(o.id) : o.selector ? bySel(o.selector) : o.text ? byText(o.text) : null;
   const missing = o => ({ error: o.id ? 'gone' : 'notfound' });
+  // A fingerprint of a field's text, to tell whether typing changed it.
+  const sig = e => { const s = !e ? '' : e.isContentEditable ? e.innerText : String(e.value ?? ''); let h = 0; for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0; return s.length + ':' + h; };
  """;
 
  // read_page: header, then one line per control near the visible area (or all of them), then a page of the text.
@@ -299,9 +301,16 @@ public partial class MainWindow
    e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true }));
    return { done: 'Set ' + (label(e) || 'the field') + ' to ' + clip(o.value, 40) };
   }
-  if (!o.append) { if (e.isContentEditable) e.ownerDocument.getSelection().selectAllChildren(e); else if (typeof e.select === 'function') e.select(); }
+  if (e.isContentEditable) { const sel = e.ownerDocument.getSelection(); sel.selectAllChildren(e); if (o.append) sel.collapseToEnd(); }
+  else if (!o.append) { if (typeof e.select === 'function') e.select(); }
   else if (typeof e.setSelectionRange === 'function') { try { e.setSelectionRange(e.value.length, e.value.length); } catch {} }
-  return { label: label(e) || kind(e) };
+  // Rich editors (Notion and the like) only wake up for a real click: one at the end of the text, away from links.
+  let at = null;
+  if (e.isContentEditable && !o.clicked && e.ownerDocument === document) {
+   const b = box(e), x = b.x + b.w - 3, y = b.y + b.h - 6, hit = document.elementFromPoint(x, y);
+   if (b.w > 6 && b.h > 8 && hit && inside(e, hit) && !hit.closest('a')) at = { x, y };
+  }
+  return { label: label(e) || kind(e), sig: sig(deepActive()), multiline: e.isContentEditable || e.localName === 'textarea', at };
  """;
  // scroll: an element into view, or the page (or the scrolling panel under the middle of the view) by some pixels.
  const string ScrollJs = """
@@ -313,6 +322,7 @@ public partial class MainWindow
   const max = sc.scrollHeight - sc.clientHeight;
   return { done: 'Scrolled ' + (o.direction === 'up' ? 'up' : 'down'), at: max > 0 ? Math.round(sc.scrollTop / max * 100) + '%' : 'no scrolling here' };
  """;
+ const string SigJs = "return { sig: sig(deepActive()) };";
  const string WaitJs = """
   const found = o.id ? !!byId(o.id) : o.selector ? !!bySel(o.selector) : pageText().toLowerCase().includes(o.text.toLowerCase());
   return o.gone ? !found : found;
@@ -358,7 +368,10 @@ public partial class MainWindow
  {
   var (w, t) = AgentTab(who, args);
   if (t.Dialog is { } d) throw new InvalidOperationException($"The page is waiting on a dialog ({DialogKind(d)}): \"{Clip(d.Args.Message, 200)}\". Answer it with handle_dialog first.");
-  return (w, t, await Core(w, t));
+  var core = await Core(w, t);
+  // Agents work in background tabs, which never have focus; editors like Notion ignore typing without it.
+  await core.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
+  return (w, t, core);
  }
  static BrowserTab? FindTab(string id) => Windows.Where(w => !w.closing).SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id);
  static string Clip(string s, int n) => s.Length > n ? s[..(n - 1)] + "…" : s;
@@ -415,6 +428,21 @@ public partial class MainWindow
   ["ArrowUp"] = ("ArrowUp", 38, ""), ["ArrowDown"] = ("ArrowDown", 40, ""), ["ArrowLeft"] = ("ArrowLeft", 37, ""), ["ArrowRight"] = ("ArrowRight", 39, ""),
   ["Home"] = ("Home", 36, ""), ["End"] = ("End", 35, ""), ["PageUp"] = ("PageUp", 33, ""), ["PageDown"] = ("PageDown", 34, ""), ["Space"] = ("Space", 32, " "),
  };
+ static async Task MouseClick(CoreWebView2 core, double x, double y)
+ {
+  foreach (var type in new[] { "mouseMoved", "mousePressed", "mouseReleased" })
+   await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = type == "mouseMoved" ? "none" : "left", clickCount = type == "mouseMoved" ? 0 : 1 }));
+ }
+ /// Types text one key at a time; a new line is Enter where the field has lines.
+ static async Task TypeKeys(CoreWebView2 core, string text, bool multiline)
+ {
+  foreach (var r in text.ReplaceLineEndings("\n").EnumerateRunes()) {
+   string s = r.ToString();
+   if (s == "\n") { if (multiline) await PressKey(core, "Enter"); continue; }
+   await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyDown", key = s, text = s, unmodifiedText = s }));
+   await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", key = s }));
+  }
+ }
  /// Presses a key like a person would, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab".
  static async Task PressKey(CoreWebView2 core, string combo)
  {
@@ -484,18 +512,28 @@ public partial class MainWindow
     double x = hit.GetProperty("x").GetDouble(), y = hit.GetProperty("y").GetDouble();
     string label = Str(hit, "label"), before = agentTabs.GetValueOrDefault(who) ?? "";
     t.AgentActedAt = DateTime.UtcNow;
-    foreach (var type in new[] { "mouseMoved", "mousePressed", "mouseReleased" })
-     await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = type == "mouseMoved" ? "none" : "left", clickCount = type == "mouseMoved" ? 0 : 1 }));
+    await MouseClick(core, x, y);
     await WaitLoaded(t, 8000);
     Did("Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
    }
    case "type": {
     var (w, t, core) = await AgentPage(who, args);
     string text = S(args, "text"), before = agentTabs.GetValueOrDefault(who) ?? "";
-    var focus = await Js(core, FocusJs, new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append") });
+    object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked };
+    var focus = await Js(core, FocusJs, Q(false));
     t.AgentActedAt = DateTime.UtcNow;
     if (Str(focus, "done") is { Length: > 0 } picked) { Did(picked); return Reply(new { done = picked }); }
-    if (text.Length > 0) await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
+    if (focus.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Object) {
+     await MouseClick(core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
+     focus = await Js(core, FocusJs, Q(true)); // the click moved the caret: put it back
+    }
+    async Task<bool> Unchanged() => Str(await Js(core, SigJs, new { }), "sig") == Str(focus, "sig");
+    if (text.Length > 0) {
+     await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
+     // Some editors ignore inserted text and only take key presses: type it key by key.
+     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean()); }
+     if (await Unchanged()) return Fail("Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
+    }
     else if (!B(args, "append")) await PressKey(core, "Backspace");
     if (B(args, "submit")) await PressKey(core, "Enter");
     await WaitLoaded(t, B(args, "submit") ? 8000 : 0);

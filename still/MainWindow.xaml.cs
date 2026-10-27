@@ -128,11 +128,15 @@ public partial class MainWindow : Window
  }
  void Toast(string message) { if(shellReady){ShellSend(new{kind="toast",message});return;} ToastText.Text = message; ToastBar.Visibility = Visibility.Visible; toastTimer.Stop(); toastTimer.Start(); }
  SolidColorBrush Brush(string name) => (SolidColorBrush)FindResource(name);
+ static readonly System.Drawing.Color DarkPage = System.Drawing.Color.FromArgb(0x1C, 0x1B, 0x19);
+ // The WPF control hands a non-white DefaultBackgroundColor to a new view through this process-wide variable and never
+ // clears it, so a white view (a light-theme page, a popup) created later would come up in the last dark view's color.
+ internal static void ClearViewColor() => Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", null);
  void ApplyTheme()
  {
   dark = Prefs.Theme == "Dark" || (Prefs.Theme == "System" && (int?)Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) == 0);
   var colors = dark
-   ? new[] { "#080808", "#000000", "#080808", "#EFEFEA", "#A5A6A0", "#292929", "#222222", "#191919" }
+   ? new[] { "#161513", "#1C1B19", "#161513", "#F1EFEB", "#A3A09A", "#33322F", "#2B2A27", "#242321" }
    : new[] { "#FAFAF9", "#FFFFFF", "#F2F2F0", "#272826", "#71726E", "#E3E3DF", "#E0E2DB", "#ECEDE8" };
   string[] keys = ["Ground", "Surface", "Sidebar", "Ink", "Muted", "Line", "Wash", "Hover"];
   for (int i = 0; i < keys.Length; i++) Application.Current.Resources[keys[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i]));
@@ -274,9 +278,10 @@ public partial class MainWindow : Window
  }
  async Task CreateView(BrowserTab tab)
  {
+  ClearViewColor();
   var view = new WebView2 {
    CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = tab.Private ? privateProfile : "Default", IsInPrivateModeEnabled = tab.Private },
-   DefaultBackgroundColor = dark ? System.Drawing.Color.Black : System.Drawing.Color.White,
+   DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White,
    Visibility = active == tab && panel == "" ? Visibility.Visible : Visibility.Hidden
   };
   tab.View = view; WebHost.Children.Add(view); tab.Loading = true; UpdateChrome();
@@ -285,7 +290,7 @@ public partial class MainWindow : Window
   WebHost.UpdateLayout();
   try {
    var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=tab.Private?privateProfile:"Default";options.IsInPrivateModeEnabled=tab.Private;
-   await view.EnsureCoreWebView2Async(environment,options);
+   await view.EnsureCoreWebView2Async(environment,options); ClearViewColor();
    StartupMetrics.Mark("page-controller");
    if (tab.Closed || tab.View != view || closing) return;
    view.UpdateWindowPos();RestorePageWindow();
@@ -307,7 +312,7 @@ public partial class MainWindow : Window
    // Black while a page loads (no white flash in the dark theme), then the normal canvas: white unless the page asks for dark, as in Edge.
    core.DOMContentLoaded += (_, _) => view.DefaultBackgroundColor = System.Drawing.Color.White;
    core.NavigationStarting += (_, e) => {
-    view.DefaultBackgroundColor = dark ? System.Drawing.Color.Black : System.Drawing.Color.White;
+    view.DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White;
     App.Breadcrumb="page navigating "+Host(e.Uri);
     tab.NavigationId=e.NavigationId;
     tab.LoginFilled=false;tab.LoginDetected=false;
