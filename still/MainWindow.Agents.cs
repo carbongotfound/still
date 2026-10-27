@@ -19,6 +19,7 @@ public partial class MainWindow
  static readonly HashSet<string> blockedAgents = new(StringComparer.OrdinalIgnoreCase);
  static string agentName = "", agentAction = "";
  static DateTime agentSeen;
+ static bool agentPaused; // the user took over: the agent's calls wait until they hand it back
  // One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
  static TaskCompletionSource<bool>? agentApproval;
  static string askClient = "", askText = "";
@@ -79,6 +80,10 @@ public partial class MainWindow
     case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
    }
    agentName = client; agentSeen = DateTime.UtcNow;
+   // The user took over: wait for them to hand it back, like a person would.
+   for (var paused = DateTime.UtcNow.AddSeconds(40); agentPaused && DateTime.UtcNow < paused;) { await Task.Delay(250); agentSeen = DateTime.UtcNow; }
+   if (stoppedAgents.TryGetValue(client, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
+   if (agentPaused) return Fail("The user took over the browser for now. Wait a little, then call the tool again.");
    var interrupt = agentInterrupts[client] = new(TaskCreationOptions.RunContinuationsAsynchronously);
    var run = RunTool(client, tool, args, quick);
    int limit = tool switch { "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
@@ -153,8 +158,15 @@ public partial class MainWindow
  }
 
  static void PublishAll() { foreach (var w in Windows) w.ShellPublish(); }
- object? AgentData() => agentApproval != null ? new { client = askClient, pending = true, action = "", ask = askText }
-  : approvedAgents.Contains(agentName) && DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2) ? new { client = agentName, pending = false, action = agentAction, ask = "" } : null;
+ object? AgentData() => agentApproval != null ? new { client = askClient, pending = true, action = "", ask = askText, paused = false }
+  : approvedAgents.Contains(agentName) && (agentPaused || DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2)) ? new { client = agentName, pending = false, action = agentAction, ask = "", paused = agentPaused } : null;
+ // Take over: the agent waits while the user drives, and the tab it works in comes to the front.
+ async Task TakeOver(bool on)
+ {
+  agentPaused = on;
+  if (on && agentTabs.GetValueOrDefault(agentName) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
+  PublishAll();
+ }
  // Stop cancels what the agent is doing now; it stays allowed, so its next task needs no new approval.
  void StopAgent() {
   if (agentName.Length > 0) {
@@ -162,7 +174,7 @@ public partial class MainWindow
    if (agentInterrupts.Remove(agentName, out var running)) running.TrySetResult(Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."));
   }
   foreach (var w in Windows) if (w.aiBusy && AiClis.FirstOrDefault(c => c.Id == (w.aiChat?.Harness ?? "")) is { } cli && cli.Name == agentName) _ = w.HandleAi("aiStop", default);
-  agentAction = ""; agentSeen = DateTime.MinValue; PublishAll(); Toast("Stopped " + (agentName.Length > 0 ? agentName : "the AI agent") + ".");
+  agentAction = ""; agentSeen = DateTime.MinValue; agentPaused = false; PublishAll(); Toast("Stopped " + (agentName.Length > 0 ? agentName : "the AI agent") + ".");
  }
  static readonly Dictionary<string, DateTime> stoppedAgents = new(StringComparer.OrdinalIgnoreCase);
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
