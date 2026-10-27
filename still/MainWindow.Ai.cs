@@ -239,7 +239,7 @@ public partial class MainWindow
    process.StandardInput.Close();
    var stderr = Task.Run(async () => { while (await process.StandardError.ReadLineAsync() is { } line) lock (errors) { errors.Add(line); if (errors.Count > 20) errors.RemoveAt(0); } });
    while (await process.StandardOutput.ReadLineAsync() is { } line) {
-    if (line.Contains("No conversation found")) lock (errors) errors.Add(line);
+    if (LostSession(line)) lock (errors) errors.Add(line);
     JsonNode? e; try { e = JsonNode.Parse(line); } catch (JsonException) { continue; }
     if (e is not JsonObject) continue;
     said |= cli.Id == "codex" ? CodexEvent(chat, e) : MessagesEvent(chat, cli, e);
@@ -248,7 +248,7 @@ public partial class MainWindow
    await process.WaitForExitAsync(); await stderr;
    chat.Started = chat.Session != null;
    stopped = chat.Messages.LastOrDefault()?.Text == "Stopped.";
-   bool lost; lock (errors) lost = errors.Any(l => l.Contains("No conversation found"));
+   bool lost; lock (errors) lost = errors.Any(LostSession);
    if (lost && !said && !stopped && cli.Id != "codex") {
     // The CLI never saved this chat (it was stopped before it could): start a new session that carries the chat over.
     chat.Session = null; chat.Started = false; aiError = "";
@@ -274,6 +274,8 @@ public partial class MainWindow
   }
  }
 
+ // The CLI has no record of the session it was asked to resume (Claude says "No conversation found", Grok's server answers 404).
+ static bool LostSession(string line) => line.Contains("No conversation found") || line.Contains("Failed to restore session");
  [GeneratedRegex(@"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials", RegexOptions.IgnoreCase)] private static partial Regex SignedOutError();
  [GeneratedRegex(@"\x1b\[[0-9;?]*[A-Za-z]")] private static partial Regex TerminalCodes();
 
