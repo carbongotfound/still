@@ -28,6 +28,7 @@ internal static class McpServer
   Tool("wait_for", "Wait until an element or some text appears (or, with gone=true, disappears), for up to timeoutMs.", new { text = Str("Text to wait for"), id = Str("Or: element id"), selector = Str("Or: CSS selector"), gone = Bool("Wait for it to disappear instead"), timeoutMs = Num("Up to 30000 (default 10000)"), tabId = Str("Tab id (optional)") }),
   Tool("handle_dialog", "Answer the alert, confirm, prompt or \"leave page?\" dialog the page is paused on (other tools tell you when one opens).", new { accept = Bool("true = OK / Leave, false = Cancel / Stay (default true)"), text = Str("For a prompt: the text to answer with"), tabId = Str("Tab id (optional)") }),
   Tool("upload_file", "Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.", new { paths = new { type = "array", items = new { type = "string" }, description = "Full paths of the files on this computer" }, id = Str("Element id of a file input (optional)"), tabId = Str("Tab id (optional)") }, "paths"),
+  Tool("user_confirmed", "Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.", new { code = Str("The code Still gave you"), allow = Bool("true if the user said yes") }, "code"),
   Tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", new { tabId = Str("Tab id (optional)") }),
  ];
  internal const string Instructions = "You're driving the user's own Still browser, signed in as them. "
@@ -68,17 +69,32 @@ internal static class McpServer
   var stdin = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
   var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
   var running = new System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource>();
+  // Questions this server asks the user through their AI app (MCP elicitation), by request id.
+  var asks = new System.Collections.Concurrent.ConcurrentDictionary<string, TaskCompletionSource<JsonNode?>>();
+  bool canElicit = false; int asked = 0;
   void Send(JsonNode id, object? result, object? error) { string json = error != null ? JsonSerializer.Serialize(new { jsonrpc = "2.0", id, error }) : JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }); lock (stdout) stdout.WriteLine(json); }
+  // "accept" or "decline", or null if the user closed it, didn't answer or the app couldn't ask.
+  string? Elicit(string question, CancellationToken token)
+  {
+   string rid = "still-" + Interlocked.Increment(ref asked);
+   var answer = asks[rid] = new TaskCompletionSource<JsonNode?>(TaskCreationOptions.RunContinuationsAsynchronously);
+   lock (stdout) stdout.WriteLine(JsonSerializer.Serialize(new { jsonrpc = "2.0", id = rid, method = "elicitation/create", @params = new { message = question, requestedSchema = new { type = "object", properties = new { } } } }));
+   try { string? action = answer.Task.WaitAsync(TimeSpan.FromMinutes(10), token).GetAwaiter().GetResult()?["action"]?.GetValue<string>(); return action is "accept" or "decline" ? action : null; }
+   catch (Exception ex) when (ex is TimeoutException or OperationCanceledException) { return null; }
+   finally { asks.TryRemove(rid, out _); }
+  }
   while (stdin.ReadLine() is { } line) {
    if (string.IsNullOrWhiteSpace(line)) continue;
    JsonNode? msg; try { msg = JsonNode.Parse(line); } catch (JsonException) { continue; }
    var id = msg?["id"]?.DeepClone(); string method = msg?["method"]?.GetValue<string>() ?? "";
+   if (method.Length == 0) { if (id is JsonValue v && v.TryGetValue<string>(out var rid) && asks.TryRemove(rid, out var answer)) answer.TrySetResult(msg?["result"]); continue; } // the app answering us
    if (method == "notifications/cancelled") { if (msg?["params"]?["requestId"]?.ToJsonString() is { } rid && running.TryRemove(rid, out var cancel)) cancel.Cancel(); continue; }
    if (id == null) continue; // other notifications need no reply
    try {
     switch (method) {
      case "initialize":
       if (forcedName == null) client = AgentName(msg?["params"]?["clientInfo"]?["name"]?.GetValue<string>() ?? client);
+      canElicit = msg?["params"]?["capabilities"]?["elicitation"] != null;
       Send(id, new { protocolVersion = msg?["params"]?["protocolVersion"]?.GetValue<string>() ?? "2025-06-18", capabilities = new { tools = new { } },
        serverInfo = new { name = "still", version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "1" },
        instructions = Instructions + (lockProfile ? "" : " Still can have several profiles (separate logins); list_profiles shows them and every tool takes an optional profile name, or \"temp\" for a clean temporary window.") }, null);
@@ -94,7 +110,13 @@ internal static class McpServer
       string who = client;
       _ = Task.Run(() => {
        try {
-        string reply = lockProfile && name == "list_profiles" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: list_profiles" }) : Call(instance, who, name, args, cts.Token);
+        string reply = lockProfile && name == "list_profiles" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: list_profiles" }) : Call(instance, who, name, args.DeepClone(), cts.Token, canElicit);
+        // The user isn't at Still: their AI app asks them (the AI never sees the question), then the call carries on.
+        for (int tries = 0; tries < 2 && canElicit && JsonNode.Parse(reply)?["confirm"] is { } ask && Elicit(ask["question"]!.GetValue<string>(), cts.Token) is { } action; tries++) {
+         var confirm = (JsonObject)args.DeepClone(); confirm["code"] = ask["code"]!.GetValue<string>(); confirm["allow"] = action == "accept";
+         Call(instance, who, "user_confirmed", confirm, cts.Token);
+         reply = action == "accept" ? Call(instance, who, name, args.DeepClone(), cts.Token, canElicit) : JsonSerializer.Serialize(new { ok = false, error = "The user said no. Don't try again unless they ask." });
+        }
         if (!cts.IsCancellationRequested) Send(id, ToolResult(reply), null);
        } catch (OperationCanceledException) { }
        catch (Exception ex) { Send(id, null, new { code = -32603, message = "Still error: " + ex.Message }); }
@@ -126,7 +148,7 @@ internal static class McpServer
  static bool IsOpen(BrowserProfile p) { try { using var gate = Mutex.OpenExisting(App.InstanceName(ProfileCatalog.Folder(p))); return true; } catch (WaitHandleCannotBeOpenedException) { return false; } catch (UnauthorizedAccessException) { return true; } }
 
  /// Sends one tool call to the Still process for the requested profile (opening it if it's closed) and returns its JSON reply.
- static string Call(string instance, string client, string tool, JsonNode args, CancellationToken cancel = default)
+ static string Call(string instance, string client, string tool, JsonNode args, CancellationToken cancel = default, bool elicit = false)
  {
   if (tool == "list_profiles") return ListProfiles(instance);
   string name = args is JsonObject o && o["profile"]?.GetValue<string>() is { Length: > 0 } n ? n : "";
@@ -153,7 +175,7 @@ internal static class McpServer
     pipe.Connect(3000);
     using var reader = new StreamReader(pipe, new UTF8Encoding(false));
     using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
-    writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args }));
+    writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args, elicit }));
     // Still answers every call within its own time limit; this only covers a Still that froze.
     using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(2));
     try { return reader.ReadLineAsync(limit.Token).AsTask().GetAwaiter().GetResult() ?? throw new IOException("Still closed the connection."); }

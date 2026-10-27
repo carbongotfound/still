@@ -66,6 +66,7 @@ public sealed class Preferences
  public List<string> PinnedExtensions { get; set; } = []; // extension ids shown in the toolbar
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
+ public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen
