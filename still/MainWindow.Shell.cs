@@ -179,7 +179,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin":await HandleAi(op,data);break;
+     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();

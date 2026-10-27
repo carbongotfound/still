@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Text.RegularExpressions;
 namespace Still;
 
 public sealed class AiMessage { public string Role { get; set; } = ""; public string Text { get; set; } = ""; }
@@ -22,11 +23,13 @@ public sealed class AiChat
 // file and shell tools turned off where the CLI allows it (Codex: read-only sandbox). Chats are saved per profile.
 public partial class MainWindow
 {
- sealed record AiCli(string Id, string Name, string App, string Command, string Install, string Login);
+ // Installer: the maker's own install script, at a fixed address shown to the user before they press Install.
+ // Domains: the only sites a sign-in page may be on; anything else the app prints is never opened.
+ sealed record AiCli(string Id, string Name, string App, string Command, string Maker, string Installer, string Site, string[] SignIn, string[] Domains);
  static readonly AiCli[] AiClis = [
-  new("claude", "Claude", "Claude Code", "claude", "npm install -g @anthropic-ai/claude-code", "claude"),
-  new("codex", "Codex", "Codex CLI", "codex", "npm install -g @openai/codex", "codex login"),
-  new("grok", "Grok", "Grok Build", "grok", "Install Grok Build from x.ai", "grok"),
+  new("claude", "Claude", "Claude Code", "claude", "Anthropic", "https://claude.ai/install.ps1", "https://claude.com/product/claude-code", ["auth", "login"], ["claude.ai", "claude.com", "anthropic.com"]),
+  new("codex", "Codex", "Codex", "codex", "OpenAI", "https://chatgpt.com/codex/install.ps1", "https://chatgpt.com/codex", ["login"], ["openai.com", "chatgpt.com"]),
+  new("grok", "Grok", "Grok Build", "grok", "xAI", "https://x.ai/cli/install.ps1", "https://x.ai/cli", ["login", "--device-auth"], ["x.ai"]),
  ];
 
  static List<AiChat>? aiChats;
@@ -91,7 +94,8 @@ public partial class MainWindow
   string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
   var dirs = $"{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User)};{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine)};{Environment.GetEnvironmentVariable("PATH")}"
    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-   .Concat([Path.Combine(home, ".local", "bin"), Path.Combine(home, ".grok", "bin"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm")]);
+   .Concat([Path.Combine(home, ".local", "bin"), Path.Combine(home, ".grok", "bin"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm"),
+    Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "OpenAI", "Codex", "bin")]);
   foreach (var dir in dirs) foreach (var ext in new[] { ".exe", ".cmd" }) {
    try { string file = Path.Combine(Environment.ExpandEnvironmentVariables(dir), name + ext); if (File.Exists(file)) return file; } catch (ArgumentException) { }
   }
@@ -103,7 +107,8 @@ public partial class MainWindow
   models = aiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness)?.Select(m => new { id = m.Id, name = m.Name, efforts = m.Efforts }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
-  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, installed = FindCli(c.Command) != null, install = c.Install, login = c.Login }),
+  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, site = c.Site }),
+  setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = aiChat?.Id, chatHarness = aiChat?.Harness,
   messages = (aiChat?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
   chats = AiChats.Take(100).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated }) } });
@@ -118,11 +123,11 @@ public partial class MainWindow
     Prefs.AiEfforts[harness] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
     SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
-   case "aiLogin" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c && FindCli(c.Command) is { } cliExe:
-    // Sign in in a terminal of its own: the CLI's login opens the browser and may ask questions.
-    Process.Start(new ProcessStartInfo { FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"), Arguments = "/k \"\"" + cliExe + "\" " + (c.Id == "codex" ? "login" : "") + "\"", UseShellExecute = true });
-    aiError = ""; break;
-   case "aiToggle": aiOpen = !aiOpen; break;
+   case "aiLogin" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c: _ = AiSignIn(c); break;
+   case "aiInstall" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c: _ = AiInstall(c); break;
+   case "aiSetupCancel": aiSetupCancelled = true; try { aiSetupProcess?.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } break;
+   case "aiCheck": _ = CheckAis(true); break;
+   case "aiToggle": aiOpen = !aiOpen; if (aiOpen) _ = CheckAis(); break;
    case "aiAsk" when S("text").Trim() is { Length: > 0 and <= 20000 } ask: // typed in the address bar
     aiOpen = true;
     if (!aiBusy) { aiChat = null; aiError = ""; await RunAi(ask); }
@@ -131,6 +136,7 @@ public partial class MainWindow
     Prefs.AiHarness = h; SaveLater(); aiError = "";
     if (!aiBusy && aiChat?.Harness != h) aiChat = null; // a chat stays with the AI it started with
     foreach (var w in Windows) if (w != this) w.PublishAi();
+    if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
     break;
    case "aiNew" when !aiBusy: aiChat = null; aiError = ""; break;
    case "aiOpenChat" when !aiBusy: aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
@@ -173,13 +179,13 @@ public partial class MainWindow
  {
   var chat = aiChat;
   if (chat == null) {
-   if (Prefs.AiHarness.Length == 0) { aiError = "Pick an AI first."; return; }
+   if (Prefs.AiHarness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
    chat = new AiChat { Harness = Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t };
   }
   var cli = AiClis.FirstOrDefault(c => c.Id == chat.Harness) ?? AiClis[0];
-  if (FindCli(cli.Command) is not { } exe) { aiError = $"{cli.App} isn't installed. Install it, run `{cli.Login}` once in a terminal to sign in, then try again."; return; }
+  if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; aiPending = shown ?? text; return; }
   if (aiChat == null) { aiChat = chat; AiChats.Insert(0, chat); }
-  if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = "Turned on Settings → Let AI agents control Still." }); }
+  if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
   aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown ?? text }); chat.Updated = DateTime.UtcNow;
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
@@ -260,6 +266,147 @@ public partial class MainWindow
    chat.Updated = DateTime.UtcNow; SaveAiChats();
    try { File.Delete(promptFile); } catch (IOException) { }
   }
+  if (!said && SignedOutError().IsMatch(aiError)) {
+   // Signed out: sign in right here, then the message runs again by itself.
+   aiError = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text;
+   if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
+   _ = AiSignIn(cli);
+  }
+ }
+
+ [GeneratedRegex(@"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials", RegexOptions.IgnoreCase)] private static partial Regex SignedOutError();
+ [GeneratedRegex(@"\x1b\[[0-9;?]*[A-Za-z]")] private static partial Regex TerminalCodes();
+
+ // Setting up an AI app: is it installed and signed in ("missing", "signedOut", "ready", or "installing"/"signingIn" while
+ // that runs; absent = not known yet, which never blocks a chat). One install or sign-in runs at a time, for every window.
+ static readonly Dictionary<string, string> aiStatus = [];
+ static DateTime aiCheckedAt;
+ static Process? aiSetupProcess;
+ static bool aiSetupCancelled;
+ static string aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "";
+ string aiPending = ""; // asked before the AI was ready: runs once setup finishes
+ static void PublishAiEverywhere() { foreach (var w in Windows) w.PublishAi(); }
+
+ /// Asks each AI app whether it's signed in. These are local checks that use none of the user's AI usage.
+ static async Task CheckAis(bool force = false)
+ {
+  if (!force && DateTime.UtcNow - aiCheckedAt < TimeSpan.FromSeconds(30)) return;
+  aiCheckedAt = DateTime.UtcNow;
+  await Task.WhenAll(AiClis.Select(CheckAi));
+  PublishAiEverywhere();
+ }
+
+ static async Task CheckAi(AiCli cli)
+ {
+  if (aiStatus.GetValueOrDefault(cli.Id) is "installing" or "signingIn") return;
+  if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; return; }
+  Process? p = null;
+  try {
+   Directory.CreateDirectory(AiFolder);
+   var start = Launch(exe, AiFolder, cli.Id switch { "claude" => ["auth", "status"], "codex" => ["login", "status"], _ => ["models"] });
+   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
+   p = Process.Start(start)!; p.StandardInput.Close();
+   var output = await Task.WhenAll(p.StandardOutput.ReadToEndAsync(), p.StandardError.ReadToEndAsync()).WaitAsync(TimeSpan.FromSeconds(20));
+   string text = string.Join("\n", output);
+   bool signedIn = cli.Id switch {
+    "claude" => (JsonNode.Parse(output[0])?["loggedIn"]?.GetValue<bool>()).GetValueOrDefault(),
+    "codex" => text.Contains("Logged in") && !text.Contains("Not logged in"),
+    _ => !text.Contains("not authenticated", StringComparison.OrdinalIgnoreCase),
+   };
+   aiStatus[cli.Id] = signedIn ? "ready" : "signedOut";
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { aiStatus.Remove(cli.Id); }
+  finally { try { if (p is { HasExited: false }) p.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } p?.Dispose(); }
+ }
+
+ /// After the user picks an AI: sign in if it needs it, then run what they asked before it was set up.
+ async Task AiPicked(AiCli cli)
+ {
+  await CheckAi(cli); PublishAiEverywhere();
+  if (aiStatus.GetValueOrDefault(cli.Id) == "signedOut") await AiSignIn(cli);
+  else if (aiStatus.GetValueOrDefault(cli.Id) != "missing") await RunPending();
+ }
+
+ async Task RunPending()
+ {
+  if (aiPending.Length == 0 || aiBusy) return;
+  string ask = aiPending; aiPending = ""; aiOpen = true;
+  await RunAi(ask); PublishAi();
+ }
+
+ static bool Official(AiCli cli, string url) =>
+  Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == "https" && cli.Domains.Any(d => u.Host == d || u.Host.EndsWith("." + d));
+
+ /// Signs in with the AI app's own sign-in. Its official page opens in a tab here and the app itself receives the
+ /// login when the user approves; Still never sees a password, key or token.
+ async Task AiSignIn(AiCli cli)
+ {
+  if (aiSetupProcess != null || FindCli(cli.Command) is not { } exe) return;
+  aiStatus[cli.Id] = "signingIn"; aiSignInUrl = aiSignInCode = aiError = ""; aiSetupCancelled = false; aiOpen = true; PublishAiEverywhere();
+  int tabsBefore = 0; Process? p = null;
+  try {
+   Directory.CreateDirectory(AiFolder);
+   var start = Launch(exe, AiFolder, cli.SignIn);
+   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
+   start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
+   p = aiSetupProcess = Process.Start(start)!;
+   async Task Read(StreamReader r) {
+    while (await r.ReadLineAsync() is { } raw) {
+     string line = TerminalCodes().Replace(raw, "");
+     if (aiSignInUrl.Length == 0 && Regex.Match(line, @"https://[^\s""'<>]+") is { Success: true } link && Official(cli, link.Value)) {
+      aiSignInUrl = link.Value;
+      if (Regex.Match(aiSignInUrl, @"user_code=([A-Za-z0-9-]+)") is { Success: true } c) aiSignInCode = c.Groups[1].Value;
+      PublishAiEverywhere();
+      // Claude and Codex also open the default browser. If that's Still, the page is already here; otherwise open it here too.
+      string host = Host(aiSignInUrl);
+      tabsBefore = Windows.SelectMany(w => w.tabs).Count(t => Host(t.Url) == host);
+      if (cli.Id != "grok") await Task.Delay(2500);
+      if (Windows.SelectMany(w => w.tabs).Count(t => Host(t.Url) == host) <= tabsBefore) await NewTab(aiSignInUrl, false, false);
+     } else if (aiSignInCode.Length == 0 && Regex.Match(line, @"^\s*([A-Z0-9]{4}-[A-Z0-9]{4,6})\s*$") is { Success: true } code) { aiSignInCode = code.Groups[1].Value; PublishAiEverywhere(); }
+    }
+   }
+   await Task.WhenAll(Read(p.StandardOutput), Read(p.StandardError), p.WaitForExitAsync()).WaitAsync(TimeSpan.FromMinutes(10));
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
+  finally {
+   try { if (p is { HasExited: false }) p.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+   p?.Dispose(); aiSetupProcess = null; aiStatus.Remove(cli.Id); aiSignInUrl = aiSignInCode = "";
+  }
+  await CheckAi(cli);
+  if (aiStatus.GetValueOrDefault(cli.Id) == "ready") await RunPending();
+  else if (!aiSetupCancelled) aiError = $"Signing in to {cli.Name} didn't finish. Try again.";
+  PublishAiEverywhere();
+ }
+
+ /// Runs the maker's official installer, only after the user pressed Install. It installs for this Windows user, no admin.
+ async Task AiInstall(AiCli cli)
+ {
+  if (aiSetupProcess != null) return;
+  aiStatus[cli.Id] = "installing"; aiSetupLine = aiError = ""; aiSetupCancelled = false; PublishAiEverywhere();
+  Process? p = null;
+  try {
+   Directory.CreateDirectory(AiFolder);
+   var start = new ProcessStartInfo { FileName = Path.Combine(Environment.SystemDirectory, "WindowsPowerShell", "v1.0", "powershell.exe"), WorkingDirectory = AiFolder, UseShellExecute = false, CreateNoWindow = true,
+    RedirectStandardInput = true, RedirectStandardOutput = true, RedirectStandardError = true, StandardOutputEncoding = new UTF8Encoding(false), StandardErrorEncoding = new UTF8Encoding(false) };
+   foreach (var a in new[] { "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-Command", $"irm '{cli.Installer}' | iex" }) start.ArgumentList.Add(a);
+   start.Environment["CODEX_NON_INTERACTIVE"] = "1";
+   p = aiSetupProcess = Process.Start(start)!; p.StandardInput.Close();
+   var shown = DateTime.MinValue;
+   async Task Read(StreamReader r) {
+    while (await r.ReadLineAsync() is { } raw) if (TerminalCodes().Replace(raw, "").Trim() is { Length: > 0 } line) {
+     aiSetupLine = line.Length > 90 ? line[..90] + "…" : line;
+     if (DateTime.UtcNow - shown > TimeSpan.FromMilliseconds(300)) { shown = DateTime.UtcNow; PublishAiEverywhere(); }
+    }
+   }
+   await Task.WhenAll(Read(p.StandardOutput), Read(p.StandardError), p.WaitForExitAsync()).WaitAsync(TimeSpan.FromMinutes(10));
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
+  finally {
+   try { if (p is { HasExited: false }) p.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+   p?.Dispose(); aiSetupProcess = null; aiStatus.Remove(cli.Id); aiSetupLine = "";
+  }
+  await CheckAi(cli);
+  if (aiStatus.GetValueOrDefault(cli.Id) == "signedOut") { await AiSignIn(cli); return; } // straight on to signing in
+  if (aiStatus.GetValueOrDefault(cli.Id) == "missing" && !aiSetupCancelled) aiError = $"{cli.App} didn't install. You can get it from {Host(cli.Site)} instead.";
+  else await RunPending();
+  PublishAiEverywhere();
  }
 
  static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args)

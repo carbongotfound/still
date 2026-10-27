@@ -60,7 +60,7 @@ Type it into the address bar and choose **Ask AI**, press <kbd>Ctrl Shift A</kbd
 
 ## Connect your AI
 
-Turn on *Settings → Let AI agents control Still* (or do it during setup). Then:
+Turn on *Settings → Let other AI apps use Still* (or do it during setup). Then:
 
 **Claude Code**
 
