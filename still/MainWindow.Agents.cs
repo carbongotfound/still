@@ -67,7 +67,7 @@ public partial class MainWindow
    client = new string(client.Where(ch => !char.IsControl(ch)).Take(40).ToArray());
    string tool = root.GetProperty("tool").GetString() ?? "";
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a.Clone() : default;
-   if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let AI agents control Still.");
+   if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.");
    if (tool == "user_confirmed") return Confirmed(client, args);
    // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
    bool quick = root.TryGetProperty("elicit", out var el) && el.ValueKind == JsonValueKind.True || UserAway();

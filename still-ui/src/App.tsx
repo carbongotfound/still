@@ -4,6 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } 
 import { Bot, Info, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
+import { Buddy } from "./Buddy"
 import { UploadCard, type Upload } from "./UploadCard"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
@@ -52,6 +53,14 @@ type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: stri
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
 const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
+// One click on the new tab page hands one of these to the AI.
+const IDEAS = [
+ ["🏖️", "Plan a weekend away", "Help me plan a weekend away. Ask me where I'm starting from and what I like, then find a few options."],
+ ["🏷️", "Find the best price", "Help me find the best price for something. Ask me what I'm shopping for first."],
+ ["☕", "Catch me up on the news", "Catch me up on today's top news in a few bullet points, with links."],
+ ["🍝", "What's for dinner?", "Find me an easy, well-reviewed dinner recipe for tonight."],
+]
+const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
 const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Ask AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
 
@@ -197,7 +206,7 @@ export default function App() {
   const q = query.trim(), items: { key: string; icon: React.ReactNode; title: string; sub: string; value?: string; run: () => void }[] = []
   if (q && q !== active?.url && !completion) items.push({ key: "go", icon: <Search size={15} />, title: q, sub: /^[^\s]+\.[^\s]+$/.test(q) || /^https?:/.test(q) ? "Go to address" : "Search " + state.preferences.search, run: () => go(q) })
   // Anything that isn't an address can go to the AI as a task.
-  if (q && !state.noAi && !/^[^\s]+\.[^\s]+$/.test(q) && !/^[a-z]+:/i.test(q)) items.push({ key: "ai", icon: <Bot size={15} />, title: q, sub: "Ask AI", run: () => { send("aiAsk", { text: q }); close() } })
+  if (q && !state.noAi && !/^[^\s]+\.[^\s]+$/.test(q) && !/^[a-z]+:/i.test(q)) items.push({ key: "ai", icon: <Buddy size={16} />, title: q, sub: "Ask AI", run: () => { send("aiAsk", { text: q }); close() } })
   suggestions.forEach(v => items.push({ key: "s" + v.url, icon: <Globe2 size={15} />, title: v.host, sub: v.bookmark ? v.title + " · Bookmark" : "Visited", value: prettyUrl(v.url), run: () => go(v.url) }))
   const lower = q.toLowerCase()
   state.tabs.filter(t => t.url && t.id !== state.activeId && (!q || q === active?.url || (t.title + t.url).toLowerCase().includes(lower))).slice(0, 4)
@@ -350,7 +359,7 @@ export default function App() {
      <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
-     {!state.noAi && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Ask AI · Ctrl+Shift+A" onClick={() => send("aiToggle")}><Bot />Ask AI</Button>}
+     {!state.noAi && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Ask AI · Ctrl+Shift+A" onClick={() => send("aiToggle")}><Buddy size={16} mood={ai?.busy ? "think" : "idle"} />Ask AI</Button>}
      <IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton>
@@ -431,10 +440,11 @@ export default function App() {
      </div></div>
      <div className="page-slot" ref={pageRef}>
       {active?.url ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : <motion.div key={active?.id} className="new-tab-page" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
-       <div className="still-mark" aria-hidden><i /><i /></div>
-       <h1>still.</h1>
+       <Buddy size={64} mood={active?.isPrivate ? "sleep" : "idle"} className="new-tab-buddy" />
+       <h1>{active?.isPrivate ? "Private tab" : greeting()}</h1>
        <p>{active?.isPrivate ? "A little privacy." : state.noAi ? "Where to?" : "Where to? Or hand it to your AI."}</p>
        <Button variant="outline" className="start-search" onClick={e => openAddress(e.currentTarget)}><Search /><span>{state.noAi ? "Search or enter an address" : "Search, enter an address or ask AI"}</span><kbd>Ctrl L</kbd></Button>
+       {!active?.isPrivate && !state.noAi && <div className="new-tab-ideas">{IDEAS.map(([icon, label, prompt]) => <button key={label} className="new-tab-idea" onClick={() => send("aiAsk", { text: prompt })}><span aria-hidden>{icon}</span>{label}</button>)}</div>}
        {!active?.isPrivate && state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
        {active?.isPrivate && <span className="private-caption"><LockKeyhole />This tab and its history won't be saved.</span>}
       </motion.div>}
@@ -465,7 +475,7 @@ export default function App() {
    <span className="tab-ghost-icon">{ghost.favicon ? <img src={ghost.favicon} alt="" /> : <Globe2 />}</span><span className="tab-ghost-title">{ghost.title}</span>
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
   </div>}
-  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} mcpCommand={state.mcpCommand} aiHarness={ai?.harness} noAi={state.noAi} send={send} onImport={() => open("import")} />}
+  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} mcpCommand={state.mcpCommand} ai={ai} noAi={state.noAi} send={send} onImport={() => open("import")} />}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
     <DialogTitle className="sr-only">{displayPane === "tabs" ? "Find a tab" : "Go somewhere"}</DialogTitle>
@@ -499,8 +509,8 @@ export default function App() {
      </TabsContent>
      <TabsContent value="browsing" className="settings-content">
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>AI sidebar</strong><p>Which AI the sidebar runs. It uses the app installed on this PC, signed in to your own account, and only this profile.</p></div><Select value={ai?.harness || "none"} onValueChange={v => send("aiHarness", { harness: v === "none" ? "" : v })}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="none">Not set up</SelectItem>{(ai?.harnesses ?? [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }, { id: "grok", name: "Grok" }]).map(h => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Let AI agents control Still (MCP)</strong><p>AI apps like Claude Desktop or Cursor can open, read and click pages for you. You approve each app first and can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let AI agents control Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
+      <Separator /><div className="setting-row"><div><strong>Your AI</strong><p>The AI that Ask AI uses. It runs on this PC, signed in to your own account, and only sees this profile.</p></div><Select value={ai?.harness ?? ""} onValueChange={v => { send("aiHarness", { harness: v }); if (!ai?.open) send("aiToggle") }}><SelectTrigger className="w-36"><SelectValue placeholder="Choose…" /></SelectTrigger><SelectContent>{(ai?.harnesses ?? [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }, { id: "grok", name: "Grok" }]).map(h => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}</SelectContent></Select></div>
+      <Separator /><div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
       {state.preferences.agents && <><Separator /><div className="setting-row"><div><strong>Ask me in the AI's chat when I'm away</strong><p>If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window.</p></div><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></div></>}
       {state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <div className="mcp-config"><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
        {(() => { const exe = `& "${state.mcpCommand}"`; const prompt = `You can control my Still web browser from the terminal (PowerShell) with:
