@@ -64,6 +64,12 @@ public partial class MainWindow
    var attributes = d.RootElement.GetProperty("node").GetProperty("attributes").EnumerateArray().Select(a => a.GetString() ?? "").ToArray();
    for (int i = 0; i + 1 < attributes.Length; i += 2) if (attributes[i] == "accept") accept = attributes[i + 1];
   } catch (Exception ex) when (ex is COMException or InvalidOperationException or JsonException or KeyNotFoundException) { }
+  // An AI's click opened it: the AI attaches files with upload_file (the user approves), so nothing pops up here.
+  if (tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10)) {
+   tab.AgentUpload = new UploadRequest(Guid.NewGuid().ToString("N"), tab, core, node, multiple, accept, []);
+   InterruptAgent(tab, new { fileChooser = new { multiple, accept = accept.Length > 0 ? accept : null }, url = tab.Url, note = "The page opened a file picker. Call upload_file with the full paths of the files to attach; the user is asked to allow it." });
+   return;
+  }
   var types = AcceptedTypes(accept);
   CancelUpload();
   // The copied image leads the bar, saved as a PNG so picking it is instant.
