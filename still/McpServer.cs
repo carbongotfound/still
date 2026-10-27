@@ -42,7 +42,8 @@ internal static class McpServer
  static JsonArray BuildTools(bool lockProfile)
  {
   var list = JsonSerializer.SerializeToNode(BrowserTools)!.AsArray();
-  if (lockProfile) return list;
+  // Still's own chat can show the user a question with options and wait for the answer.
+  if (lockProfile) { list.Add(JsonSerializer.SerializeToNode(Tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.", new { question = Str("The question, in one short sentence"), options = new { type = "array", items = new { type = "string" }, description = "2-4 short answers to pick from" } }, "question"))); return list; }
   foreach (var t in list) t!["inputSchema"]!["properties"]!["profile"] = JsonSerializer.SerializeToNode(Str("Still profile name from list_profiles (optional; defaults to the launch profile). A closed profile is opened. \"temp\" opens a separate temporary window with no cookies, logins or history, deleted after it closes."));
   list.Insert(0, JsonSerializer.SerializeToNode(Tool("list_profiles", "List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or \"temp\" for a clean temporary window.", new { })));
   return list;
@@ -177,7 +178,7 @@ internal static class McpServer
     using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
     writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args, elicit }));
     // Still answers every call within its own time limit; this only covers a Still that froze.
-    using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(2));
+    using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(tool == "ask_user" ? 12 : 2));
     try { return reader.ReadLineAsync(limit.Token).AsTask().GetAwaiter().GetResult() ?? throw new IOException("Still closed the connection."); }
     catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { return JsonSerializer.Serialize(new { ok = false, error = "Still didn't answer in time. It may be busy; try again, or ask the user to check Still." }); }
    } catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException) {

@@ -57,10 +57,10 @@ public partial class MainWindow
         var native=new System.Windows.Media.Imaging.BitmapImage();native.BeginInit();native.CacheOption=System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;native.StreamSource=chromeStream;native.EndInit();native.Freeze();
         System.Windows.Media.Imaging.BitmapImage? page=null;
         System.Windows.Rect pageRect=default;
-        if(WebHost.Visibility==System.Windows.Visibility.Visible && active?.View?.CoreWebView2 is {} browser && active.View.Visibility==System.Windows.Visibility.Visible){
+        if(WebHost.Visibility==System.Windows.Visibility.Visible && Shown?.View?.CoreWebView2 is {} browser && Shown.View.Visibility==System.Windows.Visibility.Visible){
          using var stream=new MemoryStream();await browser.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,stream).WaitAsync(TimeSpan.FromSeconds(3));stream.Position=0;
          page=new();page.BeginInit();page.CacheOption=System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;page.StreamSource=stream;page.EndInit();page.Freeze();
-         var point=active.View.TransformToAncestor(shellRoot).Transform(new System.Windows.Point(0,0));pageRect=new(point.X,point.Y,active.View.ActualWidth,active.View.ActualHeight);
+         var point=Shown.View.TransformToAncestor(shellRoot).Transform(new System.Windows.Point(0,0));pageRect=new(point.X,point.Y,Shown.View.ActualWidth,Shown.View.ActualHeight);
         }
         var visual=new System.Windows.Media.DrawingVisual();
         using(var dc=visual.RenderOpen()) {dc.DrawImage(native,new System.Windows.Rect(0,0,width,height));if(page!=null)dc.DrawImage(page,pageRect);}
