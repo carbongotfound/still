@@ -10,7 +10,7 @@
   <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><ConcurrentGarbageCollection>false</ConcurrentGarbageCollection><StartupObject>Still.Program</StartupObject>
   <DebugType>embedded</DebugType>
-  <Description>A quieter window onto the internet. A minimalist Windows browser.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
+  <Description>The browser you share with your AI.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>
  <ItemGroup>
   <EmbeddedResource Include="Shell\**\*" LogicalName="Still.Content.Shell/%(RecursiveDir)%(Filename)%(Extension)" />

@@ -83,7 +83,7 @@ Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still"; ValueType: strin
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\DefaultIcon"; ValueType: string; ValueData: """{app}\Still.exe"",0"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\shell\open\command"; ValueType: string; ValueData: """{app}\Still.exe"""
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Still"
-Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "A quiet, pitch-black browser for Windows."
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "The browser you share with your AI."
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: """{app}\Still.exe"",0"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities\StartMenu"; ValueType: string; ValueName: "StartMenuInternet"; ValueData: "Still"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "StillURL"

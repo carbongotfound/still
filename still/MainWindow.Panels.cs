@@ -104,7 +104,7 @@ public partial class MainWindow
  {
   if(shellReady){ShellOpen("settings");return;}
   OpenSheet("settings", "Make yourself at home.");
-  SheetContent.Children.Add(Note("Still. A quiet browser."));
+  SheetContent.Children.Add(Note("Still. The browser you share with your AI."));
   Choices("Appearance", ["Light", "Dark", "System"], Prefs.Theme, s => { Prefs.Theme = s; ApplyTheme(); });
   Choices("Search with", ["DuckDuckGo", "Google", "Bing"], Prefs.SearchEngine, s => Prefs.SearchEngine = s);
   Choices("Restore tabs when Still opens", ["On", "Off"], Prefs.RestoreTabs ? "On" : "Off", s => Prefs.RestoreTabs = s == "On");
@@ -134,10 +134,7 @@ public partial class MainWindow
  {
   if(shellReady){ShellOpen("about");return;}
   OpenSheet("about", "still.");
-  SheetContent.Children.Add(Note("Version 1.0\nA native Windows browser with room to breathe.", 15));
-  Heading("Inspired by Search");
-  SheetContent.Children.Add(Note("The quiet interface of Search by Office Commun inspired Still. This is an independent Windows implementation with its own identity."));
-  SheetContent.Children.Add(ActionButton("Visit the original Search", async () => await NewTab("https://officecommun.com/search", false, false), true));
+  SheetContent.Children.Add(Note("Version 1.0\nThe browser you share with your AI.", 15));
   Heading("Built here");
   SheetContent.Children.Add(Note("Your tabs, history and bookmarks stay in your Windows user profile. Still has no account, telemetry, or cloud sync. Websites have their own privacy policies. Microsoft's WebView2 runtime is maintained and updated separately."));
   SheetContent.Children.Add(Note("Still uses Microsoft WebView2 and Mozilla Readability. This first release does not include extension installation, browser-data migration, or a Still updater."));
