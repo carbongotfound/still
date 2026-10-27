@@ -51,7 +51,7 @@ internal static class ErrorPages
   // Only link back to web URLs; never echo other schemes into an href.
   string retry = u != null && u.Scheme is "http" or "https" or "file" ? u.AbsoluteUri : "";
   string search = (searchEngine == "Bing" ? "https://www.bing.com/search?q=" : searchEngine == "DuckDuckGo" ? "https://duckduckgo.com/?q=" : "https://www.google.com/search?q=") + Uri.EscapeDataString(host);
-  string bg = dark ? "#000" : "#FAFAF9", ink = dark ? "#EFEFEA" : "#1B1B1A", muted = dark ? "#8E8F89" : "#6B6C67", line = dark ? "#262626" : "#E3E3DF", btnBg = dark ? "#EFEFEA" : "#1B1B1A", btnInk = dark ? "#000" : "#FAFAF9";
+  string bg = dark ? "#1C1B19" : "#FAFAF9", ink = dark ? "#EFEFEA" : "#1B1B1A", muted = dark ? "#8E8F89" : "#6B6C67", line = dark ? "#262626" : "#E3E3DF", btnBg = dark ? "#EFEFEA" : "#1B1B1A", btnInk = dark ? "#000" : "#FAFAF9";
   return $@"<!doctype html><html><head><meta charset='utf-8'><title>{e(k.Title)}</title><style>
 html,body{{margin:0;height:100%;background:{bg};color:{ink};font:15px/1.55 'Segoe UI Variable Text','Segoe UI',system-ui,sans-serif}}
 main{{min-height:100%;display:flex;align-items:center;justify-content:center;padding:40px;box-sizing:border-box}}

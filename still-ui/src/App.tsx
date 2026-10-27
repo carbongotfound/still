@@ -4,6 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } 
 import { Bot, Info, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
+import { AiLogo } from "./AiLogo"
 import { Buddy } from "./Buddy"
 import { UploadCard, type Upload } from "./UploadCard"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -122,7 +123,7 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
-      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{tab.agent && <span className="tab-agent" title={tab.agent + " is using this tab"}><Bot /></span>}{tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
+      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{tab.agent && <span className="tab-agent" title={tab.agent + " is using this tab"}><AiLogo id={tab.agent} size={14} /></span>}{tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
@@ -216,7 +217,7 @@ export default function App() {
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned && !t.aiGroup)
  const aiTabs = state.tabs.filter(t => !t.pinned && t.aiGroup)
- const aiGroup = (top: boolean) => aiTabs.length > 0 && <div className={cn("ai-tab-group", top && "is-top")}><span className="ai-tab-group-label"><Bot />AI</span><FlowTabs tabs={aiTabs} top={top} /></div>
+ const aiGroup = aiTabs.length > 0 && <div className="ai-tab-group" role="group" aria-label="AI tabs"><span className="ai-tab-group-label"><Buddy size={16} />AI</span><FlowTabs tabs={aiTabs} top /></div>
  useLayoutEffect(() => {
   const root = tabsRef.current
   const viewport = root?.matches('.top-tab-list') ? root : root?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
@@ -321,7 +322,7 @@ export default function App() {
  )
  return <UICtx.Provider value={{state,setContext,open,arriving,setGhost}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
   <div className={cn("browser-shell", "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
-   {!state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
+   {!state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -420,7 +421,7 @@ export default function App() {
       <Button variant="ghost" size="sm" className="bookmark-chip bookmark-all" onClick={() => open("bookmarks")}><Bookmark />All bookmarks</Button>
      </nav>}
      <div className={cn("permission-wrap", state.agent && "is-open")}><div className={cn("permission-bar agent-bar", state.agent?.pending && "is-asking")} role="alertdialog" aria-label="AI agent" aria-hidden={!state.agent}>
-      <Bot /><span>{state.agent?.pending
+      {state.agent?.client ? <AiLogo id={state.agent.client} size={20} /> : <Bot />}<span>{state.agent?.pending
        ? state.agent.ask ? <><b>{state.agent.client}</b> wants to {state.agent.ask}.</>
        : <><b>{state.agent.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>
        : <><b>{state.agent?.client}</b> is using Still{state.agent?.action ? " · " + state.agent.action : ""}</>}</span>
@@ -509,10 +510,9 @@ export default function App() {
      </TabsContent>
      <TabsContent value="browsing" className="settings-content">
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Your AI</strong><p>The AI that Ask AI uses. It runs on this PC, signed in to your own account, and only sees this profile.</p></div><Select value={ai?.harness ?? ""} onValueChange={v => { send("aiHarness", { harness: v }); if (!ai?.open) send("aiToggle") }}><SelectTrigger className="w-36"><SelectValue placeholder="Choose…" /></SelectTrigger><SelectContent>{(ai?.harnesses ?? [{ id: "claude", name: "Claude" }, { id: "codex", name: "Codex" }, { id: "grok", name: "Grok" }]).map(h => <SelectItem key={h.id} value={h.id}>{h.name}</SelectItem>)}</SelectContent></Select></div>
       <Separator /><div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
       {state.preferences.agents && <><Separator /><div className="setting-row"><div><strong>Ask me in the AI's chat when I'm away</strong><p>If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window.</p></div><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></div></>}
-      {state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <div className="mcp-config"><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
+      {state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <details className="mcp-config welcome-dev"><summary>For developers: connect an AI app by hand</summary><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
        {(() => { const exe = `& "${state.mcpCommand}"`; const prompt = `You can control my Still web browser from the terminal (PowerShell) with:
 ${exe} --cli <tool> as=<your name> [key=value ...]
 
@@ -535,7 +535,7 @@ Run \`${exe} --cli help\` to list tools. Common ones:
 - switch_tab / close_tab / go_back / go_forward / reload [tabId=<id>]
 - list_profiles; add profile=<name> to any tool to use another profile, or profile=temp for a separate temporary window with no cookies or logins
 
-The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Codex or Grok Build:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</div> })()}
+The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Codex or Grok Build:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</details> })()}
       <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
       <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>

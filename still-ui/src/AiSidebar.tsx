@@ -4,10 +4,11 @@ import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { AiLogo } from "./AiLogo"
 import { Buddy } from "./Buddy"
 import { Markdown } from "./Markdown"
 
@@ -15,7 +16,7 @@ type Harness = { id: string; name: string; app: string; maker: string; installed
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
  setup: { line: string; url: string; code: string }; pending: boolean
- models?: { id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
+ models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; messages: { role: string; text: string }[]; chats: { id: string; title: string; harness: string; updated: string }[]
 }
 type Send = (op: string, payload?: Record<string, unknown>) => void
@@ -27,7 +28,6 @@ const IDEAS = [
  ["💡", "Explain it simply", "Explain this page simply, like I'm new to the topic."],
 ]
 const WORKING = ["On it", "Looking around", "Reading carefully", "Connecting the dots", "Almost there"]
-const COLORS: Record<string, string> = { claude: "#d97757", codex: "#10a37f", grok: "#52525b" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
@@ -53,12 +53,14 @@ function StatusChip({ h }: { h: Harness }) {
 // The AIs Still works with and whether each is ready. Picking one signs it in, or offers to install it.
 export function AiPicker({ ai, onPick }: { ai: AiState; onPick: (id: string) => void }) {
  return <div className="ai-picker">{ai.harnesses.map(h => <button key={h.id} className="ai-pick-card" data-chosen={ai.harness === h.id || undefined} onClick={() => onPick(h.id)}>
-  <span className="ai-avatar" style={{ background: COLORS[h.id] }}>{h.name[0]}</span>
+  <AiLogo id={h.id} />
   <span className="ai-pick-name"><strong>{h.name}</strong><small>by {h.maker}</small></span>
   <StatusChip h={h} />
   {ai.harness === h.id && <Check className="ai-pick-check" />}
  </button>)}</div>
 }
+
+const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(statusOf(h))
 
 // Chat with the user's own Claude Code, Codex or Grok Build. It reads and drives this profile's tabs through Still's MCP server.
 export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
@@ -66,12 +68,13 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
  const [text, setText] = useState("")
  const [cheer, setCheer] = useState(false)
  const [tick, setTick] = useState(0)
+ const [queued, setQueued] = useState("")
  const log = useRef<HTMLDivElement>(null)
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const status = statusOf(current)
  const openLink = (url: string) => send("new", { url })
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [ai.messages.length, ai.busy, view])
- useEffect(() => { if (!ai.busy) return; const t = setInterval(() => setTick(n => n + 1), 2600); return () => clearInterval(t) }, [ai.busy])
+ useEffect(() => { if (!ai.busy) return; setTick(0); const t = setInterval(() => setTick(n => n + 1), 1000); return () => clearInterval(t) }, [ai.busy])
  // Just finished installing or signing in: a little celebration.
  const wasSettingUp = useRef(false)
  useEffect(() => {
@@ -80,7 +83,8 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
   const done = wasSettingUp.current && status === "ready"; wasSettingUp.current = false
   if (done) { setCheer(true); const t = setTimeout(() => setCheer(false), 6000); return () => clearTimeout(t) }
  }, [status])
- const submit = (value = text) => { if (value.trim() && !ai.busy) { send("aiSend", { text: value }); setText(""); setCheer(false) } }
+ const submit = (value = text) => { if (!value.trim()) return; if (ai.busy) setQueued(value); else send("aiSend", { text: value }); setText(""); setCheer(false) }
+ useEffect(() => { if (!ai.busy && queued && !ai.error) { send("aiSend", { text: queued }); setQueued("") } }, [ai.busy]) // eslint-disable-line react-hooks/exhaustive-deps
  const setup = !ai.harness && !ai.chatId
  const pending = ai.pending && <p className="ai-fine">Your question runs as soon as {current?.name ?? "your AI"} is ready.</p>
 
@@ -94,9 +98,9 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
  const last = ai.messages[ai.messages.length - 1]
 
  const header = <div className="ai-head">
-  {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Buddy size={20} mood={ai.busy ? "think" : "idle"} className="ai-head-buddy" />}
+  {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Buddy size={20} className="ai-head-buddy" />}
   <div className="ai-title">
-   <strong>{view === "history" ? "Conversations" : view === "settings" ? "Settings" : setup ? "Ask AI" : current?.name ?? "AI"}</strong>
+   <strong>{view === "history" ? "Conversations" : view === "settings" ? "Settings" : "Ask AI"}</strong>
   </div>
   {view === "chat" && !setup && <>
    <IconButton label="Conversations" onClick={() => setView("history")}><History /></IconButton>
@@ -108,7 +112,7 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
 
  let body: ReactNode
  if (view === "settings") body = <div className="ai-pane">
-  <section><h4>Your AI</h4><p>Ask AI runs it on this PC, signed in to your own account.</p>
+  <section><h4>AI apps</h4><p>They run on this PC, signed in to your own accounts. Switch between them in the model list under the message box.</p>
    <AiPicker ai={ai} onPick={id => { send("aiHarness", { harness: id }); setView("chat") }} /></section>
   <Separator />
   <section><h4>What it can see</h4><p>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</p></section>
@@ -120,7 +124,7 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
   {!ai.chats.length ? <Empty><EmptyHeader><EmptyMedia variant="icon"><History /></EmptyMedia><EmptyTitle>No conversations yet</EmptyTitle><EmptyDescription>Your chats are saved here.</EmptyDescription></EmptyHeader></Empty>
    : ai.chats.map(c => <div key={c.id} className="ai-chat-row" data-active={c.id === ai.chatId || undefined}>
     <button className="ai-chat-open" disabled={ai.busy} onClick={() => { send("aiOpenChat", { id: c.id }); setView("chat") }}>
-     <span>{c.title || "Untitled"}</span><small>{ai.harnesses.find(h => h.id === c.harness)?.name ?? c.harness} · {ago(c.updated)}</small>
+     <span>{c.title || "Untitled"}</span><small><AiLogo id={c.harness} size={14} />{ago(c.updated)}</small>
     </button>
     <IconButton label="Delete conversation" disabled={ai.busy && c.id === ai.chatId} onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></IconButton>
    </div>)}
@@ -171,8 +175,8 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
  else body = <div className="ai-log" ref={log}>
   {!items.length && <div className="ai-hello">
    <Buddy size={64} mood={cheer ? "happy" : "idle"} />
-   <h3>{cheer ? "You're all set!" : `Hi! I'm ${current?.name}.`}</h3>
-   <p>{cheer ? "What should we do first?" : "Tell me what you need. I can read this page, search, compare and click around in my own tabs."}</p>
+   <h3>{cheer ? "You're all set!" : "What should we do?"}</h3>
+   <p>{cheer ? "Ask me anything to start." : "I can read this page, search, compare and click around in my own tabs."}</p>
    <div className="ai-ideas">{IDEAS.map(([icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span>{icon}</span>{label}</button>)}</div>
    <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
   </div>}
@@ -181,26 +185,35 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
    : m.role === "user" ? <div key={i} className="ai-msg is-user">{m.text}</div>
    : m.role === "assistant" ? <div key={i} className="ai-msg is-assistant"><Markdown text={m.text} onLink={openLink} /></div>
    : <div key={i} className="ai-msg is-note">{m.text}</div>)}
-  {ai.busy && <div className="ai-working"><Buddy size={26} mood="think" /><span><strong className="ai-shimmer">{WORKING[tick % WORKING.length]}…</strong>{last?.role === "tool" && <small>{last.text}</small>}</span></div>}
+  {ai.busy && <div className="ai-working"><Buddy size={26} mood="think" /><span><strong><b className="ai-shimmer">{WORKING[Math.floor(tick / 3) % WORKING.length]}…</b> <em>{tick < 60 ? tick + "s" : Math.floor(tick / 60) + "m " + String(tick % 60).padStart(2, "0") + "s"}</em></strong>{last?.role === "tool" && <small>{last.text}</small>}</span></div>}
  </div>
 
  const canChat = view === "chat" && !setup && !!current?.installed && !["missing", "installing", "signedOut", "signingIn"].includes(status)
- const model = ai.models?.find(m => m.id === ai.model)
+ const model = ai.models?.find(m => m.harness === current?.id && m.id === ai.model)
+ // Every AI in one list: its models when it's ready, or a way to set it up.
+ const modelsOf = (h: Harness) => { const ms = ai.models?.filter(m => m.harness === h.id); return ms?.length ? ms : [{ harness: h.id, id: "", name: "Default", efforts: [] }] }
+ const picked = current ? `${current.id}|${modelsOf(current).some(m => m.id === ai.model) ? ai.model : ""}` : ""
  return <aside className="ai-sidebar" aria-label="Ask AI">
   {header}
   {body}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription></Alert>}
-  {canChat && <div className="ai-compose"><InputGroup>
-   <InputGroupTextarea aria-label="Message" placeholder={`Ask ${current.name} to do anything…`} rows={2} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
+  {canChat && <div className="ai-compose">
+  {queued && <div className="ai-queued"><span>Up next</span><p>{queued}</p><button aria-label="Don't send" onClick={() => setQueued("")}><X /></button></div>}
+  <InputGroup>
+   <InputGroupTextarea aria-label="Message" placeholder={ai.busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : "Ask anything, or tell me what to do…"} rows={2} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
    <InputGroupAddon align="block-end">
-    {ai.models && <>
-     <Select value={ai.model || "default"} onValueChange={v => send("aiModel", { model: v === "default" ? "" : v, effort: ai.effort })}>
-      <SelectTrigger size="sm" className="ai-pick" aria-label="Model"><SelectValue /></SelectTrigger>
-      <SelectContent>{ai.models.map(m => <SelectItem key={m.id || "default"} value={m.id || "default"}>{m.name}</SelectItem>)}</SelectContent></Select>
+    <>
+     <Select value={picked} disabled={ai.busy} onValueChange={v => { const [harness, id] = v.split("|"); if (id === "setup") send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
+      <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue /></SelectTrigger>
+      <SelectContent position="popper" side="top" align="start">{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
+       {i > 0 && <SelectSeparator />}
+       {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} />{m.id ? m.name : h.name}</SelectItem>)
+        : <SelectItem value={`${h.id}|setup`}><AiLogo id={h.id} size={16} />{h.name}<span className="ai-pick-setup">Set up</span></SelectItem>}
+      </SelectGroup>)}</SelectContent></Select>
      {!!model?.efforts.length && <Select value={ai.effort || "default"} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
       <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
       <SelectContent><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
-    </>}
+    </>
     {ai.busy ? <InputGroupButton className="ml-auto ai-send" size="icon-xs" variant="default" aria-label="Stop" onClick={() => send("aiStop")}><Square /></InputGroupButton>
      : <InputGroupButton className="ml-auto rounded-full ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim()} onClick={() => submit()}><ArrowUp /></InputGroupButton>}
    </InputGroupAddon>
