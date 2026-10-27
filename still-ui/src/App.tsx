@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, Hand, Info, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
 import { AiLogo } from "./AiLogo"
@@ -49,7 +49,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -247,6 +247,9 @@ export default function App() {
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
  const [shownLogin, setShownLogin] = useState<State["loginOffer"]>()
  useEffect(() => { if (state.loginOffer) setShownLogin(state.loginOffer) }, [state.loginOffer])
+ const working = state.agent?.pending ? undefined : state.agent
+ const [shownAgent, setShownAgent] = useState<State["agent"]>()
+ useEffect(() => { if (working) setShownAgent(working) }, [working])
  const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
@@ -413,6 +416,7 @@ export default function App() {
     </div>
    </header>
    <div className="workspace">
+    {ai?.open && <AiSidebar ai={ai} send={send} />}
     <main className="page-column">
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
      {!state.focusMode && !state.fullScreen && state.bookmarks.length > 0 && <nav className={cn("bookmarks-bar", barOpen && state.bookmarks.length >= 5 && "is-expanded")} aria-label="Bookmarks bar">
@@ -420,14 +424,11 @@ export default function App() {
       {state.bookmarks.length >= 5 && <Button variant="ghost" size="icon-sm" className="bookmark-toggle" aria-expanded={barOpen} aria-label={barOpen ? "Collapse bookmarks" : "Expand bookmarks"} title={barOpen ? "Show one row" : `Show all ${state.bookmarks.length} bookmarks`} onClick={() => setBarOpen(!barOpen)}><ChevronRight /></Button>}
       <Button variant="ghost" size="sm" className="bookmark-chip bookmark-all" onClick={() => open("bookmarks")}><Bookmark />All bookmarks</Button>
      </nav>}
-     <div className={cn("permission-wrap", state.agent && "is-open")}><div className={cn("permission-bar agent-bar", state.agent?.pending && "is-asking")} role="alertdialog" aria-label="AI agent" aria-hidden={!state.agent}>
-      {state.agent?.client ? <AiLogo id={state.agent.client} size={20} /> : <Bot />}<span>{state.agent?.pending
-       ? state.agent.ask ? <><b>{state.agent.client}</b> wants to {state.agent.ask}.</>
-       : <><b>{state.agent.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>
-       : <><b>{state.agent?.client}</b> is using Still{state.agent?.action ? " · " + state.agent.action : ""}</>}</span>
-      {state.agent?.pending
-       ? <><Button variant="ghost" size="sm" onClick={() => send("agentAnswer", { allow: false })}>Block</Button><Button size="sm" onClick={() => send("agentAnswer", { allow: true })}>Allow</Button></>
-       : <Button variant="ghost" size="sm" onClick={() => send("agentStop")}><X />Stop</Button>}
+     <div className={cn("permission-wrap", state.agent?.pending && "is-open")}><div className="permission-bar agent-bar is-asking" role="alertdialog" aria-label="AI agent" aria-hidden={!state.agent?.pending}>
+      {state.agent?.client ? <AiLogo id={state.agent.client} size={20} /> : <Bot />}<span>{state.agent?.ask
+       ? <><b>{state.agent.client}</b> wants to {state.agent.ask}.</>
+       : <><b>{state.agent?.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>}</span>
+      <Button variant="ghost" size="sm" onClick={() => send("agentAnswer", { allow: false })}>Block</Button><Button size="sm" onClick={() => send("agentAnswer", { allow: true })}>Allow</Button>
      </div></div>
      <div className={cn("permission-wrap", state.permission && "is-open")}><div className="permission-bar" role="alertdialog" aria-label="Site permission" aria-hidden={!state.permission}>
       <ShieldCheck /><span><b>{shownPermission?.site}</b> wants to {shownPermission?.kind}.</span>
@@ -451,8 +452,18 @@ export default function App() {
       </motion.div>}
      </div>
      {active?.loading && <div className="loading-line" aria-label="Loading page"><i /></div>}
+     {/* An AI is at the wheel: the user can grab it back or stop it at any time. */}
+     <div className={cn("agent-dock-wrap", working && "is-open")}><div className="agent-dock" role="status" aria-label="AI at work" aria-hidden={!working}>
+      <div className={cn("agent-pill", shownAgent?.paused && "is-paused")}>
+       <span className="agent-pill-face">{shownAgent?.paused ? <Hand /> : <AiLogo id={shownAgent?.client} size={18} />}</span>
+       <span className="agent-pill-text">{shownAgent?.paused
+        ? <><b>You're driving</b><small>{shownAgent.client} waits until you hand it back</small></>
+        : <><b>{shownAgent?.client} is working</b>{shownAgent?.action && <small>{shownAgent.action}</small>}</>}</span>
+       <button className="agent-take" disabled={!working} onClick={() => send("agentTakeOver", { on: !working?.paused })}>{shownAgent?.paused ? "Hand back" : "Take over"}</button>
+       <button className="agent-stop" disabled={!working} onClick={() => send("agentStop")}>Stop</button>
+      </div>
+     </div></div>
     </main>
-    {ai?.open && <AiSidebar ai={ai} send={send} />}
     {state.sidePanel && <ExtensionPanel panel={state.sidePanel} />}
    </div>
   </div>

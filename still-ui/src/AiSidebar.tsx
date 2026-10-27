@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, Check, ExternalLink, Gauge, History, LockKeyhole, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, Wrench, X } from "lucide-react"
+import { ArrowLeft, ArrowUp, Check, ChevronDown, ExternalLink, Gauge, Globe, History, LockKeyhole, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
@@ -53,7 +53,7 @@ function StatusChip({ h }: { h: Harness }) {
 // The AIs Still works with and whether each is ready. Picking one signs it in, or offers to install it.
 export function AiPicker({ ai, onPick }: { ai: AiState; onPick: (id: string) => void }) {
  return <div className="ai-picker">{ai.harnesses.map(h => <button key={h.id} className="ai-pick-card" data-chosen={ai.harness === h.id || undefined} onClick={() => onPick(h.id)}>
-  <AiLogo id={h.id} />
+  <AiLogo id={h.id} size={26} />
   <span className="ai-pick-name"><strong>{h.name}</strong><small>by {h.maker}</small></span>
   <StatusChip h={h} />
   {ai.harness === h.id && <Check className="ai-pick-check" />}
@@ -100,7 +100,7 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
  const header = <div className="ai-head">
   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Buddy size={20} className="ai-head-buddy" />}
   <div className="ai-title">
-   <strong>{view === "history" ? "Conversations" : view === "settings" ? "Settings" : "Ask AI"}</strong>
+   <strong>{view === "history" ? "Conversations" : view === "settings" ? "Settings" : ai.chats.find(c => c.id === ai.chatId)?.title || "Ask AI"}</strong>
   </div>
   {view === "chat" && !setup && <>
    <IconButton label="Conversations" onClick={() => setView("history")}><History /></IconButton>
@@ -180,12 +180,15 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
    <div className="ai-ideas">{IDEAS.map(([icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span>{icon}</span>{label}</button>)}</div>
    <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
   </div>}
-  {items.map((m, i) => "steps" in m
-   ? <details key={i} className="ai-steps-group"><summary><Wrench />Used the browser · {m.steps.length} step{m.steps.length === 1 ? "" : "s"}</summary><ul>{m.steps.map((s, j) => <li key={j}>{s}</li>)}</ul></details>
+  {items.map((m, i) => {
+   const face = m.role !== "user" && items[i - 1]?.role === "user" && <Buddy size={22} mood={ai.busy && i === items.length - 1 ? "think" : "idle"} className="ai-face" />
+   return "steps" in m
+   ? <div key={i}>{face}<details className="ai-steps-group"><summary><span className="ai-steps-icon"><Globe /></span><span className="ai-steps-text"><b>{m.steps[m.steps.length - 1]}</b>{m.steps.length > 1 && <small>and {m.steps.length - 1} more step{m.steps.length === 2 ? "" : "s"}</small>}</span><ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => <li key={j}>{s}</li>)}</ol></details></div>
    : m.role === "user" ? <div key={i} className="ai-msg is-user">{m.text}</div>
-   : m.role === "assistant" ? <div key={i} className="ai-msg is-assistant"><Markdown text={m.text} onLink={openLink} /></div>
-   : <div key={i} className="ai-msg is-note">{m.text}</div>)}
-  {ai.busy && <div className="ai-working"><Buddy size={26} mood="think" /><span><strong><b className="ai-shimmer">{WORKING[Math.floor(tick / 3) % WORKING.length]}…</b> <em>{tick < 60 ? tick + "s" : Math.floor(tick / 60) + "m " + String(tick % 60).padStart(2, "0") + "s"}</em></strong>{last?.role === "tool" && <small>{last.text}</small>}</span></div>}
+   : m.role === "assistant" ? <div key={i}>{face}<div className="ai-msg is-assistant"><Markdown text={m.text} onLink={openLink} /></div></div>
+   : <div key={i} className="ai-msg is-note">{m.text}</div>
+  })}
+  {ai.busy && <div className="ai-working">{last?.role === "user" && <Buddy size={22} mood="think" className="ai-face" />}<span><b className="ai-shimmer">{WORKING[Math.floor(tick / 3) % WORKING.length]}</b><em>{tick < 60 ? tick + "s" : Math.floor(tick / 60) + "m " + String(tick % 60).padStart(2, "0") + "s"}</em></span></div>}
  </div>
 
  const canChat = view === "chat" && !setup && !!current?.installed && !["missing", "installing", "signedOut", "signingIn"].includes(status)
@@ -200,7 +203,7 @@ export function AiSidebar({ ai, send }: { ai: AiState; send: Send }) {
   {canChat && <div className="ai-compose">
   {queued && <div className="ai-queued"><span>Up next</span><p>{queued}</p><button aria-label="Don't send" onClick={() => setQueued("")}><X /></button></div>}
   <InputGroup>
-   <InputGroupTextarea aria-label="Message" placeholder={ai.busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : "Ask anything, or tell me what to do…"} rows={2} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
+   <InputGroupTextarea aria-label="Message" placeholder={ai.busy ? (queued ? "Change what's up next…" : "Add a follow-up…") : items.length ? "Reply, or ask something new…" : "Ask anything, or tell me what to do…"} rows={2} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
    <InputGroupAddon align="block-end">
     <>
      <Select value={picked} disabled={ai.busy} onValueChange={v => { const [harness, id] = v.split("|"); if (id === "setup") send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
