@@ -208,8 +208,25 @@ public partial class MainWindow : Window
   if (prompt && url.Length == 0) ShowAddress("");
   SaveLater(); return tab;
  }
+ /// The tab whose page is on screen: the active tab, or for a chat tab whose page is open, the page its AI works in (beside the chat).
+ BrowserTab? Shown => active?.ChatId is { } chat ? active.PageOpen ? tabs.Where(t => t.InChat == chat && !t.Closed).MaxBy(t => t.LastActive) : null : active;
+ /// Puts the shown page on screen and hides the rest.
+ void ShowPage()
+ {
+  var shown = Shown;
+  foreach (var t in tabs) if (t.View != null) t.View.Visibility = t == shown && panel == "" ? Visibility.Visible : Visibility.Hidden;
+  RestorePageWindow();
+ }
+ /// The tab that shows this chat, opened next to the others if it isn't.
+ BrowserTab ChatTab(string chatId)
+ {
+  if (tabs.FirstOrDefault(t => t.ChatId == chatId) is { } open) return open;
+  var tab = new BrowserTab { ChatId = chatId, Title = AiChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
+  tabs.Add(tab); SaveLater(); return tab;
+ }
  async Task SelectTab(BrowserTab tab)
  {
+  if (tab.InChat is { } owner && !tab.Closed) { tab.LastActive = DateTime.UtcNow; tab = ChatTab(owner); tab.PageOpen = true; } // an AI's page opens in its chat
   if (tab.Closed || !tabs.Contains(tab)) return;
   if(active!=tab&&contentFullScreen)await ExitContentFullScreen();
   CloseSheet(false); CancelUpload();
@@ -222,8 +239,10 @@ public partial class MainWindow : Window
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
   RenderTabs(); UpdateChrome(); SaveLater();
-  if (tab.Url.Length > 0) await EnsureView(tab);
-  if (active == tab && tab.View != null && panel == "") { tab.View.Visibility = Visibility.Visible;RestorePageWindow(); tab.View.Focus(); }
+  if (tab.ChatId is { } chat && !aiBusy) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
+  if (tab.ChatId != null || leaving?.ChatId != null) PublishAi();
+  if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
+  if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;RestorePageWindow(); if (shown == tab) view.Focus(); }
   if(active==tab)await InspectLogin(tab);
  }
  async Task CloseTab(BrowserTab tab, bool removePin = false)
@@ -235,10 +254,12 @@ public partial class MainWindow : Window
   }
   var index = tabs.IndexOf(tab);
   if (index < 0) return;
-  if (!tab.Private) { closedTabs.Push(new BrowserTab { Url = tab.Url, Title = tab.Title, Pinned = tab.Pinned }); while (closedTabs.Count > 25) { var keep = closedTabs.Take(25).Reverse().ToArray(); closedTabs.Clear(); foreach (var t in keep) closedTabs.Push(t); } }
+  if (!tab.Private && tab.InChat == null) { closedTabs.Push(new BrowserTab { Url = tab.Url, Title = tab.Title, Pinned = tab.Pinned }); while (closedTabs.Count > 25) { var keep = closedTabs.Take(25).Reverse().ToArray(); closedTabs.Clear(); foreach (var t in keep) closedTabs.Push(t); } }
   tab.Closed = true; DisposeView(tab); tabs.Remove(tab);
-  if (tabs.Count == 0) await NewTab("", false, false);
-  else if (active == tab) await SelectTab(tabs[Math.Min(index, tabs.Count - 1)]);
+  if (tab.ChatId is { } chat) foreach (var page in tabs.Where(t => t.InChat == chat).ToList()) { page.Closed = true; DisposeView(page); tabs.Remove(page); } // its pages go with it
+  var rest = tabs.Where(t => t.InChat == null).ToList();
+  if (rest.Count == 0) await NewTab("", false, false);
+  else if (active == tab) await SelectTab(rest[Math.Min(index, rest.Count - 1)]);
   RenderTabs(); SaveLater();
  }
  // The WPF WebView2 control closes the whole app window when a page calls window.close() (e.g. a Google
@@ -261,7 +282,7 @@ public partial class MainWindow : Window
  void DisposeView(BrowserTab tab)
  {
   DropPermissions(tab);
-  if(tab==active&&contentFullScreen){contentFullScreen=false;ApplyFullScreen();}
+  if(tab==Shown&&contentFullScreen){contentFullScreen=false;ApplyFullScreen();}
   // A closed tab that is still downloading keeps its (hidden) engine until the downloads finish;
   // disposing it now would cancel them. The download's StateChanged handler finishes the job.
   if (tab.Closed && tab.ActiveDownloads > 0 && tab.View is { } busy) { busy.Visibility = Visibility.Hidden; return; }
@@ -282,7 +303,7 @@ public partial class MainWindow : Window
   var view = new WebView2 {
    CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = tab.Private ? privateProfile : "Default", IsInPrivateModeEnabled = tab.Private },
    DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White,
-   Visibility = active == tab && panel == "" ? Visibility.Visible : Visibility.Hidden
+   Visibility = Shown == tab && panel == "" ? Visibility.Visible : Visibility.Hidden
   };
   tab.View = view; WebHost.Children.Add(view); tab.Loading = true; UpdateChrome();
   view.Loaded+=(_,_)=>RestorePageWindow();
@@ -325,14 +346,14 @@ public partial class MainWindow : Window
     if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
     tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
     if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
-    if (tab == active) UpdateChrome();
+    if (tab == Shown) UpdateChrome();
    };
-   core.SourceChanged += (_, _) => { if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == active) UpdateChrome(); SaveLater(); };
+   core.SourceChanged += (_, _) => { if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == Shown) UpdateChrome(); SaveLater(); };
    core.DocumentTitleChanged += (_, _) => {
     if (!tab.Reader) tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? Host(tab.Url) : core.DocumentTitle;
-    RenderTabs(); if (tab == active) UpdateChrome(); SaveLater();
+    RenderTabs(); if (tab == Shown) UpdateChrome(); SaveLater();
    };
-   core.HistoryChanged += (_, _) => { if (tab == active) UpdateChrome(); };
+   core.HistoryChanged += (_, _) => { if (tab == Shown) UpdateChrome(); };
    core.NavigationCompleted += async (_, e) => {
     App.Breadcrumb="page loaded "+Host(tab.Url);
     bool ok=e.IsSuccess;var status=e.WebErrorStatus;var navId=e.NavigationId;
@@ -357,7 +378,7 @@ public partial class MainWindow : Window
     }
     if(!ok&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
     tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
-    tab.Loading = false; if (tab == active) UpdateChrome();
+    tab.Loading = false; if (tab == Shown) UpdateChrome();
     if(ok)_=InspectLogin(tab);
     if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.RunAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
     if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
@@ -370,7 +391,7 @@ public partial class MainWindow : Window
      // Show a full-page error for this cause; keep the address on the page that failed.
      tab.ShowingError=true;tab.Url=failedUrl;
      core.NavigateToString(ErrorPages.Html(status,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
-     if(tab==active)UpdateChrome();
+     if(tab==Shown)UpdateChrome();
     }
    };
    core.NewWindowRequested += async (_, e) => {
@@ -425,7 +446,7 @@ public partial class MainWindow : Window
      case CoreWebView2ProcessFailedKind.RenderProcessExited:
       tab.ShowingError = true; tab.Loading = false;
       try { core.NavigateToString(ErrorPages.Crashed(tab.Url, dark)); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { DisposeView(tab); }
-      if (tab == active) UpdateChrome(); break;
+      if (tab == Shown) UpdateChrome(); break;
      // The whole engine exited: this view can't be reused; it reloads when you next open the tab.
      case CoreWebView2ProcessFailedKind.BrowserProcessExited:
       DisposeView(tab); if (tab == active) { Toast("The browser engine restarted. Reload to continue."); UpdateChrome(); } break;
@@ -437,7 +458,7 @@ public partial class MainWindow : Window
    });
    // A page that closes itself (window.close) closes its tab, e.g. download hand-off pages.
    core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(async () => { if (!tab.Closed) await CloseTab(tab, true); });
-   core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=active||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
+   core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=Shown||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
    core.IsDocumentPlayingAudioChanged += (_, _) => { if (core.IsDocumentPlayingAudio) { tab.Media = true; core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } };
    SetupBlocking(tab, core);
    await InstallHiddenRules(tab);
@@ -512,6 +533,7 @@ public partial class MainWindow : Window
   }
   CloseSheet(false);
   if (active == null) await NewTab("", false, false);
+  if (active?.ChatId != null) { await NewTab(url, false, false); return; } // a chat tab stays a chat
   var tab = active!;
   if(Host(tab.Url)!=Host(url))tab.Favicon="";
   tab.Url = url; tab.Reader = false; StartPage.Visibility = Visibility.Collapsed;
@@ -543,9 +565,9 @@ public partial class MainWindow : Window
  void CloseWindow(object s, RoutedEventArgs e) => Close();
  void MinimizeWindow(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
  void MaximizeWindow(object s, RoutedEventArgs e) => ToggleMaximize();
- void BackClick(object s, RoutedEventArgs e) { if (active?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
- void ForwardClick(object s, RoutedEventArgs e) { if (active?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
- async void ReloadClick(object s, RoutedEventArgs e) { if (active is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
+ void BackClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
+ void ForwardClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
+ async void ReloadClick(object s, RoutedEventArgs e) { if (Shown is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
  void AddressClick(object s, RoutedEventArgs e) => ShowAddress(active?.Url ?? "");
  void BookmarkClick(object s, RoutedEventArgs e) => ToggleBookmark();
  void ShieldClick(object s, RoutedEventArgs e) => ShowSiteControls();
