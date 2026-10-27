@@ -1,5 +1,7 @@
 using System.IO;
 using System.IO.Pipes;
+using System.Runtime.InteropServices;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -66,15 +68,19 @@ public partial class MainWindow
    string tool = root.GetProperty("tool").GetString() ?? "";
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a.Clone() : default;
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let AI agents control Still.");
+   if (tool == "user_confirmed") return Confirmed(client, args);
+   // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
+   bool quick = root.TryGetProperty("elicit", out var el) && el.ValueKind == JsonValueKind.True || UserAway();
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent in Still for this session.");
    if (stoppedAgents.TryGetValue(client, out var until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (Prefs.ApprovedAgents.Any(a => McpServer.AgentName(a).Equals(client, StringComparison.OrdinalIgnoreCase))) approvedAgents.Add(client); // approved once = remembered across restarts/updates
-   if (!approvedAgents.Contains(client) && await AskUser(client, "") != true)
-    return blockedAgents.Contains(client) ? Fail("The user blocked this agent in Still for this session.")
-     : Fail("Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
+   if (!approvedAgents.Contains(client)) switch (await AskUser(client, "", quick)) {
+    case false: return Fail("The user blocked this agent in Still for this session.");
+    case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
+   }
    agentName = client; agentSeen = DateTime.UtcNow;
    var interrupt = agentInterrupts[client] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-   var run = RunTool(client, tool, args);
+   var run = RunTool(client, tool, args, quick);
    int limit = tool switch { "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(run, interrupt.Task, Task.Delay(limit));
    string result = first == run ? await run : first == interrupt.Task ? await interrupt.Task
@@ -87,12 +93,13 @@ public partial class MainWindow
  }
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Null: no answer yet; the question stays up.
- static async Task<bool?> AskUser(string client, string ask)
+ /// now: don't wait for the answer (the agent asks the user elsewhere, see NeedsConfirm).
+ static async Task<bool?> AskUser(string client, string ask, bool now = false)
  {
   if (lastAnswer.Client == client && lastAnswer.Ask == ask && DateTime.UtcNow - lastAnswer.At < TimeSpan.FromMinutes(2)) return lastAnswer.Allow; // answered after the agent stopped waiting
-  var deadline = Task.Delay(TimeSpan.FromSeconds(45)); // shorter than MCP apps' own tool timeouts
+  var deadline = Task.Delay(TimeSpan.FromSeconds(now ? 0 : 45)); // shorter than MCP apps' own tool timeouts
   while (agentApproval is { } other && !(askClient == client && askText == ask))
-   if (await Task.WhenAny(other.Task, deadline) == deadline) return null;
+   if (now || await Task.WhenAny(other.Task, deadline) == deadline) return null;
   if (agentApproval == null) { agentApproval = new(TaskCreationOptions.RunContinuationsAsynchronously); askClient = client; askText = ask; PublishAll(); }
   var pending = agentApproval;
   return await Task.WhenAny(pending.Task, deadline) == pending.Task ? pending.Task.Result : null;
@@ -100,13 +107,49 @@ public partial class MainWindow
  void AnswerAgent(bool allow)
  {
   if (agentApproval is not { } pending) return;
-  if (askText.Length == 0) {
-   if (!allow) blockedAgents.Add(askClient);
-   else { approvedAgents.Add(askClient); if (!Prefs.ApprovedAgents.Contains(askClient, StringComparer.OrdinalIgnoreCase)) Prefs.ApprovedAgents.Add(askClient); SaveLater(); }
-  }
-  lastAnswer = (askClient, askText, allow, DateTime.UtcNow);
+  Settle(askClient, askText, allow);
   agentApproval = null; askClient = askText = "";
   pending.TrySetResult(allow); PublishAll();
+ }
+ void Settle(string client, string ask, bool allow)
+ {
+  if (ask.Length == 0) {
+   if (!allow) blockedAgents.Add(client);
+   else { approvedAgents.Add(client); if (!Prefs.ApprovedAgents.Contains(client, StringComparer.OrdinalIgnoreCase)) Prefs.ApprovedAgents.Add(client); SaveLater(); }
+  }
+  lastAnswer = (client, ask, allow, DateTime.UtcNow);
+  foreach (var code in confirmCodes.Where(c => c.Value.Client == client && c.Value.Ask == ask).Select(c => c.Key).ToList()) confirmCodes.Remove(code); // answered here: a code from the chat no longer counts
+ }
+
+ // The user is away from Still: the agent asks them in its own chat instead. MCP apps that support elicitation
+ // ask the user themselves (the AI never sees the question); otherwise the AI passes the user's answer on.
+ static readonly Dictionary<string, (string Client, string Ask, DateTime Until)> confirmCodes = [];
+ string NeedsConfirm(string client, string ask, string waiting)
+ {
+  if (!Prefs.AgentsAskInChat) return Fail(waiting);
+  foreach (var old in confirmCodes.Where(c => c.Value.Until < DateTime.UtcNow).Select(c => c.Key).ToList()) confirmCodes.Remove(old);
+  string code = Convert.ToHexString(RandomNumberGenerator.GetBytes(3)).ToLowerInvariant();
+  confirmCodes[code] = (client, ask, DateTime.UtcNow.AddMinutes(10));
+  string question = ask.Length == 0 ? $"Allow {client} to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : $"Allow {client} to {ask}?";
+  return JsonSerializer.Serialize(new { ok = false, confirm = new { code, question },
+   error = waiting + $" If the user isn't at Still, ask them in your chat instead: \"{question}\" Then call user_confirmed with code \"{code}\" and allow true or false, as they answer. Never answer for the user." }, ReplyJson);
+ }
+ string Confirmed(string client, JsonElement args)
+ {
+  if (!confirmCodes.Remove(S(args, "code").Trim().ToLowerInvariant(), out var c) || !c.Client.Equals(client, StringComparison.OrdinalIgnoreCase) || c.Until < DateTime.UtcNow)
+   return Fail("That code isn't valid anymore (the user may have answered in Still). Call the tool again.");
+  bool allow = B(args, "allow");
+  if (agentApproval != null && askClient == c.Client && askText == c.Ask) AnswerAgent(allow); else Settle(c.Client, c.Ask, allow);
+  Toast($"{c.Client} was {(allow ? "allowed" : "turned down")} {(c.Ask.Length == 0 ? "to use Still" : "to " + c.Ask)}, answered through its chat.");
+  return Reply(new { done = allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask." });
+ }
+ [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint Size, Time; }
+ [DllImport("user32.dll")] static extern bool GetLastInputInfo(ref LastInput info);
+ /// No keyboard or mouse for a minute (or the screen is locked), or Still is minimized: nobody will see the bar.
+ static bool UserAway()
+ {
+  var input = new LastInput { Size = 8 };
+  return GetLastInputInfo(ref input) && (uint)Environment.TickCount - input.Time > 60_000 || Windows.All(w => w.closing || w.WindowState == WindowState.Minimized);
  }
 
  static void PublishAll() { foreach (var w in Windows) w.ShellPublish(); }
@@ -389,7 +432,7 @@ public partial class MainWindow
   await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", modifiers, key = name, code, windowsVirtualKeyCode = vk }));
  }
 
- async Task<string> RunTool(string who, string tool, JsonElement args)
+ async Task<string> RunTool(string who, string tool, JsonElement args, bool quick)
  {
   switch (tool) {
    case "list_tabs":
@@ -507,9 +550,10 @@ public partial class MainWindow
     } else if (t.AgentUpload is UploadRequest picker && picker.Core == core) input = new { files = picker.Multiple ? files : files[..1], backendNodeId = picker.Node };
     else return Fail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.");
     string names = string.Join(", ", files.Select(Path.GetFileName));
-    switch (await AskUser(who, "wants to upload " + Clip(names, 120) + " to " + Host(t.Url))) {
+    string ask = "upload " + Clip(names, 120) + " to " + Host(t.Url);
+    switch (await AskUser(who, ask, quick)) {
      case false: return Fail("The user didn't allow this upload. Don't try again unless they ask.");
-     case null: return Fail("Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
+     case null: return NeedsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
     }
     await core.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", JsonSerializer.Serialize(input));
     t.AgentUpload = null;
