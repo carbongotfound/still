@@ -12,6 +12,9 @@ public sealed class BrowserTab
  [JsonIgnore] public string? Agent { get; set; } // the AI working in this tab right now (bot icon)
  [JsonIgnore] public bool AgentGroup { get; set; } // opened by an AI: shown together in the AI group
  public bool Pinned { get; set; }
+ public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page
+ [JsonIgnore] public bool PageOpen { get; set; } // a chat tab showing its AI's page beside the conversation
+ public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
  [JsonIgnore] public WebView2? View { get; set; }
@@ -67,6 +70,7 @@ public sealed class Preferences
  public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
+ public List<Companion> Companions { get; set; } = []; // empty = the default crew
  public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;

@@ -37,7 +37,7 @@ public partial class MainWindow
  void RestorePageWindow()
  {
   if(!closing&&!overlay&&!contentFullScreen&&sidePanelView is{} panel&&panel.Handle!=IntPtr.Zero){panel.UpdateWindowPos();SetWindowPos(panel.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);} // above the chrome too
-  if(closing||overlay||active?.View is not{} view||!view.IsVisible)return;
+  if(closing||overlay||Shown?.View is not{} view||!view.IsVisible)return;
   // HwndHost windows have native z-order, independent of WPF's visual tree.
   // Keep the live page above the full-window chrome so it receives pointer input.
   WebHost.UpdateLayout();
@@ -117,7 +117,7 @@ public partial class MainWindow
      case "back": BackClick(this,new());break;
      case "forward": ForwardClick(this,new());break;
      case "reload": ReloadClick(this,new());break;
-     case "zoom":if(active?.View is{} zv){double amount=data.GetProperty("amount").GetDouble();zv.ZoomFactor=amount==0?1:Math.Clamp(zv.ZoomFactor+amount,.3,3);}break;
+     case "zoom":if(Shown?.View is{} zv){double amount=data.GetProperty("amount").GetDouble();zv.ZoomFactor=amount==0?1:Math.Clamp(zv.ZoomFactor+amount,.3,3);}break;
      case "bookmark": ToggleBookmark();break;
      case "reader": CloseSheet(false);await ToggleReader();break;
      case "hide": CloseSheet(false);await PickHidden();break;
@@ -180,7 +180,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck":await HandleAi(op,data);break;
+     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "companionSave" or "companionDelete":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();
@@ -204,11 +204,12 @@ public partial class MainWindow
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
     preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
-    tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,aiGroup=t.AgentGroup,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
+    tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),
     downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
-    canBack=active?.View?.CoreWebView2?.CanGoBack==true,canForward=active?.View?.CoreWebView2?.CanGoForward==true,
+    canBack=Shown?.View?.CoreWebView2?.CanGoBack==true,canForward=Shown?.View?.CoreWebView2?.CanGoForward==true,
+    chatPage=active?.ChatId!=null&&Shown is {} sp?new{id=sp.Id,url=sp.Url,title=sp.Title,loading=sp.Loading,favicon=sp.Favicon}:null,
     siteBlocking=Prefs.Blocking&&!Prefs.UnblockedHosts.Contains(host)
    });
   });
@@ -233,7 +234,7 @@ public partial class MainWindow
   int version=++overlayVersion;
   overlay=value;
   if(value){
-   if(active?.View?.CoreWebView2 is {} core && WebHost.Visibility==Visibility.Visible){
+   if(Shown?.View?.CoreWebView2 is {} core && WebHost.Visibility==Visibility.Visible){
     try{
      if(snapshotCapture==null||snapshotCapture.IsCompleted){snapshotCore=core;snapshotCapture=CaptureSnapshot(core);}
      // A stalled website must never prevent browser controls from opening.
@@ -243,7 +244,7 @@ public partial class MainWindow
    if(version==overlayVersion){WebHost.Visibility=Visibility.Hidden;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Hidden;}
   }else{
    WebHost.Visibility=Visibility.Visible;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Visible;
-   foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==active?Visibility.Visible:Visibility.Hidden;
+   var shown=Shown;foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==shown?Visibility.Visible:Visibility.Hidden;
    ShellSend(new{kind="snapshot",data=""});
    if(snapshotCapture?.IsCompleted==true){snapshotCapture=null;snapshotCore=null;}
    RestorePageWindow();

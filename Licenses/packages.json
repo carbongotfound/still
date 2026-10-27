@@ -1,5 +1,10 @@
 [
   {
+    "package": "fluentui-emoji",
+    "version": "main",
+    "license": "MIT"
+  },
+  {
     "package": "@fontsource-variable/geist",
     "version": "5.3.0",
     "license": "OFL-1.1"
