@@ -13,11 +13,11 @@ public partial class MainWindow
   if(tab.Private||tab.View?.CoreWebView2 is not{} core)return;
   if(tab.LoginScriptId!=null)core.RemoveScriptToExecuteOnDocumentCreated(tab.LoginScriptId);
   tab.LoginScriptId=null;
-  if(!Prefs.OfferPasswordSave&&!Prefs.OfferPasswordUpdate&&!Prefs.AutoFillPasswords){await core.ExecuteScriptAsync("window.__stillLoginCleanup?.()");tab.LoginToken="";return;}
+  if(!Prefs.OfferPasswordSave&&!Prefs.OfferPasswordUpdate&&!Prefs.AutoFillPasswords){await core.RunAsync("window.__stillLoginCleanup?.()");tab.LoginToken="";return;}
   tab.LoginToken=Guid.NewGuid().ToString("N");
   string js=(await AppContent.ReadAsset("LoginObserver.js")).Replace("__STILL_LOGIN_CONFIG__",JsonSerializer.Serialize(new{token=tab.LoginToken,capture=Prefs.OfferPasswordSave||Prefs.OfferPasswordUpdate}));
   tab.LoginScriptId=await core.AddScriptToExecuteOnDocumentCreatedAsync(js);
-  await core.ExecuteScriptAsync(js);
+  await core.RunAsync(js);
  }
  async Task ReceiveLogin(BrowserTab tab,CoreWebView2WebMessageReceivedEventArgs e)
  {
@@ -48,7 +48,7 @@ public partial class MainWindow
  {
   if(closing||tab.Private||tab!=active||tab.Loading||tab.CertificateError||tab.View?.CoreWebView2 is not{} core||!IsLoginOrigin(core.Source,out var site))return;
   try{
-   tab.LoginDetected=await core.ExecuteScriptAsync("[...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)")=="true";
+   tab.LoginDetected=await core.RunAsync("[...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)")=="true";
    ShellPublish();
    if(!tab.LoginDetected||!Prefs.AutoFillPasswords||tab.LoginFilled)return;
    var entries=Vault.Read().Where(v=>v.Origin==site.GetLeftPart(UriPartial.Authority)).ToArray();
@@ -59,7 +59,7 @@ public partial class MainWindow
  {
   if(tab.View?.CoreWebView2 is not{} core||tab.CertificateError||!IsLoginOrigin(core.Source,out var site)||site.GetLeftPart(UriPartial.Authority)!=entry.Origin)return false;
   string payload=JsonSerializer.Serialize(new{origin=entry.Origin,username=entry.Username,password=entry.Password,onlyEmpty});
-  return await core.ExecuteScriptAsync("((v)=>{if(location.origin!==v.origin)return false;const real=e=>{if(e.disabled||e.readOnly)return false;const r=e.getBoundingClientRect(),c=getComputedStyle(e);if(r.width<24||r.height<10||c.visibility!=='visible'||parseFloat(c.opacity)<0.5)return false;const inView=r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;return !inView||document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('input')===e};const p=[...document.querySelectorAll('input[type=password]')].find(e=>real(e)&&e.autocomplete!=='new-password');if(!p||(v.onlyEmpty&&p.value))return false;if(p.form&&new URL(p.form.action||location.href,location.href).origin!==v.origin)return false;const root=p.form||document;const inputs=[...root.querySelectorAll('input')].filter(real);const u=inputs.find(e=>e!==p&&['email','text'].includes(e.type)&&(['username','email'].includes(e.autocomplete)||/user|email|login/i.test(e.name+' '+e.id)))||inputs.find(e=>e!==p&&['email','text'].includes(e.type));if(v.onlyEmpty&&u?.value&&u.value!==v.username)return false;function set(e,value){if(!e)return;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}set(u,v.username);set(p,v.password);return true})("+payload+")")=="true";
+  return await core.RunAsync("((v)=>{if(location.origin!==v.origin)return false;const real=e=>{if(e.disabled||e.readOnly)return false;const r=e.getBoundingClientRect(),c=getComputedStyle(e);if(r.width<24||r.height<10||c.visibility!=='visible'||parseFloat(c.opacity)<0.5)return false;const inView=r.bottom>0&&r.top<innerHeight&&r.right>0&&r.left<innerWidth;return !inView||document.elementFromPoint(r.left+r.width/2,r.top+r.height/2)?.closest('input')===e};const p=[...document.querySelectorAll('input[type=password]')].find(e=>real(e)&&e.autocomplete!=='new-password');if(!p||(v.onlyEmpty&&p.value))return false;if(p.form&&new URL(p.form.action||location.href,location.href).origin!==v.origin)return false;const root=p.form||document;const inputs=[...root.querySelectorAll('input')].filter(real);const u=inputs.find(e=>e!==p&&['email','text'].includes(e.type)&&(['username','email'].includes(e.autocomplete)||/user|email|login/i.test(e.name+' '+e.id)))||inputs.find(e=>e!==p&&['email','text'].includes(e.type));if(v.onlyEmpty&&u?.value&&u.value!==v.username)return false;function set(e,value){if(!e)return;Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));e.dispatchEvent(new Event('change',{bubbles:true}))}set(u,v.username);set(p,v.password);return true})("+payload+")")=="true";
  }
  async Task AcceptLoginOffer(string id,string username)
  {

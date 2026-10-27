@@ -107,7 +107,7 @@ public partial class MainWindow
     try
     {
      // A hung page must not delay memory management for the other tabs.
-     string activity = await core.ExecuteScriptAsync("(() => { const busy = window.__stillMemoryBusy ? window.__stillMemoryBusy() : true; if (busy === true) return 'busy'; const edited = !!window.__stillEdited?.(); return busy === 'frames' ? (edited ? 'busy' : 'frames') : edited ? 'edited' : 'idle' })()").WaitAsync(TimeSpan.FromSeconds(2));
+     string activity = await core.RunAsync("(() => { const busy = window.__stillMemoryBusy ? window.__stillMemoryBusy() : true; if (busy === true) return 'busy'; const edited = !!window.__stillEdited?.(); return busy === 'frames' ? (edited ? 'busy' : 'frames') : edited ? 'edited' : 'idle' })()").WaitAsync(TimeSpan.FromSeconds(2));
      if (activity == "\"busy\"") continue;
      if (activity == "\"frames\"") {
       if (CanSuspend(tab) && !tab.Pinned && tab.View?.CoreWebView2 == core && DateTime.UtcNow - tab.LastActive >= DiscardAfter) { DisposeView(tab); discarded = true; }

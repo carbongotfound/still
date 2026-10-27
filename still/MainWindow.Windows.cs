@@ -69,7 +69,7 @@ public partial class MainWindow
   if (!tabs.Contains(tab) || target == this) return;
   double scroll = 0;
   if (tab.View?.CoreWebView2 is { } core) {
-   try { double.TryParse(await core.ExecuteScriptAsync("window.scrollY"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out scroll); } catch (Exception) { }
+   try { double.TryParse(await core.RunAsync("window.scrollY"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out scroll); } catch (Exception) { }
   }
   var moved = new BrowserTab { Url = tab.Url, Title = tab.Title, Favicon = tab.Favicon, Pinned = tab.Pinned, Private = tab.Private, RestoreScroll = scroll };
   // Leave this window (not a real close: nothing goes to "reopen closed tab").
