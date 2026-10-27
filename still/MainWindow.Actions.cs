@@ -287,6 +287,7 @@ public partial class MainWindow
   else if (key == Key.F && shift) { focusMode = !focusMode; ApplyLayout(); }
   else if (key == Key.F) ShowFind();
   else if (key == Key.P && shift && active != null) { active.Pinned = !active.Pinned; RenderTabs(); SaveLater(); }
+  else if (key == Key.A && shift) await HandleAi("aiToggle", default);
   else if (key == Key.OemComma) ShowSettings();
   else if (active?.View is { } v) {
    if (key == Key.D0) v.ZoomFactor = 1;
