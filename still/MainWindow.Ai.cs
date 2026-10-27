@@ -123,6 +123,10 @@ public partial class MainWindow
     Process.Start(new ProcessStartInfo { FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe"), Arguments = "/k \"\"" + cliExe + "\" " + (c.Id == "codex" ? "login" : "") + "\"", UseShellExecute = true });
     aiError = ""; break;
    case "aiToggle": aiOpen = !aiOpen; break;
+   case "aiAsk" when S("text").Trim() is { Length: > 0 and <= 20000 } ask: // typed in the address bar
+    aiOpen = true;
+    if (!aiBusy) { aiChat = null; aiError = ""; await RunAi(ask); }
+    break;
    case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)):
     Prefs.AiHarness = h; SaveLater(); aiError = "";
     if (!aiBusy && aiChat?.Harness != h) aiChat = null; // a chat stays with the AI it started with
