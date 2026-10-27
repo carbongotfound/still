@@ -292,7 +292,7 @@ public partial class MainWindow : Window
    var core = view.CoreWebView2;
    ApplyMemoryPolicy(); // includes views initialized after a quick tab switch
    DetachWindowClose(view, core);
-   core.Settings.IsStatusBarEnabled = false;
+   core.Settings.IsStatusBarEnabled = true; // link preview on hover, like Edge
    core.Settings.IsZoomControlEnabled = true;
    core.Settings.AreBrowserAcceleratorKeysEnabled = true;
    // Alerts, confirms and prompts show inside Still (and AI agents can answer them) instead of a Windows dialog.
@@ -312,14 +312,14 @@ public partial class MainWindow : Window
     tab.NavigationId=e.NavigationId;
     tab.LoginFilled=false;tab.LoginDetected=false;
     if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
-    if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension")) {
+    if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension" or "view-source" or "edge")) {
      e.Cancel = true;
      Dispatcher.BeginInvoke(() => OpenAppLink(tab, e.Uri));
      return;
     }
     if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
     tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
-    if (uri.Scheme is "http" or "https" or "file") { tab.Url = e.Uri; tab.ShowingError = false; }
+    if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
     if (tab == active) UpdateChrome();
    };
    core.SourceChanged += (_, _) => { if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == active) UpdateChrome(); SaveLater(); };
@@ -354,7 +354,7 @@ public partial class MainWindow : Window
     tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
     tab.Loading = false; if (tab == active) UpdateChrome();
     if(ok)_=InspectLogin(tab);
-    if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.ExecuteScriptAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
+    if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.RunAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
     if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
      state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
      state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });
@@ -371,9 +371,11 @@ public partial class MainWindow : Window
    core.NewWindowRequested += async (_, e) => {
     var deferral = e.GetDeferral(); e.Handled = true;
     try {
-     if (!e.IsUserInitiated) { Toast("A pop-up was blocked."); return; }
+     if (!e.IsUserInitiated && !Prefs.AllowedPopups.Contains(Host(tab.Url))) { PopupBlocked(tab, e.Uri); return; }
+     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
+     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
      // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-     var child = tab.Agent is { } who && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10) ? await OpenAgentTab(who, "about:blank") : await NewTab("about:blank", tab.Private, false);
+     var child = agent ? await OpenAgentTab(tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
      if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
     } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
     finally { deferral.Complete(); }
@@ -479,6 +481,9 @@ public partial class MainWindow : Window
  {
   input = input.Trim();
   if (string.IsNullOrEmpty(input)) return "";
+  if (input.StartsWith("view-source:", StringComparison.OrdinalIgnoreCase)) { var page = ResolveAddress(input[12..], engine); return page.StartsWith("http") || page.StartsWith("file:") ? "view-source:" + page : page; }
+  if (input.StartsWith("chrome://", StringComparison.OrdinalIgnoreCase)) input = "edge://" + input[9..];
+  if (input.StartsWith("edge://", StringComparison.OrdinalIgnoreCase) || input.Equals("about:blank", StringComparison.OrdinalIgnoreCase)) return input.ToLowerInvariant();
   if (Uri.TryCreate(input, UriKind.Absolute, out var explicitUri) && explicitUri.Scheme is "http" or "https" or "file") return explicitUri.AbsoluteUri;
   if (File.Exists(input)) return new Uri(Path.GetFullPath(input)).AbsoluteUri;
   if (!input.Any(char.IsWhiteSpace) && (input.Contains('.') || input.StartsWith("localhost", StringComparison.OrdinalIgnoreCase) || input.StartsWith("[::1]"))) {
@@ -491,6 +496,15 @@ public partial class MainWindow : Window
  {
   string url = ResolveAddress(input, Prefs.SearchEngine);
   if (url.Length == 0) return;
+  // Edge's own pages that Still has a screen for open that screen.
+  switch (url.StartsWith("edge://") ? url[7..].Split('/', '?', '#')[0] : "") {
+   case "settings": ShowSettings(); return;
+   case "history": ShowLibrary(false); return;
+   case "favorites" or "bookmarks": ShowLibrary(true); return;
+   case "downloads": ShowDownloads(); return;
+   case "version": ShowAbout(); return;
+   case "extensions": ShellOpen("extensions"); await PublishBrowserTools("extensions"); return;
+  }
   CloseSheet(false);
   if (active == null) await NewTab("", false, false);
   var tab = active!;

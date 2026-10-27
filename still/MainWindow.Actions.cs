@@ -126,7 +126,7 @@ public partial class MainWindow
   var tab = active;
   tab.HideToken = Guid.NewGuid().ToString("N"); tab.HideExpires = DateTime.UtcNow.AddMinutes(2);
   var token = JsonSerializer.Serialize(tab.HideToken);
-  await core.ExecuteScriptAsync($$"""
+  await core.RunAsync($$"""
   (() => {
     if (window.__stillCancelPicker) window.__stillCancelPicker();
     let last, oldOutline;
@@ -201,8 +201,8 @@ public partial class MainWindow
   if (tab.Reader) { tab.Reader = false; core.Reload(); return; }
   try {
    string readability = await AppContent.ReadAsset("Readability.js");
-   await core.ExecuteScriptAsync(readability);
-   string result = await core.ExecuteScriptAsync($$"""
+   await core.RunAsync(readability);
+   string result = await core.RunAsync($$"""
    (() => {
     const copy = document.cloneNode(true);
     copy.querySelectorAll('nav,aside,[role="navigation"],[role="banner"]').forEach(el=>el.remove());
@@ -263,7 +263,7 @@ public partial class MainWindow
    if (panel.Length > 0) CloseSheet();
    else if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}
    else if (FindBar.Visibility == Visibility.Visible) FindBar.Visibility = Visibility.Collapsed;
-   else if (active?.View?.CoreWebView2 is { } escCore) await escCore.ExecuteScriptAsync("if(window.__stillCancelPicker)window.__stillCancelPicker();if(document.fullscreenElement)document.exitFullscreen();");
+   else if (active?.View?.CoreWebView2 is { } escCore) await escCore.RunAsync("if(window.__stillCancelPicker)window.__stillCancelPicker();if(document.fullscreenElement)document.exitFullscreen();");
    return;
   }
   if (alt && key == Key.Left) { BackClick(this, new()); return; }
@@ -288,6 +288,7 @@ public partial class MainWindow
   else if (key == Key.F) ShowFind();
   else if (key == Key.P && shift && active != null) { active.Pinned = !active.Pinned; RenderTabs(); SaveLater(); }
   else if (key == Key.A && shift) await HandleAi("aiToggle", default);
+  else if (key == Key.U && active?.Url is { Length: > 0 } source && !source.StartsWith("view-source:")) await NewTab("view-source:" + source, active.Private, false);
   else if (key == Key.OemComma) ShowSettings();
   else if (active?.View is { } v) {
    if (key == Key.D0) v.ZoomFactor = 1;
@@ -308,7 +309,7 @@ public partial class MainWindow
  async Task FindText()
  {
   if (active?.View?.CoreWebView2 is not { } core || FindInput.Text.Length == 0) return;
-  var found = await core.ExecuteScriptAsync("window.find(" + JsonSerializer.Serialize(FindInput.Text) + ",false,false,true,false,false,false)");
+  var found = await core.RunAsync("window.find(" + JsonSerializer.Serialize(FindInput.Text) + ",false,false,true,false,false,false)");
   if (found != "true") Toast("No match found on this page.");
  }
 }

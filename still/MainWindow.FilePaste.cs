@@ -96,7 +96,7 @@ public partial class MainWindow
   if (inPage.X < 0 || inPage.Y < 0 || inPage.X > view.ActualWidth || inPage.Y > view.ActualHeight) return null;
   double zoom = view.ZoomFactor;
   try {
-   string box = await core.ExecuteScriptAsync($"(()=>{{const e=document.elementFromPoint({inPage.X / zoom:0.#},{inPage.Y / zoom:0.#});const b=e&&e.closest('button,label,a,input,[role=button]');if(!b)return [{inPage.X / zoom:0.#}-1,{inPage.Y / zoom:0.#}-1,2,2];const r=b.getBoundingClientRect();return [r.left,r.top,r.width,r.height]}})()");
+   string box = await core.RunAsync($"(()=>{{const e=document.elementFromPoint({inPage.X / zoom:0.#},{inPage.Y / zoom:0.#});const b=e&&e.closest('button,label,a,input,[role=button]');if(!b)return [{inPage.X / zoom:0.#}-1,{inPage.Y / zoom:0.#}-1,2,2];const r=b.getBoundingClientRect();return [r.left,r.top,r.width,r.height]}})()");
    if (JsonSerializer.Deserialize<double[]>(box) is not { Length: 4 } r) return null;
    var origin = view.TranslatePoint(new Point(0, 0), shellView);
    double scale = shellView.ZoomFactor;

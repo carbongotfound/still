@@ -324,7 +324,7 @@ public partial class MainWindow
 
  static async Task<JsonElement> Js(CoreWebView2 core, string body, object o)
  {
-  string json = await core.ExecuteScriptAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
+  string json = await core.RunAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
   using var doc = JsonDocument.Parse(json);
   var r = doc.RootElement.Clone();
   if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new InvalidOperationException(err.GetString() switch {
