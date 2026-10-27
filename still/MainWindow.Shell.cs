@@ -94,7 +94,6 @@ public partial class MainWindow
       PlacePage();return;
      case "overlay": await ShellOverlay(data.GetProperty("value").GetBoolean());return;
      case "openPanel": ShellOpen(S("name"),S("value"));break;
-     case "sidebarResize": if(data.TryGetProperty("width",out var width)){Prefs.SidebarWidth=Math.Clamp(width.GetDouble(),190,360);SaveLater();}break;
      case "navigate": await Navigate(S("url"));break;
      case "new": await NewTab(S("url"),data.TryGetProperty("private",out var pr)&&pr.GetBoolean(),S("url").Length==0);break;
      case "uploadAnswer": AnswerUpload(S("id"),data.TryGetProperty("picked",out var picked)&&picked.ValueKind==JsonValueKind.Array?picked.EnumerateArray().Where(p=>p.ValueKind==JsonValueKind.Number).Select(p=>p.GetInt32()).ToArray():[],data.TryGetProperty("browse",out var br)&&br.ValueKind==JsonValueKind.True);break;
@@ -130,7 +129,6 @@ public partial class MainWindow
      case "preference":
       string value=S("value");switch(S("key")){
        case "theme": if(new[]{"Light","Dark","System"}.Contains(value)){Prefs.Theme=value;ApplyTheme();}break;
-       case "layout": if(new[]{"Sidebar","Top"}.Contains(value)){Prefs.Layout=value;ApplyLayout();}break;
        case "search":if(new[]{"DuckDuckGo","Google","Bing"}.Contains(value))Prefs.SearchEngine=value;break;
        case "restore":Prefs.RestoreTabs=value=="true";break;
        case "blocking":Prefs.Blocking=value=="true";_=SyncYouTubeScripts();break;
@@ -175,7 +173,7 @@ public partial class MainWindow
      case "focus":focusMode=!focusMode;ApplyLayout();break;
      case "panel":panel=S("name");break;
      case "drag":ReleaseCapture();SendMessage(new WindowInteropHelper(this).Handle,0xA1,new IntPtr(2),IntPtr.Zero);break;
-     case "copyText":{var text=S("text");if(text.Length is >0 and <=8192)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
+     case "copyText":{var text=S("text");if(text.Length is >0 and <=8192&&!App.IsQa)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
      case "fullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
      case "exitFullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>{if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}});break;
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
@@ -204,7 +202,7 @@ public partial class MainWindow
    ShellSend(new{
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
-    preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
+    preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,aiGroup=t.AgentGroup,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),

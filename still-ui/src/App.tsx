@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, PanelLeft, Moon, Sun, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, Info, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiSidebar, type AiState } from "./AiSidebar"
 import { UploadCard, type Upload } from "./UploadCard"
@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut } from "@/components/ui/dropdown-menu"
 import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
-import { Tooltip, TooltipProvider, TooltipTrigger, TooltipContent } from "@/components/ui/tooltip"
+import { TooltipProvider } from "@/components/ui/tooltip"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
@@ -47,13 +47,13 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
-const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", layout: "Sidebar", search: "Google", restore: true, blocking: true, downloads: "", sidebarWidth:248, tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
+const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
-const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Tab layout", "Ctrl Shift S"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
+const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
 
 const FLOW = { type: "spring" as const, stiffness: 460, damping: 34, mass: .75 }
 const AnimatedButton = motion.create(Button)
@@ -67,9 +67,6 @@ function FlowTabs({ tabs, top = false }: { tabs: Tab[]; top?: boolean }) {
 }
 type Ghost = { title: string; favicon?: string; x: number; y: number; tearing: boolean }
 const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name:string,value?:string)=>void;arriving:string;setGhost:(g:Ghost|null)=>void}|null>(null)
- function Hint({ label, children }: { label: string; children: ReactNode }) {
-  return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent side="bottom" sideOffset={8} collisionPadding={6}>{label}</TooltipContent></Tooltip>
- }
  function IconButton({ label, caption = label, children, onClick, disabled = false }: { label: string; caption?:string; children: ReactNode; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; disabled?: boolean }) {
   return <AnimatedButton variant="ghost" size="icon-sm" className="chrome-button expanding-button" aria-label={label} disabled={disabled} onClick={onClick} whileTap={{ scale: .97 }} transition={FLOW}><span className="chrome-icon">{children}</span><span className="chrome-label" aria-hidden="true"><span>{caption}</span></span></AnimatedButton>
  }
@@ -81,7 +78,7 @@ const UICtx = createContext<{state:State;setContext:(v:boolean)=>void;open:(name
   const drag = useRef<{ sx: number; sy: number; active: boolean } | null>(null)
   const suppressClick = useRef(false)
   const outsideList = (el: Element, x: number, y: number) => {
-   const list = el.closest(".tabs-scroll, .top-tab-strip")?.getBoundingClientRect()
+   const list = el.closest(".top-tab-strip")?.getBoundingClientRect()
    const out = x < 0 || y < 0 || x > innerWidth || y > innerHeight
    return out || !list || x < list.left - 40 || x > list.right + 40 || y < list.top - 40 || y > list.bottom + 40
   }
@@ -156,7 +153,6 @@ export default function App() {
  const [toolData,setToolData]=useState<Record<string,ToolData>>({})
  const [bookmarkDraft,setBookmarkDraft]=useState<{oldUrl:string;title:string;url:string}|null>(null)
  const editBookmark=(b:{title:string;url:string})=>{open("bookmarks");setBookmarkDraft({oldUrl:b.url,title:b.title,url:b.url})}
- const resize=useRef<{x:number;width:number;current:number}|null>(null)
  const [confirm, setConfirm] = useState<{ title: string; body: string; op: string } | null>(null)
  const pageRef = useRef<HTMLDivElement>(null)
  const tabsRef = useRef<HTMLDivElement>(null)
@@ -206,7 +202,6 @@ export default function App() {
    .forEach(t => items.push({ key: "t" + t.id, icon: t.favicon ? <img className="tab-favicon" src={t.favicon} alt="" /> : <Globe2 size={15} />, title: t.title, sub: "Switch to tab", run: () => action("select", { id: t.id }) }))
   return items.slice(0, 9)
  }, [pane, query, completion, suggestions, state.tabs, state.activeId, active?.url, state.preferences.search])
- const sidebar = state.preferences.layout === "Sidebar" && !state.focusMode && !state.fullScreen
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned && !t.aiGroup)
  const aiTabs = state.tabs.filter(t => !t.pinned && t.aiGroup)
@@ -233,7 +228,7 @@ export default function App() {
   const observer = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(revealSelected) })
   observer.observe(viewport)
   return () => { observer.disconnect(); cancelAnimationFrame(frame) }
- }, [state.activeId, sidebar, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen])
+ }, [state.activeId, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen])
  useEffect(() => { paneRef.current = pane }, [pane])
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
@@ -271,7 +266,6 @@ export default function App() {
  }, [])
  useEffect(() => { document.documentElement.classList.toggle("dark", state.dark) }, [state.dark])
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(""),6500);return()=>clearTimeout(timer)},[notice])
- useEffect(()=>{document.documentElement.style.setProperty("--sidebar-width",state.preferences.sidebarWidth+"px")},[state.preferences.sidebarWidth])
  useEffect(() => {
   if (modal) { send("overlay", { value: true }); return }
   const timer = setTimeout(() => send("overlay", { value: false }), reduced ? 0 : 210)
@@ -290,7 +284,7 @@ export default function App() {
   const sync = () => { const r = element.getBoundingClientRect(); send("bounds", { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: innerWidth }) }
   const observer = new ResizeObserver(sync); observer.observe(element); sync()
   return () => observer.disconnect()
- }, [sidebar, state.focusMode, state.fullScreen, findOpen])
+ }, [state.focusMode, state.fullScreen, findOpen])
  useEffect(() => {
   const handler = (e: KeyboardEvent) => {
    if (e.key === "F11") { e.preventDefault(); send("fullscreen"); return }
@@ -315,8 +309,8 @@ export default function App() {
     </div>
  )
  return <UICtx.Provider value={{state,setContext,open,arriving,setGhost}}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}>
-  <div className={cn("browser-shell", !sidebar && "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
-   {!sidebar && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
+  <div className={cn("browser-shell", "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
+   {!state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -398,36 +392,15 @@ export default function App() {
        <DropdownMenuItem onSelect={()=>send("reader")}><BookOpen/>Reading mode</DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("pip")}><ExternalLink />Picture in picture</DropdownMenuItem>
        <DropdownMenuSeparator />
-       <DropdownMenuItem onSelect={() => preference("layout", sidebar ? "Top" : "Sidebar")}><PanelLeft />Switch tab layout</DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("fullscreen")}><Expand />Full screen<DropdownMenuShortcut>F11</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("focus")}><Expand />{state.focusMode ? "Leave focus mode" : "Focus mode"}</DropdownMenuItem>
        <MenuPanelItem name="settings" label="Settings" icon={<Settings2 />} keys="Ctrl ," />
+       <MenuPanelItem name="about" label="About Still" icon={<Info />} />
       </DropdownMenuContent>
      </DropdownMenu>
     </div>
-    {sidebar && windowControls}
    </header>
    <div className="workspace">
-    {sidebar && <aside className="browser-sidebar">
-     <div className="sidebar-resize" role="separator" aria-label="Resize sidebar" aria-orientation="vertical" tabIndex={0}
-      onKeyDown={e=>{if(e.key==="ArrowLeft"||e.key==="ArrowRight"){e.preventDefault();send("sidebarResize",{width:state.preferences.sidebarWidth+(e.key==="ArrowRight"?10:-10)})}}}
-      onPointerDown={e=>{e.currentTarget.setPointerCapture(e.pointerId);resize.current={x:e.clientX,width:e.currentTarget.parentElement!.getBoundingClientRect().width,current:state.preferences.sidebarWidth}}}
-      onPointerMove={e=>{if(resize.current){const value=Math.max(190,Math.min(360,resize.current.width+e.clientX-resize.current.x));resize.current.current=value;document.documentElement.style.setProperty("--sidebar-width",value+"px")}}}
-      onPointerUp={()=>{if(resize.current){send("sidebarResize",{width:resize.current.current});resize.current=null}}}
-      onPointerCancel={()=>{resize.current=null;document.documentElement.style.setProperty("--sidebar-width",state.preferences.sidebarWidth+"px")}} />
-     <ScrollArea className="tabs-scroll" ref={tabsRef}><LayoutGroup id="side">
-      <div className="pinned-tabs"><FlowTabs tabs={pinned} /></div>
-      <div className="tab-list"><FlowTabs tabs={ordinary} /></div>
-      {aiGroup(false)}
-     </LayoutGroup>
-     <Button variant="ghost" className="new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>Ctrl T</kbd></Button>
-     </ScrollArea>
-     <footer className="sidebar-footer">
-      <Button variant="ghost" size="icon-sm" aria-label="Settings" onClick={() => open("settings")}><Settings2 /></Button>
-      <Button variant="ghost" className="still-signature" onClick={() => open("about")}>still<span>{state.profileName}</span></Button>
-      <Hint label={state.dark ? "Switch to light" : "Switch to black"}><Button variant="ghost" size="icon-sm" aria-label="Switch theme" onClick={() => preference("theme", state.dark ? "Light" : "Dark")}>{state.dark ? <Moon /> : <Sun />}</Button></Hint>
-     </footer>
-    </aside>}
     <main className="page-column">
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
      {!state.focusMode && !state.fullScreen && state.bookmarks.length > 0 && <nav className={cn("bookmarks-bar", barOpen && state.bookmarks.length >= 5 && "is-expanded")} aria-label="Bookmarks bar">
@@ -490,7 +463,7 @@ export default function App() {
    <span className="tab-ghost-icon">{ghost.favicon ? <img src={ghost.favicon} alt="" /> : <Globe2 />}</span><span className="tab-ghost-title">{ghost.title}</span>
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
   </div>}
-  {state.welcome && <Welcome layout={state.preferences.layout} isDefault={state.preferences.isDefaultBrowser} send={send} onImport={() => open("import")} />}
+  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} mcpCommand={state.mcpCommand} aiHarness={ai?.harness} noAi={state.noAi} send={send} onImport={() => open("import")} />}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
     <DialogTitle className="sr-only">{displayPane === "tabs" ? "Find a tab" : "Go somewhere"}</DialogTitle>
@@ -520,7 +493,6 @@ export default function App() {
       <div className="setting-label">Theme</div><div className="theme-choices">{["Light", "Dark", "System"].map(theme => <Button key={theme} variant="outline" className={cn("theme-choice", state.preferences.theme === theme && "chosen")} onClick={() => preference("theme", theme)}>
        <div className={cn("theme-preview", theme.toLowerCase())}><i /><span /><b /></div><span>{theme === "Dark" ? "Black" : theme}{state.preferences.theme === theme && <Check />}</span>
       </Button>)}</div>
-      <div className="setting-row"><div><strong>Tab layout</strong><p>Across the top, or down the side.</p></div><Select value={state.preferences.layout} onValueChange={v => preference("layout", v)}><SelectTrigger className="w-32"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Sidebar">Sidebar</SelectItem><SelectItem value="Top">Top</SelectItem></SelectContent></Select></div>
       <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
      </TabsContent>
      <TabsContent value="browsing" className="settings-content">

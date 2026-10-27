@@ -2,9 +2,6 @@
 :root { --ease-flow:cubic-bezier(.22,1,.36,1); --ease-spring:cubic-bezier(.2,1.5,.45,1); }
 .tab-motion { position:relative;min-width:0; }
 .top-tab-motion { flex:none; }
-.pinned-tabs .tab-motion { width:42px; }
-.tab-list .tab-motion { width:100%; }
-.tabs-scroll [data-slot="scroll-area-viewport"]>div { display:block!important;min-width:0!important;width:100%!important; }
 .tab-main { min-width:0;overflow:hidden; }
 .address-bar[data-slot="button"] { flex:1 1 240px;min-width:120px;width:auto; }
 .zoom-controls { display:flex;align-items:center;gap:4px;padding:4px 7px;font-size:12px; }.zoom-controls>span{flex:1;color:var(--muted-foreground)}
@@ -15,8 +12,6 @@
 .vault-form{display:grid;gap:8px}.vault-form label{font-size:11px;color:var(--muted-foreground);margin-top:6px}.password-input{display:flex;gap:5px}.password-input>input{flex:1;min-width:0}.vault-form .tool-toolbar{gap:4px}.vault-form .tool-toolbar button{font-size:11px}
 .extension-review{border:1px solid var(--input);padding:16px;border-radius:12px;background:var(--secondary);margin:12px 0}.extension-review strong{font-size:13px;font-weight:500}.extension-review p{font-size:11px;color:var(--muted-foreground);margin:8px 0}.permission-list{height:130px;overflow:hidden}.permission-list code{display:block;overflow-wrap:anywhere;font-size:11px;padding:3px 0}.permissions-scroll{height:145px;overflow:hidden}.tool-section-label{font-size:12px;margin:18px 0 8px}.tool-caption{font-size:10px;color:var(--muted-foreground);line-height:1.6}.tool-error{font-size:12px;color:#f99;overflow-wrap:anywhere}.bookmark-edit{display:grid;gap:8px}.bookmark-edit>div{display:flex;justify-content:flex-end;gap:8px}
 .tab-favicon { width:16px;height:16px;object-fit:contain; }
-.sidebar-resize { position:absolute;right:-3px;top:0;bottom:0;width:6px;z-index:10;cursor:col-resize;touch-action:none; }
-.sidebar-resize:hover { background:#ffffff0b; }
 .tab-main:active { scale:1!important; }
 .tab-row:hover .tab-letter { color:var(--foreground); }
 .tab-letter { transition:color 180ms,opacity 180ms,background-color 180ms; }

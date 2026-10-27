@@ -106,7 +106,6 @@ public partial class MainWindow
   OpenSheet("settings", "Make yourself at home.");
   SheetContent.Children.Add(Note("Still. A quiet browser."));
   Choices("Appearance", ["Light", "Dark", "System"], Prefs.Theme, s => { Prefs.Theme = s; ApplyTheme(); });
-  Choices("Tabs", ["Sidebar", "Top"], Prefs.Layout, s => { Prefs.Layout = s; ApplyLayout(); });
   Choices("Search with", ["DuckDuckGo", "Google", "Bing"], Prefs.SearchEngine, s => Prefs.SearchEngine = s);
   Choices("Restore tabs when Still opens", ["On", "Off"], Prefs.RestoreTabs ? "On" : "Off", s => Prefs.RestoreTabs = s == "On");
   Choices("Block common ads and trackers", ["On", "Off"], Prefs.Blocking ? "On" : "Off", s => { Prefs.Blocking = s == "On"; _ = SyncYouTubeScripts(); Toast("Applies to new requests. Reload an open page to see the change."); });
@@ -153,7 +152,7 @@ public partial class MainWindow
    ["Close / sleep pinned tab", "Ctrl W"], ["Reopen closed tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"],
    ["Jump to a tab", "Ctrl 1 … 9"], ["Pin / unpin", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"],
    ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"],
-   ["Reading mode", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Sidebar / top tabs", "Ctrl Shift S"],
+   ["Reading mode", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"],
    ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"], ["Back / forward", "Alt ← / →"], ["Zoom", "Ctrl + / − / 0"]
   ];
   foreach (var row in rows) {
@@ -263,7 +262,6 @@ public partial class MainWindow
   AddMenu(m, "Picture in picture", async () => await PictureInPicture());
   m.Items.Add(new Separator());
   AddMenu(m, "Pin / unpin tab", () => { if (active != null) { active.Pinned = !active.Pinned; RenderTabs(); SaveLater(); } }, "Ctrl Shift P");
-  AddMenu(m, "Switch tab layout", () => { Prefs.Layout = Prefs.Layout == "Sidebar" ? "Top" : "Sidebar"; ApplyLayout(); }, "Ctrl Shift S");
   AddMenu(m, "Focus mode", () => { focusMode = !focusMode; ApplyLayout(); }, "Ctrl Shift F");
   AddMenu(m, "Settings", ShowSettings, "Ctrl ,");
   m.PlacementTarget = button; m.IsOpen = true;
