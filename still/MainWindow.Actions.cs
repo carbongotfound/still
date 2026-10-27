@@ -223,7 +223,7 @@ public partial class MainWindow
     document.body.replaceChildren(root);
     document.body.removeAttribute('class');document.body.removeAttribute('style');
     const style=document.createElement('style');
-    style.textContent='html,body{background:{{(dark ? "#1C1B19" : "#FAFAF7")}}!important;color:{{(dark ? "#EAECE4" : "#30312D")}}!important;margin:0!important;font:19px/1.85 Georgia,serif!important} body main img{max-width:100%;height:auto} body main a{color:inherit;text-decoration:underline;text-underline-offset:3px} body main pre{overflow:auto} body main p{margin:1.25em 0}';
+    style.textContent='html,body{background:{{(dark ? "#1C1C1E" : "#FAFAF7")}}!important;color:{{(dark ? "#EAECE4" : "#30312D")}}!important;margin:0!important;font:19px/1.85 Georgia,serif!important} body main img{max-width:100%;height:auto} body main a{color:inherit;text-decoration:underline;text-underline-offset:3px} body main pre{overflow:auto} body main p{margin:1.25em 0}';
     document.head.querySelectorAll('style,link[rel="stylesheet"]').forEach(el=>el.remove());
     document.head.appendChild(style);
     return true;
