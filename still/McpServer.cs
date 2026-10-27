@@ -11,21 +11,31 @@ namespace Still;
 internal static class McpServer
 {
  internal static readonly object[] BrowserTools = [
-  Tool("list_tabs", "List the open (non-private) tabs in every Still window.", new { }),
-  Tool("open_tab", "Open a new tab in the background (the user keeps their own tab) with a URL or search terms, wait for it to load, and work in it from now on.", new { url = Str("URL or search terms") }, "url"),
-  Tool("navigate", "Load a URL or search in a tab (your current tab if tabId is omitted).", new { url = Str("URL or search terms"), tabId = Str("Tab id from list_tabs (optional)") }, "url"),
-  Tool("switch_tab", "Work in another tab from now on. It stays in the background unless show is true, which brings it to the front for the user.", new { tabId = Str("Tab id"), show = new { type = "boolean", description = "Bring it to the front (only when the user asked to see it)" } }, "tabId"),
-  Tool("close_tab", "Close a tab.", new { tabId = Str("Tab id") }, "tabId"),
-  Tool("go_back", "Go back in a tab's history.", new { tabId = Str("Tab id (optional)") }),
-  Tool("go_forward", "Go forward in a tab's history.", new { tabId = Str("Tab id (optional)") }),
-  Tool("reload", "Reload a tab.", new { tabId = Str("Tab id (optional)") }),
-  Tool("read_page", "Snapshot of a tab: title, URL, one line per visible clickable/typeable element as [id] kind \"label\" (→ link, =value, {options}), then the page text. Use the ids with click/type/scroll/wait_for. Ids change on every read.", new { text = Bool("Include page text (default true; false = elements only, fewer tokens)"), tabId = Str("Tab id (optional)") }),
-  Tool("screenshot", "Take a PNG screenshot of a tab (brings it to the front).", new { tabId = Str("Tab id (optional)") }),
-  Tool("click", "Click an element by id from read_page (or CSS selector, or visible text).", new { id = Str("Element id from read_page"), selector = Str("CSS selector (optional)"), text = Str("Visible text of a link or button (optional)"), tabId = Str("Tab id (optional)") }),
-  Tool("type", "Type into a field by id (or CSS selector, or the focused field). On a dropdown, picks the option with that text. Optionally clear first and press Enter.", new { text = Str("Text to type, or option to pick"), id = Str("Element id from read_page"), selector = Str("CSS selector (optional)"), clear = Bool("Clear the field first"), submit = Bool("Press Enter afterwards"), tabId = Str("Tab id (optional)") }, "text"),
-  Tool("scroll", "Scroll a tab up/down, or to an element id.", new { id = Str("Element id to scroll into view (optional)"), direction = new { type = "string", @enum = new[] { "up", "down" } }, amount = new { type = "number", description = "Pixels (default 800)" }, tabId = Str("Tab id (optional)") }),
-  Tool("wait_for", "Wait until an element (id or CSS selector) or some text appears.", new { id = Str("Element id (optional)"), selector = Str("CSS selector (optional)"), text = Str("Text to wait for (optional)"), timeoutMs = new { type = "number", description = "Max wait, up to 30000 (default 10000)" }, tabId = Str("Tab id (optional)") }),
+  Tool("list_tabs", "List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.", new { }),
+  Tool("open_tab", "Open a URL or search terms in a new background tab and work there from now on. The user keeps their own tab and can keep browsing. Start most tasks here.", new { url = Str("URL or search terms") }, "url"),
+  Tool("navigate", "Load a URL or search terms in your current tab (or tabId).", new { url = Str("URL or search terms"), tabId = Str("Tab id (optional)") }, "url"),
+  Tool("switch_tab", "Work in another tab from now on. It stays in the background unless show is true.", new { tabId = Str("Tab id from list_tabs"), show = Bool("Bring it to the front (only when the user asked to see it)") }, "tabId"),
+  Tool("close_tab", "Close your current tab (or tabId).", new { tabId = Str("Tab id (optional)") }),
+  Tool("go_back", "Go back in your tab's history.", new { tabId = Str("Tab id (optional)") }),
+  Tool("go_forward", "Go forward in your tab's history.", new { tabId = Str("Tab id (optional)") }),
+  Tool("reload", "Reload your tab.", new { tabId = Str("Tab id (optional)") }),
+  Tool("read_page", "See the page: title, URL and scroll position, then one line per button, link and field near the visible part as [id] kind \"label\" (→ link, =value, {options}, ✓/☐ checked), then the page text (8000 characters at a time). An id keeps working as long as its element is on the page.", new { text = Bool("Include the page text (default true). false = controls only, far fewer tokens"), all = Bool("List controls on the whole page, not just near the visible part"), offset = Num("Text position to continue from, for long pages"), tabId = Str("Tab id (optional)") }),
+  Tool("find", "Search the page for text: the buttons, links and fields that match (with ids) and the matching lines of text, from anywhere on the page. Much cheaper than read_page on a big page.", new { text = Str("Text to look for"), tabId = Str("Tab id (optional)") }, "text"),
+  Tool("click", "Click an element like a real mouse click (it's scrolled into view first). Says where you ended up, and whether a new tab, dialog or file picker opened.", new { id = Str("Element id from read_page or find"), text = Str("Or: visible text of the button or link"), selector = Str("Or: CSS selector"), tabId = Str("Tab id (optional)") }),
+  Tool("type", "Type into a field, replacing what's in it (append=true adds instead). Without an id, types into the focused field. On a dropdown, picks the option with that text. submit=true presses Enter afterwards.", new { text = Str("Text to type, or the option to pick"), id = Str("Element id from read_page or find"), selector = Str("Or: CSS selector"), submit = Bool("Press Enter afterwards"), append = Bool("Add to the field's text instead of replacing it"), tabId = Str("Tab id (optional)") }, "text"),
+  Tool("press_key", "Press a key in the page: Enter, Escape, Tab, ArrowDown, PageDown, Backspace, a letter, or a combination like Control+A or Shift+Tab.", new { key = Str("Key or combination"), tabId = Str("Tab id (optional)") }, "key"),
+  Tool("scroll", "Scroll down or up (the page, or the scrolling panel in the middle of the view), or bring element id into view.", new { direction = new { type = "string", @enum = new[] { "down", "up" } }, amount = Num("Pixels (default: most of a screen)"), id = Str("Element id: scroll it into view, or with direction, scroll the panel it's in"), tabId = Str("Tab id (optional)") }),
+  Tool("wait_for", "Wait until an element or some text appears (or, with gone=true, disappears), for up to timeoutMs.", new { text = Str("Text to wait for"), id = Str("Or: element id"), selector = Str("Or: CSS selector"), gone = Bool("Wait for it to disappear instead"), timeoutMs = Num("Up to 30000 (default 10000)"), tabId = Str("Tab id (optional)") }),
+  Tool("handle_dialog", "Answer the alert, confirm, prompt or \"leave page?\" dialog the page is paused on (other tools tell you when one opens).", new { accept = Bool("true = OK / Leave, false = Cancel / Stay (default true)"), text = Str("For a prompt: the text to answer with"), tabId = Str("Tab id (optional)") }),
+  Tool("upload_file", "Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.", new { paths = new { type = "array", items = new { type = "string" }, description = "Full paths of the files on this computer" }, id = Str("Element id of a file input (optional)"), tabId = Str("Tab id (optional)") }, "paths"),
+  Tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", new { tabId = Str("Tab id (optional)") }),
  ];
+ internal const string Instructions = "You're driving the user's own Still browser, signed in as them. "
+  + "Work in background tabs: open_tab for new work, so the user can keep browsing. "
+  + "Use read_page to see a page (text=false when you only need its controls) and find to locate something on a big page; then click, type and press_key with the element ids. "
+  + "Actions report where you ended up and any new tab, dialog or file picker, so read the page again only when you need to see what changed. "
+  + "If Still says it's waiting for the user, tell the user what to click and stop until they reply. "
+  + "Ask the user before buying anything, sending messages or posts, or deleting things. Private tabs, passwords and cookies are never available.";
  // Every tool can target another Still profile by name, or "temp": a fresh window with no cookies, logins or history.
  // Each profile is its own Still process with its own pipe. The AI sidebar's agent is locked to its own profile.
  static JsonArray BuildTools(bool lockProfile)
@@ -47,6 +57,7 @@ internal static class McpServer
  }
  static object Str(string d) => new { type = "string", description = d };
  static object Bool(string d) => new { type = "boolean", description = d };
+ static object Num(string d) => new { type = "number", description = d };
  static object Tool(string name, string description, object properties, params string[] required) =>
   new { name, description, inputSchema = new { type = "object", properties, required } };
 
@@ -56,42 +67,58 @@ internal static class McpServer
   var tools = BuildTools(lockProfile);
   var stdin = new StreamReader(Console.OpenStandardInput(), new UTF8Encoding(false));
   var stdout = new StreamWriter(Console.OpenStandardOutput(), new UTF8Encoding(false)) { AutoFlush = true };
+  var running = new System.Collections.Concurrent.ConcurrentDictionary<string, CancellationTokenSource>();
+  void Send(JsonNode id, object? result, object? error) { string json = error != null ? JsonSerializer.Serialize(new { jsonrpc = "2.0", id, error }) : JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }); lock (stdout) stdout.WriteLine(json); }
   while (stdin.ReadLine() is { } line) {
    if (string.IsNullOrWhiteSpace(line)) continue;
    JsonNode? msg; try { msg = JsonNode.Parse(line); } catch (JsonException) { continue; }
    var id = msg?["id"]?.DeepClone(); string method = msg?["method"]?.GetValue<string>() ?? "";
-   if (id == null) continue; // notifications need no reply
-   object? result = null; object? error = null;
+   if (method == "notifications/cancelled") { if (msg?["params"]?["requestId"]?.ToJsonString() is { } rid && running.TryRemove(rid, out var cancel)) cancel.Cancel(); continue; }
+   if (id == null) continue; // other notifications need no reply
    try {
-   switch (method) {
-    case "initialize":
-     if (forcedName == null) client = AgentName(msg?["params"]?["clientInfo"]?["name"]?.GetValue<string>() ?? client);
-     result = new { protocolVersion = msg?["params"]?["protocolVersion"]?.GetValue<string>() ?? "2025-06-18", capabilities = new { tools = new { } },
-      serverInfo = new { name = "still", version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "1" },
-      instructions = "Control the user's Still browser. The user must approve you in Still first. Private tabs, passwords and cookies are never available." + (lockProfile ? "" : " Still can have several profiles (separate logins); list_profiles shows them and every tool takes an optional profile name, or \"temp\" for a clean temporary window.") };
-     break;
-    case "ping": result = new { }; break;
-    case "tools/list": result = new { tools }; break;
-    case "tools/call": {
-     string name = msg?["params"]?["name"]?.GetValue<string>() ?? "";
-     var args = msg?["params"]?["arguments"] ?? new JsonObject();
-     if (lockProfile) (args as JsonObject)?.Remove("profile");
-     string reply = lockProfile && name == "list_profiles" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: list_profiles" }) : Call(instance, client, name, args.DeepClone());
-     var r = JsonNode.Parse(reply)!;
-     if (r["ok"]?.GetValue<bool>() != true) { result = new { content = new[] { new { type = "text", text = r["error"]?.GetValue<string>() ?? "Failed." } }, isError = true }; break; }
-     var data = r["result"];
-     if (data is JsonObject obj && obj["image"] is { } img) result = new { content = new object[] { new { type = "image", data = img.GetValue<string>(), mimeType = "image/png" } } };
-     else result = new { content = new[] { new { type = "text", text = data?.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}" } } };
-     break;
+    switch (method) {
+     case "initialize":
+      if (forcedName == null) client = AgentName(msg?["params"]?["clientInfo"]?["name"]?.GetValue<string>() ?? client);
+      Send(id, new { protocolVersion = msg?["params"]?["protocolVersion"]?.GetValue<string>() ?? "2025-06-18", capabilities = new { tools = new { } },
+       serverInfo = new { name = "still", version = Assembly.GetEntryAssembly()?.GetName().Version?.ToString(3) ?? "1" },
+       instructions = Instructions + (lockProfile ? "" : " Still can have several profiles (separate logins); list_profiles shows them and every tool takes an optional profile name, or \"temp\" for a clean temporary window.") }, null);
+      break;
+     case "ping": Send(id, new { }, null); break;
+     case "tools/list": Send(id, new { tools }, null); break;
+     case "tools/call": {
+      // Calls run side by side, so one slow page never holds up the next request, and the app can cancel any of them.
+      string name = msg?["params"]?["name"]?.GetValue<string>() ?? "";
+      var args = (msg?["params"]?["arguments"] ?? new JsonObject()).DeepClone();
+      if (lockProfile) (args as JsonObject)?.Remove("profile");
+      var cts = new CancellationTokenSource(); string key = id.ToJsonString(); running[key] = cts;
+      string who = client;
+      _ = Task.Run(() => {
+       try {
+        string reply = lockProfile && name == "list_profiles" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: list_profiles" }) : Call(instance, who, name, args, cts.Token);
+        if (!cts.IsCancellationRequested) Send(id, ToolResult(reply), null);
+       } catch (OperationCanceledException) { }
+       catch (Exception ex) { Send(id, null, new { code = -32603, message = "Still error: " + ex.Message }); }
+       finally { running.TryRemove(key, out _); }
+      });
+      break;
+     }
+     default: Send(id, null, new { code = -32601, message = "Method not found: " + method }); break;
     }
-    default: error = new { code = -32601, message = "Method not found: " + method }; break;
-   }
-   } catch (Exception ex) { error = new { code = -32603, message = "Still error: " + ex.Message }; }
-   stdout.WriteLine(error != null ? JsonSerializer.Serialize(new { jsonrpc = "2.0", id, error }) : JsonSerializer.Serialize(new { jsonrpc = "2.0", id, result }));
+   } catch (Exception ex) { Send(id, null, new { code = -32603, message = "Still error: " + ex.Message }); }
   }
  }
+ static readonly JsonSerializerOptions Relaxed = new() { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping };
+ /// A page read comes back as plain text (no JSON escaping, fewer tokens); other results as compact JSON.
+ static object ToolResult(string reply)
+ {
+  var r = JsonNode.Parse(reply)!;
+  if (r["ok"]?.GetValue<bool>() != true) return new { content = new[] { new { type = "text", text = r["error"]?.GetValue<string>() ?? "Failed." } }, isError = true };
+  var data = r["result"];
+  if (data is JsonObject obj && obj["image"] is { } img) return new { content = new object[] { new { type = "image", data = img.GetValue<string>(), mimeType = "image/png" } } };
+  return new { content = new[] { new { type = "text", text = PlainText(data) } } };
+ }
+ static string PlainText(JsonNode? data) => data is JsonObject { Count: 1 } o && o["text"] is JsonValue v && v.TryGetValue<string>(out var text) ? text : data?.ToJsonString(Relaxed) ?? "{}";
 
- static readonly Dictionary<string, (NamedPipeClientStream Pipe, StreamReader Reader, StreamWriter Writer)> pipes = new();
 
  static string ListProfiles(string instance) => JsonSerializer.Serialize(new { ok = true, result = ProfileCatalog.Read().Select(p => new {
   name = p.Name, id = p.Id, open = IsOpen(p), launch = p.Id == ProfileCatalog.LaunchId, defaultForAgent = App.InstanceName(ProfileCatalog.Folder(p)) == instance }) });
@@ -99,7 +126,7 @@ internal static class McpServer
  static bool IsOpen(BrowserProfile p) { try { using var gate = Mutex.OpenExisting(App.InstanceName(ProfileCatalog.Folder(p))); return true; } catch (WaitHandleCannotBeOpenedException) { return false; } catch (UnauthorizedAccessException) { return true; } }
 
  /// Sends one tool call to the Still process for the requested profile (opening it if it's closed) and returns its JSON reply.
- static string Call(string instance, string client, string tool, JsonNode args)
+ static string Call(string instance, string client, string tool, JsonNode args, CancellationToken cancel = default)
  {
   if (tool == "list_profiles") return ListProfiles(instance);
   string name = args is JsonObject o && o["profile"]?.GetValue<string>() is { Length: > 0 } n ? n : "";
@@ -119,17 +146,19 @@ internal static class McpServer
    }
   }
   for (var until = DateTime.UtcNow.AddSeconds(name.Length > 0 ? 25 : 0); ; Thread.Sleep(500)) {
+   cancel.ThrowIfCancellationRequested();
    try {
-    if (!pipes.TryGetValue(instance, out var c) || !c.Pipe.IsConnected) {
-     if (c.Pipe != null) c.Pipe.Dispose();
-     var pipe = new NamedPipeClientStream(".", MainWindow.AgentPipe(instance), PipeDirection.InOut, PipeOptions.CurrentUserOnly);
-     pipe.Connect(3000);
-     pipes[instance] = c = (pipe, new StreamReader(pipe, new UTF8Encoding(false)), new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true });
-    }
-    c.Writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args }));
-    return c.Reader.ReadLine() ?? throw new IOException("Still closed the connection.");
+    // One connection per call: calls never queue behind each other, and a cancelled call just hangs up.
+    using var pipe = new NamedPipeClientStream(".", MainWindow.AgentPipe(instance), PipeDirection.InOut, PipeOptions.CurrentUserOnly | PipeOptions.Asynchronous);
+    pipe.Connect(3000);
+    using var reader = new StreamReader(pipe, new UTF8Encoding(false));
+    using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
+    writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args }));
+    // Still answers every call within its own time limit; this only covers a Still that froze.
+    using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(2));
+    try { return reader.ReadLineAsync(limit.Token).AsTask().GetAwaiter().GetResult() ?? throw new IOException("Still closed the connection."); }
+    catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { return JsonSerializer.Serialize(new { ok = false, error = "Still didn't answer in time. It may be busy; try again, or ask the user to check Still." }); }
    } catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException) {
-    if (pipes.Remove(instance, out var dead)) dead.Pipe.Dispose();
     if (DateTime.UtcNow < until) continue;
     return JsonSerializer.Serialize(new { ok = false, error = name.Equals("temp", StringComparison.OrdinalIgnoreCase) ? "The temporary window didn't start. Try again." : (name.Length > 0 ? $"Still profile \"{name}\" isn't reachable. " : "Still isn't running. ") + "Open it and turn on Settings → Let AI agents control Still (each profile has its own switch), then try again." });
    }
@@ -137,8 +166,10 @@ internal static class McpServer
  }
 
  static string? tempFolder;
+ static readonly object tempLock = new();
  /// Opens (once per agent session) a Still window on a brand-new throwaway profile, with this agent already allowed in.
- static string TempInstance(string client)
+ static string TempInstance(string client) { lock (tempLock) return OpenTemp(client); }
+ static string OpenTemp(string client)
  {
   if (tempFolder != null && IsOpen(tempFolder)) return App.InstanceName(tempFolder);
   string root = Path.Combine(Path.GetTempPath(), "Still-temp");
@@ -175,7 +206,7 @@ internal static class McpServer
   foreach (var a in argv.Skip(1)) {
    int eq = a.IndexOf('='); if (eq < 1) { stdout.WriteLine($"Arguments are key=value, got: {a}"); return 2; }
    string k = a[..eq].TrimStart('-'), v = a[(eq + 1)..];
-   args[k] = v is "true" or "false" ? bool.Parse(v) : double.TryParse(v, out var n) && k is "amount" or "timeoutMs" ? n : v;
+   args[k] = v is "true" or "false" ? bool.Parse(v) : double.TryParse(v, System.Globalization.CultureInfo.InvariantCulture, out var n) && k is "amount" or "timeoutMs" or "offset" ? n : k == "paths" ? new JsonArray(v.Split(';', StringSplitOptions.RemoveEmptyEntries).Select(x => (JsonNode)x).ToArray()) : v;
   }
   // Agents must say who they are, so the user sees "Codex is using Still", not a generic name.
   if (args["as"]?.ToString() is not { Length: > 0 } who) { stdout.WriteLine("Error: say who you are with as=<your name>, for example as=Claude or as=Codex."); return 2; }
@@ -189,7 +220,7 @@ internal static class McpServer
    File.WriteAllBytes(file, Convert.FromBase64String(img.GetValue<string>()));
    stdout.WriteLine(file); return 0;
   }
-  stdout.WriteLine(data?.ToJsonString(new JsonSerializerOptions { Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping }) ?? "{}");
+  stdout.WriteLine(PlainText(data));
   return 0;
  }
 }

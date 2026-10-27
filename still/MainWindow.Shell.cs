@@ -107,6 +107,7 @@ public partial class MainWindow
      case "mute": if(Target()?.View?.CoreWebView2 is {} mute)mute.IsMuted=!mute.IsMuted;break;
      case "tearOff":if(Prefs.TabTearOff&&Target() is {} torn&&data.TryGetProperty("x",out var tx)&&data.TryGetProperty("y",out var ty)){var drop=new Point(tx.GetDouble(),ty.GetDouble());await MoveTab(torn,WindowAt(drop),drop);};break;
      case "moveTab":if(Target() is {} mv){var dest=Windows.FirstOrDefault(w=>w.WindowId==S("window")&&!w.closing);if(dest!=null||S("window")=="new")await MoveTab(mv,dest,null);}break;
+     case "dialogAnswer":if(Target() is {} asked)AnswerPageDialog(asked,data.TryGetProperty("accept",out var da)&&da.ValueKind==JsonValueKind.True,data.TryGetProperty("text",out var dt)&&dt.ValueKind==JsonValueKind.String?dt.GetString():null);break;
      case "agentAnswer":AnswerAgent(data.TryGetProperty("allow",out var ag)&&ag.ValueKind==JsonValueKind.True);break;
      case "agentStop":StopAgent();break;
      case "incognitoWindow":OpenIncognito();break;
@@ -135,7 +136,7 @@ public partial class MainWindow
        case "blocking":Prefs.Blocking=value=="true";_=SyncYouTubeScripts();break;
        case "tracking":if(new[]{"Basic","Balanced","Strict"}.Contains(value)){Prefs.Tracking=value;foreach(var t in tabs)if(t.View?.CoreWebView2 is {} tc)ApplyProtection(tc);}break;
        case "tearOff":Prefs.TabTearOff=value=="true";SaveLater();foreach(var w in Windows)w.ShellPublish();break;
-       case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();agentApproval?.TrySetResult(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
+       case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();AnswerAgent(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "memory":Prefs.MemorySaver=value=="true";foreach(var w in Windows)w.ApplyMemoryPolicy();break;
        case "autofill":Prefs.Autofill=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is {} ac)ac.Settings.IsGeneralAutofillEnabled=Prefs.Autofill;break;
       }SaveLater();break;
@@ -200,7 +201,7 @@ public partial class MainWindow
    shellQueued=false;
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
-    kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
+    kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
     preferences=new{theme=Prefs.Theme,layout=Prefs.Layout,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,sidebarWidth=Prefs.SidebarWidth,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,aiGroup=t.AgentGroup,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),

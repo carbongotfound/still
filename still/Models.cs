@@ -39,7 +39,11 @@ public sealed class BrowserTab
  [JsonIgnore] public string LoginToken { get; set; }="";
  [JsonIgnore] public bool LoginDetected { get; set; }
  [JsonIgnore] public bool LoginFilled { get; set; }
+ [JsonIgnore] public PageDialog? Dialog { get; set; } // an alert/confirm/prompt the page is paused on
+ [JsonIgnore] public object? AgentUpload { get; set; } // a file picker an AI's click opened, waiting for upload_file
+ [JsonIgnore] public DateTime AgentActedAt { get; set; }
 }
+public sealed record PageDialog(CoreWebView2ScriptDialogOpeningEventArgs Args, CoreWebView2Deferral Deferral, string Site);
 public sealed class Visit
 {
  public string Title { get; set; } = "";

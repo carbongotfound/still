@@ -52,6 +52,8 @@ public partial class MainWindow : Window
   memoryTimer.Start();
   toastTimer.Tick += (_, _) => { toastTimer.Stop(); ToastBar.Visibility = Visibility.Collapsed; };
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
+  // Test windows open where the test runner says (its own screen), never over the user's work.
+  if (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_POS")?.Split(',') is [var qx, var qy]) { WindowStartupLocation = WindowStartupLocation.Manual; Left = double.Parse(qx); Top = double.Parse(qy); }
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    StartupMetrics.Mark("window-loaded");
@@ -269,6 +271,7 @@ public partial class MainWindow : Window
   // disposing it now would cancel them. The download's StateChanged handler finishes the job.
   if (tab.Closed && tab.ActiveDownloads > 0 && tab.View is { } busy) { busy.Visibility = Visibility.Hidden; return; }
   if (tab.View is { } view) { WebHost.Children.Remove(view); view.Dispose(); tab.View = null; }
+  if (tab.Dialog is { } open) { tab.Dialog = null; try { open.Deferral.Complete(); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { } }
   tab.LoadingTask = null; tab.Loading = false; tab.Reader = false; tab.HideScriptId = null;tab.LoginScriptId=null;tab.LoginDetected=false;tab.LoginFilled=false;
  }
  async Task EnsureView(BrowserTab tab)
@@ -301,6 +304,9 @@ public partial class MainWindow : Window
    core.Settings.IsStatusBarEnabled = false;
    core.Settings.IsZoomControlEnabled = true;
    core.Settings.AreBrowserAcceleratorKeysEnabled = true;
+   // Alerts, confirms and prompts show inside Still (and AI agents can answer them) instead of a Windows dialog.
+   core.Settings.AreDefaultScriptDialogsEnabled = false;
+   core.ScriptDialogOpening += (_, e) => OpenPageDialog(tab, e);
    ApplyProtection(core);
    core.FaviconChanged+=async(_,_)=>await UpdateFavicon(tab,core);
    core.LaunchingExternalUriScheme+=(_,e)=>{e.Cancel=true;var uri=e.Uri;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri));};
@@ -372,7 +378,8 @@ public partial class MainWindow : Window
     var deferral = e.GetDeferral(); e.Handled = true;
     try {
      if (!e.IsUserInitiated) { Toast("A pop-up was blocked."); return; }
-     var child = await NewTab("about:blank", tab.Private, false);
+     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
+     var child = tab.Agent is { } who && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10) ? await OpenAgentTab(who, "about:blank") : await NewTab("about:blank", tab.Private, false);
      if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
     } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
     finally { deferral.Complete(); }
@@ -453,6 +460,26 @@ public partial class MainWindow : Window
    if (tab == active) ShowError("The browser engine couldn't start.", ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message);
   } finally { if (tab.View == view) tab.LoadingTask = null; }
  }
+ void OpenPageDialog(BrowserTab tab, CoreWebView2ScriptDialogOpeningEventArgs e)
+ {
+  tab.Dialog?.Deferral.Complete();
+  var dialog = tab.Dialog = new PageDialog(e, e.GetDeferral(), Host(e.Uri));
+  InterruptAgent(tab, new { dialog = new { type = DialogKind(dialog), message = Clip(e.Message, 500), defaultText = e.Kind == CoreWebView2ScriptDialogKind.Prompt ? e.DefaultText : null }, url = tab.Url,
+   note = "The page is paused on this dialog. Answer it with handle_dialog (accept=true or false)." });
+  if (tab == active) ShellPublish();
+ }
+ internal void AnswerPageDialog(BrowserTab tab, bool accept, string? text)
+ {
+  if (tab.Dialog is not { } d) return;
+  tab.Dialog = null;
+  try {
+   if (accept) { if (text != null && d.Args.Kind == CoreWebView2ScriptDialogKind.Prompt) d.Args.ResultText = text; d.Args.Accept(); }
+   d.Deferral.Complete();
+  } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { } // the page is already gone
+  ShellPublish();
+ }
+ static string DialogKind(PageDialog d) => d.Args.Kind switch { CoreWebView2ScriptDialogKind.Confirm => "confirm", CoreWebView2ScriptDialogKind.Prompt => "prompt", CoreWebView2ScriptDialogKind.Beforeunload => "leave page", _ => "alert" };
+ object? PageDialogData() => active?.Dialog is { } d ? new { id = active.Id, kind = DialogKind(d), message = d.Args.Message, defaultText = d.Args.DefaultText, site = d.Site } : null;
  public static string Host(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? (u.IsFile ? Path.GetFileName(u.LocalPath) : u.Host.Replace("www.", "")) : url;
  public static string ResolveAddress(string input, string engine)
  {

@@ -47,7 +47,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; layout: string; search: string; restore: boolean; blocking: boolean; downloads: string; sidebarWidth:number; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -240,7 +240,10 @@ export default function App() {
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
  const [shownLogin, setShownLogin] = useState<State["loginOffer"]>()
  useEffect(() => { if (state.loginOffer) setShownLogin(state.loginOffer) }, [state.loginOffer])
- const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu
+ const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog
+ const [dialogText, setDialogText] = useState("")
+ useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
+ const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
  const findOpen = pane === "find"
 
  function open(name: string, value = "") { if (window.chrome?.webview) { send("openPanel", { name, value }); return } setQuery(value); setFilter(""); setDisplayPane(name); setPane(name) }
@@ -434,7 +437,8 @@ export default function App() {
      </nav>}
      <div className={cn("permission-wrap", state.agent && "is-open")}><div className={cn("permission-bar agent-bar", state.agent?.pending && "is-asking")} role="alertdialog" aria-label="AI agent" aria-hidden={!state.agent}>
       <Bot /><span>{state.agent?.pending
-       ? <><b>{state.agent.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>
+       ? state.agent.ask ? <><b>{state.agent.client}</b> {state.agent.ask}.</>
+       : <><b>{state.agent.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>
        : <><b>{state.agent?.client}</b> is using Still{state.agent?.action ? " · " + state.agent.action : ""}</>}</span>
       {state.agent?.pending
        ? <><Button variant="ghost" size="sm" onClick={() => send("agentAnswer", { allow: false })}>Block</Button><Button size="sm" onClick={() => send("agentAnswer", { allow: true })}>Allow</Button></>
@@ -533,16 +537,20 @@ Run \`${exe} --cli help\` to list tools. Common ones:
 - list_tabs: open tabs and their ids
 - open_tab url=<url or search>
 - navigate url=<url> [tabId=<id>]
-- read_page [text=false] [tabId=<id>]: title, url, then one line per clickable/typeable element as [id] kind "label", then the page text (text=false = elements only, fewer tokens)
+- read_page [text=false] [all=true] [offset=<n>] [tabId=<id>]: title, url, then one line per button/link/field near the visible part as [id] kind "label", then the page text (text=false = controls only, fewer tokens)
+- find text=<words>: matching buttons/links/fields with ids, and matching lines of text, from the whole page
 - click id=<id> (or selector=<css> | text=<visible text>)
-- type id=<id> text=<text> [clear=true] [submit=true] (on a dropdown, picks that option)
+- type id=<id> text=<text> [append=true] [submit=true] (replaces the field's text; on a dropdown, picks that option)
+- press_key key=<Enter | Escape | Tab | Control+A ...>
 - scroll direction=down [amount=800] | scroll id=<id>
-- wait_for id=<id> | selector=<css> | text=<text> [timeoutMs=10000]
+- wait_for id=<id> | selector=<css> | text=<text> [gone=true] [timeoutMs=10000]
+- handle_dialog [accept=false] [text=<answer>]: answers an alert/confirm/prompt the page opened
+- upload_file paths=<full path>[;<another>]: attaches files after you click a page's upload button
 - screenshot: prints the path of a PNG you can open
 - switch_tab / close_tab / go_back / go_forward / reload [tabId=<id>]
 - list_profiles; add profile=<name> to any tool to use another profile, or profile=temp for a separate temporary window with no cookies or logins
 
-Output is JSON. The first call waits for me to approve you in Still (up to 2 minutes). Private tabs, passwords and cookies are never available. Ids change on every read_page, so read again after the page changes. Read the page before clicking, and don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Codex or Grok Build:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</div> })()}
+The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Codex or Grok Build:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</div> })()}
       <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
       <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
@@ -570,6 +578,15 @@ Output is JSON. The first call waits for me to approve you in Still (up to 2 min
    </DialogContent>
   </Dialog>
 
+  <AlertDialog open={!!state.dialog}><AlertDialogContent onEscapeKeyDown={e => { e.preventDefault(); answerDialog(false) }}>
+   <AlertDialogHeader><AlertDialogTitle>{state.dialog?.kind === "leave page" ? "Leave this page?" : (state.dialog?.site || "This page") + " says"}</AlertDialogTitle>
+    <AlertDialogDescription className="whitespace-pre-wrap break-words max-h-[50vh] overflow-auto">{state.dialog?.kind === "leave page" ? "Changes you made may not be saved." : state.dialog?.message}</AlertDialogDescription></AlertDialogHeader>
+   {state.dialog?.kind === "prompt" && <Input autoFocus aria-label="Your answer" value={dialogText} onChange={e => setDialogText(e.target.value)} onKeyDown={e => { if (e.key === "Enter") answerDialog(true) }} />}
+   <AlertDialogFooter>
+    {state.dialog?.kind !== "alert" && <Button variant="outline" onClick={() => answerDialog(false)}>{state.dialog?.kind === "leave page" ? "Stay" : "Cancel"}</Button>}
+    <Button autoFocus={state.dialog?.kind !== "prompt"} onClick={() => answerDialog(true)}>{state.dialog?.kind === "leave page" ? "Leave" : "OK"}</Button>
+   </AlertDialogFooter>
+  </AlertDialogContent></AlertDialog>
   <AlertDialog open={!!confirm} onOpenChange={o => { if (!o) setConfirm(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.body}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (confirm) send(confirm.op); setConfirm(null) }}>Clear</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   {upload && <UploadCard upload={upload} send={send} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />
