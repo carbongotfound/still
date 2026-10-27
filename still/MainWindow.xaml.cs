@@ -128,7 +128,7 @@ public partial class MainWindow : Window
  }
  void Toast(string message) { if(shellReady){ShellSend(new{kind="toast",message});return;} ToastText.Text = message; ToastBar.Visibility = Visibility.Visible; toastTimer.Stop(); toastTimer.Start(); }
  SolidColorBrush Brush(string name) => (SolidColorBrush)FindResource(name);
- static readonly System.Drawing.Color DarkPage = System.Drawing.Color.FromArgb(0x1C, 0x1B, 0x19);
+ static readonly System.Drawing.Color DarkPage = System.Drawing.Color.FromArgb(0x1C, 0x1C, 0x1E);
  // The WPF control hands a non-white DefaultBackgroundColor to a new view through this process-wide variable and never
  // clears it, so a white view (a light-theme page, a popup) created later would come up in the last dark view's color.
  internal static void ClearViewColor() => Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", null);
@@ -136,8 +136,8 @@ public partial class MainWindow : Window
  {
   dark = Prefs.Theme == "Dark" || (Prefs.Theme == "System" && (int?)Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) == 0);
   var colors = dark
-   ? new[] { "#161513", "#1C1B19", "#161513", "#F1EFEB", "#A3A09A", "#33322F", "#2B2A27", "#242321" }
-   : new[] { "#FAFAF9", "#FFFFFF", "#F2F2F0", "#272826", "#71726E", "#E3E3DF", "#E0E2DB", "#ECEDE8" };
+   ? new[] { "#151517", "#1C1C1E", "#151517", "#F2F2F3", "#A1A1A8", "#333336", "#2C2C2F", "#242426" }
+   : new[] { "#F6F4F0", "#FFFFFF", "#F6F4F0", "#262421", "#837D74", "#EBE7E0", "#F2EFEA", "#EFEBE5" };
   string[] keys = ["Ground", "Surface", "Sidebar", "Ink", "Muted", "Line", "Wash", "Hover"];
   for (int i = 0; i < keys.Length; i++) Application.Current.Resources[keys[i]] = new SolidColorBrush((Color)ColorConverter.ConvertFromString(colors[i]));
   int theme = dark ? 1 : 0;

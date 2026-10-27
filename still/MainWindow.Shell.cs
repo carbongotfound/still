@@ -49,7 +49,7 @@ public partial class MainWindow
   shellRoot = new Grid { Background = Brushes.Black };
   shellView = new WebView2 {
    CreationProperties = new CoreWebView2CreationProperties { UserDataFolder=Path.Combine(App.DataRoot,"WebView"),ProfileName="Shell" },
-   DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x16, 0x15, 0x13)
+   DefaultBackgroundColor = System.Drawing.Color.FromArgb(0x15, 0x15, 0x17)
   };
   ((Panel)WebHost.Parent).Children.Remove(WebHost);
   pageCanvas = new Canvas { Background=null };
@@ -109,6 +109,7 @@ public partial class MainWindow
      case "dialogAnswer":if(Target() is {} asked)AnswerPageDialog(asked,data.TryGetProperty("accept",out var da)&&da.ValueKind==JsonValueKind.True,data.TryGetProperty("text",out var dt)&&dt.ValueKind==JsonValueKind.String?dt.GetString():null);break;
      case "agentAnswer":AnswerAgent(data.TryGetProperty("allow",out var ag)&&ag.ValueKind==JsonValueKind.True);break;
      case "agentStop":StopAgent();break;
+     case "agentTakeOver":await TakeOver(data.TryGetProperty("on",out var takeOn)&&takeOn.ValueKind==JsonValueKind.True);break;
      case "incognitoWindow":OpenIncognito();break;
      case "reorder":
       var move=tabs.FirstOrDefault(t=>t.Id==S("id"));var before=tabs.FirstOrDefault(t=>t.Id==S("before"));
