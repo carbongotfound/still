@@ -86,7 +86,7 @@ public partial class MainWindow
    if (agentPaused) return Fail("The user took over the browser for now. Wait a little, then call the tool again.");
    var interrupt = agentInterrupts[client] = new(TaskCreationOptions.RunContinuationsAsynchronously);
    var run = RunTool(client, tool, args, quick);
-   int limit = tool switch { "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
+   int limit = tool switch { "ask_user" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(run, interrupt.Task, Task.Delay(limit));
    string result = first == run ? await run : first == interrupt.Task ? await interrupt.Task
     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
@@ -390,8 +390,10 @@ public partial class MainWindow
  static readonly Dictionary<string, string> agentTabs = []; // agent name -> the tab it is working in
  static void Claim(string who, MainWindow w, BrowserTab t)
  {
+  var shown = w.Shown;
   agentTabs[who] = t.Id; t.LastActive = DateTime.UtcNow; // in use: memory saver leaves it awake
   if (t.Agent != who) { t.Agent = who; w.ShellPublish(); }
+  if (w.Shown != shown) { w.ShowPage(); w.ShellPublish(); } // a chat shows the page its AI just moved to
  }
  /// The agent's work is done: its icon leaves the user's own tabs. Tabs it opened stay in the AI group.
  internal static void ReleaseAgentTabs(string name)
@@ -399,15 +401,23 @@ public partial class MainWindow
   agentTabs.Remove(name);
   foreach (var w in Windows) { bool changed = false; foreach (var t in w.tabs.Where(t => t.Agent == name && !t.AgentGroup)) { t.Agent = null; changed = true; } if (changed) w.ShellPublish(); }
  }
- // Opens in the background, next to the other AI tabs, so the user can keep browsing.
+ /// The window whose own chat is running this AI right now.
+ static MainWindow? ChatRunner(string who) => Windows.FirstOrDefault(w => !w.closing && w.aiBusy && w.aiChat != null && AiClis.FirstOrDefault(c => c.Id == w.aiChat.Harness)?.Name == who);
+ // Still's own chat keeps the pages it opens inside the chat, beside the conversation. Other AI apps' tabs open in the
+ // background, next to the other AI tabs, so the user can keep browsing.
  async Task<BrowserTab> OpenAgentTab(string who, string url)
  {
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = who, AgentGroup = true };
-  int last = tabs.FindLastIndex(t => t.AgentGroup);
-  tabs.Insert(last >= 0 ? last + 1 : tabs.Count, tab);
-  if (active == null || active.Url.Length == 0 && !active.Pinned && tabs.Count == 2) await SelectTab(tab); // nothing to keep the user on
+  string? chat = ChatRunner(who) == this ? aiChat!.Id : null;
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = who, AgentGroup = chat == null, InChat = chat };
+  if (chat != null) tabs.Add(tab);
+  else {
+   int last = tabs.FindLastIndex(t => t.AgentGroup);
+   tabs.Insert(last >= 0 ? last + 1 : tabs.Count, tab);
+   if (active == null || active.Url.Length == 0 && active.ChatId == null && !active.Pinned && tabs.Count == 2) await SelectTab(tab); // nothing to keep the user on
+  }
   Claim(who, this, tab); ShellPublish(); SaveLater();
   await EnsureView(tab);
+  if (chat != null) ShowPage();
   return tab;
  }
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
@@ -475,10 +485,11 @@ public partial class MainWindow
  async Task<string> RunTool(string who, string tool, JsonElement args, bool quick)
  {
   switch (tool) {
+   case "ask_user": return await AskInChat(who, args);
    case "list_tabs":
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "open_tab": {
-    var tab = await OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(tab);
+    var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(tab);
     Did("Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {

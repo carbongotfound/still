@@ -76,11 +76,11 @@ public partial class MainWindow
    if (tab.View?.CoreWebView2 is not { } core) continue;
    if (core.IsSuspended)
    {
-    if (!Prefs.MemorySaver || tab == active) core.Resume();
+    if (!Prefs.MemorySaver || tab == Shown) core.Resume();
     else continue;
    }
    // Low keeps scripts and network activity running until the tab is eligible for suspension.
-   core.MemoryUsageTargetLevel = Prefs.MemorySaver && !tab.Media && (tab != active || WindowState == WindowState.Minimized)
+   core.MemoryUsageTargetLevel = Prefs.MemorySaver && !tab.Media && (tab != Shown || WindowState == WindowState.Minimized)
     ? CoreWebView2MemoryUsageTargetLevel.Low : CoreWebView2MemoryUsageTargetLevel.Normal;
   }
   if (shellView?.CoreWebView2 is { } shell)
@@ -141,7 +141,7 @@ public partial class MainWindow
    var processes = await environment.GetProcessExtendedInfosAsync();
    if (!Prefs.MemorySaver || closing) return;
    // Decide after the await: a tab may have been resumed, moved or closed meanwhile.
-   var sleeping = Windows.Where(w => !w.closing).SelectMany(w => w.tabs.Where(t => t != w.active && t.ActiveDownloads == 0))
+   var sleeping = Windows.Where(w => !w.closing).SelectMany(w => w.tabs.Where(t => t != w.Shown && t.ActiveDownloads == 0))
     .Select(t => t.View?.CoreWebView2).Where(c => c?.IsSuspended == true).Select(c => c!.FrameId).ToHashSet();
    foreach (var process in processes)
    {
@@ -181,7 +181,7 @@ public partial class MainWindow
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
-  && tab != active && tab.Agent == null && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
+  && tab != Shown && tab.Agent == null && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
   && DateTime.UtcNow - tab.LastActive >= TimeSpan.FromMinutes(1)
   && !permissions.Any(p => p.Tab == tab) && tab.View?.CoreWebView2?.IsDocumentPlayingAudio == false;
 }
