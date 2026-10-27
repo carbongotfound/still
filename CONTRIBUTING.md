@@ -6,4 +6,4 @@ Keep changes small and include the problem, behavior, and validation. Use actual
 
 Run frontend lint/build and `node --test tests/suggestions.test.ts` in still-ui. Native regression tests are under tests; automation-enabled builds must never be released. For changes affecting security boundaries, include a negative test (wrong origin, invalid path, cancellation, or permission denied). A compile or scripted click alone is not proof of interactive behavior.
 
-Keep third-party notices and lockfiles. Original Still code is MIT licensed; dependencies keep their own licenses. No Office Commun source code is included. Do not claim affiliation with Office Commun, Microsoft, shadcn, or uBlock Origin.
+Keep third-party notices and lockfiles. Original Still code is MIT licensed; dependencies keep their own licenses. Do not claim affiliation with Microsoft, shadcn, or uBlock Origin.

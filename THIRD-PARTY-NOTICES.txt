@@ -12,6 +12,3 @@ See Licenses for the retained upstream license texts and package inventory.
 uBlock Origin Lite is downloaded separately from its official upstream release only
 after user review. Its GPL-3.0 license and source are provided by the extension
 publisher: https://github.com/uBlockOrigin/uBOL-home . It is not bundled in Still.
-
-Visual inspiration: Search by Office Commun, https://officecommun.com/search .
-No Office Commun source code or brand assets are included. Still is independent.

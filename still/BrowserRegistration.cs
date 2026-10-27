@@ -42,7 +42,7 @@ internal static class BrowserRegistration
     using (var c = k.CreateSubKey(@"shell\open\command")) c.SetValue("", "\"" + Exe + "\"");
     using var cap = k.CreateSubKey("Capabilities");
     cap.SetValue("ApplicationName", "Still");
-    cap.SetValue("ApplicationDescription", "A quiet, pitch-black browser for Windows.");
+    cap.SetValue("ApplicationDescription", "The browser you share with your AI.");
     cap.SetValue("ApplicationIcon", "\"" + Exe + "\",0");
     using (var s = cap.CreateSubKey("StartMenu")) s.SetValue("StartMenuInternet", "Still");
     using (var u = cap.CreateSubKey("URLAssociations")) { u.SetValue("http", UrlProgId); u.SetValue("https", UrlProgId); }
