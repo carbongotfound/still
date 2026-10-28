@@ -1,0 +1,103 @@
+using System.Text.Json;
+using System.Windows;
+using System.Windows.Threading;
+using Microsoft.Web.WebView2.Core;
+using Microsoft.Web.WebView2.Wpf;
+namespace Still;
+
+// web_search and read_url: the AI looks things up without a tab. Each lookup loads in one hidden page (the same
+// profile, never a tab, no pop-ups or sound), one at a time. It closes after a minute unused, so it costs nothing at rest.
+public partial class MainWindow
+{
+ static readonly SemaphoreSlim lookupGate = new(1, 1);
+ WebView2? lookupView;
+ DispatcherTimer? lookupIdle;
+
+ string SearchUrl(string q) => (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_SEARCH") is { Length: > 0 } qa ? qa : Prefs.SearchEngine switch { // tests search a local page
+  "Google" => "https://www.google.com/search?q=", "Bing" => "https://www.bing.com/search?q=", _ => "https://html.duckduckgo.com/html/?q=" }) + Uri.EscapeDataString(q);
+
+ async Task<JsonElement> LookUp(string url, string script, object args)
+ {
+  await lookupGate.WaitAsync();
+  try {
+   lookupIdle?.Stop();
+   if (lookupView?.CoreWebView2 == null) {
+    lookupView = new WebView2 { Visibility = Visibility.Hidden }; WebHost.Children.Add(lookupView);
+    var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions(); options.ProfileName = "Default";
+    await lookupView.EnsureCoreWebView2Async(env, options);
+    var c = lookupView.CoreWebView2; ApplyProtection(c);
+    c.IsMuted = true; c.Settings.AreDefaultScriptDialogsEnabled = false;
+    c.NewWindowRequested += (_, e) => e.Handled = true;
+    c.ScriptDialogOpening += (_, e) => e.Accept();
+    c.DownloadStarting += (_, e) => e.Cancel = true;
+   }
+   var core = lookupView.CoreWebView2;
+   var loaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+   void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) => loaded.TrySetResult(e.IsSuccess);
+   core.NavigationCompleted += Done;
+   try {
+    core.Navigate(url);
+    if (await Task.WhenAny(loaded.Task, Task.Delay(20000)) != loaded.Task) throw new InvalidOperationException("The page took too long to load.");
+    if (!await loaded.Task) throw new InvalidOperationException("The page didn't load.");
+   } finally { core.NavigationCompleted -= Done; }
+   await Task.Delay(350); // pages that draw their text with script
+   return await Js(core, script, args);
+  } finally {
+   lookupGate.Release();
+   lookupIdle ??= new DispatcherTimer(TimeSpan.FromSeconds(60), DispatcherPriority.Background, (_, _) => { lookupIdle!.Stop(); if (lookupView is { } v) { WebHost.Children.Remove(v); v.Dispose(); lookupView = null; } }, Dispatcher);
+   lookupIdle.Start();
+  }
+ }
+
+ async Task<string> WebSearch(string who, JsonElement args)
+ {
+  string q = S(args, "query").Trim();
+  if (q.Length == 0) return Fail("Pass what to search for.");
+  int count = (int)Math.Clamp(N(args, "count", 8), 1, 10);
+  var found = await LookUp(SearchUrl(q), ResultsJs, new { count });
+  if (found.GetArrayLength() == 0 && Prefs.SearchEngine != "DuckDuckGo") found = await LookUp("https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ResultsJs, new { count }); // a consent page or a challenge
+  Did(who, "Searched “" + Clip(q, 60) + "”");
+  if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "search", Text = JsonSerializer.Serialize(new { q, results = found }) }); PublishAiEverywhere(); }
+  return found.GetArrayLength() == 0 ? Fail("No results. Try other words, or open_tab the search to see the page.") : Reply(new { results = found });
+ }
+
+ async Task<string> ReadUrl(string who, JsonElement args)
+ {
+  string url = WebUrl(S(args, "url"), Prefs.SearchEngine);
+  var page = await LookUp(url, ReadableJs, new { offset = (int)Math.Max(0, N(args, "offset", 0)) });
+  string at = Str(page, "url") is { Length: > 0 } u ? u : url;
+  Did(who, "Read " + Host(at));
+  if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "read", Text = JsonSerializer.Serialize(new { url = at, title = Str(page, "title") }) }); PublishAiEverywhere(); }
+  return Reply(page);
+ }
+
+ // Each engine's result list, with their redirect links undone. Anything pointing back at the engine itself is left out.
+ const string ResultsJs = """
+  const out = [], seen = new Set(), engines = /(^|\.)(google|bing|duckduckgo)\.[a-z.]+$/;
+  const add = (a, snip) => {
+   if (!a?.href || out.length >= o.count) return;
+   let url = a.href;
+   try {
+    const p = new URL(url);
+    if (p.searchParams.get('uddg')) url = p.searchParams.get('uddg');
+    else if (p.pathname === '/url' && p.searchParams.get('q')) url = p.searchParams.get('q');
+    else if (p.pathname.startsWith('/ck/') && p.searchParams.get('u')?.startsWith('a1')) url = atob(p.searchParams.get('u').slice(2).replace(/-/g, '+').replace(/_/g, '/'));
+    if (!/^https?:/.test(url) || engines.test(new URL(url).hostname) || seen.has(url)) return;
+   } catch { return; }
+   seen.add(url);
+   out.push({ title: (a.innerText || a.textContent || '').trim().split('\n')[0].slice(0, 160), url, snippet: (snip || '').replace(/\s+/g, ' ').trim().slice(0, 300) });
+  };
+  document.querySelectorAll('.result, .web-result').forEach(r => add(r.querySelector('a.result__a'), r.querySelector('.result__snippet')?.innerText));
+  document.querySelectorAll('li.b_algo').forEach(r => add(r.querySelector('h2 a'), r.querySelector('.b_caption p, [class*=b_lineclamp]')?.innerText));
+  document.querySelectorAll('#search a h3, #rso a h3').forEach(h => { const a = h.closest('a'), box = a.closest('[data-hveid]')?.parentElement?.closest('[data-hveid]') || a.closest('[data-hveid]'); add(a, box && [...box.querySelectorAll('[data-sncf], .VwiC3b, [style*=line-clamp]')].map(e => e.innerText).join(' ')); });
+  return out;
+ """;
+ // The page's main text: menus, headers, footers and asides left out.
+ const string ReadableJs = """
+  document.querySelectorAll('script,style,noscript,template,svg,iframe,nav,header,footer,aside,dialog,[role=navigation],[role=banner],[role=contentinfo],[aria-hidden=true]').forEach(e => e.remove());
+  const main = document.querySelector('article') || document.querySelector('main,[role=main]');
+  const pick = main && main.innerText.trim().length > 400 ? main : document.body;
+  const text = (pick?.innerText || '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n').trim();
+  return { title: document.title, url: location.href, text: text.slice(o.offset, o.offset + 12000), offset: o.offset, total: text.length, more: o.offset + 12000 < text.length };
+ """;
+}

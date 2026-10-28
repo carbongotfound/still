@@ -100,7 +100,9 @@ def shots(exe, name, version, setup, preferences=None, reference=None):
                 rpc(process, "quit")
                 process.wait(timeout=15)
     if reference:
-        compare(out / f"{name}-{version}-light-1720.png", reference, out / f"{name}-{version}.png")
+        theirs = Path(r"D:\Still\work\refs\compare")  # reference frames never go into the repo
+        theirs.mkdir(parents=True, exist_ok=True)
+        compare(out / f"{name}-{version}-light-1720.png", reference, theirs / f"{name}-{version}.png")
 
 
 def compare(mine, reference, to):

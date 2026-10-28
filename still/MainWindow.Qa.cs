@@ -30,7 +30,7 @@ public partial class MainWindow
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
         windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),
         title = Title, width = ActualWidth, height = ActualHeight, left = Left, top = Top,
-        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
+        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.InChat, t.RunChat, t.ChatId, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
         history = state.History, bookmarks = state.Bookmarks, hidden = state.Hidden,
         downloads = downloads.Select(d => new { d.Path, status = d.Operation.State.ToString(), bytes = d.Operation.BytesReceived }),
         profilePrivate = active?.View?.CoreWebView2?.Profile.IsInPrivateModeEnabled,
@@ -44,7 +44,7 @@ public partial class MainWindow
         split = new { left = splitLeft?.Id, right = splitRight?.Id, ratio = splitRatio, partner = Partner?.Id, leftWidth = splitLeft?.View?.ActualWidth, rightWidth = splitRight?.View?.ActualWidth, rightVisible = splitRight?.View?.IsVisible, leftVisible = splitLeft?.View?.IsVisible },
         windows = Windows.Select(w => new { id = w.WindowId, active = w.active?.Id, tabs = w.tabs.Select(t => new { t.Id, t.Url, t.Group, wired = t.Wire != null, visible = t.View?.IsVisible }) }),
         order = tabs.Select(t => t.Id) });
-       if (op == "eval" && active?.View?.CoreWebView2 is { } core) return await core.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
+       if (op == "eval" && (doc.RootElement.TryGetProperty("tab", out var evalTab) ? tabs.FirstOrDefault(t => t.Id == evalTab.GetString()) : Shown ?? active)?.View?.CoreWebView2 is { } core) return await core.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? ""); // the page in view, or a given tab
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }

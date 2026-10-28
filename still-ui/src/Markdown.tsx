@@ -1,4 +1,5 @@
 import type { ReactNode } from "react"
+import { Copy } from "lucide-react"
 
 // A small Markdown renderer for AI replies: headings, lists, quotes, code, tables, links, bold/italic/strike.
 // React escapes all text, so a reply can't inject HTML. Links open in a new Still tab.
@@ -28,7 +29,8 @@ function inline(text: string, onLink: Link, key = ""): ReactNode[] {
 
 const cells = (row: string) => row.trim().replace(/^\||\|$/g, "").split("|").map(c => c.trim())
 
-export function Markdown({ text, onLink }: { text: string; onLink: Link }) {
+// A ```draft block is copy the user will send or post: a grey card with its own Copy button.
+export function Markdown({ text, onLink, onCopy }: { text: string; onLink: Link; onCopy?: (text: string) => void }) {
  const lines = text.replace(/\r/g, "").split("\n"), blocks: ReactNode[] = []
  for (let i = 0; i < lines.length;) {
   const line = lines[i], k = "b" + i
@@ -36,7 +38,10 @@ export function Markdown({ text, onLink }: { text: string; onLink: Link }) {
   if (/^\s*```/.test(line)) {
    const code: string[] = []; i++
    while (i < lines.length && !/^\s*```/.test(lines[i])) code.push(lines[i++])
-   i++; blocks.push(<pre key={k}><code>{code.join("\n")}</code></pre>); continue
+   i++
+   if (/^\s*```\s*draft\b/i.test(line)) blocks.push(<div key={k} className="md-draft"><span>Draft</span><p>{code.join("\n")}</p>{onCopy && <button type="button" onClick={() => onCopy(code.join("\n"))}><Copy />Copy</button>}</div>)
+   else blocks.push(<pre key={k}><code>{code.join("\n")}</code></pre>)
+   continue
   }
   const h = /^(#{1,6})\s+(.*)$/.exec(line)
   if (h) { const Tag = (["h3", "h3", "h4", "h5", "h5", "h5"] as const)[h[1].length - 1]; blocks.push(<Tag key={k}>{inline(h[2], onLink, k)}</Tag>); i++; continue }
@@ -51,7 +56,7 @@ export function Markdown({ text, onLink }: { text: string; onLink: Link }) {
   if (/^\s*>/.test(line)) {
    const quote: string[] = []
    while (i < lines.length && /^\s*>/.test(lines[i])) quote.push(lines[i++].replace(/^\s*>\s?/, ""))
-   blocks.push(<blockquote key={k}><Markdown text={quote.join("\n")} onLink={onLink} /></blockquote>); continue
+   blocks.push(<blockquote key={k}><Markdown text={quote.join("\n")} onLink={onLink} onCopy={onCopy} /></blockquote>); continue
   }
   const item = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/
   if (item.test(line)) {

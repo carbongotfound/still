@@ -229,6 +229,7 @@ public partial class MainWindow : Window
  }
  async Task SelectTab(BrowserTab tab)
  {
+  if (tab.InChat is { } app && app.StartsWith(AppPages)) tab.InChat = null; // an AI app's background tab joins the user's tabs once they open it
   if (tab.InChat is { } owner && !tab.Closed) { tab.LastActive = DateTime.UtcNow; tab = ChatTab(owner); tab.PageOpen = true; } // an AI's page opens in its chat
   if (tab.Closed || !tabs.Contains(tab)) return;
   if(active!=tab&&contentFullScreen)await ExitContentFullScreen();
@@ -430,7 +431,7 @@ public partial class MainWindow : Window
     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
+    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank", tab.InChat != null) : await NewTab("about:blank", tab.Private, false);
     if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
    } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
    finally { deferral.Complete(); }

@@ -333,7 +333,16 @@ public partial class MainWindow
      ShowPage(); ShellPublish();
     } else await SelectTab(help);
     break;
-   case "chatPopOut" when active?.ChatId != null && Shown is { } page: page.InChat = null; await SelectTab(page); break; // the AI's page becomes an ordinary tab
+   case "chatPopOut" when active?.ChatId is { } owner && Shown is { } page: // "Move to my tabs": the AI's page becomes the user's tab, next to the chat's
+    page.InChat = null; page.RunChat = owner; tabs.Remove(page); tabs.Insert(tabs.IndexOf(active) + 1, page); await SelectTab(page); break;
+   case "tabMine" when tabs.FirstOrDefault(t => t.Id == S("id") && t.InChat != null) is { } mine: // the same, from the running tasks
+    mine.RunChat = mine.InChat!.StartsWith(AppPages) ? null : mine.InChat; mine.AgentGroup = mine.RunChat == null; mine.InChat = null; await SelectTab(mine); break;
+   case "tabHand" when tabs.FirstOrDefault(t => t.Id == S("id") && t.ChatId == null && t.InChat == null && !t.Private && t.Url.Length > 0) is { } given: { // "Hand to …": a tab of the user's becomes a chat's page
+    var to = AiChats.FirstOrDefault(c => c.Id == S("chat"));
+    if (to == null) { var with = Companions.FirstOrDefault(c => c.Id == S("companion")) ?? Companions.FirstOrDefault(); AiChats.Insert(0, to = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = given.Title, Companion = with?.Id ?? "" }); SaveAiChats(); }
+    given.InChat = to.Id; given.RunChat = null; given.AgentGroup = false; aiChat = to;
+    await SelectTab(given); PublishAiEverywhere(); break;
+   }
    case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Go to chat"
     aiChat = runChat; aiOpen = true; break;
    case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
@@ -409,10 +418,12 @@ public partial class MainWindow
 
   How to work:
   - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).
-  - For research, open_tab with a search or URL, read the results, and open the best sources. Cite them as Markdown links.
+  - For questions and research, use web_search, then read_url on the best sources. They need no tab. Cite sources as Markdown links.
+  - Open a tab (open_tab) only to click, type, sign in or show the user something. Your tabs are your own: they stay out of the user's tab strip. Use the user's own tab only when the task is about it ("this page") or they hand it to you.
   - Use find to locate something on a long page instead of reading all of it. Ids stay valid while the element exists.
   - Actions tell you where you ended up and about any new tab, dialog or file picker. Read the page again only when you need to see what changed.
-  - Pages you open with open_tab show in this chat, so the user can watch you work and take over.
+  - Pages you open with open_tab show beside this chat, so the user can watch you work and take over.
+  - When you write something for the user to send or post (an email, a message, a post), put it in a ```draft block so it's easy to copy.
   - When the user wants a table, a list or notes they can keep, make a file with save_file: CSV for tables, Markdown for notes. It shows in the chat as a card.
   - Keep going until the task is done. Don't ask permission for harmless steps like reading, searching, scrolling or opening tabs.
   - When you need the user to decide something, call ask_user with a short question and 2-4 short options, then carry on with their answer.
@@ -424,13 +435,14 @@ public partial class MainWindow
   """;
 
  /// What the agent should know about where the user is right now.
- string AiContext()
+ string AiContext(AiChat? chat = null)
  {
   var open = Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Count(t => !t.Private);
   string where = active == null || active.Url.Length == 0 ? "The active tab is empty."
    : active.Private ? "The active tab is private, which is off-limits."
    : $"Active tab: \"{active.Title}\" {active.Url} (tabId {active.Id}).";
-  return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open.";
+  var pages = chat == null ? [] : tabs.Where(t => t.InChat == chat.Id && !t.Closed).Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})").ToList();
+  return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open." + (pages.Count > 0 ? " Your tabs in this chat: " + string.Join("; ", pages) + "." : "");
  }
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null).
@@ -465,7 +477,7 @@ public partial class MainWindow
   string work = cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
   string memory = string.Join("\n\n", new[] { Memory().Trim(), who == null ? "" : Memory(who.Id).Trim() }.Where(m => m.Length > 0));
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n" + (memory.Length > 0 ? "What the user asked you to remember:\n" + memory + "\n\n" : ""))
-   + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext() + "\n\n" + text;
+   + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
   string folder = Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
   Directory.CreateDirectory(folder);
@@ -651,6 +663,7 @@ public partial class MainWindow
   return tool switch {
    "read_page" => "Read the page", "list_tabs" => "Looked at open tabs", "screenshot" => "Took a screenshot",
    "open_tab" => "Opened " + arg, "navigate" => "Went to " + arg, "click" => "Clicked " + (o2(input, "text") ?? "element " + arg),
+   "web_search" or "read_url" => "", // they show as their own rows
    "type" => "Typed “" + arg + "”", "scroll" => "Scrolled " + (arg.Length > 0 ? arg : "the page"), "wait_for" => "Waited for the page",
    "go_back" => "Went back", "go_forward" => "Went forward", "reload" => "Reloaded", "switch_tab" => "Switched tabs", "close_tab" => "Closed a tab", "ask_user" => "",
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
