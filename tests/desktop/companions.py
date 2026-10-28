@@ -139,22 +139,34 @@ def main():
         check(until(lambda: mates().get("Wren", {}).get("Mode") == "efficient", 5), "Picking Efficient saves Wren's mode")
         check(until(lambda: "Efficient" in js(process, "document.querySelector('.home-compose .mode-chip')?.innerText ?? ''"), 5), "The chip shows the mode")
 
-        # Edit: a job change and a memory.
+        # Edit: how it talks.
         click(process, ".mate-switch-on")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        memory_box = ".companion-dialog textarea[placeholder^='For example: my favorite']"
-        type_into(process, memory_box, "Wren knows I prefer peer-reviewed sources.")
+        type_into(process, ".companion-dialog textarea[placeholder^='For example: upbeat']", "Calm and precise, always with sources.")
         click(process, ".companion-save")
-        file = until(lambda: next(PROFILE.glob("companions/*/memory.md"), None), 10)
-        check(file and "peer-reviewed" in file.read_text(), "Edit: the companion's memory is saved to its memory.md")
+        check(until(lambda: mates().get("Wren", {}).get("Tone") == "Calm and precise, always with sources.", 5), "Edit: how Wren talks is saved")
 
-        # Shared memory on the Companions page.
+        # The Companions page: a card per companion, then the crew to pick from; memory opens Settings > Memory.
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
         check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Chat with Wren" in text(process), "The Companions page shows a card per companion")
-        type_into(process, ".home-memory textarea", "I live in Lisbon and pay in euros.")
-        click_text(process, ".home-memory button", "Save")
-        check(until(lambda: (PROFILE / "companions" / "memory.md").exists() and "Lisbon" in (PROFILE / "companions" / "memory.md").read_text(), 5), "Shared memory is saved")
+        check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Meet the crew" in text(process), "Below them, the crew of six and Create your own")
+        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Wren'))?.querySelector('.mate-memory')?.click()")
+        check(until(lambda: js(process, "!!document.querySelector('.memory-settings')") and js(process, "document.querySelector('.memory-who [aria-checked=true]')?.innerText.trim()") == "Wren", 5), "What they remember opens Settings > Memory on Wren")
+        for fact in ("I prefer peer-reviewed sources.", "I live in Lisbon and pay in euros."):
+            type_into(process, ".memory-add input", fact)
+            click(process, ".memory-add button[type=submit]")
+            time.sleep(.4)
+        wren_id = mates().get("Wren", {}).get("Id", "")
+        file = PROFILE / "companions" / wren_id / "memory.json"
+        check(until(lambda: file.exists() and "Lisbon" in file.read_text(encoding="utf-8") and "peer-reviewed" in file.read_text(encoding="utf-8"), 5), "Facts added on the Memory page are saved to Wren's memory.json")
+        check(until(lambda: js(process, "document.querySelectorAll('.memory-row').length") == 2, 5), "and listed there")
+        click_text(process, ".memory-who button", "Pip")
+        type_into(process, ".memory-add input", "My sister Maya lives in Porto.")
+        click(process, ".memory-add button[type=submit]")
+        check(until(lambda: (PROFILE / "companions" / "pip" / "memory.json").exists(), 5) and "Lisbon" not in (PROFILE / "companions" / "pip" / "memory.json").read_text(encoding="utf-8"), "Each companion keeps its own memory")
+        js(process, "document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")  # closes Settings
+        until(lambda: not js(process, "!!document.querySelector('.memory-settings')"), 5)
 
         # A skill: make it, then use it with / in the message box.
         click(process, ".home-rail-item[aria-label=Skills]")
@@ -181,7 +193,8 @@ def main():
         prompts = BIN / "prompts.jsonl"
         sent = until(lambda: prompts.exists() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
-        check("Lisbon and pay in euros" in sent and "peer-reviewed" in sent, "Shared and companion memory go into the first prompt")
+        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "peer-reviewed" in sent and "Maya" not in sent, "Wren's memory goes into the first prompt, and not Pip's")
+        check("Calm and precise, always with sources." in sent, "So does how Wren talks")
         check("Your name is Wren" in sent and "cites sources" in sent, "Wren's name and job go into the prompt")
         args = json.loads(prompts.read_text().splitlines()[-1])["args"]
         check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Efficient mode runs another AI app with --effort low and its own model")
@@ -232,12 +245,14 @@ def main():
         except Exception:
             process.kill()
 
-    # Memory edits persist across a restart.
+    # Memory persists across a restart.
     process = launch(EXE, PROFILE)
     try:
         home(process)
         click(process, ".home-rail-item[aria-label=Companions]")
-        check(until(lambda: "Lisbon" in (js(process, "document.querySelector('.home-memory textarea')?.value") or ""), 10), "Shared memory is still there after a restart")
+        until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 10)
+        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Pip'))?.querySelector('.mate-memory')?.click()")
+        check(until(lambda: "Maya lives in Porto" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), 10), "Pip's memory is still there after a restart")
         check(len(state()["Preferences"]["Companions"]) == 4, "The crew is saved")
     finally:
         rpc(process, "quit")

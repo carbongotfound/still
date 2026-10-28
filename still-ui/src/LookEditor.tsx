@@ -5,11 +5,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { cn } from "@/lib/utils"
 import { lookOf, type Companion } from "./Buddy"
 import { drawFace, REST } from "./face"
-import { BODY_COLORS, BROWS, EYES, HAIR_COLORS, HAIRS, HATS, MOUTHS, SHAPES, lookKey, surprise, type Look } from "./look"
+import { BODIES, BODY_COLORS, BROWS, EYES, GLASSES, HAIR_COLORS, HAIRS, HATS, MOUTHS, SHAPES, lookKey, surprise, type Look } from "./look"
 import { Mascot, pictureOf, useMascotVersion } from "./Mascot"
 
 // Customize: a big live preview that reacts to each change, and every part of the look in tabs.
-const TABS = [["color", "Color"], ["eyes", "Eyes"], ["brows", "Brows"], ["mouth", "Mouth"], ["head", "Head"], ["hair", "Hair"], ["hat", "Hat"]] as const
+const TABS = [["color", "Color"], ["eyes", "Eyes"], ["brows", "Brows"], ["mouth", "Mouth"], ["head", "Body"], ["hair", "Hair"], ["hat", "Hat"]] as const
 type Tab = (typeof TABS)[number][0]
 
 /// The face alone, flat, on a disc of the body color: quick to draw, so every style can show at once.
@@ -47,7 +47,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
    <div className="look-stage">
     <Mascot look={look} size={280} follow gesture={nudge ? "admire" : ""} gestureAt={nudge} />
     <b>{companion.name || "Your companion"}</b>
-    <Button type="button" variant="outline" size="sm" onClick={() => set(surprise())}><Dices />Surprise me</Button>
+    <Button type="button" variant="outline" size="sm" onClick={() => set({ ...surprise(), body: look.body, glasses: look.glasses })}><Dices />Surprise me</Button>
    </div>
    <div className="look-panel">
     <div className="look-tabs" role="tablist">{TABS.map(([k, label]) => <button type="button" key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}</div>
@@ -62,6 +62,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
       <Slider label="Height" value={look.eyeY} onChange={v => set({ eyeY: v }, false)} />
       <Slider label="Size" value={look.eyeSize} onChange={v => set({ eyeSize: v }, false)} />
       <Slider label="Pupils" value={look.pupil} onChange={v => set({ pupil: v }, false)} />
+      <div className="look-row" role="radiogroup" aria-label="Glasses"><span>Glasses</span>{GLASSES.map(([k, label]) => <button type="button" key={k || "none"} role="radio" aria-checked={look.glasses === k} className={cn(look.glasses === k && "is-picked")} onClick={() => set({ glasses: k }, false)}>{label}</button>)}</div>
      </>}
      {tab === "brows" && <>
       <div className="look-grid" role="radiogroup" aria-label="Brows">{BROWS.map(([k, label]) => option(look.brows === k, label, () => set({ brows: k }, false), <FaceSwatch look={{ ...look, brows: k, mouth: "none", blush: false }} />, k))}</div>
@@ -76,9 +77,10 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
       <Slider label="Size" value={look.mouthSize} onChange={v => set({ mouthSize: v }, false)} />
      </>}
      {tab === "head" && <>
-      <div className="look-grid is-3d" role="radiogroup" aria-label="Head shape">{SHAPES.map(([k, label]) => option(look.shape === k, label, () => set({ shape: k }), <>{pic(thumb({ shape: k, hair: "", hat: "" }))}<small>{label}</small></>, k))}</div>
+      <div className="look-grid is-3d" role="radiogroup" aria-label="Body">{BODIES.map(([k, label]) => option(look.body === k, label, () => set({ body: k }), <>{pic(thumb({ body: k, shape: "round", ears: 0, hair: "", hat: "" }))}<small>{label}</small></>, k || "classic"))}</div>
+      {!look.body && <div className="look-grid is-3d" role="radiogroup" aria-label="Head shape">{SHAPES.map(([k, label]) => option(look.shape === k, label, () => set({ shape: k }), <>{pic(thumb({ shape: k, hair: "", hat: "" }))}<small>{label}</small></>, k))}</div>}
       <Slider label="Head size" value={look.head} min={.88} max={1.12} onChange={v => set({ head: v }, false)} />
-      <Slider label="Ears" value={look.ears} onChange={v => set({ ears: v }, false)} />
+      {!look.body && <Slider label="Ears" value={look.ears} onChange={v => set({ ears: v }, false)} />}
      </>}
      {tab === "hair" && <>
       <div className="look-grid is-3d" role="radiogroup" aria-label="Hair">{HAIRS.map(([k, label]) => option(look.hair === k, label, () => set({ hair: k }), <>{pic(thumb({ hair: k, hat: "" }))}<small>{label}</small></>, k || "none"))}</div>

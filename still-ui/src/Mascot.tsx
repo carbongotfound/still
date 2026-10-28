@@ -54,6 +54,8 @@ const STORE = "still.picture."
 
 function drain() {
  if (!engine || !wanted.size) return
+ const e = engine, bodies = [...new Set([...wanted.values()].map(w => w.look.body))].filter(b => !e.hasBody(b))
+ if (bodies.length) { void Promise.all(bodies.map(e.loadBody)).then(drain); return } // an official companion's body loads first
  for (const [key, w] of wanted) {
   try {
    const url = engine.picture(w.look, w.state, w.px, w.frame)

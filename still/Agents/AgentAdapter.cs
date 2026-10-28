@@ -293,6 +293,7 @@ sealed class ManifestAdapter : AgentAdapter
 public sealed class AgentRun : IDisposable
 {
  public static readonly TimeSpan Limit = TimeSpan.FromHours(1);
+ public static int Launched; // runs started since Still opened: each one uses the user's plan (tests check Quick setup uses none)
  readonly Process process;
  readonly Job job = new();
  readonly AgentAdapter adapter;
@@ -316,6 +317,7 @@ public sealed class AgentRun : IDisposable
   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
   start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
   var run = new AgentRun(adapter, Process.Start(start) ?? throw new InvalidOperationException("couldn't start it."));
+  Interlocked.Increment(ref Launched);
   if (adapter.PromptOnStdin) await run.process.StandardInput.BaseStream.WriteAsync(new UTF8Encoding(false).GetBytes(r.Prompt));
   run.process.StandardInput.Close();
   return run;

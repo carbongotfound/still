@@ -40,7 +40,7 @@ public partial class MainWindow : Window
   state = sharedState ??= store.Load();
   StartupMetrics.Mark("session-loaded");
   if(state.UiVersion==0)state.Welcome=true; // brand-new install: show the welcome setup
-  if(state.UiVersion<2){state.Preferences.Theme="Dark";state.UiVersion=2;}
+  if(state.UiVersion<2){if(state.UiVersion>0)state.Preferences.Theme="Dark";state.UiVersion=2;} // new installs follow the system
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   if(state.UiVersion<4){state.Preferences.OfferPasswordSave=state.Preferences.OfferPasswordUpdate=true;state.UiVersion=4;} // offering to save logins is on by default, like other browsers
   if(state.UiVersion<5){MigrateAgentIds(state.Preferences);state.UiVersion=5;}
@@ -120,6 +120,9 @@ public partial class MainWindow : Window
   finally { drainingLinks = false; }
  }
  void SystemPreferenceChanged(object sender, UserPreferenceChangedEventArgs e) { if (Prefs.Theme == "System") Dispatcher.BeginInvoke(ApplyTheme); }
+ // Test windows get their "system" theme from the test (STILL_QA_SYSTEM_THEME, or the systemTheme op), dark unless it says.
+ internal static string? qaSystemTheme = App.IsQa ? Environment.GetEnvironmentVariable("STILL_QA_SYSTEM_THEME") ?? "Dark" : null;
+ static bool SystemDark => qaSystemTheme != null ? qaSystemTheme == "Dark" : (int?)Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) == 0;
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
  internal void Save()
  {
@@ -137,7 +140,7 @@ public partial class MainWindow : Window
  internal static void ClearViewColor() => Environment.SetEnvironmentVariable("WEBVIEW2_DEFAULT_BACKGROUND_COLOR", null);
  void ApplyTheme()
  {
-  dark = Prefs.Theme == "Dark" || (Prefs.Theme == "System" && (int?)Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) == 0);
+  dark = Prefs.Theme == "Dark" || (Prefs.Theme == "System" && SystemDark);
   var colors = dark
    ? new[] { "#151517", "#1C1C1E", "#151517", "#F2F2F3", "#A1A1A8", "#333336", "#2C2C2F", "#242426" }
    : new[] { "#F6F4F0", "#FFFFFF", "#F6F4F0", "#262421", "#837D74", "#EBE7E0", "#F2EFEA", "#EFEBE5" };

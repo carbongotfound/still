@@ -1,13 +1,15 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Info, Settings, FileText, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, type Companion } from "./Buddy"
+import { MemorySettings } from "./Memory"
+import { starters } from "./crew"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { UploadCard, type Upload } from "./UploadCard"
@@ -56,7 +58,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number; newTab?:string; interests?:string[] }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -246,6 +248,7 @@ export default function App() {
  const [pane, setPane] = useState("")
  const [displayPane, setDisplayPane] = useState("")
  const [settingsPage, setSettingsPage] = useState("general")
+ const [memoryFor, setMemoryFor] = useState("") // the companion Settings > Memory opens on
  const reduced = useReducedMotion()
  const [query, setQuery] = useState("")
  const [filter, setFilter] = useState("")
@@ -299,7 +302,8 @@ export default function App() {
  const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
  useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
  const idea = state.tabs.find(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && t.id !== active?.id)
- const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []), ...IDEAS].slice(0, 3)
+ const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []),
+  ...(state.preferences.interests?.length ? starters(state.preferences.interests, companion, 3).map(([label, prompt], i) => [Sparkles, ["green", "amber", "rose"][i], label, "Picked for what you're into", prompt] as (typeof IDEAS)[number]) : IDEAS)].slice(0, 3)
  const [typing, setTyping] = useState(false) // to the companion on the new tab: it listens
  const openAiSettings = () => { setAiView("settings"); if (!ai?.open) send("aiToggle") }
  // In a chat tab the viewer takes the page's place beside the chat; anywhere else it opens over the page.
@@ -378,7 +382,7 @@ export default function App() {
   const observer = new ResizeObserver(() => { cancelAnimationFrame(frame); frame = requestAnimationFrame(revealSelected) })
   observer.observe(viewport)
   return () => { observer.disconnect(); cancelAnimationFrame(frame) }
- }, [state.activeId, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen])
+ }, [state.activeId, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen, modern])
  useEffect(() => { paneRef.current = pane }, [pane])
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
@@ -641,7 +645,7 @@ export default function App() {
        <Button variant="ghost" size="icon-sm" aria-label="Chat details" title="Chat details" aria-pressed={split ? splitInfo : info} className={cn((split ? splitInfo : info) && "is-on")} onClick={() => split ? setSplitInfo(!splitInfo) : setInfo(!info)}><Info /></Button>
        {chatPages.length > 0 && <Button variant="ghost" size="icon-sm" aria-label={split ? "Hide the page" : "Show the page"} title={split ? "Hide the page" : "Show the page"} onClick={() => send("chatPage", { on: !split })}>{split ? <PanelRightClose /> : <PanelRightOpen />}</Button>}
       </div>
-      <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} />
+      <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} interests={state.preferences.interests} />
       {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={setEditing} onSettings={openAiSettings} onFile={openFile} />}
      </section>}
      <div className="page-pane">
@@ -664,11 +668,11 @@ export default function App() {
       {ghost?.side && <div className="split-zones" aria-hidden><div className={cn("split-zone", ghost.side === "left" && "is-on")}><span><Columns2 />Open on the left</span></div><div className={cn("split-zone", ghost.side === "right" && "is-on")}><span><Columns2 />Open on the right</span></div></div>}
       {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} />}
       {pair && snapshot && pairShot && <img className={cn("page-snapshot", pair.right !== active?.id && "is-right")} src={pairShot} alt="" style={{ width: `calc((100% - 6px) * ${pair.right === active?.id ? pair.ratio : 1 - pair.ratio})` }} />}
-      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : !active?.isPrivate && !state.noAi && ai && companion ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : !active?.isPrivate && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
-         : view === "companions" ? <CompanionsPage key={ai.memory} ai={ai} send={send} onEdit={setEditing} onChat={id => { setBuddy(id); setView("home") }} />
+         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={setEditing} onChat={id => { setBuddy(id); setView("home") }} onMemory={id => { setMemoryFor(id); open("settings", "memory") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
@@ -735,7 +739,7 @@ export default function App() {
    <span className="tab-ghost-icon">{ghost.favicon ? <img src={ghost.favicon} alt="" /> : <Globe2 />}</span><span className="tab-ghost-title">{ghost.title}</span>
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
   </div>}
-  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} layout={state.preferences.tabLayout} ai={ai} noAi={state.noAi} hidden={pane === "import"} send={send} onImport={() => open("import")} />}
+  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} layout={state.preferences.tabLayout} theme={state.preferences.theme} talk={state.welcomeTalk} ai={ai} noAi={state.noAi} hidden={pane === "import"} send={send} onImport={() => open("import")} />}
   {!state.welcome && !state.secondary && <Tour name={companion?.name ?? "Your helper"} ready={!modal && !active?.url && !active?.chatId && !active?.isPrivate && !!ai && !state.noAi} />}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
@@ -759,11 +763,12 @@ export default function App() {
     <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "A few things to make it yours." : displayPane === "about" ? "Your browser, with a helper that runs on your own AI." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? "Your logins, protected on this PC." : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
     {["passwords","extensions","cookies","security","profiles","import"].includes(displayPane)&&<BrowserTools key={displayPane} pane={displayPane} data={toolData[displayPane]??{}} send={send} url={active?.url??""} tracking={state.preferences.tracking} memory={state.preferences.memory} autofill={state.preferences.autofill}/> }
     {displayPane === "settings" && <Tabs value={settingsPage} onValueChange={setSettingsPage} className="settings-tabs">
-     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
+     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"], ["memory", "Memory"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
       {settingsPage === value && <motion.span className="settings-selection" layoutId="settings-selection" transition={FLOW} />}<span className="settings-tab-label">{label}</span>
      </TabsTrigger>)}</TabsList></LayoutGroup>
      <TabsContent value="general" className="settings-content">
-      <div className="setting-row"><div><strong>Setup</strong><p>Go through the first steps again: your helper, your AI and how Still looks.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></div><Separator />
+      <div className="setting-row"><div><strong>Setup</strong><p>Go through the first steps again: your helper, your AI and how Still looks.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></div>
+      {ai && !state.noAi && ai.companions?.[0] && <div className="setting-row"><div><strong>Set me up with {ai.companions[0].name}</strong><p>{ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more. You check every change.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></div>}<Separator />
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
       <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
@@ -778,6 +783,7 @@ export default function App() {
       {ai && !state.noAi && <><Separator /><Button variant="ghost" className="settings-link" onClick={() => { close(); send("aiToggle") }}><Bot />Your AI and its model<ChevronRight /></Button><Button variant="ghost" className="settings-link" onClick={() => { close(); goHome("companions") }}><UsersRound />Companions<ChevronRight /></Button></>}
      </TabsContent>
      {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
+     {ai && !state.noAi && <TabsContent value="memory" className="settings-content"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></TabsContent>}
      <TabsContent value="privacy" className="settings-content">
       <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>
       <Separator /><div className="setting-row"><div><strong>Block common ads & trackers</strong><p>A small built-in list. Some ads may remain.</p></div><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></div>

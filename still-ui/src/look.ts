@@ -6,6 +6,7 @@ export type Look = {
  brows: string; browGap: number; browY: number; browSize: number; browTilt: number
  mouth: string; mouthY: number; mouthSize: number
  blush: boolean; hair: string; hairColor: string; hat: string
+ body: string; glasses: string // body: "" is the classic one, whose head takes the shapes; the others are the official companions' own
 }
 // Sliders run -1..1 with 0 in the middle, except head size (0.88..1.12).
 
@@ -30,16 +31,19 @@ export const EYES: [string, string][] = [
 ]
 export const BROWS: [string, string][] = [["none", "None"], ["soft", "Soft"], ["straight", "Straight"], ["thick", "Bold"], ["thin", "Thin"], ["dots", "Dots"], ["fluffy", "Fluffy"], ["tapered", "Tapered"], ["arch", "Arched"]]
 export const MOUTHS: [string, string][] = [["smile", "Smile"], ["grin", "Grin"], ["cat", "Cat"], ["open", "Oh"], ["tooth", "Tooth"], ["tongue", "Tongue"], ["flat", "Flat"], ["smirk", "Smirk"]]
-export const HAIRS: [string, string][] = [["", "None"], ["tuft", "Tuft"], ["curls", "Curls"], ["bowl", "Bowl"], ["swoop", "Swoop"], ["spiky", "Spiky"], ["bun", "Bun"], ["buns", "Two buns"],
- ["pigtails", "Pigtails"], ["cloud", "Cloud"], ["mohawk", "Mohawk"], ["ponytail", "Ponytail"], ["bob", "Bob"], ["sprout", "Sprout"], ["part", "Side part"], ["wisp", "Wisp"]]
-export const HATS: [string, string][] = [["", "None"], ["beanie", "Beanie"], ["cap", "Cap"], ["tophat", "Top hat"], ["party", "Party hat"], ["beret", "Beret"], ["bucket", "Bucket hat"],
- ["crown", "Crown"], ["headphones", "Headphones"], ["flower", "Flower"], ["bow", "Bow"]]
+export const HAIRS: [string, string][] = [["", "None"], ["tuft", "Tuft"], ["sprout", "Sprout"], ["swoop", "Swoop"], ["curls", "Curls"], ["bob", "Bob"], ["spiky", "Spiky"],
+ ["bun", "Bun"], ["ponytail", "Ponytail"], ["pigtails", "Pigtails"], ["cloud", "Cloud"]]
+const OLD_HAIRS: Record<string, string> = { bowl: "bob", buns: "bun", mohawk: "spiky", part: "swoop", wisp: "tuft" } // styles that were folded into others
+export const HATS: [string, string][] = [["", "None"], ["beanie", "Beanie"], ["cap", "Cap"], ["newsboy", "Newsboy cap"], ["tophat", "Top hat"], ["party", "Party hat"], ["beret", "Beret"],
+ ["bucket", "Bucket hat"], ["crown", "Crown"], ["headphones", "Headphones"], ["flower", "Flower"], ["bow", "Bow"]]
+export const BODIES: [string, string][] = [["", "Classic"], ["hazel", "Tall"], ["rio", "Chubby"], ["juno", "Boxy"], ["bram", "Big head"], ["wren", "Lop ears"], ["pip", "Little"]]
+export const GLASSES: [string, string][] = [["", "None"], ["round", "Round"], ["square", "Square"]]
 
 const base: Look = {
  color: "#8fb8e8", shape: "round", head: 1, ears: 0,
  eyes: "dot", eyeGap: 0, eyeY: 0, eyeSize: 0, pupil: 0,
  brows: "none", browGap: 0, browY: 0, browSize: 0, browTilt: 0,
- mouth: "smile", mouthY: 0, mouthSize: 0, blush: true, hair: "", hairColor: "#6b4a35", hat: "",
+ mouth: "smile", mouthY: 0, mouthSize: 0, blush: true, hair: "", hairColor: "#6b4a35", hat: "", body: "", glasses: "",
 }
 /// The plain shape a new companion starts as, before it has a color or a face.
 export const BLANK: Look = { ...base, color: "#ece8e1", eyes: "none", mouth: "none", blush: false }
@@ -82,7 +86,8 @@ export function parseLook(raw: unknown, fallback: Look = base): Look {
   eyes: o.eyes === "none" ? "none" : known(EYES, o.eyes, f.eyes), eyeGap: num(o.eyeGap, -1, 1, f.eyeGap), eyeY: num(o.eyeY, -1, 1, f.eyeY), eyeSize: num(o.eyeSize, -1, 1, f.eyeSize), pupil: num(o.pupil, -1, 1, f.pupil),
   brows: known(BROWS, o.brows, f.brows), browGap: num(o.browGap, -1, 1, f.browGap), browY: num(o.browY, -1, 1, f.browY), browSize: num(o.browSize, -1, 1, f.browSize), browTilt: num(o.browTilt, -1, 1, f.browTilt),
   mouth: o.mouth === "none" ? "none" : known(MOUTHS, o.mouth, f.mouth), mouthY: num(o.mouthY, -1, 1, f.mouthY), mouthSize: num(o.mouthSize, -1, 1, f.mouthSize),
-  blush: typeof o.blush === "boolean" ? o.blush : f.blush, hair: known(HAIRS, o.hair, f.hair), hairColor: hex(o.hairColor, f.hairColor), hat: known(HATS, o.hat, f.hat),
+  blush: typeof o.blush === "boolean" ? o.blush : f.blush, hair: known(HAIRS, OLD_HAIRS[o.hair as string] ?? o.hair, f.hair), hairColor: hex(o.hairColor, f.hairColor), hat: known(HATS, o.hat, f.hat),
+  body: known(BODIES, o.body, f.body), glasses: known(GLASSES, o.glasses, f.glasses),
  }
 }
 export const lookKey = (l: Look) => JSON.stringify(l)
