@@ -31,3 +31,5 @@ a log of failed runs in `ai/logs` (never the prompt).
   `--live` adds one small Claude run with a takeover in the middle. By hand only.
 - `python tests/desktop/agentic.py <exe>` runs chats in parallel against a local store: files, the Library, the runner,
   Up next, questions. `--live` does the laptops task through real Claude on Haiku. By hand only.
+- `python tests/desktop/permissions.py <exe>` answers permission cards on a local shop: once per chat, always, ask
+  every time, purchases, the countdown, Approve all, sensitive sites, outside apps, settings, the log.

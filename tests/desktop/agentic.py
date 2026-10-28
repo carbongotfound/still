@@ -216,7 +216,7 @@ def main():
     (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080},
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}], "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, PROFILE)
     try:

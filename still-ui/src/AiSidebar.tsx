@@ -13,6 +13,7 @@ import { Switch } from "@/components/ui/switch"
 import { Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
+import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
@@ -24,12 +25,14 @@ export type AiState = {
  question?: { text: string; options: string[] } | null; companions?: Companion[]
  chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean }[]
  advanced?: boolean; memory?: string; skills?: Skill[]
+ approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
 }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
 // A chat at work. Any number run at once.
-export type Run = { id: string; started: string; question?: string | null; options?: string[] | null }
+export type Run = { id: string; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
-export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && r.question)
+const waits = (r: Run) => !!r.question || !!r.asks?.length
+export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && waits(r))
 type Send = (op: string, payload?: Record<string, unknown>) => void
 type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean }
 
@@ -172,7 +175,7 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
   const t = setTimeout(() => setDone(false), 2600)
   return () => clearTimeout(t)
  }, [busy])
- if (ai?.question) return "needs"
+ if (ai?.question || ai?.approvals?.some(a => !a.until)) return "needs"
  if (busy) return ai?.messages.at(-1)?.role === "tool" ? "working" : "thinking"
  if (ai?.error) return "error"
  if (done) return "done"
@@ -364,6 +367,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <span className="chat-chip" title={activeTab.url}><Globe />{activeTab.title || host(activeTab.url)}</span>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
+   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><button aria-label="Don't send" title="Don't send" onClick={() => send("aiUnqueue")}><X /></button></div>}
    <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
@@ -416,7 +420,7 @@ export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; on
  const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), empty = !runs.length && !unread.length
  useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
  if (empty) return null
- const waiting = runs.filter(r => r.question).length
+ const waiting = runs.filter(waits).length
  const chat = (id: string) => ai.chats.find(c => c.id === id)
  return <DropdownMenu open={open} onOpenChange={setOpen}>
   <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks">
@@ -426,10 +430,12 @@ export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; on
   <DropdownMenuContent align="end" sideOffset={6} className="tasks-menu">
    <DropdownMenuLabel>Running tasks</DropdownMenuLabel>
    {runs.map(r => { const c = chat(r.id); return <div key={r.id} className="tasks-item">
-    <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={r.question ? "needs" : "working"} />
-     <span className="tasks-title">{c?.title ?? "Chat"}<small>{r.question ? "Needs you" : "Working for " + clock(since(r.started))}</small></span>
-     {r.question ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={waits(r) ? "needs" : "working"} />
+     <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working for " + clock(since(r.started))}</small></span>
+     {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}
+    {r.asks?.map(a => <div key={a.id} className="tasks-ask"><p>{a.what} <small>on {a.site}</small></p>
+     <button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow once</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Deny</button></div>)}
    </div> })}
    {unread.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>New replies</DropdownMenuLabel>
     {unread.map(c => <DropdownMenuItem key={c.id} onSelect={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={22} /><span className="tasks-title">{c.title}</span><i className="is-unread" aria-hidden /></DropdownMenuItem>)}</>}

@@ -56,6 +56,15 @@ public sealed class Visit
  public string? Favicon { get; set; }
  public DateTime At { get; set; } = DateTime.Now;
 }
+/// What AIs may do without asking. Site "" = any site, Companion "" = everyone. Action: read, navigate, interact or
+/// sensitive. Mode: always (never asks), chat (asks once per site in each chat), ask (asks every time).
+public sealed class SitePermission
+{
+ public string Site { get; set; } = "";
+ public string Action { get; set; } = "";
+ public string Companion { get; set; } = "";
+ public string Mode { get; set; } = "";
+}
 public sealed class Preferences
 {
  public string Theme { get; set; } = "Dark";
@@ -82,6 +91,8 @@ public sealed class Preferences
  public List<string> AllowedAppLinks { get; set; } = [];
  public List<string> AllowedPopups { get; set; } = [];
  public List<string> ApprovedAgents { get; set; } = [];
+ public List<SitePermission> Permissions { get; set; } = []; // on top of the defaults: read and navigate always, interact once per chat, sensitive every time
+ public List<string> SensitiveSites { get; set; } = []; // every click or keystroke there counts as sensitive
  public double Width { get; set; } = 1260;
  public double Height { get; set; } = 810;
 }
