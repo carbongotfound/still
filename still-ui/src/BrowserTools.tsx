@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react"
 import { KeyRound, Plus, Copy, ArrowDownToLine, Trash2, Puzzle, FolderOpen, ExternalLink, RotateCw, Settings2, ShieldCheck, Cookie, Eye, EyeOff } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { MAC } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { ScrollArea } from "@/components/ui/scroll-area"
@@ -32,7 +33,7 @@ export function BrowserTools({pane,data,send,url,tracking,memory,autofill}:{pane
   {data.error&&<p className="tool-error" role="alert">{data.error}</p>}
   {(pane==="profiles"||pane==="import")&&<DataTools pane={pane} data={data} send={send}/>}
   {pane==="passwords"&&<>
-   <div className="tool-intro"><KeyRound/><p>Encrypted by Windows for your account. Logins fill only on the exact website you saved.</p></div>
+   <div className="tool-intro"><KeyRound/><p>{MAC ? "Kept in your Mac's Keychain." : "Encrypted by Windows for your account."} Logins fill only on the exact website you saved.</p></div>
    <LoginControls data={data} send={send} ask={ask}/>
    {!adding?<div className="tool-toolbar"><Input aria-label="Search saved logins" placeholder="Find a login" value={filter} onChange={e=>setFilter(e.target.value)}/><Button variant="outline" onClick={()=>{setOrigin(currentOrigin);setAdding(true)}}><Plus/>Add login</Button></div>:<form className="vault-form" onSubmit={e=>{e.preventDefault();send("vaultSave",{origin,username,password})}}>
     <label htmlFor="login-site">Website</label><Input id="login-site" type="url" required placeholder="https://example.com" value={origin} onChange={e=>setOrigin(e.target.value)}/>
@@ -54,7 +55,7 @@ export function BrowserTools({pane,data,send,url,tracking,memory,autofill}:{pane
    <ScrollArea className="tools-list">{data.cookies?.filter(c=>(c.domain+c.name).toLowerCase().includes(filter.toLowerCase())).map(c=><div className="tool-row" key={c.id}><Cookie/><div className="tool-copy"><strong>{c.domain}</strong><small>{c.name} · {c.httpOnly?"HTTP only · ":""}{c.secure?"Secure":"HTTP"}{c.session?" · Session":""}</small></div><Button variant="ghost" size="icon-sm" aria-label={"Delete cookie "+c.name} onClick={()=>ask("Delete this cookie?",`${c.name} from ${c.domain} will be removed. You may be signed out of that site.`,()=>send("cookieDelete",{id:c.id}))}><Trash2/></Button></div>)}{data.cookies?.length===0&&<p className="empty-state">No cookies in this profile.</p>}</ScrollArea>
   </>}
   {pane==="security"&&<>
-   <div className="tool-intro"><ShieldCheck/><p>Invalid certificates are blocked. Microsoft reputation checks are requested; Windows policy can override them.</p></div>
+   <div className="tool-intro"><ShieldCheck/><p>Invalid certificates are blocked. {MAC ? "WebKit warns you before fraudulent websites, and tracking protection is always on." : "Microsoft reputation checks are requested; Windows policy can override them."}</p></div>
    <div className="setting-row"><div><strong>Tracking prevention</strong><p>Strict protection can affect some websites.</p></div><Select value={tracking} onValueChange={v=>pref("tracking",v)}><SelectTrigger className="w-32"><SelectValue/></SelectTrigger><SelectContent>{["Basic","Balanced","Strict"].map(v=><SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
    <Separator/><div className="setting-row"><div><strong>Reduce background memory use</strong><p>Sleep inactive tabs after a minute while keeping page state. Media, calls and downloads stay awake.</p></div><Switch aria-label="Memory saver" checked={memory} onCheckedChange={v=>pref("memory",String(v))}/></div>
    <Separator/><div className="setting-row"><div><strong>Form autofill</strong><p>Names, addresses, and other non-password fields.</p></div><Switch aria-label="Form autofill" checked={autofill} onCheckedChange={v=>pref("autofill",String(v))}/></div>

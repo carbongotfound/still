@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("polish-" + uuid.uuid4().hex[:8])
@@ -133,7 +133,9 @@ def keyboard(process):
     send(process, "openPanel", name="shortcuts", value="")
     listed = until(lambda: js(process, "document.querySelector('.shortcuts-scroll')?.innerText || ''"), 5) or ""
     close(process)
-    for keys in ("Ctrl T", "Ctrl Shift A", "Ctrl Shift K", "Ctrl K", "Esc", "Ctrl .", "Ctrl Enter", "Ctrl Tab", "Ctrl J"):
+    windows = ("Ctrl T", "Ctrl Shift A", "Ctrl Shift K", "Ctrl K", "Esc", "Ctrl .", "Ctrl Enter", "Ctrl Tab", "Ctrl J")
+    mac = ("⌘T", "⇧⌘A", "⇧⌘K", "⌘K", "Esc", "⌘.", "⌘Enter", "⌃Tab", "⌥⌘L")  # the Mac menu bar's spelling
+    for keys in (mac if MAC else windows):
         check(keys in listed, f"Keyboard shortcuts lists {keys}")
 
     count = len(rpc(process)["tabs"])
@@ -206,7 +208,8 @@ def main():
             check(not any(f["images"] for f in found), f"{theme}: every image has alt text")
             check(not any(f["noRing"] for f in found), f"{theme}: keyboard focus shows a ring on every control")
             check(not any(f["contrast"] for f in found), f"{theme}: text meets 4.5:1 (3:1 when large)")
-        check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
+        errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
+        check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)

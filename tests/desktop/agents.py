@@ -4,7 +4,6 @@ Run: python tests/desktop/agents.py artifacts/Still-QA/Still.exe [--update-snaps
 `--cli` always talks to the default profile, so only its offline behavior (help, as= required) runs here;
 the rest goes through `--mcp --profile`, which shares the same call path (McpServer.Call) with a fresh profile.
 """
-import ctypes
 import http.server
 import json
 import os
@@ -42,22 +41,7 @@ SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 URL = "http://127.0.0.1:" + str(SERVER.server_port)
 
-def rpc(process, op="state", **args):
-    pipe = r"\\.\pipe\StillQa-" + str(process.pid)
-    end = time.monotonic() + 15
-    while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
-        if time.monotonic() > end or process.poll() is not None:
-            raise RuntimeError("QA pipe unavailable")
-        time.sleep(.05)
-    with open(pipe, "r+b", buffering=0) as stream:
-        stream.write((json.dumps({"op": op, **args}) + "\n").encode())
-        response = b""
-        while not response.endswith(b"\n"):
-            part = stream.read(65536)
-            if not part:
-                raise RuntimeError("QA pipe closed")
-            response += part
-    return json.loads(response)
+from qa import rpc  # noqa: E402  (the Windows pipe, or the Mac's socket)
 
 def send(process, op, **args):
     rpc(process, "shellEval", script="window.chrome.webview.postMessage(" + json.dumps({"op": op, **args}) + ")")
@@ -81,6 +65,9 @@ def Mcp(name, profile):
 
 def kill_qa_windows():
     """Temp windows are started by Still itself; close every process of this QA executable."""
+    if sys.platform == "darwin":
+        subprocess.run(["pkill", "-9", "-f", str(EXE)], capture_output=True)
+        return
     path = str(EXE).replace("'", "''")
     subprocess.run(["powershell", "-NoProfile", "-Command",
                     f"Get-CimInstance Win32_Process -Filter \"Name='Still.exe'\" | Where-Object {{ $_.ExecutablePath -eq '{path}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"],
@@ -96,7 +83,10 @@ try:
         SNAPSHOT.parent.mkdir(exist_ok=True)
         SNAPSHOT.write_text(text, encoding="utf-8", newline="\n")
         print("Wrote " + str(SNAPSHOT))
-    check(helped.returncode == 0 and text == SNAPSHOT.read_text(encoding="utf-8"), "--cli help output is unchanged")
+    snapshot = SNAPSHOT.read_text(encoding="utf-8")
+    if sys.platform == "darwin":  # the same help, under the Mac app's name
+        snapshot = snapshot.replace("Usage: Still.exe ", "Usage: Still ", 1)
+    check(helped.returncode == 0 and text == snapshot, "--cli help output is unchanged")
     anonymous = subprocess.run([str(EXE), "--cli", "list_tabs"], capture_output=True, timeout=60)
     check(anonymous.returncode == 2 and "say who you are with as=" in anonymous.stdout.decode("utf-8"), "--cli without as= is refused")
 

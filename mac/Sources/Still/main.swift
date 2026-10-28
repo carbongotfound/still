@@ -5,12 +5,30 @@ import SQLite3
 import WebKit
 
 let resources = Bundle.main.resourceURL!
+func argAfter(_ flag: String) -> String? {
+ let args = CommandLine.arguments
+ guard let index = args.firstIndex(of: flag), index + 1 < args.count else { return nil }
+ return args[index + 1]
+}
+#if STILL_QA
+let isQa = CommandLine.arguments.contains("--qa") // test builds only: the QA channel and its environment variables
+#else
+let isQa = false
+#endif
+/// The Default profile's folder. Every other profile keeps its website data apart (see pageStore).
+let defaultSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Still")
+/// Where every profile lives, with the agents folder (Windows: App.ProfileHome).
+let profileHome: URL = (argAfter("--profiles-root") ?? argAfter("--profile")).map { URL(fileURLWithPath: $0).standardizedFileURL } ?? defaultSupport
+/// The profile's folder (Windows: App.DataRoot). --profile picks another one, for tests and the MCP server a chat starts;
+/// otherwise the profile chosen to open at launch.
 let support: URL = {
- let url = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Still")
+ let url = argAfter("--profile").map { URL(fileURLWithPath: $0).standardizedFileURL } ?? Profiles.folder(Profiles.launchId)
  try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
  return url
 }()
 let unavailable = "That isn't available in Still for Mac yet."
+/// A short random id, the way Windows writes Guid.ToString("N").
+func newId() -> String { UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased() }
 
 let bridge = """
 (() => {
@@ -23,6 +41,18 @@ let bridge = """
  window.__stillReceive = data => { for (const listener of listeners) listener({ data }) };
 })();
 """
+/// The Mac's own traffic lights stand in for the interface's window buttons, so the strips leave room for them.
+let macStyle = """
+(() => {
+ const style = document.createElement('style');
+ style.textContent = `.window-controls{display:none!important}
+ html:not(.mac-fullscreen) .browser-shell:not(.is-fullscreen)>:is(.top-tab-strip,.window-bar):first-child{padding-left:84px!important}`;
+ document.head.appendChild(style);
+})();
+"""
+
+/// Scripts Still puts in pages run apart from the page's own (the page can't see or change them); they share its DOM.
+let stillWorld = WKContentWorld.world(name: "Still")
 
 /// Serves the bundled interface from still://app/ (module scripts don't load from file:// in WebKit).
 final class ShellScheme: NSObject, WKURLSchemeHandler {
@@ -33,10 +63,14 @@ final class ShellScheme: NSObject, WKURLSchemeHandler {
   let path = url.path.isEmpty || url.path == "/" ? "index.html" : String(url.path.dropFirst())
   let file = root.appendingPathComponent(path).standardizedFileURL
   guard file.path.hasPrefix(root.path), var data = try? Data(contentsOf: file) else { task.didFailWithError(URLError(.fileDoesNotExist)); return }
+  #if STILL_QA
+  qaServed.append(path) // WebKit keeps no resource timing for still:// files, so tests ask what was served
+  #endif
   if file.lastPathComponent == "index.html", let html = String(data: data, encoding: .utf8) {
    data = Data(html.replacingOccurrences(of: "'self'", with: "'self' still:").utf8)
   }
-  let types = ["html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2", "woff": "font/woff", "json": "application/json"]
+  let types = ["html": "text/html; charset=utf-8", "js": "text/javascript; charset=utf-8", "css": "text/css; charset=utf-8", "svg": "image/svg+xml", "png": "image/png", "woff2": "font/woff2", "woff": "font/woff", "json": "application/json",
+               "wasm": "application/wasm", "glb": "model/gltf-binary", "webp": "image/webp", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif"]
   let headers = ["Content-Type": types[file.pathExtension.lowercased()] ?? "application/octet-stream", "Access-Control-Allow-Origin": "*"]
   task.didReceive(HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: headers)!)
   task.didReceive(data)
@@ -47,9 +81,45 @@ final class ShellScheme: NSObject, WKURLSchemeHandler {
 
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
+/// A page. Spots the interface keeps open over it (pageHoles: the AI's glow and its controls) show the shell through and take its clicks.
+final class PageView: WKWebView {
+ var holes: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])? // in points, from the page's top left
+ /// A rect from the top left in this view's own coordinates (flipped or not).
+ func local(_ rect: NSRect, flipped: Bool) -> NSRect { flipped ? rect : NSRect(x: rect.minX, y: bounds.height - rect.maxY, width: rect.width, height: rect.height) }
+ override func hitTest(_ point: NSPoint) -> NSView? {
+  if let holes, let superview {
+   let p = convert(point, from: superview)
+   if !local(bounds.insetBy(dx: holes.frame, dy: holes.frame), flipped: true).contains(p) || holes.spots.contains(where: { local($0.rect, flipped: isFlipped).contains(p) }) { return nil }
+  }
+  return super.hitTest(point)
+ }
+ func cut(_ value: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])?) {
+  holes = value
+  guard let value else { layer?.mask = nil; return }
+  wantsLayer = true
+  let flipped = layer?.isGeometryFlipped ?? false
+  let path = CGMutablePath()
+  path.addRect(bounds.insetBy(dx: value.frame, dy: value.frame))
+  for spot in value.spots { path.addRoundedRect(in: local(spot.rect, flipped: flipped), cornerWidth: spot.radius, cornerHeight: spot.radius) }
+  let mask = CAShapeLayer()
+  mask.path = path
+  mask.fillRule = .evenOdd
+  layer?.mask = mask
+ }
+}
+
 final class Tab: NSObject {
  var id = UUID().uuidString
  var title = "New tab", url = "", pinned = false, isPrivate = false, loading = false, muted = false
+ var group = "" // a tab group's id, "" = none
+ var chatId: String? // a chat tab: shows this AI chat instead of a page
+ var pageOpen = false // a chat tab showing its AI's page beside the conversation
+ var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
+ var agentKey: String? // which AI run is at work here
+ var runChat: String? // an ordinary tab Still's chat AI opened: "Go to chat" opens that chat
+ var favicon = ""
+ var closed = false, reader = false, edited = false, media = false
+ var blocked = 0
  var lastSeen = Date()
  var view: WKWebView?
  var observers: [NSKeyValueObservation] = []
@@ -59,12 +129,15 @@ final class Tab: NSObject {
  var dialog: PageDialog? // an alert/confirm/prompt the page is paused on
  var agentUpload: AgentUpload? // a file picker an AI's click opened, waiting for upload_file
  var uploadFiles: [URL]? // files upload_file is handing to the next file picker
+ var loginToken = "", loginDetected = false, loginFilled = false
+ var hideToken: String?, hideExpires = Date.distantPast
 }
 
 final class Download {
  let task: WKDownload
  var path: URL?
  var status = "InProgress"
+ var isPrivate = false
  var observer: NSKeyValueObservation?
  init(task: WKDownload) { self.task = task }
 }
@@ -75,95 +148,120 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var shell: WKWebView!
  var tabs: [Tab] = []
  var active: Tab?
- var prefs: [String: Any] = [:]
- var history: [[String: Any]] = [], bookmarks: [[String: Any]] = []
  var downloads: [Download] = []
- var closed: [String] = []
- var welcome = true, ready = false, focusMode = false, overlay = false
+ var closed: [String] = [] // closed tabs' addresses, newest last (25 at most)
+ var ready = false, focusMode = false, overlay = false
  var panel = ""
  var pageFrame = NSRect.zero
- var rules: WKContentRuleList?
+ var shellRatio: CGFloat = 1 // shell points per interface pixel
  let youTube = (try? String(contentsOf: resources.appendingPathComponent("youtube.js"))) ?? ""
- var publishQueued = false, saveQueued = false, overlayVersion = 0
+ var publishQueued = false, overlayVersion = 0
  var appearanceObserver: NSKeyValueObservation?
  var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]])?
  var importBusy = false, importError = "", importDone = ""
+ // Windows (Windows.swift)
+ let windowId = newId()
+ let secondary: Bool, incognito: Bool
+ var closing = false
+ lazy var privateStore = WKWebsiteDataStore.nonPersistent() // this window's private tabs share one throwaway session
+ // Split view, the recent tabs switcher and page holes (Tabs.swift)
+ var splitLeft: Tab?, splitRight: Tab?, splitRatio = 0.5
+ var recent: [Tab]?, recentIndex = 0, recentHeld = false, recentAt = Date(), recentTimer: Timer?
+ var pointerOnPage = false
+ var holes: (tab: String, frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)]) = ("", 0, [])
+ var privateHidden: [String: [String]] = [:]
+ // Browser tools (Tools.swift, Vault.swift)
+ var permissions: [PendingPermission] = []
+ var upload: UploadRequest?
+ var loginOffer: LoginOffer?
+ var importBatch: ImportBatch?
+ var cookieInventory: [String: (cookie: HTTPCookie, store: WKHTTPCookieStore)] = [:] // the cookies panel's rows, by row id
+ var profileConfirmation = false
 
+ /// What every window shares lives in the store; these read and write it.
+ var prefs: [String: Any] { get { store.prefs } set { store.prefs = newValue } }
+ var history: [[String: Any]] { get { store.history } set { store.history = newValue } }
+ var bookmarks: [[String: Any]] { get { store.bookmarks } set { store.bookmarks = newValue } }
+ var welcome: Bool { get { store.welcome } set { store.welcome = newValue } }
  func pref<T>(_ key: String, _ fallback: T) -> T { prefs[key] as? T ?? fallback }
  var unblocked: [String] { pref("UnblockedHosts", [String]()) }
  var downloadFolder: URL { URL(fileURLWithPath: pref("DownloadFolder", FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0].path)) }
  var stateFile: URL { support.appendingPathComponent("state.json") }
  var dark: Bool { window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 
- override init() {
+ /// The main window, or with moved a window for a tab dragged out, or an incognito window where every tab is private.
+ init(moving moved: Tab? = nil, at point: NSPoint? = nil, incognito: Bool = false) {
+  secondary = moved != nil || incognito
+  self.incognito = incognito
   super.init()
+  browsers.append(self)
   window.titleVisibility = .hidden
   window.titlebarAppearsTransparent = true
-  for button in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] { window.standardWindowButton(button)?.isHidden = true }
   window.backgroundColor = .black
   window.minSize = NSSize(width: 640, height: 420)
   window.isReleasedWhenClosed = false
   window.delegate = self
-  if !window.setFrameUsingName("StillMain") { window.center() }
-  window.setFrameAutosaveName("StillMain")
+  if secondary {
+   window.setContentSize(NSSize(width: 1120, height: 760))
+   if let point { window.setFrameTopLeftPoint(NSPoint(x: point.x - 140, y: point.y + 24)) }
+   else if isQa, let main = browsers.first?.window { window.setFrameTopLeftPoint(NSPoint(x: main.frame.minX + 30, y: main.frame.maxY - 30)) } // test windows stay on the test screen
+   else { window.center() }
+  } else {
+   if !window.setFrameUsingName("StillMain") { window.center() }
+   window.setFrameAutosaveName("StillMain")
+  }
   window.contentView = root
 
   let config = WKWebViewConfiguration()
   config.setURLSchemeHandler(ShellScheme(root: resources.appendingPathComponent("Shell")), forURLScheme: "still")
   config.userContentController.add(self, name: "still")
   config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
+  config.userContentController.addUserScript(WKUserScript(source: macStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
   shell = WKWebView(frame: root.bounds, configuration: config)
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
   root.addSubview(shell)
   shell.load(URLRequest(url: URL(string: "still://app/index.html")!))
 
-  load()
+  if let moved { acceptTab(moved, announce: false) } else if incognito { newTab(prompt: false) } else { load() }
   applyTheme()
   appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in DispatchQueue.main.async { self?.schedulePublish() } }
-  compileRules()
+  if blockingRules == nil && browsers.count == 1 { compileRules() }
   Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
-  startAgentServer()
+  if !secondary {
+   startAgentServer()
+   startAi()
+   if isQa { startQa() }
+   startUpdateChecks()
+  }
   window.makeKeyAndOrderFront(nil)
+  placeTrafficLights()
  }
 
  // MARK: State
 
+ /// The main window's tabs from the saved state (the store itself loads once, in loadStore).
  func load() {
-  var saved: [String: Any] = [:]
-  if let data = try? Data(contentsOf: stateFile), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { saved = json }
-  prefs = saved["Preferences"] as? [String: Any] ?? [:]
-  history = saved["History"] as? [[String: Any]] ?? []
-  bookmarks = saved["Bookmarks"] as? [[String: Any]] ?? []
-  welcome = saved["Welcome"] as? Bool ?? true
   if pref("RestoreTabs", true) {
-   for item in saved["Tabs"] as? [[String: Any]] ?? [] {
+   for item in savedState["Tabs"] as? [[String: Any]] ?? [] {
     let tab = Tab()
     tab.id = item["Id"] as? String ?? tab.id
     tab.title = item["Title"] as? String ?? "New tab"
     tab.url = item["Url"] as? String ?? ""
     tab.pinned = item["Pinned"] as? Bool ?? false
+    tab.group = item["Group"] as? String ?? ""
+    tab.chatId = item["ChatId"] as? String
+    tab.inChat = item["InChat"] as? String
+    tab.favicon = item["Favicon"] as? String ?? ""
     tabs.append(tab)
    }
   }
-  if tabs.isEmpty { tabs.append(Tab()) }
-  select(tabs.first { $0.id == saved["ActiveId"] as? String } ?? tabs[0])
+  if !tabs.contains(where: { $0.inChat == nil }) { tabs.append(Tab()) }
+  select(tabs.first { $0.id == savedState["ActiveId"] as? String && $0.inChat == nil } ?? tabs.first { $0.inChat == nil }!)
  }
 
- func save() {
-  let state: [String: Any] = [
-   "Preferences": prefs, "History": history, "Bookmarks": bookmarks, "Welcome": welcome, "ActiveId": active?.id ?? "",
-   "Tabs": tabs.filter { !$0.isPrivate }.map { ["Id": $0.id, "Title": $0.title, "Url": $0.url, "Pinned": $0.pinned] }
-  ]
-  guard JSONSerialization.isValidJSONObject(state), let data = try? JSONSerialization.data(withJSONObject: state, options: .prettyPrinted) else { return }
-  try? data.write(to: stateFile, options: .atomic)
- }
-
- func saveLater() {
-  if saveQueued { return }
-  saveQueued = true
-  DispatchQueue.main.asyncAfter(deadline: .now() + 1) { self.saveQueued = false; self.save() }
- }
+ func save() { saveAll() }
+ func saveLater() { saveAllLater() }
 
  // MARK: Talking to the interface
 
@@ -181,63 +279,77 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func publish() {
-  guard ready else { return }
-  let host = active?.view?.url?.host ?? ""
+  guard ready, !closing else { return }
+  let shown = self.shown
   let preferences: [String: Any] = [
-   "theme": pref("Theme", "Dark"), "search": pref("SearchEngine", "Google"),
+   "theme": pref("Theme", "System"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
-   "tracking": "Balanced", "memory": pref("MemorySaver", true), "autofill": false,
-   "startup": false, "startupDisabled": true, "tearOff": false, "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true)
+   "tracking": pref("Tracking", "Balanced"), "memory": pref("MemorySaver", true), "autofill": pref("Autofill", true),
+   "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
+   "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "isDefaultBrowser": isDefaultBrowser,
+   "tabLayout": pref("TabLayout", "Classic"), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
+   "sidebarWidth": pref("SidebarWidth", 248.0)
   ]
-  let tabList: [[String: Any]] = tabs.map { tab in [
-   "id": tab.id, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "isPrivate": tab.isPrivate, "loading": tab.loading,
-   "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": 0, "muted": tab.muted, "secure": tab.url.hasPrefix("https://"), "certificateError": false,
-   "agent": tab.agent ?? "", "aiGroup": tab.aiGroup
-  ] }
+  let tabList: [[String: Any]] = tabs.map { tab in
+   var row: [String: Any] = [
+    "id": tab.id, "group": tab.group, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "agent": tab.agent ?? "", "aiGroup": tab.aiGroup,
+    "isPrivate": tab.isPrivate, "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted,
+    "favicon": tab.favicon, "secure": tab.url.hasPrefix("https://"), "certificateError": false
+   ]
+   if let chat = tab.runChat { row["runChat"] = chat }
+   if let key = tab.agentKey, runs[key] != nil { row["driverChat"] = key }
+   if let chat = tab.chatId { row["chatId"] = chat }
+   if let chat = tab.inChat { row["inChat"] = chat }
+   return row
+  }
   let source = active?.isPrivate == true && panel == "address" ? [] : history
   let visits: [[String: Any]] = source.prefix(panel == "history" || panel == "address" ? 2000 : 100).map { visit in
    ["title": visit["Title"] as? String ?? "", "url": visit["Url"] as? String ?? "", "at": visit["At"] as? String ?? ""]
   }
-  let marks: [[String: Any]] = bookmarks.map { ["title": $0["Title"] as? String ?? "", "url": $0["Url"] as? String ?? ""] }
+  let marks: [[String: Any]] = bookmarks.map { ["title": $0["Title"] as? String ?? "", "url": $0["Url"] as? String ?? "", "favicon": $0["Favicon"] as? String ?? ""] }
   var files: [[String: Any]] = []
-  for (index, item) in downloads.enumerated() {
-   files.append(["id": String(index), "name": item.path?.lastPathComponent ?? "Download", "status": item.status,
+  for (index, item) in downloads.enumerated() where !item.isPrivate || active?.isPrivate == true {
+   files.append(["id": String(index), "name": item.path?.lastPathComponent ?? "Download", "status": item.status, "isPrivate": item.isPrivate,
                  "bytes": item.task.progress.completedUnitCount, "total": max(0, item.task.progress.totalUnitCount)])
   }
-  var state: [String: Any] = ["kind": "state", "activeId": active?.id ?? "", "dark": dark, "focusMode": focusMode, "fullScreen": false]
+  var state: [String: Any] = ["kind": "state", "activeId": active?.id ?? "", "dark": dark, "focusMode": focusMode, "fullScreen": contentFullScreen]
   state["appFullScreen"] = window.styleMask.contains(.fullScreen)
   state["maximized"] = window.isZoomed
   state["panel"] = panel
-  state["profileName"] = "Default"
-  state["windows"] = [[String: Any]]()
-  state["secondary"] = false
+  state["profileName"] = Profiles.currentName
+  state["secondary"] = secondary
+  state["incognito"] = incognito
   state["noExtensions"] = true
-  state["noAi"] = true
-  state["incognito"] = false
-  state["welcome"] = welcome
-  state["version"] = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? ""
-  state["zoom"] = Double(active?.view?.pageZoom ?? 1)
+  state["noAi"] = false
+  state["welcome"] = welcome && !secondary && !incognito
+  state["version"] = currentVersion
+  state["zoom"] = Int(((shown?.view?.pageZoom ?? 1) * 100).rounded())
   state["preferences"] = preferences
   state["tabs"] = tabList
   state["history"] = visits
   state["bookmarks"] = marks
   state["downloads"] = files
-  state["canBack"] = active?.view?.canGoBack ?? false
-  state["canForward"] = active?.view?.canGoForward ?? false
-  state["siteBlocking"] = pref("Blocking", true) && !unblocked.contains(host)
+  state["canBack"] = shown?.view?.canGoBack ?? false
+  state["canForward"] = shown?.view?.canGoForward ?? false
+  state["siteBlocking"] = pref("Blocking", true) && !unblocked.contains(shown?.view?.url?.host ?? "")
   state["mcpCommand"] = Bundle.main.executablePath ?? ""
   if let agent = agentData() { state["agent"] = agent }
   if let tab = active, let dialog = tab.dialog {
    state["dialog"] = ["id": tab.id, "kind": dialog.kind, "message": dialog.message, "defaultText": dialog.defaultText, "site": dialog.site]
   }
+  state.merge(agentStateFields()) { _, new in new }
+  state.merge(aiStateFields()) { _, new in new }
+  state.merge(toolStateFields()) { _, new in new }
   send(state)
  }
 
  func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
-  guard message.webView === shell, let text = message.body as? String, text.utf8.count <= 65536,
+  // Only Still's own interface, from its own origin, drives the browser.
+  guard message.webView === shell, message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == "still", message.frameInfo.securityOrigin.host == "app",
+        let text = message.body as? String, text.utf8.count <= 65536,
         let data = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], let op = data["op"] as? String else { return }
   handle(op, data)
-  if op != "bounds" && op != "overlay" { schedulePublish() }
+  if op != "bounds" && op != "overlay" && op != "pageHoles" { schedulePublish() }
  }
 
  func handle(_ op: String, _ data: [String: Any]) {
@@ -245,35 +357,42 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   func number(_ key: String) -> Double { (data[key] as? NSNumber)?.doubleValue ?? 0 }
   let target = tabs.first { $0.id == text("id") } ?? active
   switch op {
-  case "ready": ready = true
+  case "ready":
+   ready = true
+   shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
+   publishAi()
   case "bounds":
-   let ratio = number("viewportWidth") > 0 ? shell.bounds.width / number("viewportWidth") : 1
-   pageFrame = NSRect(x: number("x") * ratio, y: number("y") * ratio, width: max(1, number("width") * ratio), height: max(1, number("height") * ratio))
+   if contentFullScreen { return } // keep the normal layout for when the video leaves fullscreen
+   shellRatio = number("viewportWidth") > 0 ? shell.bounds.width / number("viewportWidth") : 1
+   pageFrame = NSRect(x: number("x") * shellRatio, y: number("y") * shellRatio, width: max(1, number("width") * shellRatio), height: max(1, number("height") * shellRatio))
    layoutPages()
   case "overlay": setOverlay(data["value"] as? Bool ?? false)
   case "openPanel": openPanel(text("name"), text("value"))
   case "panel": panel = text("name")
   case "navigate": navigate(text("url"))
-  case "new": newTab(text("url"), isPrivate: data["private"] as? Bool ?? false)
-  case "incognitoWindow": newTab(isPrivate: true)
+  case "new": newTab(text("url"), isPrivate: data["private"] as? Bool ?? false, prompt: text("url").isEmpty)
+  case "incognitoWindow": openIncognito()
   case "select": if let target { select(target) }
-  case "closeTab": if let target { close(target) }
-  case "pin": target?.pinned.toggle(); saveLater()
-  case "duplicate": if let target { newTab(target.url, isPrivate: target.isPrivate) }
-  case "sleep": if let target { unload(target); if target === active { newTab() } }
+  case "closeTab": if let target { close(target, force: data["force"] as? Bool ?? false) }
+  case "pin": if let target { target.pinned.toggle(); if target.pinned { leaveGroup(target) }; saveLater() }
+  case "duplicate": if let target { newTab(target.url, isPrivate: target.isPrivate, prompt: false) }
+  case "sleep": if let target { unload(target); if target === active { newTab(prompt: false) }; saveLater() }
   case "mute": if let target { target.muted.toggle(); target.view?.evaluateJavaScript("document.querySelectorAll('video,audio').forEach(m=>m.muted=\(target.muted))") }
   case "reorder":
-   if let from = tabs.firstIndex(where: { $0.id == text("id") }), let before = tabs.first(where: { $0.id == text("before") }), tabs[from] !== before {
-    let moved = tabs.remove(at: from)
-    tabs.insert(moved, at: tabs.firstIndex { $0 === before }!)
+   if let move = tabs.first(where: { $0.id == text("id") }), let before = tabs.first(where: { $0.id == text("before") }), move !== before {
+    tabs.removeAll { $0 === move }
+    let at = tabs.firstIndex { $0 === before }!
+    tabs.insert(move, at: at)
+    // Dropped between two tabs of a group, it joins; at a group's edge it stays outside, so groups stay together.
+    if move.group != before.group { move.group = !move.pinned && at > 0 && tabs[at - 1].group == before.group ? before.group : "" }
     saveLater()
    }
-  case "back": active?.view?.goBack()
-  case "forward": active?.view?.goForward()
-  case "reload": active?.view?.reload()
-  case "zoom": if let view = active?.view { view.pageZoom = number("amount") == 0 ? 1 : min(3, max(0.3, view.pageZoom + number("amount"))) }
-  case "find": if let view = active?.view, !text("text").isEmpty { view.find(text("text"), configuration: WKFindConfiguration()) { _ in } }
-  case "bookmark": toggleBookmark()
+  case "back": shown?.view?.goBack()
+  case "forward": shown?.view?.goForward()
+  case "reload": if let view = shown?.view { if view.isLoading { view.stopLoading() } else { view.reload() } }
+  case "zoom": if let view = shown?.view { view.pageZoom = number("amount") == 0 ? 1 : min(3, max(0.3, view.pageZoom + number("amount"))) }
+  case "find": if let view = shown?.view, !text("text").isEmpty { view.find(text("text"), configuration: WKFindConfiguration()) { _ in } }
+  case "bookmark": toggleBookmark(tabs.first { $0.id == text("id") } ?? shown)
   case "removeBookmark": bookmarks.removeAll { $0["Url"] as? String == text("url") }; saveLater()
   case "bookmarkMove":
    if let i = bookmarks.firstIndex(where: { $0["Url"] as? String == text("url") }) {
@@ -286,16 +405,15 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     bookmarks[i]["Title"] = title.isEmpty ? address : title; bookmarks[i]["Url"] = address; saveLater()
    }
   case "exportBookmarks": exportBookmarks()
-  case "pip": pictureInPicture()
+  case "pip": closeSheet(); pictureInPicture()
   case "dialogAnswer": if let target { answerDialog(target, data["accept"] as? Bool ?? false, data["text"] as? String) }
   case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
-  case "agentStop": stopAgent()
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()
-  case "clearHistory": history.removeAll(); save(); toast("History cleared.")
+  case "clearHistory": history.removeAll(); store.picks.removeAll(); save(); toast("History cleared.")
   case "clearCookies":
-   WKWebsiteDataStore.default().removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Cookies and website data cleared.") }
+   pageStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Cookies and website data cleared.") }
   case "siteBlocking":
-   if let view = active?.view, let host = view.url?.host {
+   if let view = shown?.view, let host = view.url?.host {
     var list = unblocked
     if let index = list.firstIndex(of: host) { list.remove(at: index) } else { list.append(host) }
     prefs["UnblockedHosts"] = list; saveLater()
@@ -315,11 +433,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "openDownload": if let item = download(text("id")), item.status == "Completed", let path = item.path { NSWorkspace.shared.open(path) }
   case "cancelDownload": download(text("id"))?.task.cancel { _ in }
   case "reopen": reopen()
-  case "focus": focusMode.toggle()
+  case "focus": focusMode.toggle(); placeTrafficLights()
   case "drag": dragWindow()
   case "copyText":
    let value = text("text")
-   if !value.isEmpty && value.count <= 8192 { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }
+   if !isQa && !value.isEmpty && value.count <= 8192 { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }
   case "fullscreen": window.toggleFullScreen(nil)
   case "exitFullscreen": if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
   case "maximize": if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) } else { window.zoom(nil) }
@@ -333,8 +451,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(url.lastPathComponent, url) } }
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false)
-  case "checkUpdate", "openUpdate", "releaseNotes": newTab("https://github.com/carbongotfound/still/releases/latest")
-  default: toast(unavailable)
+  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) { toast(unavailable) }
   }
  }
 
@@ -343,31 +460,42 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "theme": if ["Light", "Dark", "System"].contains(value) { prefs["Theme"] = value; applyTheme() }
   case "search": if ["DuckDuckGo", "Google", "Bing"].contains(value) { prefs["SearchEngine"] = value }
   case "restore": prefs["RestoreTabs"] = value == "true"
-  case "blocking": prefs["Blocking"] = value == "true"; for tab in tabs { if let view = tab.view { applyBlocking(view) } }
+  case "blocking": prefs["Blocking"] = value == "true"; for browser in browsers { for tab in browser.tabs { if let view = tab.view { browser.applyBlocking(view) } } }
+  case "tracking": if ["Basic", "Balanced", "Strict"].contains(value) { prefs["Tracking"] = value } // WebKit's own tracking prevention is always on
   case "memory": prefs["MemorySaver"] = value == "true"
+  case "autofill": prefs["Autofill"] = value == "true"
+  case "tearOff": prefs["TabTearOff"] = value == "true"
+  case "newTab": if ["companion", "sites"].contains(value) { prefs["NewTab"] = value }
+  case "tabLayout": if ["Classic", "Modern"].contains(value) { prefs["TabLayout"] = value; for browser in browsers { browser.placeTrafficLights(); browser.schedulePublish() } }
   case "agents":
    prefs["AgentsEnabled"] = value == "true"
    if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
   case "askInChat": prefs["AgentsAskInChat"] = value == "true"
-  default: toast(unavailable)
+  default: toast(unavailable); return
   }
   saveLater()
+  publishEverywhere()
  }
 
+ /// Light, Dark or System in every window; pages follow through the window's appearance. In QA the test's stand-in for the
+ /// Mac's own setting (qaSystemTheme) decides what System means.
  func applyTheme() {
-  switch pref("Theme", "Dark") {
-  case "Light": window.appearance = NSAppearance(named: .aqua)
-  case "System": window.appearance = nil
-  default: window.appearance = NSAppearance(named: .darkAqua)
+  let theme = pref("Theme", "System")
+  let name: NSAppearance.Name? = theme == "Light" ? .aqua : theme == "Dark" ? .darkAqua : qaSystemTheme.map { $0 == "Light" ? .aqua : .darkAqua }
+  for browser in browsers {
+   browser.window.appearance = name.flatMap { NSAppearance(named: $0) }
+   browser.window.backgroundColor = browser.dark ? .black : .white
+   browser.schedulePublish()
   }
-  window.backgroundColor = dark ? .black : .white
  }
 
  // MARK: Panels and page placement
 
  func openPanel(_ name: String, _ value: String) {
-  if ["passwords", "extensions", "cookies", "security", "profiles"].contains(name) { toast(unavailable); return }
-  if name == "import" { importDone = ""; publishImport() }
+  if ["passwords", "extensions", "cookies", "security", "profiles", "import"].contains(name) {
+   if name == "import" { importDone = "" }
+   publishBrowserTools(name)
+  }
   panel = name
   if name != "find" { setOverlay(true) }
   send(["kind": "panel", "name": name, "value": value])
@@ -375,35 +503,58 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   schedulePublish()
  }
 
- /// While a panel is open the page is swapped for a snapshot so the interface can draw over it.
+ /// Closes whatever panel is open (Windows: CloseSheet).
+ func closeSheet() {
+  guard !panel.isEmpty else { return }
+  panel = ""
+  send(["kind": "panel", "name": "", "value": ""])
+  schedulePublish()
+ }
+
+ /// While a panel is open the page (and its split partner) is swapped for a snapshot so the interface can draw over it.
  func setOverlay(_ value: Bool) {
   overlayVersion += 1
   let version = overlayVersion
   overlay = value
   guard value else {
    layoutPages()
-   send(["kind": "snapshot", "data": ""])
-   if let view = active?.view { window.makeFirstResponder(view) }
+   send(["kind": "snapshot", "data": "", "partner": ""])
+   if let view = shown?.view { window.makeFirstResponder(view) }
    return
   }
-  guard let view = active?.view, !view.isHidden else { layoutPages(); return }
-  view.takeSnapshot(with: nil) { image, _ in
-   guard version == self.overlayVersion else { return }
-   if let tiff = image?.tiffRepresentation, let jpeg = NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) {
-    self.send(["kind": "snapshot", "data": "data:image/jpeg;base64," + jpeg.base64EncodedString()])
+  guard let view = shown?.view, !view.isHidden else { layoutPages(); return }
+  let pair = partner?.view
+  func shot(_ view: WKWebView?, _ done: @escaping (String) -> Void) {
+   guard let view, !view.isHidden else { done(""); return }
+   view.takeSnapshot(with: nil) { image, _ in
+    guard let tiff = image?.tiffRepresentation, let jpeg = NSBitmapImageRep(data: tiff)?.representation(using: .jpeg, properties: [.compressionFactor: 0.8]) else { done(""); return }
+    done("data:image/jpeg;base64," + jpeg.base64EncodedString())
    }
-   self.layoutPages()
+  }
+  shot(view) { main in
+   shot(pair) { partner in
+    guard version == self.overlayVersion else { return }
+    self.send(["kind": "snapshot", "data": main, "partner": partner])
+    self.layoutPages()
+   }
   }
   // A stalled page must never keep the controls from opening.
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { if version == self.overlayVersion { self.layoutPages() } }
  }
 
+ /// The shown page fills the page slot; a split pair shares it, 6 points apart.
  func layoutPages() {
+  let shown = self.shown, partner = self.partner
+  let leftWidth = ((pageFrame.width - 6) * splitRatio).rounded()
   for tab in tabs {
    guard let view = tab.view else { continue }
-   view.frame = pageFrame
-   view.isHidden = tab !== active || overlay
+   var frame = pageFrame
+   if partner != nil && tab === splitLeft { frame.size.width = max(1, leftWidth) }
+   if partner != nil && tab === splitRight { frame.origin.x += leftWidth + 6; frame.size.width = max(1, pageFrame.width - 6 - leftWidth) }
+   if view.frame != frame { view.frame = frame }
+   view.isHidden = !(tab === shown || tab === partner) || overlay
   }
+  cutHoles()
  }
 
  func dragWindow() {
@@ -415,24 +566,47 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   }
  }
 
+ /// The traffic lights sit centered on the top strip (taller than a title bar), the way Safari and Chrome place them.
+ func placeTrafficLights() {
+  guard !window.styleMask.contains(.fullScreen), let close = window.standardWindowButton(.closeButton), let bar = close.superview?.superview else { return }
+  let height: CGFloat = pref("TabLayout", "Classic") == "Modern" || focusMode ? 56 : 46
+  bar.frame = NSRect(x: 0, y: window.frame.height - height, width: window.frame.width, height: height)
+  for (index, type) in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton].enumerated() {
+   guard let button = window.standardWindowButton(type) else { continue }
+   button.setFrameOrigin(NSPoint(x: 16 + CGFloat(index) * 20, y: ((height - button.frame.height) / 2).rounded()))
+  }
+ }
+
  // MARK: Tabs
 
  @discardableResult
  func createView(_ tab: Tab, configuration: WKWebViewConfiguration? = nil) -> WKWebView {
   let config = configuration ?? WKWebViewConfiguration()
   if configuration == nil {
-   config.websiteDataStore = tab.isPrivate ? .nonPersistent() : .default()
+   config.websiteDataStore = tab.isPrivate ? privateStore : pageStore
    config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
    config.mediaTypesRequiringUserActionForPlayback = []
    config.preferences.isFraudulentWebsiteWarningEnabled = true
    if #available(macOS 12.3, *) { config.preferences.isElementFullscreenEnabled = true }
   }
-  let view = WKWebView(frame: pageFrame, configuration: config)
+  let view = PageView(frame: pageFrame, configuration: config)
+  config.userContentController.removeScriptMessageHandler(forName: "stillPage", contentWorld: stillWorld) // a pop-up shares its opener's
+  config.userContentController.add(pageMessages, contentWorld: stillWorld, name: "stillPage")
   view.allowsBackForwardNavigationGestures = true
   view.allowsMagnification = true
+  view.isHidden = true
+  tab.view = view
+  watch(tab, view)
+  applyBlocking(view)
+  root.addSubview(view)
+  layoutPages()
+  return view
+ }
+
+ /// Hooks a page up to this window: its delegates and the title, address and loading state the strip shows.
+ func watch(_ tab: Tab, _ view: WKWebView) {
   view.navigationDelegate = self
   view.uiDelegate = self
-  tab.view = view
   tab.observers = [
    view.observe(\.title) { [weak self, weak tab] view, _ in
     if let title = view.title, !title.isEmpty { tab?.title = title; self?.schedulePublish() }
@@ -444,61 +618,91 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    view.observe(\.canGoBack) { [weak self] _, _ in self?.schedulePublish() },
    view.observe(\.canGoForward) { [weak self] _, _ in self?.schedulePublish() }
   ]
-  applyBlocking(view)
-  root.addSubview(view)
-  layoutPages()
-  return view
  }
 
- func select(_ tab: Tab) {
-  active?.lastSeen = Date()
-  tab.lastSeen = Date()
+ func select(_ target: Tab) {
+  var tab = target
+  if let app = tab.inChat, app.hasPrefix("app:") { tab.inChat = nil } // an AI app's background tab joins the user's tabs once they open it
+  if let owner = tab.inChat, !tab.closed { tab.lastSeen = Date(); tab = chatTab(owner); tab.pageOpen = true } // an AI's page opens in its chat
+  guard !tab.closed, tabs.contains(where: { $0 === tab }) else { return }
+  if !panel.isEmpty && panel != "recent" { closeSheet() }
+  cancelUpload()
+  let leaving = active
+  leaving?.lastSeen = Date()
   active = tab
-  if tab.view == nil && !tab.url.isEmpty, let url = URL(string: tab.url) { load(url, in: createView(tab)) }
+  tab.lastSeen = Date()
+  if tab.chatId != nil || leaving?.chatId != nil { publishAi() }
+  for page in [shown, partner] { if let page, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } }
   layoutPages()
-  if !overlay, let view = tab.view { window.makeFirstResponder(view) }
+  if !overlay, let view = shown?.view, shown === tab { window.makeFirstResponder(view) }
+  inspectLogin(tab)
   saveLater()
   schedulePublish()
  }
 
- func newTab(_ url: String = "", isPrivate: Bool = false) {
+ @discardableResult
+ func newTab(_ url: String = "", isPrivate: Bool = false, prompt: Bool = true) -> Tab {
   let tab = Tab()
-  tab.isPrivate = isPrivate
+  tab.isPrivate = isPrivate || incognito // every tab in an incognito window is private
+  tab.title = tab.isPrivate ? "Private tab" : "New tab"
   tabs.append(tab)
   select(tab)
-  if url.isEmpty { if ready { openPanel("address", "") } } else { navigate(url) }
+  if url.isEmpty { if prompt && ready { openPanel("address", "") } } else { navigate(url) }
+  saveLater()
+  return tab
  }
 
- func close(_ tab: Tab) {
+ /// Closing a pinned tab puts it to sleep unless forced. A chat tab takes its pages with it.
+ func close(_ tab: Tab, force: Bool = false) {
+  if tab.pinned && !force {
+   unload(tab)
+   if tab === active { if let next = tabs.first(where: { $0 !== tab && !$0.pinned && $0.inChat == nil }) { select(next) } else { newTab(prompt: false) } }
+   toast("Pinned tab put to sleep."); saveLater(); schedulePublish()
+   return
+  }
   guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
-  if !tab.isPrivate && !tab.url.isEmpty { closed.append(tab.url) }
+  if !tab.isPrivate && tab.inChat == nil && !tab.url.isEmpty { closed.append(tab.url); if closed.count > 25 { closed.removeFirst() } }
+  if tab === splitLeft || tab === splitRight { splitLeft = nil; splitRight = nil }
+  tab.closed = true
   unload(tab)
   tabs.remove(at: index)
-  if tabs.isEmpty { newTab(); return }
-  if active === tab { select(tabs[min(index, tabs.count - 1)]) }
+  if let chat = tab.chatId { for page in tabs where page.inChat == chat { page.closed = true; unload(page) }; tabs.removeAll { $0.inChat == chat } }
+  let rest = tabs.filter { $0.inChat == nil }
+  if rest.isEmpty { newTab(prompt: false) } else if active === tab { select(rest[min(index, rest.count - 1)]) }
+  layoutPages()
   saveLater()
+  schedulePublish()
  }
 
  func unload(_ tab: Tab) {
   releasePage(tab)
+  dropPermissions(tab)
+  if upload?.tab === tab { cancelUpload() }
   tab.observers = []
   tab.view?.removeFromSuperview()
   tab.view = nil
  }
 
- func reopen() { if let url = closed.popLast() { newTab(url) } }
+ func reopen() { if let url = closed.popLast() { newTab(url, prompt: false) } else { toast("No closed tabs to reopen.") } }
 
- func toggleBookmark() {
-  guard let tab = active, !tab.url.isEmpty else { return }
+ func toggleBookmark(_ target: Tab? = nil) {
+  guard let tab = target ?? shown, !tab.url.isEmpty else { return }
   if let index = bookmarks.firstIndex(where: { $0["Url"] as? String == tab.url }) { bookmarks.remove(at: index); toast("Bookmark removed.") }
-  else { bookmarks.append(["Title": tab.title, "Url": tab.url]); toast("Bookmarked.") }
+  else { bookmarks.append(["Title": tab.title, "Url": tab.url, "Favicon": tab.isPrivate ? "" : tab.favicon]); toast("Bookmarked.") }
   saveLater()
  }
 
  func navigate(_ input: String) {
   let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-  guard !text.isEmpty, let url = URL(string: resolve(text)) else { return }
-  guard let tab = active else { newTab(url.absoluteString); return }
+  guard !text.isEmpty else { return }
+  // chrome:// and edge:// pages open Still's own panels.
+  let pages = ["settings": "settings", "history": "history", "favorites": "bookmarks", "bookmarks": "bookmarks", "downloads": "downloads", "version": "about", "extensions": "extensions"]
+  if let scheme = ["chrome://", "edge://"].first(where: { text.lowercased().hasPrefix($0) }), let name = pages[String(text.dropFirst(scheme.count)).lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "/"))] {
+   openPanel(name, ""); return
+  }
+  if text.lowercased().hasPrefix("view-source:") { viewSource(String(text.dropFirst(12))); return }
+  guard let url = URL(string: resolve(text)) else { return }
+  guard let tab = active, tab.chatId == nil else { newTab(url.absoluteString, prompt: false); return } // a chat tab keeps its chat
   tab.url = url.absoluteString
   load(url, in: tab.view ?? createView(tab))
   select(tab)
@@ -510,8 +714,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func resolve(_ text: String) -> String {
   if let scheme = URL(string: text)?.scheme?.lowercased(), ["http", "https", "file", "about"].contains(scheme) { return text }
+  if text.hasPrefix("/") || text.hasPrefix("~/") { return URL(fileURLWithPath: (text as NSString).expandingTildeInPath).absoluteString }
   if !text.contains(" ") && (text.contains(".") || text.hasPrefix("localhost")) && URL(string: "https://" + text) != nil {
-   return (text.hasPrefix("localhost") ? "http://" : "https://") + text
+   return (text.hasPrefix("localhost") || text.hasPrefix("127.0.0.1") ? "http://" : "https://") + text
   }
   let query = text.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? text
   switch pref("SearchEngine", "Google") {
@@ -524,12 +729,16 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func makeDefault() {
   for scheme in ["http", "https"] {
    NSWorkspace.shared.setDefaultApplication(at: Bundle.main.bundleURL, toOpenURLsWithScheme: scheme) { error in
-    if error != nil { DispatchQueue.main.async { self.toast("Choose Still in System Settings → Desktop & Dock → Default web browser.") } }
+    DispatchQueue.main.async {
+     defaultBrowserChecked = .distantPast
+     if error != nil { self.toast("Choose Still in System Settings → Desktop & Dock → Default web browser.") }
+     publishEverywhere()
+    }
    }
   }
  }
 
- // MARK: Blocking
+ // MARK: Blocking and page scripts
 
  func compileRules() {
   let domains = ((try? String(contentsOf: resources.appendingPathComponent("blocked.txt"))) ?? "")
@@ -542,20 +751,22 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   WKContentRuleListStore.default().compileContentRuleList(forIdentifier: "still-blocking", encodedContentRuleList: json) { rules, error in
    DispatchQueue.main.async {
     if let error { NSLog("Still blocking rules: \(error)") }
-    self.rules = rules
-    for tab in self.tabs { if let view = tab.view { self.applyBlocking(view) } }
+    blockingRules = rules
+    for browser in browsers { for tab in browser.tabs { if let view = tab.view { browser.applyBlocking(view) } } }
    }
   }
  }
 
- /// Tracker and ad-domain blocking plus the YouTube ad script, unless blocking is off or the site is allowed.
+ /// Tracker and ad-domain blocking plus the YouTube ad script, unless blocking is off or the site is allowed;
+ /// and Still's own page scripts (draft keeper, login observer, hidden elements).
  func applyBlocking(_ view: WKWebView, host: String? = nil) {
   let controller = view.configuration.userContentController
   controller.removeAllContentRuleLists()
   controller.removeAllUserScripts()
   controller.addUserScript(WKUserScript(source: editedCheck, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
+  if let tab = tabs.first(where: { $0.view === view }) { addPageScripts(tab, controller) }
   guard pref("Blocking", true), !unblocked.contains(host ?? view.url?.host ?? "") else { return }
-  if let rules { controller.add(rules) }
+  if let blockingRules { controller.add(blockingRules) }
   if !youTube.isEmpty { controller.addUserScript(WKUserScript(source: youTube, injectionTime: .atDocumentStart, forMainFrameOnly: false)) }
  }
 
@@ -568,10 +779,10 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  /// unless they're pinned, private, playing sound or holding typed text. Selecting one loads it again.
  func sleepIdleTabs() {
   guard pref("MemorySaver", true) else { return }
-  let cutoff = Date().addingTimeInterval(-300)
-  for tab in tabs where tab !== active && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff && tab.agent == nil {
+  let cutoff = Date().addingTimeInterval(-300), shown = self.shown, partner = self.partner
+  for tab in tabs where tab !== active && tab !== shown && tab !== partner && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff && tab.agent == nil {
    tab.view?.evaluateJavaScript(busyCheck) { [weak self, weak tab] result, _ in
-    guard let self, let tab, tab !== self.active, (result as? Bool) == false else { return }
+    guard let self, let tab, tab !== self.active, tab !== self.shown, (result as? Bool) == false else { return }
     self.unload(tab)
     self.schedulePublish()
    }
@@ -594,14 +805,22 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   return known.filter { FileManager.default.fileExists(atPath: $0.2.path) }.map { (id: $0.0, name: $0.1, folder: $0.2) }
  }
 
- func publishImport() {
-  var external: [String: Any] = ["busy": importBusy, "error": importError, "done": importDone, "profile": "Still",
+ func publishImport() { publishBrowserTools("import") }
+
+ /// The import panel's data: other browsers on this Mac, and a reviewed file import (Windows: ImportData).
+ func importData() -> [String: Any] {
+  var external: [String: Any] = ["busy": importBusy, "error": importError, "done": importDone, "profile": Profiles.currentName,
                                  "sources": importSources().map { ["id": $0.id, "name": $0.name] }]
   if let preview = pendingImport {
    external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
                           "passwords": 0, "cookies": 0, "cookiesLocked": false, "skipped": 0, "warnings": [String]()]
   }
-  send(["kind": "tools", "name": "import", "data": ["external": external]])
+  var data: [String: Any] = ["external": external]
+  if let batch = importBatch {
+   data["preview"] = ["id": batch.id, "kind": batch.kind, "file": batch.file, "logins": batch.logins.count, "bookmarks": batch.bookmarks.count,
+                      "history": batch.history.count, "tabs": batch.tabs.count, "skipped": batch.skipped]
+  }
+  return data
  }
 
  /// Reads bookmarks and history (never passwords or cookies, which macOS keeps locked to each browser) for review first.
@@ -729,8 +948,18 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func webView(_ view: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { track(download) }
  func webView(_ view: WKWebView, navigationResponse: WKNavigationResponse, didBecome download: WKDownload) { track(download) }
 
+ func webView(_ view: WKWebView, didCommit navigation: WKNavigation!) {
+  guard let tab = tabs.first(where: { $0.view === view }) else { return }
+  if hostName(tab.url) != hostName(view.url?.absoluteString ?? "") { tab.favicon = "" }
+  tab.reader = false; tab.hideToken = nil; tab.loginFilled = false; tab.loginDetected = false
+  schedulePublish()
+ }
+
  func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
-  guard let tab = tabs.first(where: { $0.view === view }), !tab.isPrivate, let url = view.url?.absoluteString, url.hasPrefix("http") else { return }
+  guard let tab = tabs.first(where: { $0.view === view }) else { return }
+  updateFavicon(tab)
+  if tab === active { inspectLogin(tab) }
+  guard !tab.isPrivate, let url = view.url?.absoluteString, url.hasPrefix("http") else { return }
   history.removeAll { $0["Url"] as? String == url }
   history.insert(["Title": view.title ?? url, "Url": url, "At": ISO8601DateFormatter().string(from: Date())], at: 0)
   if history.count > 5000 { history.removeLast(history.count - 5000) }
@@ -744,7 +973,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func webViewWebContentProcessDidTerminate(_ view: WKWebView) {
-  if let tab = tabs.first(where: { $0.view === view }) { releasePage(tab); schedulePublish() }
+  if let tab = tabs.first(where: { $0.view === view }) { releasePage(tab); dropPermissions(tab); schedulePublish() }
   view.reload()
  }
 
@@ -754,14 +983,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    return openAgentTab(who, "", configuration: configuration).view
   }
   let tab = Tab()
-  tab.isPrivate = tabs.first { $0.view === view }?.isPrivate ?? false
+  tab.isPrivate = incognito || tabs.first { $0.view === view }?.isPrivate ?? false
   tabs.append(tab)
   let created = createView(tab, configuration: configuration)
   select(tab)
   return created
  }
 
- func webViewDidClose(_ view: WKWebView) { if let tab = tabs.first(where: { $0.view === view }) { close(tab) } }
+ func webViewDidClose(_ view: WKWebView) { if let tab = tabs.first(where: { $0.view === view }) { close(tab, force: true) } }
 
  // Page dialogs show in Still's own dialog over the page (see openDialog), where an agent can answer them too.
  func webView(_ view: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping () -> Void) {
@@ -777,11 +1006,16 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func webView(_ view: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
-  if let tab = tabs.first(where: { $0.view === view }), agentPicker(tab, parameters.allowsMultipleSelection, completionHandler) { return }
-  let picker = NSOpenPanel()
-  picker.allowsMultipleSelection = parameters.allowsMultipleSelection
-  picker.canChooseDirectories = parameters.allowsDirectories
-  picker.beginSheetModal(for: window) { completionHandler($0 == .OK ? picker.urls : nil) }
+  guard let tab = tabs.first(where: { $0.view === view }) else { completionHandler(nil); return }
+  if agentPicker(tab, parameters.allowsMultipleSelection, completionHandler) { return }
+  offerFiles(tab, parameters, completionHandler)
+ }
+
+ /// Camera and microphone ask in Still's own permission bar; the answer is kept for the site (not for private tabs).
+ func webView(_ view: WKWebView, requestMediaCapturePermissionFor origin: WKSecurityOrigin, initiatedByFrame frame: WKFrameInfo, type: WKMediaCaptureType, decisionHandler: @escaping (WKPermissionDecision) -> Void) {
+  guard let tab = tabs.first(where: { $0.view === view }) else { decisionHandler(.deny); return }
+  let kind = type == .camera ? "Camera" : type == .microphone ? "Microphone" : "CameraAndMicrophone"
+  askPermission(tab, origin, kind) { decisionHandler($0 ? .grant : .deny) }
  }
 
  // MARK: Downloads
@@ -789,6 +1023,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func track(_ task: WKDownload) {
   task.delegate = self
   let item = Download(task: task)
+  item.isPrivate = incognito || tabs.first { $0.view === task.webView }?.isPrivate == true
   item.observer = task.progress.observe(\.completedUnitCount) { [weak self] _, _ in DispatchQueue.main.async { self?.schedulePublish() } }
   downloads.append(item)
   schedulePublish()
@@ -815,10 +1050,24 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  // MARK: Window
 
- func windowDidResize(_ notification: Notification) { schedulePublish() }
- func windowDidEnterFullScreen(_ notification: Notification) { schedulePublish() }
- func windowDidExitFullScreen(_ notification: Notification) { schedulePublish() }
- func windowWillClose(_ notification: Notification) { save() }
+ func windowDidResize(_ notification: Notification) { placeTrafficLights(); schedulePublish() }
+ func windowDidEnterFullScreen(_ notification: Notification) { fullScreenChanged() }
+ func windowDidExitFullScreen(_ notification: Notification) { fullScreenChanged(); placeTrafficLights() }
+ func windowDidBecomeKey(_ notification: Notification) { lastActiveBrowser = self; schedulePublish() }
+ func windowWillClose(_ notification: Notification) {
+  closing = true
+  saveAll()
+  for tab in tabs { unload(tab) }
+  recentTimer?.invalidate()
+  shell.configuration.userContentController.removeScriptMessageHandler(forName: "still")
+  browsers.removeAll { $0 === self }
+  if lastActiveBrowser === self { lastActiveBrowser = nil }
+  publishEverywhere() // the other windows' window lists
+ }
+ func fullScreenChanged() {
+  shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
+  schedulePublish()
+ }
 
  // MARK: Menu commands
 
@@ -826,52 +1075,110 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   guard let name = sender.representedObject as? String else { return }
   switch name {
   case "newTab": newTab()
-  case "privateTab": newTab(isPrivate: true)
+  case "incognito": openIncognito()
   case "closeTab": if let tab = active { close(tab) }
   case "reopen": reopen()
   case "address": openPanel("address", active?.url ?? "")
   case "findTab": openPanel("tabs", "")
   case "find", "history", "downloads", "settings", "bookmarks": openPanel(name, "")
-  case "reload": active?.view?.reload()
-  case "back": active?.view?.goBack()
-  case "forward": active?.view?.goForward()
+  case "reload": handle("reload", [:])
+  case "back": shown?.view?.goBack()
+  case "forward": shown?.view?.goForward()
   case "bookmark": toggleBookmark()
   case "zoomIn": handle("zoom", ["amount": 0.1])
   case "zoomOut": handle("zoom", ["amount": -0.1])
   case "zoomReset": handle("zoom", ["amount": 0])
   case "fullscreen": window.toggleFullScreen(nil)
-  case "nextTab", "previousTab":
-   if let tab = active, let index = tabs.firstIndex(where: { $0 === tab }) { select(tabs[(index + (name == "nextTab" ? 1 : tabs.count - 1)) % tabs.count]) }
+  case "nextTab": cycleTabs(1)
+  case "previousTab": cycleTabs(-1)
+  case "reader": closeSheet(); toggleReader()
+  case "hide": closeSheet(); pickHidden()
+  case "viewSource": if let url = shown?.url, !url.isEmpty { viewSource(url) }
+  case "focus": handle("focus", [:])
+  case "layout": setPreference("tabLayout", pref("TabLayout", "Classic") == "Modern" ? "Classic" : "Modern")
+  case "pin": if let tab = active, tab.chatId == nil { handle("pin", ["id": tab.id]) }
+  case "aiChat": aiShortcut("chat")
+  case "aiStop": aiShortcut("stop")
+  case "aiTasks": aiShortcut("tasks")
   default:
-   if name.hasPrefix("tab"), let number = Int(name.dropFirst(3)), !tabs.isEmpty { select(number == 9 ? tabs[tabs.count - 1] : tabs[min(number - 1, tabs.count - 1)]) }
+   let strip = tabs.filter { $0.inChat == nil }
+   if name.hasPrefix("tab"), let number = Int(name.dropFirst(3)), !strip.isEmpty { select(number == 9 ? strip[strip.count - 1] : strip[min(number - 1, strip.count - 1)]) }
   }
   schedulePublish()
  }
 }
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
- var browser: Browser?
  var pending: [URL] = []
+ var started = false
+ /// The window the menu and keys act on.
+ var current: Browser? { browsers.first { $0.window.isKeyWindow } ?? lastActiveBrowser ?? browsers.first }
 
  func applicationDidFinishLaunching(_ notification: Notification) {
+  if isQa && qaSystemTheme == nil { qaSystemTheme = ProcessInfo.processInfo.environment["STILL_QA_SYSTEM_THEME"] ?? "Dark" }
+  Profiles.holdRunningLock()
+  loadStore()
   let browser = Browser()
-  self.browser = browser
-  NSApp.mainMenu = menu(for: browser)
-  for url in pending { browser.newTab(url.absoluteString) }
+  started = true
+  NSApp.mainMenu = menu()
+  watchKeys()
+  for url in pending { browser.newTab(url.absoluteString, prompt: false) }
   pending = []
-  NSApp.activate(ignoringOtherApps: true)
+  if !isQa { NSApp.activate(ignoringOtherApps: true) }
  }
 
  func application(_ application: NSApplication, open urls: [URL]) {
-  guard let browser else { pending += urls; return }
-  for url in urls { browser.newTab(url.absoluteString) }
+  guard started, let browser = current else { pending += urls; return }
+  for url in urls { browser.newTab(url.absoluteString, prompt: false) }
   browser.window.makeKeyAndOrderFront(nil)
  }
 
  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
- func applicationWillTerminate(_ notification: Notification) { browser?.save() }
+ func applicationWillTerminate(_ notification: Notification) {
+  saveAll(); AgentRun.endAll()
+  // A temporary profile is deleted as it closes (the next temp window sweeps any leftovers).
+  if isTemp, support.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.appendingPathComponent("Still-temp").standardizedFileURL.path + "/") { try? FileManager.default.removeItem(at: support) }
+ }
+ func applicationDidBecomeActive(_ notification: Notification) { defaultBrowserChecked = .distantPast; publishEverywhere() }
 
- func menu(for browser: Browser) -> NSMenu {
+ @objc func command(_ sender: NSMenuItem) { current?.command(sender) }
+
+ /// Keys the menu can't express: Ctrl+Tab's hold-to-pick recent tabs, Esc from a page, and a click into the other half of a split.
+ /// Also the pointer moving onto a page.
+ func watchKeys() {
+  NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .flagsChanged, .leftMouseDown, .mouseMoved]) { event in
+   if event.type == .mouseMoved { self.pointerMoved(event); return event }
+   guard let browser = browsers.first(where: { $0.window === event.window }) else { return event }
+   switch event.type {
+   case .keyDown where event.keyCode == 48 && event.modifierFlags.contains(.control): // Tab
+    browser.switchRecent(event.modifierFlags.contains(.shift) ? -1 : 1)
+    return nil
+   case .keyDown where event.keyCode == 53: // Esc
+    // Anywhere but the interface (a page, or the window itself after a click on nothing), it goes to the interface
+    if (browser.window.firstResponder as? NSView)?.isDescendant(of: browser.shell) != true { browser.escape() }
+    return event
+   case .leftMouseDown:
+    let point = browser.root.convert(event.locationInWindow, from: nil)
+    if let partner = browser.partner, let view = partner.view, !view.isHidden, view.frame.contains(point) { browser.focusSplitSide(partner) }
+    return event
+   default: return event
+   }
+  }
+ }
+
+ /// The page sits over the interface's own view, so once the pointer is on the page the interface gets no more moves and
+ /// keeps its hover (a tab's X stays up); WebKit takes no handed-over move or exit for it. Tell the interface instead: it
+ /// drops its hover styles until the pointer comes back.
+ func pointerMoved(_ event: NSEvent) {
+  // A move with no window (one posted to the app) carries a screen point
+  guard let window = event.window ?? NSApp.keyWindow, let browser = browsers.first(where: { $0.window === window }) else { return }
+  let point = event.window == nil ? window.convertPoint(fromScreen: event.locationInWindow) : event.locationInWindow
+  let onPage = sequence(first: window.contentView?.hitTest(point), next: { $0?.superview }).contains { $0 is PageView }
+  if onPage, !browser.pointerOnPage { browser.send(["kind": "pointerAway"]) }
+  browser.pointerOnPage = onPage
+ }
+
+ func menu() -> NSMenu {
   let main = NSMenu()
   func add(_ title: String, _ items: [NSMenuItem]) {
    let holder = NSMenuItem()
@@ -880,18 +1187,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
    holder.submenu = submenu
    main.addItem(holder)
   }
+  // A shifted letter is written uppercase, as a real key press reports it, so ⇧⌘K never falls through to ⌘K.
+  func shifted(_ key: String, _ modifiers: NSEvent.ModifierFlags) -> String { modifiers.contains(.shift) ? key.uppercased() : key }
   func command(_ title: String, _ name: String, _ key: String, _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
-   let item = NSMenuItem(title: title, action: #selector(Browser.command(_:)), keyEquivalent: key)
+   let item = NSMenuItem(title: title, action: #selector(AppDelegate.command(_:)), keyEquivalent: shifted(key, modifiers))
    item.keyEquivalentModifierMask = modifiers
-   item.target = browser
+   item.target = self
    item.representedObject = name
    return item
   }
   func standard(_ title: String, _ action: String, _ key: String, _ modifiers: NSEvent.ModifierFlags = .command) -> NSMenuItem {
-   let item = NSMenuItem(title: title, action: Selector(action), keyEquivalent: key)
+   let item = NSMenuItem(title: title, action: Selector(action), keyEquivalent: shifted(key, modifiers))
    item.keyEquivalentModifierMask = modifiers
    return item
   }
+  let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!), right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
   add("Still", [
    standard("About Still", "orderFrontStandardAboutPanel:", ""),
    .separator(),
@@ -899,17 +1209,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
    .separator(),
    standard("Hide Still", "hide:", "h"),
    standard("Hide Others", "hideOtherApplications:", "h", [.command, .option]),
+   standard("Show All", "unhideAllApplications:", ""),
    .separator(),
    standard("Quit Still", "terminate:", "q")
   ])
   add("File", [
    command("New Tab", "newTab", "t"),
-   command("New Private Tab", "privateTab", "n", [.command, .shift]),
+   command("New Private Window", "incognito", "n", [.command, .shift]),
    command("Reopen Closed Tab", "reopen", "t", [.command, .shift]),
    command("Open Location…", "address", "l"),
    command("Find a Tab…", "findTab", "k"),
    .separator(),
-   command("Close Tab", "closeTab", "w")
+   command("Close Tab", "closeTab", "w"),
+   standard("Close Window", "performClose:", "w", [.command, .shift])
   ])
   add("Edit", [
    standard("Undo", "undo:", "z"),
@@ -924,11 +1236,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   ])
   add("View", [
    command("Reload Page", "reload", "r"),
+   command("Reader", "reader", "r", [.command, .shift]),
+   command("Hide an Element…", "hide", "h", [.command, .shift]),
+   command("View Page Source", "viewSource", "u", [.command, .option]),
    .separator(),
    command("Actual Size", "zoomReset", "0"),
    command("Zoom In", "zoomIn", "="),
    command("Zoom Out", "zoomOut", "-"),
    .separator(),
+   command("Tabs on Top or on the Side", "layout", "s", [.command, .shift]),
+   command("Focus Mode", "focus", "f", [.command, .shift]),
    command("Enter Full Screen", "fullscreen", "f", [.command, .control])
   ])
   add("History", [
@@ -942,13 +1259,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
    command("Bookmark This Page", "bookmark", "d"),
    command("Show Bookmarks", "bookmarks", "b", [.command, .option])
   ])
+  add("AI", [
+   command("Chat with Your AI", "aiChat", "a", [.command, .shift]),
+   command("Running Tasks", "aiTasks", "k", [.command, .shift]),
+   command("Stop the AI", "aiStop", ".")
+  ])
   var tabItems = [
+   command("Show Next Tab", "nextTab", right, [.command, .option]),
+   command("Show Previous Tab", "previousTab", left, [.command, .option]),
    command("Show Next Tab", "nextTab", "]", [.command, .shift]),
    command("Show Previous Tab", "previousTab", "[", [.command, .shift]),
+   command("Pin Tab", "pin", "p", [.command, .shift]),
    .separator()
   ]
+  tabItems[2].isAlternate = false
   for number in 1...9 { tabItems.append(command(number == 9 ? "Last Tab" : "Tab \(number)", "tab\(number)", "\(number)")) }
-  tabItems += [.separator(), standard("Minimize", "performMiniaturize:", "m")]
+  tabItems += [.separator(), standard("Minimize", "performMiniaturize:", "m"), standard("Zoom", "performZoom:", "")]
   add("Window", tabItems)
   return main
  }

@@ -23,7 +23,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, compare, js, launch, rpc, send, text, until  # noqa: E402
+from qa import CREW, MAC, ROOT, compare, js, launch, launcher, rpc, send, text, until  # noqa: E402
 from mcp_client import Mcp  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
@@ -217,8 +217,10 @@ def strip(process):
 
 
 def home(process):
+    # A chat tab shows the home rail too: wait for the new tab itself
+    before = rpc(process)["activeId"]
     send(process, "new")
-    until(lambda: js(process, "!!document.querySelector('.home-rail')"), 20)
+    until(lambda: rpc(process)["activeId"] != before and js(process, "!!document.querySelector('.home-rail')"), 20)
     time.sleep(.4)
     js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
 
@@ -231,7 +233,7 @@ def ask(process, words, companion="pip"):
 def capture(process, name, reference=None):
     rpc(process, "capture", name=name + ".png")
     (OUT / f"{name}.png").write_bytes((PROFILE / f"{name}.png").read_bytes())
-    if reference:
+    if reference and REFS.exists():  # the reference frames live only on the Windows machine
         (REFS / "compare").mkdir(exist_ok=True)
         compare(OUT / f"{name}.png", REFS / reference, REFS / "compare" / f"{name}-compare.png")  # their frames stay out of the repo
 
@@ -248,7 +250,7 @@ def main():
     (PROFILE / "agents").mkdir(parents=True)
     (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
     (BIN / "laptops.csv").write_text(CSV, encoding="utf-8")
-    (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}], "ApprovedAgents": ["Outside"], "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080},
@@ -264,7 +266,8 @@ def main():
         hand_over(process)
         outside_app(process)
         queue_and_question(process)
-        check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
+        errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
+        check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
@@ -307,7 +310,7 @@ def laptops(process):
     check(js(process, "!!document.querySelector('.page-column.is-split .chat-pane') && !!document.querySelector('.page-column.is-split .page-pane')"), "The chat splits to show its page on the right")
     check(until(lambda: "Pip is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "The pill says who's working")
     check(js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')") == "Take over|Stop", "The pill offers Take over and Stop")
-    cursor = rpc(process, "eval", tab=page["Id"], script="(() => { const h = window[Symbol.for('still.cursor')]; return h ? h[Symbol.for('still.cursor')].tag.textContent : '' })()")
+    cursor = rpc(process, "eval", tab=page["Id"], world="still", script="(() => { const h = window[Symbol.for('still.cursor')]; return h ? h[Symbol.for('still.cursor')].tag.textContent : '' })()")
     check(cursor == "Pip", "The AI's cursor shows in the page with its name")
     check(rpc(process, "eval", tab=page["Id"], script="document.querySelector('#q').value") == "laptop", "Typing reached the search field")
     check(rpc(process, "eval", tab=page["Id"], script="location.search") == "?max=800", "The click went through to the page")
@@ -342,13 +345,15 @@ def laptops(process):
     check(until(lambda: js(process, f"document.querySelector('{grid} tbody td:nth-child(3)')?.innerText") == "299", 3), "Sorting by price puts the cheapest first")
     capture(process, "viewer-side-v01")
     rpc(process, "key", key="Escape", mods="None")
-    check(until(lambda: not js(process, "!!document.querySelector('.page-column.is-viewing')"), 5), "Esc closes the viewer beside the chat")
+    open_ui = js(process, "[...document.querySelectorAll(':is([role=dialog],[role=alertdialog],[role=menu]):not([aria-hidden=true])')].map(e => e.className || e.tagName).join(', ')")
+    check(until(lambda: not js(process, "!!document.querySelector('.page-column.is-viewing')"), 5), "Esc closes the viewer beside the chat" + (f" (open: {open_ui})" if open_ui else "") + (f" (focus: {rpc(process).get('responder')})" if MAC else ""))
 
     # The Library.
     home(process)
     click(process, ".home-rail-item[aria-label=Library]")
     check(until(lambda: js(process, "document.querySelectorAll('.library-list .history-row').length") == 1, 5)
-          and "LAPTOPS" in (js(process, "document.querySelector('.library-list')?.innerText ?? ''") or ""), "The Library lists the file with its chat")
+          and "LAPTOPS" in (js(process, "document.querySelector('.library-list')?.textContent.toUpperCase() ?? ''") or ""),  # WebKit leaves a row it hasn't painted yet (content-visibility) out of innerText
+          "The Library lists the file with its chat")
     capture(process, "library-v01")
 
 

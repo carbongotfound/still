@@ -221,7 +221,8 @@ public partial class MainWindow
      case "showDownload":
       if(int.TryParse(S("id"),out int index)&&index>=0&&index<downloads.Count)System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe","/select,\""+downloads[index].Path+"\""){UseShellExecute=true});break;
      case "openDownload":if(int.TryParse(S("id"),out int oi)&&oi>=0&&oi<downloads.Count&&downloads[oi].Operation.State==CoreWebView2DownloadState.Completed&&File.Exists(downloads[oi].Path))
-       try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(downloads[oi].Path){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){Toast("Windows couldn't open this file.");}break;
+       // Windows checks a fresh download (SmartScreen, antivirus) before it opens: seconds that must not freeze Still.
+       {var file=downloads[oi].Path;_=Task.Run(()=>{try{System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(file){UseShellExecute=true});}catch(System.ComponentModel.Win32Exception){Dispatcher.BeginInvoke(()=>Toast("Windows couldn't open this file."));}});}break;
      case "openUpdate":RestartToUpdate();break;
      case "releaseNotes":if(update!=null)await NewTab(update.Url,false,false);break;
      case "checkUpdate":await CheckForUpdate();if(update==null)Toast("Still is up to date.");break;

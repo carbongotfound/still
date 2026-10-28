@@ -3,7 +3,7 @@ name: Mac
 on:
   push:
     branches: [main]
-    paths: ["mac/**", "still/Shell/**", "still/MainWindow.Actions.cs", "still/MainWindow.Agents.cs", "still/Still.csproj", ".github/workflows/mac.yml"]
+    paths: ["mac/**", "still/Shell/**", "still/Assets/**", "still/MainWindow.Actions.cs", "still/MainWindow.Agents.cs", "still/MainWindow.Lookup.cs", "still/MainWindow.Drafts.cs", "still/Still.csproj", ".github/workflows/mac.yml"]
   release:
     types: [published]
   workflow_dispatch:
@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
-      - run: sh mac/build.sh
+      - run: sh mac/build.sh && cp mac/build/Still-*.dmg mac/build/Still-mac.dmg
       - name: Import test
         run: |
           mkdir -p /tmp/profile
@@ -54,11 +54,12 @@ jobs:
         with:
           name: Still-mac
           path: |
+            mac/build/Still-mac.dmg
             mac/build/Still-mac.zip
             mac/build/smoke*.png
       - name: Attach to the release
         if: github.event_name == 'release'
-        run: gh release upload "$TAG" mac/build/Still-mac.zip --clobber --repo "$GITHUB_REPOSITORY"
+        run: gh release upload "$TAG" mac/build/Still-mac.dmg mac/build/Still-mac.zip --clobber --repo "$GITHUB_REPOSITORY"
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.event.release.tag_name }}

@@ -1,31 +1,41 @@
 #!/bin/sh
-# Builds a universal Still.app and Still-mac.zip. Run on a Mac with Xcode 15 or newer: sh mac/build.sh
+# Builds Still.app, Still-<version>.dmg and Still-mac.zip with xcodebuild. Run on a Mac with Xcode 15 or newer: sh mac/build.sh
+#  ARCH=arm64  one architecture, for quick builds (default: universal, arm64 and x86_64)
+#  QA=1        a test build with the QA channel (-D STILL_QA) into build/qa/, no dmg. Never distribute it.
 set -eu
 cd "$(dirname "$0")"
 repo=..
 version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$repo/still/Still.csproj")
-app=build/Still.app
+out=build flags="" id=com.carbongotfound.still
+# QA builds keep their WebKit data, caches and defaults apart from the real app (~/Library/*/com.carbongotfound.still.qa).
+if [ "${QA:-0}" = 1 ]; then out=build/qa flags="-D STILL_QA" id=com.carbongotfound.still.qa; fi
+app=$out/Still.app
 resources=$app/Contents/Resources
 
-swift build -c release --arch arm64 --arch x86_64
-bin=$(swift build -c release --arch arm64 --arch x86_64 --show-bin-path)
+# Derived data stays in $out/dd between builds, so a rebuild only compiles what changed.
+xcodebuild -scheme Still -configuration Release -destination "generic/platform=macOS" -derivedDataPath "$out/dd" \
+ ARCHS="${ARCH:-arm64 x86_64}" ONLY_ACTIVE_ARCH=NO OTHER_SWIFT_FLAGS="$flags" -quiet build
+bin=$out/dd/Build/Products/Release/Still
 
-rm -rf build
+rm -rf "$app" "$out/Still.iconset"
 mkdir -p "$app/Contents/MacOS" "$resources"
-cp "$bin/Still" "$app/Contents/MacOS/Still"
+cp "$bin" "$app/Contents/MacOS/Still"
 cp -R "$repo/still/Shell" "$resources/Shell"
+cp "$repo/still/Assets/Readability.js" "$repo/still/Assets/LoginObserver.js" "$resources/"
 
-# The blocked domains and the YouTube ad script come straight from the Windows app, so both stay in step.
+# Scripts and lists come straight from the Windows app, so both stay in step: extract <const> from a C# file into <file>.
+extract() {
+ awk -v start="const string $2 = \"\"\"" 'index($0, start) {on=1; next} on && /^ *""";/ {exit} on' "$repo/still/$1" > "$resources/$3"
+ test -s "$resources/$3"
+}
 awk '/BlockedDomains = \[/ {on=1; next} on && /^ *\];/ {exit} on' "$repo/still/MainWindow.Actions.cs" | grep -o '"[^"]*"' | tr -d '"' > "$resources/blocked.txt"
-awk '/const string YouTubeAdScript = """/ {on=1; next} on && /^ *""";/ {exit} on' "$repo/still/MainWindow.Actions.cs" > "$resources/youtube.js"
-test -s "$resources/blocked.txt" && test -s "$resources/youtube.js"
-# So do the AI agent page scripts (read_page, find, click, ...).
-for name in Page Snapshot Find Click Focus Scroll Wait FileInput; do
- awk -v start="const string ${name}Js = \"\"\"" 'index($0, start) {on=1; next} on && /^ *""";/ {exit} on' "$repo/still/MainWindow.Agents.cs" > "$resources/agent-$name.js"
- test -s "$resources/agent-$name.js"
-done
+test -s "$resources/blocked.txt"
+extract MainWindow.Actions.cs YouTubeAdScript youtube.js
+for name in Page Snapshot Find Click Focus Scroll Wait Sensitive FileInput Cursor; do extract MainWindow.Agents.cs "${name}Js" "agent-$name.js"; done
+for name in Results Readable; do extract MainWindow.Lookup.cs "${name}Js" "lookup-$name.js"; done
+extract MainWindow.Drafts.cs DraftScript draft.js
 
-iconset=build/Still.iconset
+iconset=$out/Still.iconset
 mkdir -p "$iconset"
 for size in 16 32 128 256 512; do
  sips -z $size $size "$repo/still/Assets/still.png" --out "$iconset/icon_${size}x${size}.png" >/dev/null
@@ -33,6 +43,7 @@ for size in 16 32 128 256 512; do
  sips -z $double $double "$repo/still/Assets/still.png" --out "$iconset/icon_${size}x${size}@2x.png" >/dev/null
 done
 iconutil -c icns "$iconset" -o "$resources/Still.icns"
+rm -rf "$iconset"
 
 cat > "$app/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -41,16 +52,17 @@ cat > "$app/Contents/Info.plist" <<PLIST
 <dict>
  <key>CFBundleName</key><string>Still</string>
  <key>CFBundleDisplayName</key><string>Still</string>
- <key>CFBundleIdentifier</key><string>com.carbongotfound.still</string>
+ <key>CFBundleIdentifier</key><string>$id</string>
  <key>CFBundleExecutable</key><string>Still</string>
  <key>CFBundleIconFile</key><string>Still</string>
  <key>CFBundlePackageType</key><string>APPL</string>
  <key>CFBundleShortVersionString</key><string>$version</string>
  <key>CFBundleVersion</key><string>$version</string>
- <key>LSMinimumSystemVersion</key><string>12.3</string>
+ <key>LSMinimumSystemVersion</key><string>12.0</string>
  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
  <key>NSHighResolutionCapable</key><true/>
  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+ <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
  <key>NSCameraUsageDescription</key><string>Websites you allow can use your camera, for example for video calls.</string>
  <key>NSMicrophoneUsageDescription</key><string>Websites you allow can use your microphone, for example for calls.</string>
  <key>NSLocationUsageDescription</key><string>Websites you allow can use your location.</string>
@@ -73,6 +85,16 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
+# Ad-hoc signed: macOS asks once on first launch (right-click > Open). See mac/README.md.
 codesign --force --deep --sign - "$app"
-ditto -c -k --keepParent "$app" build/Still-mac.zip
-echo "Built $app ($version)"
+if [ "$out" = build/qa ]; then echo "Built $app ($version, QA)"; exit 0; fi
+
+ditto -c -k --keepParent "$app" "$out/Still-mac.zip"
+staging=$out/dmg
+rm -rf "$staging" "$out/Still-$version.dmg"
+mkdir -p "$staging"
+cp -R "$app" "$staging/"
+ln -s /Applications "$staging/Applications"
+hdiutil create -quiet -volname Still -srcfolder "$staging" -format UDZO "$out/Still-$version.dmg"
+rm -rf "$staging"
+echo "Built $app and $out/Still-$version.dmg ($version)"
