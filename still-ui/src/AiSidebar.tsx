@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, BookOpen, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, FileText, Gauge, Globe, Lightbulb, LockKeyhole, Luggage, Plus, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
+import { ArrowLeft, ArrowUp, BookOpen, Camera, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Save, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -12,10 +12,12 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel,
 import { Switch } from "@/components/ui/switch"
 import { Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
 import { Markdown } from "./Markdown"
+import { FileCard, type LibFile } from "./Files"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
- open: boolean; harness: string; busy: boolean; running?: string; error: string; profile: string; harnesses: Harness[]
+ open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
+ runs?: Run[]; queued?: string[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: { role: string; text: string }[]
@@ -24,6 +26,10 @@ export type AiState = {
  advanced?: boolean; memory?: string; skills?: Skill[]
 }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
+// A chat at work. Any number run at once.
+export type Run = { id: string; started: string; question?: string | null; options?: string[] | null }
+export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
+export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && r.question)
 type Send = (op: string, payload?: Record<string, unknown>) => void
 type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean }
 
@@ -38,7 +44,12 @@ const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
 const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(statusOf(h))
-const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
+export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
+export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
+// Each step's icon, from how its label starts.
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Read skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
+ [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
+const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // Next steps the AI offers end its answer, one per line starting with ">> ".
 const nextSteps = (text: string) => { const next: string[] = []; const body = text.replace(/^>>\s*(.+)$/gm, (_, s: string) => { next.push(s.trim()); return "" }).trim(); return { body, next } }
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0]
@@ -150,7 +161,7 @@ export function SkillText({ text, skills }: { text: string; skills?: Skill[] }) 
 // How the companion looks through a run: thinking until its first step, working through steps, waiting on the user's
 // answer, a small celebration when it finishes, a droop on an error. Listening while the user types to it.
 export function useRunMood(ai: AiState | undefined, typing = false): Mood {
- const busy = !!ai?.busy && ai.running === ai.chatId
+ const busy = !!ai?.busy
  const [done, setDone] = useState(false)
  const was = useRef(busy)
  useEffect(() => {
@@ -278,25 +289,24 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
 }
 
 // A conversation: in its own tab (centered, or beside the AI's page) or in the panel next to a page.
-export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void }) {
+export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onFile }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void; onFile: (path: string) => void }) {
  const [tick, setTick] = useState(0)
  const provider = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
- const [worked, setWorked] = useState(0)
- const ticks = useRef(0)
- const [queued, setQueued] = useState("")
+ const queued = ai.queued ?? []
  const log = useRef<HTMLDivElement>(null)
  const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
  const fresh = !ai.messages.length
  const companion = companionOf(ai, fresh && picked ? picked : ai.chatCompanion)
  const name = companion?.name ?? "your AI"
- const busy = ai.busy && ai.running === ai.chatId
- const elsewhere = ai.busy && !busy
+ const busy = ai.busy
+ const started = ai.runs?.find(r => r.id === ai.chatId)?.started
  const [typing, setTyping] = useState(false)
  const mood = useRunMood(ai, typing)
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [ai.messages.length, busy, !!ai.question])
- useEffect(() => { if (!busy) return; ticks.current = 0; setTick(0); setWorked(0); const t = setInterval(() => setTick(++ticks.current), 1000); return () => { clearInterval(t); setWorked(ticks.current) } }, [busy])
- useEffect(() => { if (!ai.busy && queued && !ai.error) { send("aiSend", { text: queued }); setQueued("") } }, [ai.busy]) // eslint-disable-line react-hooks/exhaustive-deps
- const submit = (value: string) => { if (busy) setQueued(value); else send("aiSend", { text: value, companion: companion?.id }) }
+ // Timed from when the run started, so it reads right after switching chats.
+ useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
+ // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
+ const submit = (value: string) => send("aiSend", { text: value, companion: companion?.id })
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
@@ -306,7 +316,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
   if (m.role === "tool") { if (prev && "steps" in prev) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text] }) }
   else items.push(m)
  }
- const fromAi = (i: number) => items[i]?.role === "assistant" || items[i]?.role === "steps"
+ const fromAi = (i: number) => ["assistant", "steps", "file"].includes(items[i]?.role)
  // The companion's face starts each of its turns.
  const face = (i: number) => fromAi(i - 1) ? null : <Face className="ai-turn-face" companion={companion} size={24} mood={i >= items.length - 1 ? mood : "idle"} />
  const setup = Setup({ ai, send, onSettings })
@@ -327,7 +337,15 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
    {items.map((m, i) => {
-    if ("steps" in m) return <div key={i} className="ai-turn">{face(i)}<details className="ai-steps-group"><summary><span className="ai-steps-icon"><Globe /></span><span className="ai-steps-text"><b>{m.steps[m.steps.length - 1]}</b>{m.steps.length > 1 && <small> (and {m.steps.length - 1} more action{m.steps.length === 2 ? "" : "s"})</small>}</span><ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => <li key={j}>{s}</li>)}</ol></details></div>
+    if ("steps" in m) {
+     const live = busy && i === items.length - 1, kinds = [...new Set(m.steps.map(stepIcon))].slice(-3)
+     return <div key={i} className="ai-turn">{face(i)}<details className="ai-steps-group"><summary>
+      <span className="ai-steps-icons">{kinds.map((Icon, j) => <span key={j} className="ai-steps-icon"><Icon /></span>)}</span>
+      <span className="ai-steps-text"><b>{m.steps[m.steps.length - 1]}</b>{m.steps.length > 1 && <small> (and {m.steps.length - 1} more action{m.steps.length === 2 ? "" : "s"})</small>}</span>
+      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : <Check className="ai-steps-state is-done" aria-label="Done" />}
+      <ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => { const Icon = stepIcon(s); return <li key={j}><Icon />{s}</li> })}</ol></details></div>
+    }
+    if (m.role === "file") return <div key={i} className="ai-turn">{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
@@ -335,7 +353,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
     return <div key={i} className="ai-turn">{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} /></div>
      {next.length > 0 && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
-     {last && <>{worked > 0 && <p className="ai-timer">Worked for {clock(worked)}</p>}
+     {last && <>{!!ai.worked && <p className="ai-timer">Worked for {clock(ai.worked)}</p>}
       <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
     </div>
    })}
@@ -346,10 +364,9 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <span className="chat-chip" title={activeTab.url}><Globe />{activeTab.title || host(activeTab.url)}</span>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
-   {queued && <div className="ai-queued"><span>Up next</span><p>{queued}</p><button aria-label="Don't send" onClick={() => setQueued("")}><X /></button></div>}
-   {elsewhere ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button><Button variant="link" size="sm" onClick={() => send("aiStop")}>Stop it</Button></div>
-    : <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
-     placeholder={busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />}
+   {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><button aria-label="Don't send" title="Don't send" onClick={() => send("aiUnqueue")}><X /></button></div>}
+   <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
+    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
   </div></div>}
  </section>
@@ -364,12 +381,12 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
   <section><h4>What it can see</h4><p>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</p></section>
   <Separator />
   <section><h4>Chats</h4><p>{ai.chats.length ? `${ai.chats.length} saved on this PC.` : "None saved yet."}</p>
-   <Button variant="outline" size="sm" disabled={!ai.chats.length || ai.busy} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>
+   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>
  </div>
 }
 
 // The chat panel beside an ordinary page (the Chat button), or the AI settings.
-export function AiPanel({ ai, send, view, setView, tabs, activeTab }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef }) {
+export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
  const companion = companionOf(ai, ai.chatCompanion)
  const mood = useRunMood(ai)
  return <aside className="ai-sidebar" aria-label="Chat">
@@ -378,12 +395,44 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab }: { ai: AiSt
    <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    {view === "chat" && <>
     <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
-    <IconButton label="New chat" disabled={ai.busy || !ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
+    <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
     <IconButton label="AI settings" onClick={() => setView("settings")}><Settings2 /></IconButton>
    </>}
    <IconButton label="Close chat" onClick={() => { setView("chat"); send("aiToggle") }}><X /></IconButton>
   </div>
-  {view === "settings" ? <AiSettings ai={ai} send={send} done={() => setView("chat")} /> : <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => setView("settings")} />}
+  {view === "settings" ? <AiSettings ai={ai} send={send} done={() => setView("chat")} /> : <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => setView("settings")} onFile={onFile} />}
  </aside>
 }
 
+
+// Top right: the chats at work (green spinner), the ones waiting on you (amber) and new replies (blue).
+// A question can be answered right here.
+export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; onOpen: (open: boolean) => void }) {
+ const [open, setOpenState] = useState(false)
+ const setOpen = (o: boolean) => { setOpenState(o); onOpen(o) }
+ useEffect(() => () => onOpen(false), []) // eslint-disable-line react-hooks/exhaustive-deps
+ const [, setNow] = useState(0)
+ useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [open])
+ const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), empty = !runs.length && !unread.length
+ useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
+ if (empty) return null
+ const waiting = runs.filter(r => r.question).length
+ const chat = (id: string) => ai.chats.find(c => c.id === id)
+ return <DropdownMenu open={open} onOpenChange={setOpen}>
+  <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks">
+   {runs.length > waiting ? <Spinner className="tasks-spin" /> : <ListTodo />}{runs.length > 0 && <b>{runs.length}</b>}
+   {waiting > 0 && <i className="is-needs" />}{unread.length > 0 && <i className="is-unread" />}
+  </Button></DropdownMenuTrigger>
+  <DropdownMenuContent align="end" sideOffset={6} className="tasks-menu">
+   <DropdownMenuLabel>Running tasks</DropdownMenuLabel>
+   {runs.map(r => { const c = chat(r.id); return <div key={r.id} className="tasks-item">
+    <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={r.question ? "needs" : "working"} />
+     <span className="tasks-title">{c?.title ?? "Chat"}<small>{r.question ? "Needs you" : "Working for " + clock(since(r.started))}</small></span>
+     {r.question ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
+    {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}
+   </div> })}
+   {unread.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>New replies</DropdownMenuLabel>
+    {unread.map(c => <DropdownMenuItem key={c.id} onSelect={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={22} /><span className="tasks-title">{c.title}</span><i className="is-unread" aria-hidden /></DropdownMenuItem>)}</>}
+  </DropdownMenuContent>
+ </DropdownMenu>
+}

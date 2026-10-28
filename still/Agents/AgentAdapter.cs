@@ -12,6 +12,7 @@ public sealed record AgentModel(string Id, string Name, string[] Efforts);
 /// the adapter's own list, the folder it runs in, the command that starts Still's MCP server, and the chat's session.
 public sealed record RunRequest(string Prompt, string Model, string Effort, string Folder, IReadOnlyList<string> Mcp, string? Session, bool Resume)
 {
+ public string WorkFolder { get; init; } = ""; // the user's working folder: the app's own file tools, for that folder only
  public string PromptFile => Path.Combine(Folder, "prompt-" + (Session ?? "run") + ".txt");
 }
 
@@ -92,7 +93,10 @@ sealed class ClaudeAdapter : AgentAdapter
  {
   string config = Path.Combine(r.Folder, "mcp.json");
   File.WriteAllText(config, JsonSerializer.Serialize(new { mcpServers = new { still = new { command = Environment.ProcessPath, args = r.Mcp } } }));
-  List<string> args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--tools", "", "--allowedTools", "mcp__still", r.Resume ? "--resume" : "--session-id", r.Session!];
+  List<string> args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.Resume ? "--resume" : "--session-id", r.Session!];
+  // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
+  if (r.WorkFolder.Length > 0) args.AddRange(["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.WorkFolder, "--permission-mode", "acceptEdits"]);
+  else args.AddRange(["--tools", ""]);
   if (r.Model.Length > 0) args.AddRange(["--model", r.Model]);
   if (r.Effort.Length > 0) args.AddRange(["--effort", r.Effort]);
   return Task.FromResult(args);

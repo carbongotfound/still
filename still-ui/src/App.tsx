@@ -3,7 +3,8 @@ import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AiPanel, ChatView, Composer, companionOf, type AiState } from "./AiSidebar"
+import { AiPanel, ChatView, Composer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
+import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AiLogo } from "./AiLogo"
 import { Buddy, Face, FALLBACK, ProviderContext, agentFace, hueOf, type Companion } from "./Buddy"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, SkillsPage, randomCompanion, type HomeView } from "./Home"
@@ -30,7 +31,7 @@ import { BrowserTools } from "./BrowserTools"
 import { Welcome } from "./Welcome"
 import type { ToolData } from "./BrowserTools"
 
-type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; runChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string }
+type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string }
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
 type ExtensionRef = { id:string; name:string; icon?:string|null }
@@ -51,12 +52,12 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string}; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
 // Who is driving a tab: the companion of the chat that opened it, or another AI app under its own name.
-const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.runChat ? companionOf(ai, ai?.chats.find(c => c.id === tab.runChat)?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
+const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverChat ?? tab.runChat ? companionOf(ai, ai?.chats.find(c => c.id === (tab.driverChat ?? tab.runChat))?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
 const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
 // One click on the new tab page hands one of these to the AI.
 const IDEAS: [LucideIcon, string, string, string, string][] = [
@@ -89,7 +90,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
   const {state,ai,setContext,arriving,setGhost}=useContext(UICtx)!
   const selected = tab.id === state.activeId
   const chat = tab.chatId ? companionOf(ai, ai?.chats.find(c => c.id === tab.chatId)?.companion) : undefined
-  const driver = tab.agent && !state.agent?.pending && state.agent?.tab === tab.id ? driverOf(ai, tab) : undefined // only while it is at work here
+  const driver = tab.agent && !state.agent?.pending && state.working?.includes(tab.id) ? driverOf(ai, tab) : undefined // only while it is at work here
   const [tearing, setTearing] = useState(false)
   // Pointer-driven drag: drop on another tab to reorder; drop outside the tab list to open a new window.
   const drag = useRef<{ sx: number; sy: number; active: boolean } | null>(null)
@@ -130,7 +131,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
-      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent && !state.agent.pending && !state.agent.paused ? "working" : "idle"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={ai?.running === tab.chatId ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
+      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent?.tab === tab.id && state.agent.paused ? "idle" : "working"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={isRunning(ai, tab.chatId) ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
@@ -172,6 +173,9 @@ export default function App() {
  const extButton = useRef<HTMLButtonElement>(null)
  const [context, setContext] = useState(false)
  const [snapshot, setSnapshot] = useState("")
+ const [viewing, setViewing] = useState("") // a Library file open in the viewer
+ const [tasksOpen, setTasksOpen] = useState(false)
+ const [fileData, setFileData] = useState<FileData | null>(null)
  const [upload, setUpload] = useState<Upload | null>(null)
  const [notice,setNotice]=useState("")
  const [toolData,setToolData]=useState<Record<string,ToolData>>({})
@@ -199,6 +203,10 @@ export default function App() {
  const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []), ...IDEAS].slice(0, 3)
  const [typing, setTyping] = useState(false) // to the companion on the new tab: it listens
  const openAiSettings = () => { setAiView("settings"); if (!ai?.open) send("aiToggle") }
+ // In a chat tab the viewer takes the page's place beside the chat; anywhere else it opens over the page.
+ const openFile = (path: string) => { setViewing(path); if (split) send("chatPage", { on: false }) }
+ const sideViewer = chatTab && !!viewing && !split
+ useEffect(() => { setViewing("") }, [state.activeId, split])
  const suggestions = useMemo(() => rankSuggestions(query, state.history, state.bookmarks, active?.isPrivate), [query, state.history, state.bookmarks, active?.isPrivate])
  const addressRef = useRef<HTMLInputElement>(null)
  const paneRef = useRef("")
@@ -281,7 +289,7 @@ export default function App() {
  // The page in view, beside a chat or in its own tab, and whether an AI is driving it right now.
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
- const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing
+ const modal = (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || (!!viewing && !sideViewer) || tasksOpen
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
@@ -298,6 +306,7 @@ export default function App() {
    const data = e.data
    if (data.kind === "state") setState(data)
    if (data.kind === "ai") setAi(data.data)
+   if (data.kind === "file") setFileData(data.data)
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage("appearance") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
@@ -395,6 +404,7 @@ export default function App() {
      <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
+     {!state.noAi && ai && <RunningTasks ai={ai} send={send} onOpen={setTasksOpen} />}
      {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={18} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
      {!chatTab && <><IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
@@ -449,7 +459,7 @@ export default function App() {
    </header>}
    <div className="workspace">
     {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={setEditing} onSettings={openAiSettings} openPanel={open} goHome={goHome} />}
-    <main className={cn("page-column", chatTab && "is-chat", split && "is-split")}>
+    <main className={cn("page-column", chatTab && "is-chat", split && "is-split", sideViewer && "is-viewing")}>
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
      {!state.focusMode && !state.fullScreen && state.bookmarks.length > 0 && <nav className={cn("bookmarks-bar", barOpen && state.bookmarks.length >= 5 && "is-expanded")} aria-label="Bookmarks bar">
       <div className="bookmarks-bar-list">{state.bookmarks.slice(0, barOpen ? 200 : 40).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><Button variant="ghost" size="sm" className="bookmark-chip" title={b.title + " · " + b.url} onClick={() => send("navigate", { url: b.url })}><span className="bookmark-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="bookmark-name">{b.title || host(b.url)}</span></Button></BookmarkMenu>)}</div>
@@ -478,13 +488,13 @@ export default function App() {
        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Chat options" title="Chat options"><MoreHorizontal /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
          <DropdownMenuItem onSelect={() => send("new")}><SquarePen />New chat</DropdownMenuItem>
-         <DropdownMenuItem disabled={ai.running === active.chatId} onSelect={() => send("aiDeleteChat", { id: active.chatId })}><Trash2 />Delete chat</DropdownMenuItem>
+         <DropdownMenuItem disabled={isRunning(ai, active.chatId)} onSelect={() => send("aiDeleteChat", { id: active.chatId })}><Trash2 />Delete chat</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
        <Button variant="ghost" size="icon-sm" aria-label="Chat details" title="Chat details" aria-pressed={split ? splitInfo : info} className={cn((split ? splitInfo : info) && "is-on")} onClick={() => split ? setSplitInfo(!splitInfo) : setInfo(!info)}><Info /></Button>
        {chatPages.length > 0 && <Button variant="ghost" size="icon-sm" aria-label={split ? "Hide the page" : "Show the page"} title={split ? "Hide the page" : "Show the page"} onClick={() => send("chatPage", { on: !split })}>{split ? <PanelRightClose /> : <PanelRightOpen />}</Button>}
       </div>
-      <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} />
-      {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={setEditing} onSettings={openAiSettings} />}
+      <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} />
+      {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={setEditing} onSettings={openAiSettings} onFile={openFile} />}
      </section>}
      <div className="page-pane">
      {split && state.chatPage && <div className="page-nav">
@@ -504,23 +514,22 @@ export default function App() {
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
          : view === "companions" ? <CompanionsPage key={ai.memory} ai={ai} send={send} onEdit={setEditing} onChat={id => { setBuddy(id); setView("home") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} />
-         : view === "library" ? <LibraryPage />
+         : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
            <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={setEditing} onManage={() => setView("companions")} />
-           {ai.busy && ai.running && <button className="home-running" title="Go to the chat that's working" onClick={() => send("chatOpen", { id: ai.running })}><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={18} mood="working" />1 running</button>}
+
           </div>
           <div className="home-center">
            <Face key={companion.id} companion={companion} size={96} look mood={typing ? "listening" : "idle"} className="home-face" />
-           <div className="home-compose">{ai.busy ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button></div>
-            : <Composer ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs} placeholder={`Ask ${companion.name} anything, or give it a job…`} onSubmit={text => send("aiSend", { text, home: true, companion: companion.id })} />}</div>
+           <div className="home-compose"><Composer ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs} placeholder={`Ask ${companion.name} anything, or give it a job…`} onSubmit={text => send("aiSend", { text, home: true, companion: companion.id })} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
             <button onClick={() => setView("library")}><Library />Library</button>
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
            </div>
-           <div className="home-ideas"><h2>Ideas for you</h2><div>{ideas.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" disabled={ai.busy} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
+           <div className="home-ideas"><h2>Ideas for you</h2><div>{ideas.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
            {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
           </div>
          </>}
@@ -535,10 +544,11 @@ export default function App() {
       </motion.div>}
      </div>
      </div>
+     {sideViewer && <FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} />}
      </div>
      {active?.loading && <div className="loading-line" aria-label="Loading page"><i /></div>}
     </main>
-    {ai?.open && (!chatTab || aiView === "settings") && <AiPanel ai={ai} send={send} view={aiView} setView={setAiView} tabs={state.tabs} activeTab={active} />}
+    {ai?.open && (!chatTab || aiView === "settings") && <AiPanel ai={ai} send={send} view={aiView} setView={setAiView} tabs={state.tabs} activeTab={active} onFile={openFile} />}
     {state.sidePanel && <ExtensionPanel panel={state.sidePanel} />}
    </div>
   </div>
@@ -660,6 +670,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   </AlertDialogContent></AlertDialog>
   <AlertDialog open={!!confirm} onOpenChange={o => { if (!o) setConfirm(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.body}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (confirm) send(confirm.op); setConfirm(null) }}>Clear</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   {upload && <UploadCard upload={upload} send={send} />}
+  {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id && (ai?.companions?.length ?? 0) > 1} onClose={() => setEditing(null)} onSave={c => { send("companionSave", c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />
  </TooltipProvider></MotionConfig></ProviderContext.Provider></UICtx.Provider>
@@ -710,8 +721,8 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
   <ScrollArea className="chat-side-list">
    {!chats.length && <p className="chat-rail-empty">Your chats show up here.</p>}
    {chats.map(c => <div key={c.id} className={cn("chat-side-item", c.id === activeChat && "is-on")}>
-    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{ai.running === c.id ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
-    {ai.running !== c.id && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
+    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
+    {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
    </div>)}
   </ScrollArea>
   <DropdownMenu><DropdownMenuTrigger asChild><button className="chat-side-profile"><span className="chat-side-avatar">{(state.profileName[0] ?? "S").toUpperCase()}</span><span className="chat-side-title">{state.profileName}</span><ChevronDown /></button></DropdownMenuTrigger>
@@ -750,15 +761,16 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
    <div className="page-control-row">
     <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
     <span>{agent.paused ? who.name + " waits for you" : agent.action || "Working on task"}</span>
-    <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused })}>{agent.paused ? "Hand back" : "Take over"}</button>
+    <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}>{agent.paused ? "Hand back" : "Take over"}</button>
     {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Go to chat</button>}
-    <button className="page-stop" onClick={() => send("agentStop")}>Stop</button>
+    <button className="page-stop" onClick={() => send("agentStop", { key: agent.key })}>Stop</button>
    </div>
   </div>
  </>
 }
 
-function ChatInfo({ ai, pages, onEdit, onSettings }: { ai: AiState; pages: Tab[]; onEdit: (c: Companion) => void; onSettings: () => void }) {
+function ChatInfo({ ai, pages, onEdit, onSettings, onFile }: { ai: AiState; pages: Tab[]; onEdit: (c: Companion) => void; onSettings: () => void; onFile: (path: string) => void }) {
+ const files = (ai.files ?? []).filter(f => f.chat === ai.chatId)
  const companion = companionOf(ai, ai.chatCompanion)
  const harness = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  return <aside className="chat-info" aria-label="Chat details">
@@ -766,6 +778,7 @@ function ChatInfo({ ai, pages, onEdit, onSettings }: { ai: AiState; pages: Tab[]
   {companion && <button className="chat-info-row" title={"Edit " + companion.name} onClick={() => onEdit(companion)}><Face companion={companion} size={18} /><b>{companion.name}</b><Settings /></button>}
   <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
+  {files.length > 0 && <><Separator /><h4>Files</h4>{files.map(f => <button key={f.path} className="chat-info-row" title={"Open " + f.name} onClick={() => onFile(f.path)}><FileIcon path={f.path} /><b>{f.name}</b></button>)}</>}
   {ai.usage && <><Separator /><p className="chat-info-usage">{ai.usage}</p></>}
  </aside>
 }

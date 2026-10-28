@@ -240,7 +240,7 @@ public partial class MainWindow : Window
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
   RenderTabs(); UpdateChrome(); SaveLater();
-  if (tab.ChatId is { } chat && !aiBusy) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
+  if (tab.ChatId is { } chat) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
   if (tab.ChatId != null || leaving?.ChatId != null) PublishAi();
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
   if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;RestorePageWindow(); if (shown == tab) view.Focus(); }
@@ -402,7 +402,7 @@ public partial class MainWindow : Window
      bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
      if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
      // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-     var child = agent ? await OpenAgentTab(tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
+     var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
      if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
     } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
     finally { deferral.Complete(); }

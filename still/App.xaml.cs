@@ -41,7 +41,7 @@ public partial class App : Application
   var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
   // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
   if (e.Args.FirstOrDefault() == "--cli") { var cliArgs = e.Args.Skip(1).ToArray(); new Thread(() => { int code = 1; try { code = McpServer.Cli(InstanceName(DataRoot), cliArgs); } finally { Dispatcher.Invoke(() => Shutdown(code)); } }) { IsBackground = true }.Start(); return; }
-  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.Run(InstanceName(DataRoot), ArgAfter(e.Args, "--as"), e.Args.Contains("--this-profile")); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
+  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.RunId = ArgAfter(e.Args, "--run") ?? ""; McpServer.Run(InstanceName(DataRoot), ArgAfter(e.Args, "--as"), e.Args.Contains("--this-profile")); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) {
    // Already running: hand the link (or a plain "bring to front") to the open window.
