@@ -33,7 +33,8 @@ a log of failed runs in `ai/logs` (never the prompt).
   Up next, questions. `--live` does the laptops task through real Claude on Haiku. By hand only.
 - `python tests/desktop/permissions.py <exe>` answers permission cards on a local shop: once per chat, always, ask
   every time, purchases, the countdown, Approve all, sensitive sites, outside apps, settings, the log, and the Phase 6
-  keyboard, help card, tab cap and crash checks.
+  keyboard, help card, tab cap and crash checks. `--live` buys a mug through real Claude on Haiku instead: you take over
+  mid-run, give it a texted code through Help with this page, and approve Place order. By hand only.
 - `python tests/desktop/tab_tools.py <exe>` covers the tab features in `screens/tabs.md`: layouts, hover actions,
   Ctrl+Tab, groups, split view, moving a live tab to another window, learned address picks, and frame times.
 - `python tests/desktop/polish.py <exe>` covers `screens/polish.md`: the keyboard table, then names, alt text, focus rings
