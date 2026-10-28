@@ -244,7 +244,7 @@ public partial class MainWindow
  static bool IsShortcut(Key key, ModifierKeys mods)
  {
   bool ctrl = mods.HasFlag(ModifierKeys.Control), alt = mods.HasFlag(ModifierKeys.Alt), shift = mods.HasFlag(ModifierKeys.Shift);
-  return (key is Key.Escape or Key.F11) || (alt && key is Key.Left or Key.Right) || (ctrl && (key is Key.L or Key.K or Key.T or Key.W or Key.Tab or Key.R or Key.D or Key.H or Key.J or Key.F or Key.OemComma or Key.Add or Key.Subtract or Key.OemPlus or Key.OemMinus or Key.D0 || shift && key is Key.N or Key.B or Key.P or Key.S || key >= Key.D1 && key <= Key.D9));
+  return (key is Key.Escape or Key.F11) || (alt && key is Key.Left or Key.Right) || (ctrl && (key is Key.L or Key.K or Key.T or Key.W or Key.Tab or Key.R or Key.D or Key.H or Key.J or Key.F or Key.OemComma or Key.Add or Key.Subtract or Key.OemPlus or Key.OemMinus or Key.D0 or Key.OemPeriod || shift && key is Key.N or Key.B or Key.P or Key.S or Key.A || key >= Key.D1 && key <= Key.D9));
  }
  void WindowKeyDown(object s, KeyEventArgs e)
  {
@@ -272,7 +272,9 @@ public partial class MainWindow
   if (alt && key == Key.Right) { ForwardClick(this, new()); return; }
   if (!ctrl) return;
   if (key == Key.L) ShowAddress(active?.Url ?? "");
+  else if (key == Key.K && shift) ShellSend(new { kind = "tasks" });
   else if (key == Key.K) ShowAddress("", true);
+  else if (key == Key.OemPeriod) { if (ShownChat is { } c && runs.GetValueOrDefault(c.Id) is { } run) { run.Queue.Clear(); StopRun(run); } else Toast("Nothing is running in this chat."); }
   else if (key == Key.T && shift) ReopenTab();
   else if (key == Key.T) await NewTab();
   else if (key == Key.N && shift) OpenIncognito();

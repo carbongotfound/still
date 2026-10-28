@@ -307,6 +307,8 @@ def laptops(process):
     click(process, ".chat-pane .file-card-open")
     check(until(lambda: js(process, "document.querySelectorAll('.page-column.is-viewing .file-view .csv-grid tbody tr').length") == 10, 10), "In a chat tab the viewer opens beside the chat")
     capture(process, "viewer-side-v01")
+    rpc(process, "key", key="Escape", mods="None")
+    check(until(lambda: not js(process, "!!document.querySelector('.page-column.is-viewing')"), 5), "Esc closes the viewer beside the chat")
 
     # The Library.
     home(process)
