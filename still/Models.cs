@@ -69,7 +69,7 @@ public sealed class SitePermission
 }
 public sealed class Preferences
 {
- public string Theme { get; set; } = "Dark";
+ public string Theme { get; set; } = "System"; // Light, Dark, or System: follows Windows
  public string SearchEngine { get; set; } = "Google";
  public bool OfferPasswordSave { get; set; } = true;
  public bool AutoFillPasswords { get; set; }
@@ -95,6 +95,8 @@ public sealed class Preferences
  public List<string> ApprovedAgents { get; set; } = [];
  public List<SitePermission> Permissions { get; set; } = []; // on top of the defaults: read and navigate always, interact once per chat, sensitive every time
  public List<string> SensitiveSites { get; set; } = []; // every click or keystroke there counts as sensitive
+ public string NewTab { get; set; } = "companion"; // the new tab page: "companion" (your companion and ideas) or "sites" (search and your sites)
+ public List<string> Interests { get; set; } = []; // what the user said they're into: ideas and chat starters come from these
  public string TabLayout { get; set; } = "Classic"; // Classic: tabs across the top. Modern: a sidebar down the left.
  public double SidebarWidth { get; set; } = 248;
  public double Width { get; set; } = 1260;

@@ -46,7 +46,13 @@ internal static class McpServer
  {
   var list = JsonSerializer.SerializeToNode(BrowserTools)!.AsArray();
   // Still's own chat can show the user a question with options and wait for the answer.
-  if (lockProfile) { list.Add(JsonSerializer.SerializeToNode(Tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.", new { question = Str("The question, in one short sentence"), options = new { type = "array", items = new { type = "string" }, description = "2-4 short answers to pick from" }, tabId = Str("When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them") }, "question"))); return list; }
+  if (NoTools) return [];
+  if (lockProfile) {
+   // Still's own companions keep a memory of the user, on this computer, one per companion.
+   list.Add(JsonSerializer.SerializeToNode(Tool("remember", "Keep one short, lasting fact about the user in your memory, like \"Prefers aisle seats\" or \"Sister Maya lives in Lisbon\". It's saved with today's date and this chat. A fact that repeats one you have updates it. Never pass passwords, codes, card or account numbers, form data or anything from private tabs: Still refuses them.", new { fact = Str("The fact, in one short sentence"), kind = Str("fact, preference, habit, person or project") }, "fact")));
+   list.Add(JsonSerializer.SerializeToNode(Tool("recall", "Look up what you remember about the user: the facts that best match the words given, with their ids and dates. Leave query empty for the most important ones.", new { query = Str("A few words about what you're looking for") })));
+   list.Add(JsonSerializer.SerializeToNode(Tool("forget", "Forget a fact: pass its id from recall, or a few words that every fact to forget contains. Use it when the user asks you to forget something.", new { id = Str("The fact's id"), about = Str("Or: words in the facts to forget") })));
+   list.Add(JsonSerializer.SerializeToNode(Tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.", new { question = Str("The question, in one short sentence"), options = new { type = "array", items = new { type = "string" }, description = "2-4 short answers to pick from" }, tabId = Str("When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them") }, "question"))); return list; }
   foreach (var t in list) t!["inputSchema"]!["properties"]!["profile"] = JsonSerializer.SerializeToNode(Str("Still profile name from list_profiles (optional; defaults to the launch profile). A closed profile is opened. \"temp\" opens a separate temporary window with no cookies, logins or history, deleted after it closes."));
   list.Insert(0, JsonSerializer.SerializeToNode(Tool("list_profiles", "List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or \"temp\" for a clean temporary window.", new { })));
   return list;
@@ -67,6 +73,7 @@ internal static class McpServer
   new { name, description, inputSchema = new { type = "object", properties, required } };
 
  internal static string RunId = ""; // Still's own chat: which chat this server works for (--run)
+ internal static bool NoTools; // --no-tools: a talk with no browser at all (setup's interview)
  public static void Run(string instance, string? forcedName = null, bool lockProfile = false)
  {
   string client = forcedName ?? "An AI agent";

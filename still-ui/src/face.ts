@@ -31,7 +31,9 @@ export function drawFace(g: G, S: number, look: Look, p: FacePose) {
  }
  // big eyes set fairly close and low, with the mouth tucked under them: the face reads as one group, not three dots
  const ez = .648 + look.eyeY * .028, er = .053 * (1 + look.eyeSize * .26) * U
- if (look.eyes !== "none") for (const side of [-1, 1]) eye(g, look.eyes, X(side * (.116 + look.eyeGap * .028)), Y(ez), er, side, p, look.pupil)
+ const ex = .116 + look.eyeGap * .028
+ if (look.eyes !== "none") for (const side of [-1, 1]) eye(g, look.eyes, X(side * ex), Y(ez), er, side, p, look.pupil)
+ if (look.glasses) glasses(g, look.glasses, X(-ex), X(ex), Y(ez), Math.max(er * 1.72, .086 * U))
  if (look.brows !== "none") {
   const bz = ez + .088 + look.browY * .022 + p.raise * .018, L = .058 * (1 + look.browSize * .3) * U
   for (const side of [-1, 1]) brow(g, look.brows, X(side * (.118 + look.browGap * .03)), Y(bz), L, side, side * look.browTilt * .38 - side * p.worry * .42)
@@ -75,7 +77,7 @@ function eye(g: G, style: string, x: number, y: number, r: number, side: number,
  const open = clamp(p.open), sq = clamp(p.squint)
  const ox = clamp(p.gx, -1, 1) * r * .3, oy = clamp(p.gy, -1, 1) * r * .24
  g.fillStyle = g.strokeStyle = INK
- if (style === "happy" || style === "line" || open < .16) { // a closed or smiling eye is a line
+ if (style === "happy" || style === "line" || open < .12) { // a closed or smiling eye is a line
   g.lineWidth = r * (style === "line" ? .22 : .24)
   g.beginPath()
   if (style === "line" && open >= .16) { g.moveTo(x - r * .7 + ox, y + oy); g.lineTo(x + r * .7 + ox, y + oy) }
@@ -89,7 +91,10 @@ function eye(g: G, style: string, x: number, y: number, r: number, side: number,
   g.ellipse(x, y + r * (2.35 - 1.45 * sq), r * 1.7, r * 1.45, 0, 0, Math.PI * 2)
   g.clip("evenodd")
  }
- g.translate(x + ox, y + oy); g.scale(1, Math.max(.08, open))
+ g.translate(x + ox, y + oy)
+ // Blinks and sleepy looks bring the upper lid down over the eye: the eye keeps its shape, less of it shows.
+ const lid = open < .97 && style !== "sleepy" ? lidEdge(r, open) : null
+ if (lid) { g.beginPath(); g.moveTo(-r * 2, lid(-r * 2)); for (let i = 1; i <= 8; i++) g.lineTo(-r * 2 + i * r / 2, lid(-r * 2 + i * r / 2)); g.lineTo(r * 2, r * 3); g.lineTo(-r * 2, r * 3); g.closePath(); g.clip() }
  const hl = 1 - pupil * .35
  switch (style) {
   case "button": bead(g, () => ellipse(g, 0, 0, r * .95, r * .95), r, hl * 1.1); break
@@ -138,6 +143,27 @@ function eye(g: G, style: string, x: number, y: number, r: number, side: number,
   }
   default: bead(g, () => ellipse(g, 0, 0, r * .8, r * .98), r, hl) // dot
  }
+ g.restore()
+ if (lid) { // the lid's edge, as wide as the eye
+  g.save(); g.translate(x + ox, y + oy); g.strokeStyle = INK; g.lineWidth = r * .17
+  g.beginPath(); for (let i = 0; i <= 8; i++) { const lx = -r * .95 + i * r * 1.9 / 8; g.lineTo(lx, lid(lx)) } g.stroke(); g.restore()
+ }
+}
+/// Where the upper lid's edge is at x: a soft curve that drops from above the eye to below it as the eye shuts.
+function lidEdge(r: number, open: number) {
+ const edge = -r * 1.6 + (1 - open) * r * 2.9, sag = r * .3
+ return (x: number) => edge - sag + sag * 2 * (1 - (x / (r * 2)) ** 2)
+}
+
+function glasses(g: G, style: string, xl: number, xr: number, y: number, R: number) {
+ g.save(); g.strokeStyle = "#3b2f36"; g.lineWidth = R * .13
+ for (const x of [xl, xr]) {
+  g.beginPath()
+  if (style === "square") g.roundRect(x - R, y - R * .8, R * 2, R * 1.6, R * .32); else g.arc(x, y, R, 0, Math.PI * 2)
+  g.stroke()
+  g.save(); g.globalAlpha = .4; g.strokeStyle = WHITE; g.lineWidth = R * .08; g.beginPath(); g.arc(x, y, R * .74, -2.6, -1.95); g.stroke(); g.restore() // a glint on the lens
+ }
+ g.beginPath(); g.moveTo(xl + R * .96, y - R * .1); g.quadraticCurveTo((xl + xr) / 2, y - R * .42, xr - R * .96, y - R * .1); g.stroke()
  g.restore()
 }
 

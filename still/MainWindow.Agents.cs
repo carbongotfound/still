@@ -702,6 +702,7 @@ public partial class MainWindow
  {
   switch (tool) {
    case "ask_user": return await AskInChat(who, args);
+   case "remember" or "recall" or "forget": return Remembering(who, tool, args);
    case "save_file": {
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");
     string ext = Path.GetExtension(name).ToLowerInvariant();
@@ -783,6 +784,7 @@ public partial class MainWindow
    case "type": {
     var (w, t, core) = await AgentPage(who, args);
     string text = S(args, "text"), before = agentTabs.GetValueOrDefault(who) ?? "";
+    if (text.Trim().Length >= 4) runs.GetValueOrDefault(who)?.Typed.Add(text.Trim());
     object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked };
     var focus = await Settled(t, core, () => Js(core, FocusJs, Q(false)));
     t.AgentActedAt = DateTime.UtcNow;

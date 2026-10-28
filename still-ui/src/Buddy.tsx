@@ -8,7 +8,9 @@ const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: 
 export const NAMES = ["Pip", "Hazel", "Rio", "Juno", "Milo", "Wren", "Otis", "Nova", "Bea", "Kit", "Moss", "Sol", "Fern", "Ivo", "Lumi", "Tate", "Ada", "Bo", "Pico", "Tula", "Momo", "Ziggy", "Olli", "Puck"]
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: string; folder?: string; look?: string }
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string }
+/// One thing a companion remembers about the user. A "chat" is a past chat it learned from.
+export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null }
 export type Mood = MascotState | "sleep"
 export const FALLBACK: Companion = { id: "", name: "Still", face: "", color: "", job: "" }
 // The companion the user is working with, for faces that don't name one.

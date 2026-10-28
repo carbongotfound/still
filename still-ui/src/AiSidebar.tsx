@@ -12,6 +12,7 @@ import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { FALLBACK, Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
+import { starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
@@ -24,8 +25,8 @@ export type AiState = {
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: { role: string; text: string }[]
  question?: { text: string; options: string[]; page?: string | null } | null; companions?: Companion[]
- chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean }[]
- advanced?: boolean; memory?: string; skills?: Skill[]
+ chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
+ advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
 }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
@@ -44,6 +45,8 @@ const IDEAS = [
  [Lightbulb, "Explain it simply", "Explain this page simply, like I'm new to the topic."],
 ] as const
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
+/// What the user likes to be called, from what their companion remembers (setup saves it as the "name" fact).
+export const calledBy = (c?: Companion) => c?.memory?.find(f => f.key === "name")?.text.match(/^Likes to be called (.+?)\.?$/)?.[1]
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
@@ -295,7 +298,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
 }
 
 // A conversation: in its own tab (centered, or beside the AI's page) or in the panel next to a page.
-export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onFile }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void; onFile: (path: string) => void }) {
+export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onFile, interests }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void; onFile: (path: string) => void; interests?: string[] }) {
  const [tick, setTick] = useState(0)
  const provider = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const queued = ai.queued ?? []
@@ -312,7 +315,12 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  // Timed from when the run started, so it reads right after switching chats.
  useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
  // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
- const submit = (value: string) => send("aiSend", { text: value, companion: companion?.id })
+ // "Don't remember this chat": a chat that exists flips its own flag, a new one starts off the record.
+ const chat = ai.chats.find(c => c.id === ai.chatId)
+ const [offRecord, setOffRecord] = useState(false)
+ const forget = chat ? !!chat.noMemory : offRecord
+ const submit = (value: string) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }) })
+ const you = calledBy(companion)
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
@@ -332,9 +340,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
   {setup ?? <div className="ai-log" ref={log}><div className="chat-column">
    {!items.length && (mode === "tab" ? <div className="chat-hello">
-    <Face companion={companion} size={72} />
-    <h3>Work with {name}</h3>
+    <Face companion={companion} size={168} follow gesture="wave" gestureAt={1} className="chat-hello-face" />
+    <h3>{you ? `Hi ${you}! What are we working on?` : `Hi, I'm ${name}. What are we working on?`}</h3>
     <p>{companion?.job || "Ask me anything, or hand me a task. I work in my own background tabs while you keep browsing."}</p>
+    <div className="chat-starters">{starters(interests, companion, 4).map(([label, prompt]) => <button key={label} onClick={() => submit(prompt)}><Lightbulb aria-hidden />{label}</button>)}</div>
    </div> : <div className="ai-hello">
     <Face companion={companion} size={64} />
     <h3>What should we do?</h3>
@@ -375,7 +384,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><button aria-label="Don't send" title="Don't send" onClick={() => send("aiUnqueue")}><X /></button></div>}
    <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
-   {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+   <div className="chat-under">
+    {companion && <label className="chat-memory" title={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label>}
+    {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+   </div>
   </div></div>}
  </section>
 }

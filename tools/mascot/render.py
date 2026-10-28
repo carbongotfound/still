@@ -102,15 +102,39 @@ def felt(mat, color, second=None, with_face=False):
 
 body = bpy.data.objects["Companion"]; rig = bpy.data.objects["Rig"]
 felt(body.data.materials[0], COLOR, with_face=True)
+
+def baked(mat):  # props carry their own colors (with occlusion) in Col
+    mat.use_nodes = True; nt = mat.node_tree; bsdf = nt.nodes["Principled BSDF"]
+    att = nt.nodes.new("ShaderNodeAttribute"); att.attribute_name = "Col"; att.attribute_type = "GEOMETRY"
+    nt.links.new(att.outputs["Color"], bsdf.inputs["Base Color"]); bsdf.inputs["Roughness"].default_value = 0.7
+
+def strands(mat, color):  # hair: occlusion (r), a shade per lock (g)
+    mat.use_nodes = True; nt = mat.node_tree; bsdf = nt.nodes["Principled BSDF"]
+    att = nt.nodes.new("ShaderNodeAttribute"); att.attribute_name = "Col"; att.attribute_type = "GEOMETRY"
+    sep = nt.nodes.new("ShaderNodeSeparateColor"); nt.links.new(att.outputs["Color"], sep.inputs[0])
+    shade = nt.nodes.new("ShaderNodeMapRange"); nt.links.new(sep.outputs[1], shade.inputs[0]); shade.inputs[3].default_value = 0.82; shade.inputs[4].default_value = 1.15
+    occ = nt.nodes.new("ShaderNodeMapRange"); nt.links.new(sep.outputs[0], occ.inputs[0]); occ.inputs[3].default_value = 0.45; occ.inputs[4].default_value = 1.0
+    m1 = nt.nodes.new("ShaderNodeMath"); m1.operation = "MULTIPLY"; nt.links.new(shade.outputs[0], m1.inputs[0]); nt.links.new(occ.outputs[0], m1.inputs[1])
+    col = mix(nt, "MULTIPLY", 1.0, hexrgb(color), m1.outputs[0])
+    nt.links.new(col, bsdf.inputs["Base Color"])
+    for k, x in (("Roughness", 0.66), ("Sheen Weight", 0.3), ("Specular IOR Level", 0.3), ("Anisotropic", 0.5)):
+        if k in bsdf.inputs: bsdf.inputs[k].default_value = x
+
+for o in bpy.data.objects:
+    if o.name.startswith("prop."):
+        m = bpy.data.materials.new(o.name); o.data.materials.clear(); o.data.materials.append(m); baked(m)
 dark = "".join(f"{int(int(COLOR[i:i + 2], 16) * 0.62):02x}" for i in (0, 2, 4))
 accs = [o for o in bpy.data.objects if o.name.startswith(("hair.", "hat."))]
 SECOND = {"hat.beanie": "f4efe6", "hat.cap": "2d3142", "hat.tophat": "c8553d", "hat.party": "ffd166", "hat.beret": "2d3142",
           "hat.bucket": "6c8a5a", "hat.crown": "b8862f", "hat.headphones": "3a3a46", "hat.flower": "ffd166", "hat.bow": "b23a48"}
 HATCOL = {"hat.beanie": "d1495b", "hat.cap": "3e7cb1", "hat.tophat": "2b2d42", "hat.party": "5aa9e6", "hat.beret": "c8553d",
           "hat.bucket": "e9c46a", "hat.crown": "f2c14e", "hat.headphones": "e8e4dc", "hat.flower": "f7a1c4", "hat.bow": "e05a6d"}
+HATCOL["hat.newsboy"] = "8a6a58"; SECOND["hat.newsboy"] = "5b6170"
+HAIRCOL = os.environ.get("HAIR", "6b4a35")
 for o in accs:
     m = bpy.data.materials.new(o.name); o.data.materials.clear(); o.data.materials.append(m)
-    felt(m, HATCOL.get(o.name, dark), SECOND.get(o.name))
+    if o.name.startswith("hair."): strands(m, HAIRCOL)
+    else: felt(m, HATCOL.get(o.name, dark), SECOND.get(o.name))
     o.hide_render = True
 
 def shot(path, w=700, h=700):
@@ -138,6 +162,7 @@ elif WHAT == "shapes":
         shape(kb if kb != "round" else ""); shot(os.path.join(OUT, f"shape_{kb}.png"), 500, 500)
     shape("")
 elif WHAT == "acc":
+    rig.data.pose_position = "REST"  # hair and hats aren't bound to the rig here; the app binds them
     aim(24, 10, 3.0, 0.6)
     for o in accs:
         o.hide_render = False; shot(os.path.join(OUT, f"acc_{o.name}.png"), 420, 420); o.hide_render = True
@@ -149,6 +174,10 @@ elif WHAT.startswith("clips"):  # clips, or clips:happy,done
         end = int(a.frame_range[1])
         for f in range(1, end + 1, 3):
             pose(a.name, f); shot(os.path.join(OUT, f"clip_{a.name}_{f:03d}.png"), 360, 360)
+elif WHAT == "turn":  # one body from four sides
+    rig.data.pose_position = "REST"
+    for i, az in enumerate((0, 35, 90, 180)):
+        aim(az, 6, 3.6, 0.5); shot(os.path.join(OUT, f"turn_{i}.png"), 520, 620)
 elif WHAT == "rest":
     body.modifiers["Rig"].show_render = False
     aim(0, 5); shot(os.path.join(OUT, "rest_front.png"), 600, 600)

@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -11,6 +11,7 @@ import { lookKey, surprise } from "./look"
 import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
+import { CrewCards, fromPremade } from "./crew"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
 export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
@@ -99,26 +100,23 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
 /// The AI a companion runs on, for its badge: its own pick, or the one picked for chats.
 const aiOf = (ai: AiState, c: Companion) => ai.harnesses.find(h => h.id === (c.ai || ai.harness))
 
-export function CompanionsPage({ ai, send, onEdit, onChat }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onChat: (id: string) => void }) {
- const [memory, setMemory] = useState(ai.memory ?? "")
+export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onChat: (id: string) => void; onMemory: (id: string) => void }) {
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />New companion</Button></header>
-  <p className="home-page-lead">Who you work with. Each one has a job, a way of thinking, skills and things to remember, on top of your own AI plan.</p>
+  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
     <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={140} follow /><Pencil className="mate-edit" /></button>
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name} · Your {h.name} plan</> : "Pick your AI"}</span>
+    {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
     <button className="mate-chat" onClick={() => onChat(c.id)}>Chat with {c.name}</button>
    </article> })}
   </div>
-  <div className="home-memory">
-   <h2>What every companion knows about you</h2>
-   <p>Your name, where you live, how you like answers. Every new chat starts with this.</p>
-   <textarea aria-label="What every companion knows about you" rows={5} maxLength={20000} placeholder="For example: I'm in Lisbon, I pay in euros, and I like short answers with links." value={memory} onChange={e => setMemory(e.target.value)} />
-   <Button size="sm" disabled={memory === (ai.memory ?? "")} onClick={() => send("memorySave", { text: memory })}>{memory === (ai.memory ?? "") && memory ? "Saved" : "Save"}</Button>
-  </div>
+  <h2 className="home-page-sub">Meet the crew</h2>
+  <p className="home-page-lead">Ready to go, each with their own job and way of talking. Pick one, then change anything you like.</p>
+  <CrewCards have={ai.companions} onChat={onChat} onOwn={() => onEdit(randomCompanion())} onPick={p => send("companionSave", fromPremade(p))} />
  </section>
 }
 
@@ -183,10 +181,10 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
  </section>
 }
 
-// Create or edit a companion: their look, name and job, the AI they run on and how hard they think, their skills and memory.
+// Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
 const MODE_NAMES: [Mode, string][] = [["efficient", "Efficient"], ["default", "Default"], ["expert", "Expert"]]
 export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
- const [c, setC] = useState<Companion>({ mode: "default", skills: [], memory: "", ai: "", ...companion })
+ const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
  const [styling, setStyling] = useState(false)
  const skills = ai.skills ?? []
  useEffect(() => { // the folder picked in Windows' own dialog
@@ -223,7 +221,7 @@ export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onD
       <Button type="button" variant="outline" size="sm" onClick={() => window.chrome?.webview?.postMessage({ op: "pickFolder" })}><FolderOpen />{c.folder ? "Change" : "Pick a folder"}</Button>
       {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
      {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
-    <label><span>What should {c.name.trim() || "they"} remember?</span><textarea className="companion-job" rows={3} maxLength={20000} placeholder="For example: my favorite stores, sizes I wear, sites I trust." value={c.memory} onChange={e => setC({ ...c, memory: e.target.value })} /></label>
+    <label><span>How should {c.name.trim() || "they"} talk?</span><textarea className="companion-job" rows={2} maxLength={600} placeholder="For example: upbeat and quick, with short answers and a joke now and then." value={c.tone} onChange={e => setC({ ...c, tone: e.target.value })} /></label>
     <div className="companion-actions">
      {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={onDelete}><Trash2 />Delete</Button>}
      <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>

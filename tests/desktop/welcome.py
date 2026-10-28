@@ -1,9 +1,11 @@
-"""Setup on a fresh profile, the tour, Run setup again, and the look editor.
+"""Setup on a fresh profile, the tour, Run setup again, "Set me up with <name>", and the look editor.
 
-The 9 steps are walked like a person would: pick an AI, color a helper, give it a face and a name, say who you are,
-pick interests, keep the Classic layout, try the permission card, and start the first task. The task runs on a fake
-AI app (a manifest in Still's agents folder): it searches, opens a page beside the chat and reads it for a while.
-The whole run is recorded with ffmpeg, frames taken from the window itself.
+The 10 steps of the Quick setup are walked like a person would: pick an AI, pass on the crew and make your own helper
+(a color, a face, a name), say who you are, pick interests, keep the Classic layout, try the permission card, and start
+the first task. Quick setup runs no AI at all. The task runs on a fake AI app (a manifest in Still's agents folder): it
+searches, opens a page beside the chat and reads it for a while. The whole run is recorded with ffmpeg, frames taken
+from the window itself. Then setup runs again and is skipped ("Nothing right now" starts nothing), and the AI setup
+runs: the fake app asks one question, then picks settings, which apply, show in a summary and undo one by one.
 
 Run: python tests/desktop/welcome.py artifacts/Still-QA/Still.exe
 Out: docs/agentic/mascot/look-*.png (the look editor for 6 companions), artifacts/welcome-*/setup.mp4 (the recording)
@@ -83,6 +85,20 @@ FAKE = textwrap.dedent(r'''
     with open(os.path.join(here, "prompts.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"prompt": prompt}) + "\n")
     site = open(os.path.join(here, "site.txt")).read().strip()
     def say(e): print(json.dumps(e), flush=True)
+    def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+    # "Set it up with <name>": one question, then the settings (later turns carry only the answer, so a file keeps count)
+    asked = os.path.join(here, "setup.txt")
+    if "setting Still up" in prompt or os.path.exists(asked):
+        say({"type": "system", "subtype": "init", "session_id": "setup-1"})
+        if not os.path.exists(asked):
+            open(asked, "w").write("1")
+            reply(json.dumps({"say": "Hi! Let's make Still yours.", "question": "What do you mostly use the browser for?", "options": ["Cooking and recipes", "Work", "Shopping"]}))
+        else:
+            os.remove(asked)
+            reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Cooking", "Gardening"], "layout": "", "theme": "Dark",
+                "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
+                "tone": "Keep it short and cheerful.", "memories": ["Cooks most weeknights."]}}))
+        sys.exit(0)
     server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
     still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
     n = 0
@@ -101,7 +117,6 @@ FAKE = textwrap.dedent(r'''
         r = request("tools/call", {"name": tool, "arguments": a})["result"]
         if shown: say({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t%d" % n, "is_error": bool(r.get("isError"))}]}})
         return not r.get("isError")
-    def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
     reply("On it. I'll look for easy dinners and check the best one.")
     call("web_search", query="easy weeknight dinner recipes")
@@ -221,6 +236,26 @@ def state():
         return {}
 
 
+def memory(name):
+    """What the companion called name remembers: companions/<id>/memory.json."""
+    mate = next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == name), None)
+    try:
+        return json.loads((PROFILE / "companions" / mate["Id"] / "memory.json").read_text(encoding="utf-8")) if mate else []
+    except (OSError, ValueError):
+        return []
+
+
+def chats():
+    try:
+        return json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+
+
+def talk_text(process):
+    return js(process, "document.querySelector('.ob-talk')?.innerText ?? ''") or ""
+
+
 def main():
     BIN.mkdir(parents=True)
     (PROFILE / "agents").mkdir(parents=True)
@@ -235,6 +270,7 @@ def main():
         setup(process)
         tour(process)
         again(process)
+        interview(process)
         looks(process)
         check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
     finally:
@@ -245,7 +281,9 @@ def main():
 def setup(process):
     ctypes.windll.shcore.SetProcessDpiAwareness(2)  # window sizes in real pixels
     check(until(lambda: js(process, "!!document.querySelector('.welcome.ob .ob-next')"), 20), "A fresh profile opens on setup")
-    check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "9", "Setup has 9 steps")
+    check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "10", "Setup has 10 steps")
+    check(rpc(process).get("theme") == "System", "The theme follows the system until you pick one")
+    check(js(process, "document.querySelector('.ob-theme [aria-checked=true]')?.getAttribute('aria-label')") == "System", "Setup's theme switch shows System")
     time.sleep(1)
     recorder = record(process.pid, RUN / "setup.mp4")
     try:
@@ -259,7 +297,11 @@ def setup(process):
         check(until(lambda: js(process, "!!document.querySelector('.byo-row[data-chosen] .byo-ok')"), 10), "Step 3: picking an AI app that's signed in")
         time.sleep(1)
         next_step(process)  # -> helper
-        check(js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "The helper starts as a plain shape, before a color")
+        until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 7, 4)
+        crew = js(process, "[...document.querySelectorAll('.crew-card h3')].map(h => h.innerText.trim())") or []
+        check(crew == ["Hazel", "Rio", "Juno", "Bram", "Wren", "Pip", "Create your own"], f"Step 4: six companions to pick, then Create your own ({', '.join(crew)})")
+        click_text(process, ".crew-card.is-own button", "Start from scratch")
+        check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
         click(process, ".ob-colors button[aria-label=Cornflower]")
         check(until(lambda: js(process, "document.querySelectorAll('.ob-faces button').length") == 8, 3), "Picking a color brings up faces")
         time.sleep(1.2)
@@ -268,10 +310,16 @@ def setup(process):
         time.sleep(1.2)
         type_into(process, ".ob-name-box input", "Miso")
         time.sleep(1.4)
-        next_step(process)  # -> you
+        next_step(process)  # -> how
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
         check(look.get("color") == "#8fb8e8" and look.get("eyes") == "sparkle", "Step 4 saves the helper's name, color and face")
+        options = js(process, "[...document.querySelectorAll('.ob-option')].map(b => b.innerText)") or []
+        check(len(options) == 2 and "Set it up with Miso" in options[0] and "Uses a little of your" in options[0] and "Uses no AI at all" in options[1], "Step 5: set up with Miso (with what it uses) or Quick setup")
+        time.sleep(1)
+        click_text(process, ".ob-option", "Quick setup")
+        until(lambda: js(process, "!!document.querySelector(\".ob-name-box input[aria-label='Your name']\")"), 4)
+        time.sleep(1.4)
         type_into(process, ".ob-name-box input[aria-label='Your name']", "Sam")
         time.sleep(1)
         next_step(process)  # -> interests
@@ -281,9 +329,8 @@ def setup(process):
             time.sleep(.35)
         time.sleep(.8)
         next_step(process)  # -> layout
-        shared = PROFILE / "companions" / "memory.md"
-        memory = until(lambda: shared.exists() and "cooking" in shared.read_text(encoding="utf-8") and shared.read_text(encoding="utf-8"), 5) or ""
-        check("My name is Sam." in memory and "cooking, travel, music" in memory, "Your name and interests go into shared memory")
+        facts = until(lambda: [f["Text"] for f in memory("Miso")] if len(memory("Miso")) >= 2 else None, 5) or []
+        check("Likes to be called Sam." in facts and "Into cooking, travel, music." in facts, f"Your name and interests are Miso's first memories ({facts})")
         check(js(process, "document.querySelector('.ob-layouts [aria-checked=true]')?.innerText ?? ''").startswith("Classic"), "Step 7: Classic tabs are the default")
         time.sleep(.8)
         next_step(process)  # -> charge
@@ -298,6 +345,7 @@ def setup(process):
         click(process, ".ob-tasks button")
         time.sleep(1)
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Let's go", "Picking one turns Finish into Let's go")
+        check(rpc(process).get("aiCalls") == 0, "Quick setup ran no AI at all")
         click(process, ".ob-next")
         check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Setup closes")
         split = until(lambda: js(process, "!!document.querySelector('.page-column.is-split .page-pane') && !!document.querySelector('.page-control')"), 20)
@@ -341,13 +389,64 @@ def tour(process):
 
 def again(process):
     send(process, "welcomeAgain")
-    check(until(lambda: "I'm Miso, your helper." in (js(process, "document.querySelector('.ob-talk')?.innerText ?? ''") or ""), 10), "Run setup again opens setup with your helper")
+    check(until(lambda: "I'm Miso, your helper." in talk_text(process), 10), "Run setup again opens setup with your helper")
+    calls, started = rpc(process).get("aiCalls"), len(chats())
+    time.sleep(3)
+    for _ in range(3):  # hello -> import -> ai -> helper
+        next_step(process, .8)
+    check(click_text(process, ".ob-keep", "Keep Miso"), "It offers to keep Miso")
+    until(lambda: "How should we set things up" in talk_text(process), 4)
+    time.sleep(1.2)
+    click_text(process, ".ob-option", "Quick setup")
+    time.sleep(1.2)
+    while step_now(process) < 10 and not js(process, "!!document.querySelector('.ob-tasks')"):
+        at = step_now(process)
+        click_text(process, ".ob-foot button", "Skip")  # skipping a step
+        if not until(lambda: step_now(process) == at + 1, 4):
+            break
+        time.sleep(.6)
+    type_into(process, ".ob-name-box textarea", "Nothing right now")
+    time.sleep(.3)
+    check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Finish", "Saying no to a first task keeps it Finish")
+    click(process, ".ob-next")
+    check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Setup closes")
+    time.sleep(2)
+    check(rpc(process).get("aiCalls") == calls and len(chats()) == started, "\"Nothing right now\" starts no task and runs no AI")
+    send(process, "welcomeAgain")
+    until(lambda: "I'm Miso, your helper." in talk_text(process), 10)
     click(process, ".ob-skip-all")
     check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5) and until(lambda: state().get("Welcome") is False, 5), "Skip setup closes it")
     new_tab(process)
     check(until(lambda: js(process, "!!document.querySelector('.tour-card')"), 10), "The tour offers itself again")
     click_text(process, ".tour-card button", "Skip tour")
     check(until(lambda: not js(process, "!!document.querySelector('.tour')"), 3) and js(process, "localStorage.getItem('still.tour')") is None, "Skip tour ends it")
+
+
+def interview(process):
+    """Set me up with Miso: the fake AI app asks one question, then picks settings; each change shows with an undo."""
+    calls = rpc(process).get("aiCalls")
+    send(process, "welcomeAgain", talk=True)
+    check(until(lambda: "What do you mostly use the browser for?" in talk_text(process), 20), "Set me up again opens straight into Miso's questions")
+    options = js(process, "[...document.querySelectorAll('.ob-interview .ob-chips button')].map(b => b.innerText.trim())") or []
+    check(options == ["Cooking and recipes", "Work", "Shopping"], f"Its question comes with answers to tap ({options})")
+    rpc(process, "capture", name="interview.png")
+    click_text(process, ".ob-interview .ob-chips button", "Cooking and recipes")
+    check(until(lambda: js(process, "document.querySelectorAll('.ob-summary li').length") == 6, 20), "Then it shows the six things it changed")
+    rows = js(process, "[...document.querySelectorAll('.ob-summary li b')].map(b => b.innerText.trim())") or []
+    check(rows == ["Theme", "Pinned", "When I work in tabs", "How Miso talks", "Ideas about", "Miso remembers"], f"The summary names each change ({rows})")
+    rpc(process, "capture", name="interview-summary.png")
+    prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Cooking", "Gardening"] and p, 5) or {}  # saved a moment later
+    check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
+    check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
+    mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
+    facts = [f["Text"] for f in memory("Miso")]
+    check(mate.get("Tone") == "Keep it short and cheerful." and "Cooks most weeknights." in facts and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts,
+          f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
+    js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
+    check(until(lambda: rpc(process).get("theme") == "System", 5) and js(process, "document.querySelector('.ob-summary li')?.innerText.includes('Undone')"), "Undo puts the theme back")
+    check(rpc(process).get("aiCalls") - calls == 2, f"It took two small AI runs ({rpc(process).get('aiCalls') - calls})")
+    click(process, ".ob-next")
+    check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Done closes setup")
 
 
 CREW = [("Juniper", "#a6cf98", {"shape": "kitty", "eyes": "iris", "pupil": .3, "brows": "thin", "mouth": "cat", "hat": "beret"}),

@@ -25,7 +25,7 @@ public partial class MainWindow
        using var doc = JsonDocument.Parse(line);
        string op = doc.RootElement.GetProperty("op").GetString() ?? "";
        if (op == "state") return JsonSerializer.Serialize(new {
-        activeId = active?.Id, panel, dark, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth, extensionPopup = extensionPopup != null,
+        activeId = active?.Id, panel, dark, theme = Prefs.Theme, aiCalls = AgentRun.Launched, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth, extensionPopup = extensionPopup != null,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
         windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),
@@ -91,6 +91,7 @@ public partial class MainWindow
         using(var file=File.Create(path))encoder.Save(file);
         return JsonSerializer.Serialize(new {path});
        }
+       if (op == "systemTheme") { qaSystemTheme = doc.RootElement.GetProperty("value").GetString() == "Light" ? "Light" : "Dark"; foreach (var w in Windows) if (Prefs.Theme == "System") w.ApplyTheme(); return "{\"ok\":true}"; }
        if (op == "quit") { Close(); return "{\"ok\":true}"; }
        return "{\"error\":\"unknown operation or no page\"}";
       } catch (Exception ex) { return JsonSerializer.Serialize(new { error = ex.Message }); }

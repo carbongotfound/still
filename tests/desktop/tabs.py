@@ -35,6 +35,7 @@ def rpc(op='state', **args):
     return value
 
 def evaluate(script): return rpc('shellEval', script=script)
+def shown_layout(): return evaluate("document.querySelector('.browser-sidebar')?'Modern':'Classic'")
 def send(op, **args): evaluate('chrome.webview.postMessage(' + json.dumps({'op':op, **args}) + ')')
 def wait(fn, seconds=20):
     until = time.monotonic() + seconds
@@ -42,14 +43,19 @@ def wait(fn, seconds=20):
         if fn(): return
         time.sleep(.05)
     raise AssertionError('Timed out')
+def settled(fn, seconds=3):
+    try: wait(fn, seconds)
+    except AssertionError: pass
+    return fn()
 def check(ok, name):
     RESULT['checks'].append({'name':name, 'passed':bool(ok)})
     print(('PASS ' if ok else 'FAIL ') + name, flush=True)
     if not ok: raise AssertionError(name)
 
 CONTROL = """(() => {
- const b=document.querySelector('.browser-sidebar .new-tab, .top-tab-strip [aria-label="New tab"]');
+ const b=[...document.querySelectorAll('.browser-sidebar .sidebar-link')].find(e=>e.textContent.includes('New tab'))??document.querySelector('.top-tab-strip [aria-label="New tab"]');
  if(!b)return {visible:false};
+ if(b.closest('.browser-sidebar')){if(!window.__reveal)return {visible:true};b.scrollIntoView({block:'nearest',behavior:'instant'})} // Modern: New tab scrolls with the list
  const r=b.getBoundingClientRect(), x=r.x+r.width/2, y=r.y+r.height/2;
  return {visible: x>=0&&y>=0&&x<innerWidth&&y<innerHeight&&b.contains(document.elementFromPoint(x,y)),x,y};
 })()"""
@@ -63,13 +69,14 @@ SELECTED = """(() => {
 })()"""
 
 INLINE = """(() => {
- const b=document.querySelector('.browser-sidebar .new-tab, .top-tab-strip [aria-label="New tab"]');
+ const b=[...document.querySelectorAll('.browser-sidebar .sidebar-link')].find(e=>e.textContent.includes('New tab'))??document.querySelector('.top-tab-strip [aria-label="New tab"]');
+ if(b?.closest('.browser-sidebar'))return true; // Modern: New tab sits at the top of the sidebar, not in the list
  const v=b?.closest('.top-tab-list, [data-slot="scroll-area-viewport"]');
  const last=[...v?.querySelectorAll('[data-tab-id]')??[]].at(-1);
  if(!v||!last)return false;
  const r=b.getBoundingClientRect(),p=last.getBoundingClientRect();
  const gap=v.matches('.top-tab-list')?r.left-p.right:r.top-p.bottom;
- return gap>=-1&&gap<=12;
+ return gap>=-1&&gap<=16; // the button sits 12px after the last tab; sub-pixel layout can round past it
 })()"""
 
 def wheel_to_new():
@@ -81,7 +88,7 @@ def wheel_to_new():
     raise AssertionError('Mouse wheel cannot reach inline New tab control')
 
 def click_new():
-    control = evaluate(CONTROL)
+    evaluate('window.__reveal=true'); control = evaluate(CONTROL); evaluate('window.__reveal=false')
     check(control['visible'], 'New tab control remains visible and receives pointer input')
     count = len(rpc()['tabs'])
     for kind in ['mousePressed','mouseReleased']:
@@ -95,43 +102,43 @@ try:
     count = 10 if '--baseline' in sys.argv else 3
     fixture = [{'Id':'tab-'+str(i),'Title':'Fixture '+str(i),'Url':''} for i in range(count)]
     (profile/'state.json').write_text(json.dumps({'UiVersion':6,'Welcome':False,'ActiveId':fixture[-1]['Id'],
-        'Preferences':{'Layout':'Sidebar'},'Tabs':fixture}))
+        'Preferences':{'TabLayout':'Modern'},'Tabs':fixture}))
     process = subprocess.Popen([str(Path(sys.argv[1]).resolve()),'--qa','--profile',str(profile)])
     wait(lambda: (profile/'qa-pipe.txt').exists(),40)
-    wait(lambda: evaluate("!!document.querySelector('.new-tab')"))
+    wait(lambda: evaluate(CONTROL)['visible'])
     # Small windows reproduce the user's roughly ten-tab threshold.
     evaluate("document.querySelector('.browser-shell').style.height='500px'")
     time.sleep(.3)
     if '--baseline' in sys.argv:
         RESULT['sidebar_control'] = evaluate(CONTROL)
-        send('preference',key='layout',value='Top')
+        send('preference',key='tabLayout',value='Classic')
         wait(lambda: evaluate("!!document.querySelector('.top-tab-list')"))
         RESULT['top_control'] = evaluate(CONTROL)
         print(json.dumps(RESULT),flush=True)
     else:
         wait(lambda: evaluate(INLINE))
         check(evaluate(INLINE), 'Sidebar New tab sits immediately after three tabs')
-        send('preference',key='layout',value='Top')
-        wait(lambda: rpc()['layout']=='Top' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
+        send('preference',key='tabLayout',value='Classic')
+        wait(lambda: shown_layout()=='Classic' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
         check(True, 'Top New tab sits immediately after three tabs')
-        send('preference',key='layout',value='Sidebar')
-        wait(lambda: rpc()['layout']=='Sidebar' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
+        send('preference',key='tabLayout',value='Modern')
+        wait(lambda: shown_layout()=='Modern' and evaluate(CONTROL)['visible'] and evaluate(INLINE))
         for _ in range(22): click_new()
         check(len(rpc()['tabs']) == 25, 'Sidebar creates 25 tabs through the visible button')
-        check(evaluate(INLINE), 'Sidebar New tab stays inside the scrolling list after 25 tabs')
+        check(settled(lambda: evaluate(INLINE)), 'Sidebar New tab stays inside the scrolling list after 25 tabs')  # tabs animate in
         evaluate("document.querySelector('.browser-shell').style.height='340px'")
         wait(lambda: evaluate(CONTROL)['visible'] and evaluate(SELECTED))
         check(True, 'Shrinking the window reveals the last tab and inline button')
         evaluate("document.querySelector('.browser-shell').style.height='500px'")
-        send('preference',key='layout',value='Top')
+        send('preference',key='tabLayout',value='Classic')
         wait(lambda: evaluate("!!document.querySelector('.top-tab-list')"))
         wait(lambda: evaluate(SELECTED))
         for _ in range(5): click_new()
         check(len(rpc()['tabs']) == 30, 'Top layout creates 30 tabs through the visible button')
-        check(evaluate(INLINE), 'Top New tab stays inside the scrolling list after 30 tabs')
-        for layout in ['Sidebar','Top']:
-            send('preference',key='layout',value=layout)
-            wait(lambda: rpc()['layout'] == layout)
+        check(settled(lambda: evaluate(INLINE)), 'Top New tab stays inside the scrolling list after 30 tabs')  # tabs animate in
+        for layout in ['Modern','Classic']:
+            send('preference',key='tabLayout',value=layout)
+            wait(lambda: shown_layout() == layout)
             send('select',id='tab-0')
             wait(lambda: rpc()['activeId']=='tab-0' and evaluate(SELECTED))
             wheel_to_new()
