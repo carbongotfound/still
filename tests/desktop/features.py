@@ -203,6 +203,10 @@ while True:
     wait(lambda: rpc("shellEval", script="document.body.innerText.includes('Still compatibility fixture')"))
     wait(lambda: rpc("shellEval", script="!!document.querySelector('[aria-label=\"Open Still compatibility fixture popup\"]')"))
     rpc("shellEval", script="document.querySelector('[aria-label=\"Open Still compatibility fixture popup\"]').click()")
+    wait(lambda: rpc().get("extensionPopup"))
+    check(True, "The toolbar button opens the extension's popup")
+    # The popup is its own small window that closes when it loses focus: read the same page from a tab.
+    send("new", url="chrome-extension://" + expected_id + "/popup.html")
     wait(ready)
     wait(lambda: rpc("eval", script="!!document.querySelector('#probe')?.textContent"))
     wait(lambda: rpc("eval", script="JSON.parse(document.querySelector('#probe').textContent).worker==='alive'"), 10)
