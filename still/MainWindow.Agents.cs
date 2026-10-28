@@ -403,7 +403,7 @@ public partial class MainWindow
   string json = await core.RunAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
   using var doc = JsonDocument.Parse(json);
   var r = doc.RootElement.Clone();
-  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new InvalidOperationException(err.GetString() switch {
+  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new PageMiss(err.GetString() is "gone" or "notfound" or "hidden" or "covered", err.GetString() switch {
    "gone" => "That element isn't on the page anymore (the page changed or it's a new page). Call read_page or find for current ids.",
    "notfound" => "Couldn't find that element on the page. Call read_page or find.",
    "hidden" => "That element is hidden right now (maybe in a closed menu). Open what contains it first, or call read_page.",
@@ -414,6 +414,19 @@ public partial class MainWindow
    _ => "The page's script failed: " + Str(r, "message"),
   });
   return r;
+ }
+ sealed class PageMiss(bool missed, string message) : InvalidOperationException(message) { public readonly bool Missed = missed; } // Missed: the element moved, vanished or is covered
+ // Pages re-render under the AI: when the element is missing, wait for the page to settle and try once more.
+ // Still missing: the error carries a fresh read of the page, so the AI picks again (and asks again if that step needs asking).
+ static async Task<JsonElement> Settled(BrowserTab t, CoreWebView2 core, Func<Task<JsonElement>> act)
+ {
+  try { return await act(); }
+  catch (PageMiss miss) when (miss.Missed) { await WaitLoaded(t, 3000); await Task.Delay(500); }
+  try { return await act(); }
+  catch (PageMiss miss) when (miss.Missed) {
+   string now = (await Js(core, SnapshotJs, new { text = false, all = false, offset = 0 })).GetString() ?? "";
+   throw new InvalidOperationException(miss.Message + "\n\nThe page now:\n" + now);
+  }
  }
  static string Str(JsonElement e, string key) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 
@@ -460,9 +473,12 @@ public partial class MainWindow
   ? Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
  // Still's own chat opens its pages as the user's own tabs, beside the chat: in front while the user watches that chat.
  // Other AI apps' tabs open in the background, next to the other AI tabs, so the user can keep browsing.
+ const int AgentTabCap = 6; // tabs one chat (or one outside AI) may have open at once
  async Task<BrowserTab> OpenAgentTab(string who, string url)
  {
   string? chat = runs.TryGetValue(who, out var run) ? who : null;
+  if (Windows.SelectMany(w => w.tabs).Count(t => !t.Closed && (chat != null ? (t.RunChat ?? t.InChat) == chat : t.AgentGroup && t.AgentKey == who)) >= AgentTabCap)
+   throw new InvalidOperationException($"You already have {AgentTabCap} tabs open. Reuse one with navigate, or close one with close_tab first.");
   var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null, RunChat = chat };
   if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
@@ -478,6 +494,7 @@ public partial class MainWindow
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
  {
   if (t.View?.CoreWebView2 == null) await w.EnsureView(t);
+  if (t.View?.CoreWebView2 is { IsSuspended: true } sleeping) { sleeping.Resume(); t.LastActive = DateTime.UtcNow; } // memory saver put it to sleep between steps
   return t.View?.CoreWebView2 ?? throw new InvalidOperationException("The tab couldn't be loaded.");
  }
  static async Task WaitLoaded(BrowserTab t, int ms = 15000)
@@ -741,7 +758,7 @@ public partial class MainWindow
    }
    case "click": {
     var (w, t, core) = await AgentPage(who, args);
-    var hit = await Js(core, ClickJs, new { id = Id(args), selector = S(args, "selector"), text = S(args, "text") });
+    var hit = await Settled(t, core, () => Js(core, ClickJs, new { id = Id(args), selector = S(args, "selector"), text = S(args, "text") }));
     double x = hit.GetProperty("x").GetDouble(), y = hit.GetProperty("y").GetDouble();
     string label = Str(hit, "label"), before = agentTabs.GetValueOrDefault(who) ?? "";
     await Pointer(who, t, core, x, y);
@@ -754,7 +771,7 @@ public partial class MainWindow
     var (w, t, core) = await AgentPage(who, args);
     string text = S(args, "text"), before = agentTabs.GetValueOrDefault(who) ?? "";
     object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked };
-    var focus = await Js(core, FocusJs, Q(false));
+    var focus = await Settled(t, core, () => Js(core, FocusJs, Q(false)));
     t.AgentActedAt = DateTime.UtcNow;
     if (Str(focus, "done") is { Length: > 0 } picked) { Did(who, picked); return Reply(new { done = picked }); }
     if (focus.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Object) {

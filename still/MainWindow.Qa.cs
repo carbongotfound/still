@@ -52,7 +52,7 @@ public partial class MainWindow
        if (op == "shellEval" && shellView?.CoreWebView2 is { } ui) return await ui.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "shellCdp" && shellView?.CoreWebView2 is { } dev) return await dev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
        if (op == "pageCdp" && active?.View?.CoreWebView2 is { } pageDev) return await pageDev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
-       if (op == "key") { var key = Enum.Parse<System.Windows.Input.Key>(doc.RootElement.GetProperty("key").GetString()!); var mods = Enum.Parse<System.Windows.Input.ModifierKeys>(doc.RootElement.GetProperty("mods").GetString()!); HandleShortcut(key, mods); return "{\"ok\":true}"; }
+       if (op == "key") { var key = Enum.Parse<System.Windows.Input.Key>(doc.RootElement.GetProperty("key").GetString()!); var mods = Enum.Parse<System.Windows.Input.ModifierKeys>(doc.RootElement.GetProperty("mods").GetString()!); if (!IsShortcut(key, mods)) return "{\"ok\":false}"; HandleShortcut(key, mods); return "{\"ok\":true}"; }
        if (op == "capture") {
         shellRoot!.UpdateLayout();
         int width=(int)shellRoot.ActualWidth, height=(int)shellRoot.ActualHeight;

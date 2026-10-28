@@ -34,9 +34,9 @@ export function Approvals({ list, companion, send }: { list: Approval[]; compani
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button>
      <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>
      {one.action === "sensitive"
-      ? <><Button size="sm" variant="outline" title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button><Button size="sm" onClick={() => answer(one.id, "once")}>Allow once</Button></>
-      : <><Button size="sm" variant="outline" onClick={() => answer(one.id, "once")}>Allow once</Button><Button size="sm" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button></>}</>
-    : <><Button size="sm" variant="ghost" onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" onClick={() => send("permAnswer", { answer: "once" })}>Approve all ({asks.length})</Button></>}
+      ? <><Button size="sm" variant="outline" title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
+      : <><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button><Button size="sm" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button></>}</>
+    : <><Button size="sm" variant="ghost" onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => send("permAnswer", { answer: "once" })}>Approve all ({asks.length})</Button></>}
    </div>
   </div>}
  </>

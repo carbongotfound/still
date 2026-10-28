@@ -90,8 +90,20 @@ public partial class MainWindow
    management.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Low;
  }
 
+ // An AI's tab is busy while its run goes on or while the AI is working in it; after that it can sleep like any other.
+ static bool AgentBusy(BrowserTab t) => t.AgentKey is { } k && (runs.ContainsKey(k) || agentTabs.GetValueOrDefault(k) == t.Id) || (t.InChat ?? t.RunChat) is { } c && runs.ContainsKey(c);
+ // Pages an AI opened close 48 hours after their chat goes quiet. The user's own tabs never do.
+ static readonly TimeSpan AgentTabLifetime = TimeSpan.FromHours(48);
+ bool AgentTabExpired(BrowserTab t)
+ {
+  if (!(t.AgentGroup || t.RunChat != null || t.InChat != null) || t.Closed || t.Pinned || t == active || t == Shown || AgentBusy(t)) return false;
+  var chat = (t.InChat ?? t.RunChat) is { } id ? AiChats.FirstOrDefault(c => c.Id == id)?.Updated : null;
+  var quiet = t.InChat != null && chat is { } updated ? updated : chat is { } u && u > t.LastActive ? u : t.LastActive; // a chat page's own LastActive restarts with Still
+  return DateTime.UtcNow - quiet >= AgentTabLifetime;
+ }
  async Task ReduceBackgroundMemory()
  {
+  foreach (var old in tabs.Where(AgentTabExpired).ToList()) if (!old.Closed) await CloseTab(old);
   if (!Prefs.MemorySaver || closing || memoryPassRunning) return;
   memoryPassRunning = true;
   bool newlySuspended = false, discarded = false;
@@ -181,7 +193,7 @@ public partial class MainWindow
  }
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
-  && tab != Shown && tab.Agent == null && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
+  && tab != Shown && !AgentBusy(tab) && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
   && DateTime.UtcNow - tab.LastActive >= TimeSpan.FromMinutes(1)
   && !permissions.Any(p => p.Tab == tab) && tab.View?.CoreWebView2?.IsDocumentPlayingAudio == false;
 }
