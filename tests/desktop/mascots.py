@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, until  # noqa: E402
+from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = sys.argv[1]
 OUT = ROOT / "docs" / "agentic" / "compare"
@@ -34,6 +34,26 @@ def gallery(theme):
     return process, profile, bool(live)
 
 
+def plain_window():
+    """A window on a web page doesn't load three.js for the toolbar's small mascot; once the chat opens, it comes alive."""
+    profile = ROOT / "artifacts" / ("mascots-" + uuid.uuid4().hex[:8]) / "profile"
+    profile.mkdir(parents=True)
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AiHarness": "claude", "Width": 1260, "Height": 860},
+        "Tabs": [{"Id": "page", "Title": "Page", "Url": "data:text/html,<title>Page</title><p>Page"}], "ActiveId": "page"}))
+    process = launch(EXE, profile)
+    try:
+        time.sleep(4)
+        loaded = js(process, "performance.getEntriesByType('resource').some(e => e.name.includes('mascot3d'))")
+        print(("PASS " if loaded is False else "FAIL ") + "A plain window doesn't load three.js for the toolbar's mascot", flush=True)
+        send(process, "aiToggle")
+        alive = until(lambda: js(process, "!!document.querySelector('.ai-pill canvas[data-live]')"), 30)
+        print(("PASS " if alive else "FAIL ") + "Once the chat opens, the toolbar's mascot comes alive too", flush=True)
+    finally:
+        rpc(process, "quit")
+        process.wait(timeout=15)
+
+
+plain_window()
 process, profile, live = gallery("Light")
 try:
     print("live canvases:", live, js(process, "document.querySelectorAll('.mascot-sheet canvas[data-live]').length"), rpc(process)["shellErrors"])

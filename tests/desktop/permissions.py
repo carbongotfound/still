@@ -9,7 +9,10 @@ Checks: once per chat / always / ask every time, a sensitive step always shows a
 countdown running out, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
 settings page and Reset all, and the audit log in the chat's details.
 
-Run: python tests/desktop/permissions.py artifacts/Still-QA/Still.exe
+With --live it runs one small real task through Claude (Haiku) instead: buy a mug. You take over mid-run, the page
+wants a texted code only you have (Help with this page), and Place order asks first. By hand only: it uses your plan.
+
+Run: python tests/desktop/permissions.py artifacts/Still-QA/Still.exe [--live]
 Screenshots: docs/agentic/compare/ (approval-v01, sensitive-v01, countdown-v01, approve-all-v01, permissions-v01, audit-v01)
 """
 import http.server
@@ -34,6 +37,8 @@ BIN = RUN / "bin"
 OUT = ROOT / "docs" / "agentic" / "compare"
 RESULT = {"checks": []}
 ORDERS = []
+LIVE = "--live" in sys.argv
+CODE = "482913"  # the code "texted to your phone": only the test (you) knows it
 
 
 def check(ok, name):
@@ -51,15 +56,22 @@ button{padding:8px 14px;border-radius:8px;border:1px solid #7a3e1d;background:#f
 <main><section><div class=pic></div><h2>Trail mug</h2><p>$18</p>
 <button type=button id=cart onclick="this.dataset.n=(+this.dataset.n||0)+1">Add to cart</button> <button type=button id=wish onclick="this.dataset.n=1">Save for later</button></section>
 <section><h2>Checkout</h2><form id=checkout method=post action=/order><p><label>Name <input id=name name=name></label></p><button id=order>Place order</button></form></section></main>"""
+# The live run's page: one checkout that needs a code only you have.
+MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple Market</title>") + """<main><section><div class=pic></div><h2>Trail mug</h2><p>$18 each</p></section>
+<section><h2>Checkout</h2><form id=checkout method=post action=/buy><p><label>Quantity <input id=qty name=qty type=number min=1 value=1></label></p>
+<p><label>Name <input id=name name=name></label></p><p><label>Delivery note <input id=note name=note></label></p><p><label>Code from your phone <input id=code name=code inputmode=numeric autocomplete=one-time-code></label><br>
+<small>We texted a 6-digit code to the phone on your account. Enter it to place the order.</small></p><button id=order>Place order</button></form></section></main>"""
 
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        self.page(SHOP if self.path.startswith("/shop") else "<!doctype html><title>Page</title><p>Page")
+        self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else "<!doctype html><title>Page</title><p>Page")
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
         ORDERS.append({"path": self.path, "body": urllib.parse.parse_qs(body), "t": time.time()})
+        if self.path == "/buy" and urllib.parse.parse_qs(body).get("code") != [CODE]:
+            return self.page("<!doctype html><title>Checkout</title><h1>That code didn't match</h1><p><a href=/mug>Try again</a>")
         self.page("<!doctype html><title>Thanks</title><h1>Thanks, your order is placed</h1>")
 
     def page(self, html):
@@ -204,10 +216,14 @@ def main():
     (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "AiHarness": "fake", "Theme": "Light", "Width": 1720, "Height": 1080},
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080,
+        # Live: clicking and typing go ahead, so the only card is the sensitive step's.
+        **({"Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}]} if LIVE else {})},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, PROFILE)
     try:
+        if LIVE:
+            return live(process)
         once_per_chat(process)
         ask_every_time(process)
         sensitive(process)
@@ -220,6 +236,58 @@ def main():
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
+
+
+def live(process):
+    """One real task through Claude on Haiku, the way you'd use it: you take over mid-run, give it the code it can't
+    know, and approve the purchase."""
+    send(process, "aiCheck")
+    time.sleep(3)  # the model list loads in the background
+    send(process, "aiAdvanced", on=True)  # without Advanced, the companion's mode picks the model
+    send(process, "aiModel", harness="claude", model="haiku")
+    started = time.monotonic()
+    ask(process, f"Buy one Trail mug for me at {SITE}/mug. The name for the order is Sam Rivera.")
+    page = lambda: next((t for t in rpc(process)["tabs"] if t.get("Url", "").endswith("/mug")), None)
+    on_page = lambda script: rpc(process, "evalTab", id=page()["Id"], script=script)
+    control = lambda: js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""
+    check(until(lambda: page() and "Controlled by" in control(), 180, .3), "Live: Claude opens the shop in front, and the pill says it's in control")
+
+    js(process, "document.querySelector('.page-take').click()")
+    check(until(lambda: "You're in control" in control(), 5), "Live: Take over mid-run hands you the page")
+    until(lambda: on_page("document.readyState === 'complete' && !!document.querySelector('#note')"), 15, .2)  # you type into a page you can see
+    on_page("note.value = 'Leave it at the door'; note.dispatchEvent(new Event('input', {bubbles: true}))")  # something only you'd add
+    capture(process, "live-takeover-v01")
+    time.sleep(3)
+    js(process, "document.querySelector('.page-take').click()")
+    check(until(lambda: "Controlled by" in control() or not control(), 5), "Live: Hand back gives Claude the page again")
+
+    helped = until(lambda: "Help with this page" in (js(process, "document.querySelector('.ask-help')?.innerText ?? ''") or ""), 240, .5)
+    check(helped, "Live: the code only you have shows a Help with this page card")
+    capture(process, "live-help-v01")
+    if helped:
+        press(process, "Open the page", ".ask-card")
+        on_page(f"code.value = {json.dumps(CODE)}; code.dispatchEvent(new Event('input', {{bubbles: true}}))")
+        # Answer in your own words: the AI picks the card's options, so there may be no "I'm done".
+        js(process, "document.querySelector('.ask-card .ask-own input').focus()")
+        rpc(process, "shellCdp", method="Input.insertText", parameters={"text": "I typed the code into the page. Go ahead."})
+        js(process, "document.querySelector('.ask-card .ask-own button[type=submit]').click()")
+
+    card = until(lambda: cards(process), 240, .5)
+    check(card and "Place order" in " ".join(card), "Live: Place order waits on an approval card")
+    capture(process, "live-approval-v01")
+    press(process, "Allow once")
+
+    bought = until(lambda: next((o for o in ORDERS if o["path"] == "/buy" and o["body"].get("code") == [CODE]), None), 180, .5)
+    done = until(lambda: not js(process, "!!document.querySelector('[aria-label=Stop]')"), 120, 1)
+    body = (bought or {}).get("body", {})
+    check(bought and body.get("name") == ["Sam Rivera"] and body.get("qty") == ["1"], "Live: the order goes through with the name and your code")
+    check(body.get("note") == ["Leave it at the door"], "Live: the note you typed while in control is still there")
+    check(done, "Live: Claude finishes and says so")
+    chat = max(json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8")), key=lambda c: c.get("Updated", ""))
+    RESULT["live"] = {"seconds": round(time.monotonic() - started, 1), "orders": ORDERS, "audit": chat.get("Audit", []),
+                      "messages": [(m["Role"], m["Text"][:300]) for m in chat["Messages"]]}
+    check(any(role == "tool" and "Place order" in text for role, text in RESULT["live"]["messages"]), "Live: the chat's steps say which button it clicked")
+    capture(process, "live-done-v01")
 
 
 def once_per_chat(process):
