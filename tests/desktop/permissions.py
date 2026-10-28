@@ -108,10 +108,12 @@ FAKE = textwrap.dedent(r'''
     request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}})
     still.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); still.stdin.flush()
     tag = prompt.rsplit("\n\n", 1)[-1].strip()
+    last = [""]
     def call(tool, **a):
         r = request("tools/call", {"name": tool, "arguments": a})["result"]
         ok, text = not r.get("isError"), "\n".join(c.get("text", "") for c in r.get("content", []))
         log({"chat": tag, "tool": tool, "args": a, "ok": ok, "text": text[:300], "t": time.time()})
+        last[0] = text
         return ok
     def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
@@ -127,15 +129,23 @@ FAKE = textwrap.dedent(r'''
         both = [threading.Thread(target=call, args=("click",), kwargs={"selector": s}) for s in ("#cart", "#wish")]
         for t in both: t.start()
         for t in both: t.join()
+    elif m := re.search(r"HELP (\S+)", tag):
+        call("open_tab", url=m[1] + "/shop")
+        call("ask_user", question="This page wants a code from your phone. Could you enter it?", tabId=json.loads(last[0])["tabId"])
+    elif m := re.search(r"CAP (\S+)", tag):
+        for i in range(7): call("open_tab", url=m[1] + "/shop?n=%d" % i)
+    elif re.search(r"SLOW", tag):
+        call("wait_for", text="never shows up", timeoutMs=30000)
+        call("wait_for", text="never shows up", timeoutMs=30000)
     reply("Done.")
     still.stdin.close()
 ''')
 
 
-def calls(chat):
+def calls(chat, opens=False):
     file = BIN / "calls.jsonl"
     rows = [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines() if line.endswith("}")] if file.exists() else []  # skips a line being written
-    return [c for c in rows if c["chat"] == chat and c["tool"] != "open_tab"]
+    return [c for c in rows if c["chat"] == chat and (opens or c["tool"] != "open_tab")]
 
 
 def chat_of(tag):
@@ -202,8 +212,10 @@ def main():
         ask_every_time(process)
         sensitive(process)
         approve_all(process)
+        keys_and_help(process)
         outside(process)
         settings(process)
+        process = crash_resume(process)
         check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
     finally:
         rpc(process, "quit")
@@ -318,6 +330,53 @@ def approve_all(process):
     idle(process)
 
 
+def keys_and_help(process):
+    """Phase 6: the keyboard over live cards and runs, the help card, the tab cap."""
+    ask(process, f"CART {SITE} 1 m")
+    check(until(lambda: cards(process), 30), "A card waits for Ctrl+Enter")
+    js(process, "document.activeElement?.blur?.(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))")
+    check(until(lambda: calls("CART " + SITE + " 1 m") and calls("CART " + SITE + " 1 m")[-1]["ok"], 15), "Ctrl+Enter approves the card in front of you")
+    idle(process)
+
+    ask(process, "SLOW n")
+    until(lambda: chat_of("SLOW n") and js(process, "!!document.querySelector('.tasks-button b')"), 30)
+    rpc(process, "key", key="K", mods="Control, Shift")
+    check(until(lambda: js(process, "!!document.querySelector('.tasks-menu')"), 5), "Ctrl+Shift+K opens the running tasks")
+    rpc(process, "key", key="Escape", mods="None")
+    check(rpc(process, "key", key="OemPeriod", mods="Control").get("ok") and idle(process), "Ctrl+. stops the chat's run")
+
+    ask(process, f"HELP {SITE} o")
+    check(until(lambda: "Help with this page" in (js(process, "document.querySelector('.ask-help')?.innerText ?? ''") or ""), 30), "A page that needs you shows a Help with this page card")
+    capture(process, "help-card-v01")
+    send(process, "chatPage", on=False)
+    check(until(lambda: not js(process, "!!document.querySelector('.page-nav-url')"), 5), "The page beside the chat can be closed")
+    check(press(process, "Open the page", ".ask-card") and until(lambda: "127.0.0.1" in (js(process, "document.querySelector('.page-nav-url')?.innerText ?? ''") or "") or any(t["Id"] == rpc(process)["activeId"] and t["Url"].endswith("/shop") for t in rpc(process)["tabs"]), 10), "Open the page shows the page")
+    js(process, "[...document.querySelectorAll('.ask-card .ask-option')].find(b => b.innerText.includes(\"I'm done\"))?.click()")
+    check(until(lambda: any(c["tool"] == "ask_user" and c["ok"] and "done" in c["text"] for c in calls("HELP " + SITE + " o")), 15), "Its answer reaches the AI")
+    idle(process)
+
+    ask(process, f"CAP {SITE} p")
+    until(lambda: len(calls("CAP " + SITE + " p", True)) == 7, 60)
+    opened = [c["ok"] for c in calls("CAP " + SITE + " p", True)]
+    check(opened == [True] * 6 + [False] and "6 tabs" in calls("CAP " + SITE + " p", True)[-1]["text"], "A chat can have 6 tabs open; the 7th is refused and says why")
+    idle(process)
+
+
+def crash_resume(process):
+    """A crash mid-run: the next start offers Resume all."""
+    ask(process, "SLOW q")
+    until(lambda: (chat_of("SLOW q") or {}).get("Running"), 30)
+    process.kill(); process.wait(timeout=20)
+    process = launch(EXE, PROFILE)
+    offer = until(lambda: "Resume all" in (js(process, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' | ')") or ""), 15)
+    check(offer, "After a crash, Still offers to resume the chat that was working")
+    capture(process, "resume-all-v01")
+    js(process, "[...document.querySelectorAll('[data-sonner-toast] button')].find(b => b.innerText.trim() === 'Resume all')?.click()")
+    check(until(lambda: any("pick up where you left off" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
+    send(process, "aiStop", id=(chat_of("SLOW q") or {}).get("Id", ""))
+    return process
+
+
 def outside(process):
     """Another AI app (no chat) keeps today's behavior: allowed, unless a rule for everyone says to ask. Then it asks in
     the bar at the top, once per site until Still closes."""
@@ -353,7 +412,7 @@ def settings(process):
     send(process, "permSensitive", site="mybank.example", on=True)
     send(process, "openPanel", name="settings")
     until(lambda: js(process, "!!document.querySelector('.settings-tabs')"), 10)
-    js(process, "[...document.querySelectorAll('.settings-tabs [role=tab]')].find(t => t.innerText.includes('AI permissions'))?.focus()")  # tabs switch on focus
+    js(process, "[...document.querySelectorAll('.settings-tabs [role=tab]')].find(t => t.innerText.trim() === 'Permissions')?.focus()")  # tabs switch on focus
     table = until(lambda: js(process, "document.querySelector('.perm-table')?.textContent ?? ''"), 10) or ""
     check("Any site" in table and "Sensitive steps" in table and "shop.example" in table and "Pip" in table, "Settings list the defaults and the rule for Pip on shop.example")
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")

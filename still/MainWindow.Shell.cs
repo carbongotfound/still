@@ -234,7 +234,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "agentChat" or "companionSave" or "companionDelete" or "companionMode" or "aiAdvanced" or "memorySave" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete":await HandleAi(op,data);break;
+     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "aiHelpPage" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMode" or "aiAdvanced" or "memorySave" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();

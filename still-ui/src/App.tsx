@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AiPanel, ChatView, Composer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
+import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { AiLogo } from "./AiLogo"
@@ -72,7 +72,27 @@ const IDEAS: [LucideIcon, string, string, string, string][] = [
 const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
-const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
+const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["Running tasks", "Ctrl Shift K"], ["Stop the AI", "Ctrl ."], ["Approve the card in front of you", "Ctrl Enter"], ["Close a preview", "Esc"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
+
+// After a crash: chats that were working when Still closed, with one button to pick them all back up.
+let offered = false
+function resumeOffer(count: number) {
+ if (!count || offered) return
+ offered = true
+ toast(count === 1 ? "A chat stopped mid-task." : `${count} chats stopped mid-task.`, { id: "resume", duration: Infinity, className: "resume-toast",
+  action: { label: "Resume all", onClick: () => send("aiResumeAll") },
+  cancel: { label: "Not now", onClick: () => send("aiResumeDismiss") } })
+}
+
+// Ctrl+Enter: approve the card that has focus, or the waiting card when you aren't typing (an empty message box counts).
+function approveCard() {
+ const focus = document.activeElement as HTMLElement | null
+ const typing = !!focus?.closest("input, textarea, [contenteditable=true]") && !(focus instanceof HTMLTextAreaElement && focus.getAttribute("aria-label") === "Message" && !focus.value.trim())
+ const card = focus?.closest(".approve-card") ?? (typing ? null : document.querySelector(".approve-card"))
+ const approve = card?.querySelector<HTMLButtonElement>("[data-approve]")
+ approve?.click()
+ return !!approve
+}
 
 const FLOW = { type: "spring" as const, stiffness: 460, damping: 34, mass: .75 }
 const AnimatedButton = motion.create(Button)
@@ -221,7 +241,7 @@ export default function App() {
  const [state, setState] = useState<State>(initial)
  const [pane, setPane] = useState("")
  const [displayPane, setDisplayPane] = useState("")
- const [settingsPage, setSettingsPage] = useState("appearance")
+ const [settingsPage, setSettingsPage] = useState("general")
  const reduced = useReducedMotion()
  const [query, setQuery] = useState("")
  const [filter, setFilter] = useState("")
@@ -378,17 +398,18 @@ export default function App() {
   const listener = (e: MessageEvent) => {
    const data = e.data
    if (data.kind === "state") setState(data)
-   if (data.kind === "ai") setAi(data.data)
+   if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted?.length ?? 0) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
-   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage("appearance") } }
+   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage(data.value || "general") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
    if (data.kind === "snapshot") { setSnapshot(data.data); setPairShot(data.partner ?? "") }
    if (data.kind === "upload") setUpload(data.data)
    if (data.kind === "recent") setRecent({ ids: data.ids, index: data.index })
    if (data.kind === "groupRename") setRenaming(data.id)
+   if (data.kind === "tasks") { if (document.querySelector(".tasks-button")) window.dispatchEvent(new Event("still-tasks")); else toast("Nothing is running right now.") }
    if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
-   if (data.kind === "escape") { setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
+   if (data.kind === "escape") { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
   }
   window.chrome?.webview?.addEventListener("message", listener)
   send("ready")
@@ -420,10 +441,11 @@ export default function App() {
  useEffect(() => {
   const handler = (e: KeyboardEvent) => {
    if (e.key === "F11") { e.preventDefault(); send("fullscreen"); return }
-   if (e.key === "Escape") { if(!document.querySelector("[role=dialog],[role=alertdialog],[role=menu]"))send("exitFullscreen"); close(); return }
+   if (e.key === "Escape") { if(!document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")){send("exitFullscreen");setViewing("")} close(); return }
    if (!(e.ctrlKey || e.metaKey)) return
+   if (e.key === "Enter" && approveCard()) { e.preventDefault(); return }
    if (e.key.toLowerCase() === "l") { e.preventDefault(); openAddress() }
-   if (e.key.toLowerCase() === "k") { e.preventDefault(); open("tabs") }
+   if (e.key.toLowerCase() === "k" && !e.shiftKey) { e.preventDefault(); open("tabs") }
   }
   window.addEventListener("keydown", handler); return () => window.removeEventListener("keydown", handler)
  }, [active?.url])
@@ -444,7 +466,7 @@ export default function App() {
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><ProviderContext.Provider value={isKind(provider) ? provider : "claude"}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
-   {!modern && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><TabStrip tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
+   {!modern && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><TabStrip tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" title="New tab · Ctrl+T" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    {!split && <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -491,7 +513,7 @@ export default function App() {
      <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
-     {!state.noAi && ai && <RunningTasks ai={ai} send={send} onOpen={setTasksOpen} />}
+     {!state.noAi && ai && <><RunningTasks ai={ai} send={send} onOpen={setTasksOpen} /><RunAnnouncer ai={ai} /></>}
      {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={18} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
      {!chatTab && <><IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
@@ -722,21 +744,48 @@ export default function App() {
     <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "A few things to make it yours." : displayPane === "about" ? "Give your AI a browser." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? "Your logins, protected on this PC." : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
     {["passwords","extensions","cookies","security","profiles","import"].includes(displayPane)&&<BrowserTools key={displayPane} pane={displayPane} data={toolData[displayPane]??{}} send={send} url={active?.url??""} tracking={state.preferences.tracking} memory={state.preferences.memory} autofill={state.preferences.autofill}/> }
     {displayPane === "settings" && <Tabs value={settingsPage} onValueChange={setSettingsPage} className="settings-tabs">
-     <LayoutGroup id="settings"><TabsList className="w-full">{[["appearance", "Appearance"], ["browsing", "Browsing"], ...(ai && !state.noAi ? [["permissions", "AI permissions"]] : []), ["data", "Your data"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
+     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
       {settingsPage === value && <motion.span className="settings-selection" layoutId="settings-selection" transition={FLOW} />}<span className="settings-tab-label">{label}</span>
      </TabsTrigger>)}</TabsList></LayoutGroup>
+     <TabsContent value="general" className="settings-content">
+      <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
+      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
+      <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
+      {state.preferences.startupDisabled && <p className="tool-caption">Windows has disabled this startup entry. <Button variant="link" onClick={() => send("startupSettings")}>Open Windows startup settings</Button></p>}
+      <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
+      <Separator /><div className="download-setting"><strong>Download folder</strong><p>{state.preferences.downloads}</p><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change folder</Button></div>
+      <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
+     </TabsContent>
+     <TabsContent value="ai" className="settings-content">
+      <div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
+      {state.preferences.agents && <><Separator /><div className="setting-row"><div><strong>Ask me in the AI's chat when I'm away</strong><p>If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window.</p></div><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></div></>}
+      {ai && !state.noAi && <><Separator /><Button variant="ghost" className="settings-link" onClick={() => { close(); send("aiToggle") }}><Bot />Your AI and its model<ChevronRight /></Button><Button variant="ghost" className="settings-link" onClick={() => { close(); goHome("companions") }}><UsersRound />Companions<ChevronRight /></Button></>}
+     </TabsContent>
+     {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
+     <TabsContent value="privacy" className="settings-content">
+      <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>
+      <Separator /><div className="setting-row"><div><strong>Block common ads & trackers</strong><p>A small built-in list. Some ads may remain.</p></div><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></div>
+      <Separator className="my-4" />
+      <Button variant="ghost" className="settings-link" onClick={()=>open("passwords")}><KeyRound/>Passwords<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("cookies")}><Cookie/>Cookies<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("security")}><ShieldCheck/>Privacy & security<ChevronRight/></Button>
+      <Separator className="my-4" />
+      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>
+      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear cookies and website data</Button>
+     </TabsContent>
      <TabsContent value="appearance" className="settings-content">
       <div className="setting-label">Theme</div><div className="theme-choices">{["Light", "Dark", "System"].map(theme => <Button key={theme} variant="outline" className={cn("theme-choice", state.preferences.theme === theme && "chosen")} onClick={() => preference("theme", theme)}>
        <div className={cn("theme-preview", theme.toLowerCase())}><i /><span /><b /></div><span>{theme === "Dark" ? "Black" : theme}{state.preferences.theme === theme && <Check />}</span>
       </Button>)}</div>
       <div className="setting-row"><div><strong>Tab layout</strong><p>Classic puts tabs across the top. Modern puts them down the side, with your chats.</p></div><Select value={state.preferences.tabLayout ?? "Classic"} onValueChange={v => preference("tabLayout", v)}><SelectTrigger className="w-32" aria-label="Tab layout"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Classic">Classic</SelectItem><SelectItem value="Modern">Modern</SelectItem></SelectContent></Select></div>
-      <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
+      <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
      </TabsContent>
-     {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
-     <TabsContent value="browsing" className="settings-content">
-      <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
-      {state.preferences.agents && <><Separator /><div className="setting-row"><div><strong>Ask me in the AI's chat when I'm away</strong><p>If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window.</p></div><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></div></>}
+     <TabsContent value="extensions" className="settings-content">
+      <p className="data-intro">Add tools from the Chrome Web Store. You check what each one can do before it installs.</p>
+      <Button variant="outline" className="settings-link" onClick={() => open("extensions")}><Puzzle />Manage extensions<ChevronRight /></Button>
+     </TabsContent>
+     <TabsContent value="advanced" className="settings-content">
+      <Button variant="outline" className="settings-link" onClick={() => open("import")}><Import />Import browsing data<ChevronRight /></Button>
+      <Button variant="outline" className="settings-link" onClick={() => send("exportBookmarks")}><ExternalLink />Export bookmarks<ChevronRight /></Button>
+      <Button variant="ghost" className="settings-link" onClick={()=>open("profiles")}><UsersRound/>Profiles<ChevronRight/></Button>
       {state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <details className="mcp-config welcome-dev"><summary>For developers: connect an AI app by hand</summary><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
        {(() => { const exe = `& "${state.mcpCommand}"`; const prompt = `You can control my Still web browser from the terminal (PowerShell) with:
 ${exe} --cli <tool> as=<your name> [key=value ...]
@@ -761,23 +810,6 @@ Run \`${exe} --cli help\` to list tools. Common ones:
 - list_profiles; add profile=<name> to any tool to use another profile, or profile=temp for a separate temporary window with no cookies or logins
 
 The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Grok Build or another agent app:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</details> })()}
-      <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
-      <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
-      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
-      {state.preferences.startupDisabled && <p className="tool-caption">Windows has disabled this startup entry. <Button variant="link" onClick={() => send("startupSettings")}>Open Windows startup settings</Button></p>}
-      <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
-      <Separator /><div className="setting-row"><div><strong>Block common ads & trackers</strong><p>A small built-in list. Some ads may remain.</p></div><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></div>
-      <Separator /><div className="download-setting"><strong>Download folder</strong><p>{state.preferences.downloads}</p><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change folder</Button></div>
-     </TabsContent>
-     <TabsContent value="data" className="settings-content">
-      <Button variant="ghost" className="settings-link" onClick={()=>open("passwords")}><KeyRound/>Passwords<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("cookies")}><Cookie/>Cookies<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("security")}><ShieldCheck/>Privacy & security<ChevronRight/></Button>
-      <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>
-      <Button variant="outline" className="settings-link" onClick={() => open("import")}><Import />Import browsing data<ChevronRight /></Button>
-      <Button variant="ghost" className="settings-link" onClick={()=>open("profiles")}><UsersRound/>Profiles<ChevronRight/></Button>
-      <Button variant="outline" className="settings-link" onClick={() => send("exportBookmarks")}><ExternalLink />Export bookmarks<ChevronRight /></Button>
-      <Separator className="my-5" />
-      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>
-      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear cookies and website data</Button>
      </TabsContent>
     </Tabs>}
     {(displayPane === "history" || displayPane === "bookmarks") && <>{displayPane === "history" && state.history.length > 0 && <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>}{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
