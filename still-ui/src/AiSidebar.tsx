@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, Check, ChevronDown, Copy, ExternalLink, Gauge, Globe, Lightbulb, LockKeyhole, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
+import { ArrowLeft, ArrowUp, Check, ChevronDown, Copy, ExternalLink, FileText, Gauge, Globe, Lightbulb, LockKeyhole, Luggage, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AiLogo } from "./AiLogo"
-import { Face, type Companion } from "./Buddy"
+import { Face, type Companion, type Mood } from "./Buddy"
 import { Markdown } from "./Markdown"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
@@ -24,11 +24,11 @@ type Send = (op: string, payload?: Record<string, unknown>) => void
 type TabRef = { id: string; title: string; url: string; inChat?: string }
 
 const IDEAS = [
- ["📝", "Sum up this page", "Summarize this page in a few short bullet points."],
- ["🏷️", "Find it cheaper", "Find what's on this page cheaper somewhere else, and show me where."],
- ["🧳", "Plan a trip", "Help me plan a weekend trip. Ask me where I'm starting from and what I like first."],
- ["💡", "Explain it simply", "Explain this page simply, like I'm new to the topic."],
-]
+ [FileText, "Sum up this page", "Summarize this page in a few short bullet points."],
+ [Tag, "Find it cheaper", "Find what's on this page cheaper somewhere else, and show me where."],
+ [Luggage, "Plan a trip", "Help me plan a weekend trip. Ask me where I'm starting from and what I like first."],
+ [Lightbulb, "Explain it simply", "Explain this page simply, like I'm new to the topic."],
+] as const
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
@@ -106,8 +106,30 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
 }
 
 // The message box: the model on the right, then send, or a red stop while the AI works (Enter then queues a follow-up).
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean }) {
- const [text, setText] = useState("")
+// How the companion looks through a run: thinking until its first step, working through steps, waiting on the user's
+// answer, a small celebration when it finishes, a droop on an error. Listening while the user types to it.
+export function useRunMood(ai: AiState | undefined, typing = false): Mood {
+ const busy = !!ai?.busy && ai.running === ai.chatId
+ const [done, setDone] = useState(false)
+ const was = useRef(busy)
+ useEffect(() => {
+  const finished = was.current && !busy
+  was.current = busy
+  if (!finished) return
+  setDone(true) // eslint-disable-line react-hooks/set-state-in-effect
+  const t = setTimeout(() => setDone(false), 2600)
+  return () => clearTimeout(t)
+ }, [busy])
+ if (ai?.question) return "needs"
+ if (busy) return ai?.messages.at(-1)?.role === "tool" ? "working" : "thinking"
+ if (ai?.error) return "error"
+ if (done) return "done"
+ return typing ? "listening" : "idle"
+}
+
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void }) {
+ const [text, setTextState] = useState("")
+ const setText = (v: string) => { setTextState(v); onTyping?.(!!v.trim()) }
  const submit = () => { if (!text.trim() || disabled) return; onSubmit(text.trim()); setText("") }
  return <InputGroup className="composer">
   <InputGroupTextarea aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
@@ -150,7 +172,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
   {pending}
  </div>
  if (status === "missing" || status === "installing") return <div className="ai-pane ai-center">
-  <Face size={64} mood={status === "installing" ? "think" : "idle"} />
+  <Face size={64} mood={status === "installing" ? "working" : "idle"} />
   {status === "installing" ? <>
    <h3>Installing {current.app}…</h3>
    <p>This usually takes about a minute.</p>
@@ -169,7 +191,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
   {pending}
  </div>
  if (status === "signedOut" || status === "signingIn") return <div className="ai-pane ai-center">
-  <Face size={64} mood={status === "signingIn" ? "think" : "idle"} />
+  <Face size={64} mood={status === "signingIn" ? "thinking" : "idle"} />
   {status === "signingIn" ? <>
    <h3>{ai.setup.url ? "Approve it in the new tab" : `Opening ${current.maker}'s sign-in…`}</h3>
    {ai.setup.url && <p>Sign in on {current.maker}'s page and approve. This moves on by itself.</p>}
@@ -203,6 +225,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
  const name = companion?.name ?? "your AI"
  const busy = ai.busy && ai.running === ai.chatId
  const elsewhere = ai.busy && !busy
+ const [typing, setTyping] = useState(false)
+ const mood = useRunMood(ai, typing)
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [ai.messages.length, busy, !!ai.question])
  useEffect(() => { if (!busy) return; ticks.current = 0; setTick(0); setWorked(0); const t = setInterval(() => setTick(++ticks.current), 1000); return () => { clearInterval(t); setWorked(ticks.current) } }, [busy])
  useEffect(() => { if (!ai.busy && queued && !ai.error) { send("aiSend", { text: queued }); setQueued("") } }, [ai.busy]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -218,7 +242,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
  }
  const fromAi = (i: number) => items[i]?.role === "assistant" || items[i]?.role === "steps"
  // The companion's face starts each of its turns.
- const face = (i: number) => fromAi(i - 1) ? null : <Face className="ai-turn-face" companion={companion} size={24} mood={busy && i >= items.length - 1 ? "think" : "idle"} />
+ const face = (i: number) => fromAi(i - 1) ? null : <Face className="ai-turn-face" companion={companion} size={24} mood={i >= items.length - 1 ? mood : "idle"} />
  const setup = Setup({ ai, send, onSettings })
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
  const openLink = (url: string) => send("new", { url })
@@ -233,7 +257,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
     <Face companion={companion} size={64} />
     <h3>What should we do?</h3>
     <p>I can read this page, search, compare and click around in my own pages.</p>
-    <div className="ai-ideas">{IDEAS.map(([icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span>{icon}</span>{label}</button>)}</div>
+    <div className="ai-ideas">{IDEAS.map(([Icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span><Icon aria-hidden /></span>{label}</button>)}</div>
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
    {items.map((m, i) => {
@@ -257,8 +281,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <span className="chat-chip" title={activeTab.url}><Globe />{activeTab.title || host(activeTab.url)}</span>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
    {queued && <div className="ai-queued"><span>Up next</span><p>{queued}</p><button aria-label="Don't send" onClick={() => setQueued("")}><X /></button></div>}
-   {elsewhere ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="think" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button><Button variant="link" size="sm" onClick={() => send("aiStop")}>Stop it</Button></div>
-    : <Composer ai={ai} send={send} onSubmit={submit} onStop={busy ? () => send("aiStop") : undefined}
+   {elsewhere ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button><Button variant="link" size="sm" onClick={() => send("aiStop")}>Stop it</Button></div>
+    : <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined}
      placeholder={busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />}
    {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
   </div></div>}
@@ -281,9 +305,10 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
 // The chat panel beside an ordinary page (the Chat button), or the AI settings.
 export function AiPanel({ ai, send, view, setView, tabs, activeTab }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef }) {
  const companion = companionOf(ai, ai.chatCompanion)
+ const mood = useRunMood(ai)
  return <aside className="ai-sidebar" aria-label="Chat">
   <div className="ai-head">
-   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Face companion={companion} size={22} className="ai-head-buddy" />}
+   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Face companion={companion} size={22} mood={mood} className="ai-head-buddy" />}
    <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    {view === "chat" && <>
     <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>

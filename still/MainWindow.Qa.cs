@@ -63,7 +63,16 @@ public partial class MainWindow
          var point=Shown.View.TransformToAncestor(shellRoot).Transform(new System.Windows.Point(0,0));pageRect=new(point.X,point.Y,Shown.View.ActualWidth,Shown.View.ActualHeight);
         }
         var visual=new System.Windows.Media.DrawingVisual();
-        using(var dc=visual.RenderOpen()) {dc.DrawImage(native,new System.Windows.Rect(0,0,width,height));if(page!=null)dc.DrawImage(page,pageRect);}
+        using(var dc=visual.RenderOpen()) {
+         dc.DrawImage(native,new System.Windows.Rect(0,0,width,height));
+         if(page!=null){
+          // The page window leaves the AI's glow and controls open (CutHoles): show the picture the same way.
+          bool holed=holedPage!=IntPtr.Zero&&holes.Tab==Shown!.Id;
+          System.Windows.Media.Geometry clip=new System.Windows.Media.RectangleGeometry(holed?new System.Windows.Rect(pageRect.X+holes.Frame,pageRect.Y+holes.Frame,Math.Max(0,pageRect.Width-2*holes.Frame),Math.Max(0,pageRect.Height-2*holes.Frame)):pageRect);
+          if(holed)foreach(var s in holes.Spots)clip=new System.Windows.Media.CombinedGeometry(System.Windows.Media.GeometryCombineMode.Exclude,clip,new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(pageRect.X+s.X,pageRect.Y+s.Y,s.W,s.H),s.R,s.R));
+          dc.PushClip(clip);dc.DrawImage(page,pageRect);dc.Pop();
+         }
+        }
         var rendered=new System.Windows.Media.Imaging.RenderTargetBitmap(width,height,96,96,System.Windows.Media.PixelFormats.Pbgra32);rendered.Render(visual);
         var encoder=new System.Windows.Media.Imaging.PngBitmapEncoder();encoder.Frames.Add(System.Windows.Media.Imaging.BitmapFrame.Create(rendered));
         string path=Path.Combine(App.DataRoot,Path.GetFileName(doc.RootElement.GetProperty("name").GetString() ?? "capture.png"));

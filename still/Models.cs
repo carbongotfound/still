@@ -15,6 +15,7 @@ public sealed class BrowserTab
  public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page
  [JsonIgnore] public bool PageOpen { get; set; } // a chat tab showing its AI's page beside the conversation
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
+ [JsonIgnore] public string? RunChat { get; set; } // an ordinary tab Still's chat AI opened: "Go to chat" opens that chat, and it can show beside the chat
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
  [JsonIgnore] public WebView2? View { get; set; }
