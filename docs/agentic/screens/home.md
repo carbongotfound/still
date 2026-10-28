@@ -5,7 +5,7 @@
 - Rail on the left (`HomeRail`): New chat, Chats, Library, Companions, Skills, then settings and the profile.
   Each opens a page in place of the home; a chat tab's sidebar links open them in a new tab.
 - Switcher at the top (`CompanionSwitch`): the active companion as a pill, the others as faces, a menu for the rest
-  and a + for a new one. "1 running" at the top right while an AI works, and it opens that chat.
+  and a + for a new one. Running chats live in the toolbar's runner (see `agent.md`).
 - The companion's face at 96 px, then the message box: `/` lists skills, + adds a skill or a link to an open tab,
   the mode chip picks the companion and Expert / Default / Efficient. The send button wears the companion's hue.
 - Chips: Skills, Companions, Library, Help. "Ideas for you": three cards, the first sums up an open tab.

@@ -94,10 +94,15 @@ def shots(exe, name, version, setup, preferences=None, reference=None):
                 rpc(process, "quit")
                 process.wait(timeout=15)
     if reference:
-        from PIL import Image
-        mine, theirs = Image.open(out / f"{name}-{version}-light-1720.png"), Image.open(reference)
-        theirs = theirs.resize((round(theirs.width * mine.height / theirs.height), mine.height))
-        both = Image.new("RGB", (mine.width + theirs.width + 16, mine.height), "white")
-        both.paste(theirs, (0, 0))
-        both.paste(mine, (theirs.width + 16, 0))
-        both.save(out / f"{name}-{version}.png")
+        compare(out / f"{name}-{version}-light-1720.png", reference, out / f"{name}-{version}.png")
+
+
+def compare(mine, reference, to):
+    """The reference on the left, Still on the right, at the same height."""
+    from PIL import Image
+    mine, theirs = Image.open(mine), Image.open(reference)
+    theirs = theirs.resize((round(theirs.width * mine.height / theirs.height), mine.height))
+    both = Image.new("RGB", (mine.width + theirs.width + 16, mine.height), "white")
+    both.paste(theirs, (0, 0))
+    both.paste(mine, (theirs.width + 16, 0))
+    both.save(to)

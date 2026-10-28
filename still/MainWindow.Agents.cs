@@ -17,9 +17,27 @@ public partial class MainWindow
 {
  static readonly HashSet<string> approvedAgents = new(StringComparer.OrdinalIgnoreCase);
  static readonly HashSet<string> blockedAgents = new(StringComparer.OrdinalIgnoreCase);
- static string agentName = "", agentAction = "";
- static DateTime agentSeen;
- static bool agentPaused; // the user took over: the agent's calls wait until they hand it back
+ /// One AI at work, by run key: a chat's id for Still's own chat (so two chats on the same AI app stay apart),
+ /// otherwise the outside agent's name.
+ sealed class Worker
+ {
+  public string Name = "", Label = "", Color = "", Action = ""; // Name: the app; Label and Color: who the user sees (a companion)
+  public DateTime Seen;
+  public bool Paused; // the user took over: its calls wait until they hand it back
+ }
+ static readonly Dictionary<string, Worker> workers = new(StringComparer.OrdinalIgnoreCase);
+ static Worker Me(string who)
+ {
+  if (workers.TryGetValue(who, out var w)) return w;
+  var run = runs.GetValueOrDefault(who);
+  var c = run == null ? null : Home.Companions.FirstOrDefault(x => x.Id == run.Chat.Companion);
+  return workers[who] = new() { Name = run?.Who ?? who, Label = c?.Name ?? run?.Who ?? who, Color = Hue(c?.Color) };
+ }
+ // The companions' colors, as in the shell's Buddy.tsx.
+ static string Hue(string? color) => color switch { "sage" => "#5c7a76", "lavender" => "#8f80aa", "apricot" => "#e8a76c", "mint" => "#8fcbbc", "blush" => "#f2a487",
+  "periwinkle" => "#bbadea", "berry" => "#ed5a31", _ => "#4f7cf0" };
+ /// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
+ static IEnumerable<KeyValuePair<string, Worker>> AtWork() => workers.Where(w => approvedAgents.Contains(w.Value.Name) && (w.Value.Paused || DateTime.UtcNow - w.Value.Seen < TimeSpan.FromMinutes(2)));
  // One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
  static TaskCompletionSource<bool>? agentApproval;
  static string askClient = "", askText = "";
@@ -66,6 +84,9 @@ public partial class MainWindow
    var root = doc.RootElement;
    string client = (root.TryGetProperty("client", out var c) ? c.GetString() : null) ?? "An AI agent";
    client = new string(client.Where(ch => !char.IsControl(ch)).Take(40).ToArray());
+   // Still's own chat runs say which chat they are; anyone else is known by name.
+   string run = root.TryGetProperty("run", out var rn) && rn.ValueKind == JsonValueKind.String ? rn.GetString() ?? "" : "";
+   string who = runs.TryGetValue(run, out var chatRun) && chatRun.Who == client ? run : client;
    string tool = root.GetProperty("tool").GetString() ?? "";
    var args = root.TryGetProperty("args", out var a) && a.ValueKind == JsonValueKind.Object ? a.Clone() : default;
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.");
@@ -73,24 +94,24 @@ public partial class MainWindow
    // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
    bool quick = root.TryGetProperty("elicit", out var el) && el.ValueKind == JsonValueKind.True || UserAway();
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent in Still for this session.");
-   if (stoppedAgents.TryGetValue(client, out var until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
+   if (stoppedAgents.TryGetValue(who, out var until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (Prefs.ApprovedAgents.Any(a => McpServer.AgentName(a).Equals(client, StringComparison.OrdinalIgnoreCase))) approvedAgents.Add(client); // approved once = remembered across restarts/updates
    if (!approvedAgents.Contains(client)) switch (await AskUser(client, "", quick)) {
     case false: return Fail("The user blocked this agent in Still for this session.");
     case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
    }
-   agentName = client; agentSeen = DateTime.UtcNow;
+   var me = Me(who); me.Seen = DateTime.UtcNow;
    // The user took over: wait for them to hand it back, like a person would.
-   for (var paused = DateTime.UtcNow.AddSeconds(40); agentPaused && DateTime.UtcNow < paused;) { await Task.Delay(250); agentSeen = DateTime.UtcNow; }
-   if (stoppedAgents.TryGetValue(client, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
-   if (agentPaused) return Fail(TookOver);
-   var interrupt = agentInterrupts[client] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-   var run = RunTool(client, tool, args, quick);
+   for (var paused = DateTime.UtcNow.AddSeconds(40); me.Paused && DateTime.UtcNow < paused;) { await Task.Delay(250); me.Seen = DateTime.UtcNow; }
+   if (stoppedAgents.TryGetValue(who, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
+   if (me.Paused) return Fail(TookOver);
+   var interrupt = agentInterrupts[who] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+   var working = RunTool(who, tool, args, quick);
    int limit = tool switch { "ask_user" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
-   var first = await Task.WhenAny(run, interrupt.Task, Task.Delay(limit));
-   string result = first == run ? await run : first == interrupt.Task ? await interrupt.Task
+   var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
+   string result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
-   if (agentInterrupts.GetValueOrDefault(client) == interrupt) agentInterrupts.Remove(client);
+   if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who);
    PublishAll();
    return result;
   } catch (JsonException) { return Fail("Invalid request."); }
@@ -158,31 +179,38 @@ public partial class MainWindow
  }
 
  static void PublishAll() { foreach (var w in Windows) w.ShellPublish(); }
- object? AgentData() => agentApproval != null ? new { client = askClient, pending = true, action = "", ask = askText, paused = false }
-  : approvedAgents.Contains(agentName) && (agentPaused || DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2)) ? new { client = agentName, pending = false, action = agentAction, ask = "", paused = agentPaused, tab = agentTabs.GetValueOrDefault(agentName) } : null;
- // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
- async Task TakeOver(bool on)
+ /// The agent bar's question, or the AI at work for the pill: the one in the page on screen, else the latest.
+ object? AgentData()
  {
-  agentPaused = on;
-  if (on && agentInterrupts.Remove(agentName, out var running)) running.TrySetResult(Fail(TookOver));
-  if (on && agentTabs.GetValueOrDefault(agentName) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
+  if (agentApproval != null) return new { client = askClient, pending = true, action = "", ask = askText, paused = false };
+  string? shown = Shown?.Id;
+  var at = AtWork().OrderByDescending(w => agentTabs.GetValueOrDefault(w.Key) == shown).ThenByDescending(w => w.Value.Seen).FirstOrDefault();
+  return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key } : null;
+ }
+ // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
+ async Task TakeOver(bool on, string key)
+ {
+  if (workers.GetValueOrDefault(key) is not { } me) return;
+  me.Paused = on;
+  if (on && agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail(TookOver));
+  if (on && agentTabs.GetValueOrDefault(key) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
   PublishAll();
  }
- // Stop cancels what the agent is doing now; it stays allowed, so its next task needs no new approval.
- void StopAgent() {
-  if (agentName.Length > 0) {
-   ReleaseAgentTabs(agentName); stoppedAgents[agentName] = DateTime.UtcNow.AddSeconds(30);
-   if (agentInterrupts.Remove(agentName, out var running)) running.TrySetResult(Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."));
-  }
-  foreach (var w in Windows) if (w.aiBusy && AiClis.FirstOrDefault(c => c.Id == (w.aiChat?.Harness ?? "")) is { } cli && cli.Name == agentName) _ = w.HandleAi("aiStop", default);
-  agentAction = ""; agentSeen = DateTime.MinValue; agentPaused = false; PublishAll(); Toast("Stopped " + (agentName.Length > 0 ? agentName : "the AI agent") + ".");
+ // Stop cancels what the agent is doing now and lets go of its tabs; it stays allowed, so its next task needs no new approval.
+ void StopAgent(string key)
+ {
+  var me = workers.GetValueOrDefault(key);
+  ReleaseAgentTabs(key); stoppedAgents[key] = DateTime.UtcNow.AddSeconds(30);
+  if (agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."));
+  if (runs.TryGetValue(key, out var run)) { run.Queue.Clear(); StopRun(run); }
+  workers.Remove(key); PublishAll(); PublishAiEverywhere(); Toast("Stopped " + (me?.Label ?? "the AI agent") + ".");
  }
  static readonly Dictionary<string, DateTime> stoppedAgents = new(StringComparer.OrdinalIgnoreCase);
  const string TookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  static void InterruptAgent(BrowserTab t, object reply)
  {
-  if (t.Agent is { } who && agentTabs.GetValueOrDefault(who) == t.Id && agentInterrupts.Remove(who, out var running)) running.TrySetResult(Reply(reply));
+  if (t.AgentKey is { } who && agentTabs.GetValueOrDefault(who) == t.Id && agentInterrupts.Remove(who, out var running)) running.TrySetResult(Reply(reply));
  }
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
@@ -324,7 +352,8 @@ public partial class MainWindow
    const b = box(e), x = b.x + b.w - 3, y = b.y + b.h - 6, hit = document.elementFromPoint(x, y);
    if (b.w > 6 && b.h > 8 && hit && inside(e, hit) && !hit.closest('a')) at = { x, y };
   }
-  return { label: label(e) || kind(e), sig: sig(deepActive()), multiline: e.isContentEditable || e.localName === 'textarea', at };
+  const fb = box(e), near = e.ownerDocument === document ? { x: fb.x + Math.min(24, fb.w / 2), y: fb.y + fb.h / 2 } : null; // where the AI's cursor goes
+  return { label: label(e) || kind(e), sig: sig(deepActive()), multiline: e.isContentEditable || e.localName === 'textarea', at, near };
  """;
  // scroll: an element into view, or the page (or the scrolling panel under the middle of the view) by some pixels.
  const string ScrollJs = """
@@ -389,28 +418,29 @@ public partial class MainWindow
  }
  static BrowserTab? FindTab(string id) => Windows.Where(w => !w.closing).SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id);
  static string Clip(string s, int n) => s.Length > n ? s[..(n - 1)] + "…" : s;
- static readonly Dictionary<string, string> agentTabs = []; // agent name -> the tab it is working in
+ static readonly Dictionary<string, string> agentTabs = []; // run key -> the tab it is working in
  static void Claim(string who, MainWindow w, BrowserTab t)
  {
   var shown = w.Shown;
   agentTabs[who] = t.Id; t.LastActive = DateTime.UtcNow; // in use: memory saver leaves it awake
-  if (t.Agent != who) { t.Agent = who; w.ShellPublish(); }
+  if (t.AgentKey != who) { t.Agent = Me(who).Name; t.AgentKey = who; w.ShellPublish(); }
   if (w.Shown != shown) { w.ShowPage(); w.ShellPublish(); } // a chat shows the page its AI just moved to
  }
  /// The agent's work is done: its icon leaves the user's own tabs. Tabs it opened stay in the AI group.
- internal static void ReleaseAgentTabs(string name)
+ internal static void ReleaseAgentTabs(string key)
  {
-  agentTabs.Remove(name);
-  foreach (var w in Windows) { bool changed = false; foreach (var t in w.tabs.Where(t => t.Agent == name && !t.AgentGroup)) { t.Agent = null; changed = true; } if (changed) w.ShellPublish(); }
+  agentTabs.Remove(key);
+  foreach (var w in Windows) { bool changed = false; foreach (var t in w.tabs.Where(t => t.AgentKey == key && !t.AgentGroup)) { t.Agent = t.AgentKey = null; changed = true; } if (changed) w.ShellPublish(); }
  }
- /// The window whose own chat is running this AI right now.
- static MainWindow? ChatRunner(string who) => Windows.FirstOrDefault(w => !w.closing && w.aiBusy && w.aiChat != null && AiClis.FirstOrDefault(c => c.Id == w.aiChat.Harness)?.Name == who);
- // Still's own chat opens its pages as the user's own tabs, in front, with the chat in the sidebar beside them.
+ /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
+ static MainWindow? ChatRunner(string who) => runs.TryGetValue(who, out var run)
+  ? Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
+ // Still's own chat opens its pages as the user's own tabs, beside the chat: in front while the user watches that chat.
  // Other AI apps' tabs open in the background, next to the other AI tabs, so the user can keep browsing.
  async Task<BrowserTab> OpenAgentTab(string who, string url)
  {
-  string? chat = ChatRunner(who) == this ? aiChat!.Id : null;
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = who, AgentGroup = chat == null, RunChat = chat };
+  string? chat = runs.TryGetValue(who, out var run) ? who : null;
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null, RunChat = chat };
   if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
    int last = tabs.FindLastIndex(t => t.AgentGroup);
@@ -419,7 +449,7 @@ public partial class MainWindow
   }
   Claim(who, this, tab); ShellPublish(); SaveLater();
   await EnsureView(tab);
-  if (chat != null) { if (active?.ChatId == chat) aiOpen = true; await SelectTab(tab); }
+  if (chat != null && (Showing(run!.Chat) || active?.RunChat == chat)) { if (active?.ChatId == chat) aiOpen = true; await SelectTab(tab); }
   return tab;
  }
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
@@ -439,7 +469,49 @@ public partial class MainWindow
   if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages.");
   return url;
  }
- void Did(string action) => agentAction = action.Length > 90 ? action[..90] + "…" : action;
+ static void Did(string who, string action) => Me(who).Action = action.Length > 90 ? action[..90] + "…" : action;
+ /// The AI's cursor: an arrow with its name, in its companion's color, glides to where it's about to click.
+ /// It's drawn inside the page (the page's own window covers Still's), clicks pass through it, and it fades on its own.
+ static async Task Pointer(string who, BrowserTab t, CoreWebView2 core, double x, double y)
+ {
+  var me = Me(who);
+  try { await Js(core, CursorJs, new { x, y, name = me.Label, color = me.Color }); } catch (InvalidOperationException) { return; }
+  if (Windows.Any(w => !w.closing && w.Shown == t)) await Task.Delay(450); // let the user see where it's going first
+ }
+ // Built with DOM calls and a constructed style sheet, so pages with a strict CSP or Trusted Types still show it.
+ const string CursorJs = """
+  const key = Symbol.for('still.cursor');
+  let host = window[key];
+  if (!host || !host.isConnected) {
+   host = window[key] = document.createElement('still-cursor');
+   host.style.cssText = 'all:initial;position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none';
+   const root = host.attachShadow({ mode: 'closed' }), sheet = new CSSStyleSheet();
+   sheet.replaceSync(`.c{position:fixed;left:0;top:0;opacity:0;transition:transform .45s cubic-bezier(.3,1.25,.4,1),opacity .25s;filter:drop-shadow(0 2px 3px #0005)}
+    .c.on{opacity:1}.c.gone{opacity:0;transition:opacity .8s}svg{display:block;overflow:visible}
+    .tag{position:absolute;left:15px;top:19px;padding:2px 8px;border-radius:999px;color:#fff;font:600 12px/18px system-ui,sans-serif;white-space:nowrap}
+    .r{position:absolute;left:-12px;top:-12px;width:24px;height:24px;border-radius:50%;border:2px solid;opacity:0}.r.on{animation:r .55s ease-out}
+    @keyframes r{from{transform:scale(.3);opacity:.95}to{transform:scale(1.6);opacity:0}}`);
+   root.adoptedStyleSheets = [sheet];
+   const c = document.createElement('div'); c.className = 'c';
+   const r = document.createElement('div'); r.className = 'r';
+   const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); svg.setAttribute('width', '20'); svg.setAttribute('height', '22');
+   const path = document.createElementNS('http://www.w3.org/2000/svg', 'path'); path.setAttribute('d', 'M1 1l17 8.5-7.4 2.1L7.2 20z');
+   path.setAttribute('stroke', '#fff'); path.setAttribute('stroke-width', '2'); path.setAttribute('stroke-linejoin', 'round');
+   const tag = document.createElement('span'); tag.className = 'tag';
+   svg.append(path); c.append(r, svg, tag); root.append(c);
+   host[key] = { c, r, path, tag };
+   c.style.transform = `translate(${innerWidth / 2}px,${innerHeight * .6}px)`; // first time: glide in from the middle
+   (document.body || document.documentElement).append(host);
+   c.getBoundingClientRect();
+  }
+  const { c, r, path, tag } = host[key];
+  path.setAttribute('fill', o.color); tag.style.background = o.color; r.style.borderColor = o.color; tag.textContent = o.name;
+  c.classList.remove('gone'); c.classList.add('on');
+  c.style.transform = `translate(${o.x - 1}px,${o.y - 1}px)`;
+  clearTimeout(host.ripple); host.ripple = setTimeout(() => { r.classList.remove('on'); r.getBoundingClientRect(); r.classList.add('on'); }, 450);
+  clearTimeout(host.fade); host.fade = setTimeout(() => c.classList.add('gone'), 6000);
+  return true;
+  """;
  /// What an action led to: where the agent is now, and the new tab it's in if the action opened one.
  static object Outcome(string who, BrowserTab t, string tabBefore, string done)
  {
@@ -458,11 +530,11 @@ public partial class MainWindow
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = type == "mouseMoved" ? "none" : "left", clickCount = type == "mouseMoved" ? 0 : 1 }));
  }
  /// Types text one key at a time; a new line is Enter where the field has lines.
- static async Task TypeKeys(CoreWebView2 core, string text, bool multiline)
+ static async Task TypeKeys(CoreWebView2 core, string text, bool multiline, Worker me)
  {
   foreach (var r in text.ReplaceLineEndings("\n").EnumerateRunes()) {
    string s = r.ToString();
-   if (agentPaused) return; // the user took over mid-word
+   if (me.Paused) return; // the user took over mid-word
    if (s == "\n") { if (multiline) await PressKey(core, "Enter"); continue; }
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyDown", key = s, text = s, unmodifiedText = s }));
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", key = s }));
@@ -489,38 +561,55 @@ public partial class MainWindow
  {
   switch (tool) {
    case "ask_user": return await AskInChat(who, args);
+   case "save_file": {
+    string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");
+    string ext = Path.GetExtension(name).ToLowerInvariant();
+    if (ext is not (".csv" or ".tsv" or ".md" or ".json" or ".txt") || name.Length is < 5 or > 120) return Fail("Name the file with a .csv, .md, .json or .txt ending, like laptops.csv.");
+    if (content.Length > 5_000_000) return Fail("That's too big: keep a file under 5 MB.");
+    var run = runs.GetValueOrDefault(who);
+    string folder = Path.Combine(LibraryFolder, run?.Chat.Id ?? string.Concat(who.Split(Path.GetInvalidFileNameChars())));
+    Directory.CreateDirectory(folder);
+    string file = Path.Combine(folder, name); string Rel() => Path.GetRelativePath(LibraryFolder, file).Replace('\\', '/');
+    bool again = run?.Chat.Messages.Any(m => m.Role == "file" && m.Text == Rel()) == true; // this chat saved it before: a fix replaces it
+    if (!again) for (int n = 2; File.Exists(file); n++) file = Path.Combine(folder, Path.GetFileNameWithoutExtension(name) + $" ({n})" + ext);
+    await File.WriteAllTextAsync(file, content, new UTF8Encoding(ext == ".csv")); // a BOM lets Excel read a CSV's accents
+    library = null;
+    if (!again) run?.Chat.Messages.Add(new() { Role = "file", Text = Rel() });
+    Did(who, (again ? "Updated " : "Saved ") + Path.GetFileName(file)); PublishAiEverywhere();
+    return Reply(new { done = $"{(again ? "Replaced" : "Saved")} {Path.GetFileName(file)} in the user's Library. It shows in the chat as a card they can open, so don't paste its contents in your reply." });
+   }
    case "list_tabs":
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "open_tab": {
     var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(tab);
-    Did("Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
+    Did(who, "Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {
     var (w, t, core) = await AgentPage(who, args); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(t);
-    Did("Went to " + Host(t.Url)); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
+    Did(who, "Went to " + Host(t.Url)); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
    }
    case "switch_tab": {
     var (w, t) = AgentTab(who, args);
     if (B(args, "show")) { await w.SelectTab(t); w.Activate(); }
-    Did("Switched to " + t.Title); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
+    Did(who, "Switched to " + t.Title); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
    }
-   case "close_tab": { var (w, t) = AgentTab(who, args); await w.CloseTab(t, true); agentTabs.Remove(who); Did("Closed a tab"); return Reply(new { done = "Closed the tab" }); }
+   case "close_tab": { var (w, t) = AgentTab(who, args); await w.CloseTab(t, true); agentTabs.Remove(who); Did(who, "Closed a tab"); return Reply(new { done = "Closed the tab" }); }
    case "go_back": case "go_forward": case "reload": {
     var (w, t, core) = await AgentPage(who, args);
     if (tool == "go_back") { if (!core.CanGoBack) return Fail("There's no earlier page in this tab."); core.GoBack(); }
     else if (tool == "go_forward") { if (!core.CanGoForward) return Fail("There's no later page in this tab."); core.GoForward(); }
     else core.Reload();
-    await WaitLoaded(t); Did(tool == "reload" ? "Reloaded the page" : tool == "go_back" ? "Went back" : "Went forward"); return Reply(new { url = t.Url, title = t.Title });
+    await WaitLoaded(t); Did(who, tool == "reload" ? "Reloaded the page" : tool == "go_back" ? "Went back" : "Went forward"); return Reply(new { url = t.Url, title = t.Title });
    }
    case "read_page": {
     var (w, t, core) = await AgentPage(who, args);
     var page = await Js(core, SnapshotJs, new { text = !(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("text", out var tx) && (tx.ValueKind == JsonValueKind.False || tx.ValueKind == JsonValueKind.String && tx.GetString() == "false")), all = B(args, "all"), offset = (int)Math.Max(0, N(args, "offset", 0)) });
-    Did("Read " + Host(t.Url)); return Reply(new { text = page.GetString() ?? "" });
+    Did(who, "Read " + Host(t.Url)); return Reply(new { text = page.GetString() ?? "" });
    }
    case "find": {
     var (w, t, core) = await AgentPage(who, args);
     var found = await Js(core, FindJs, new { text = S(args, "text") });
-    Did("Looked for \"" + S(args, "text") + "\""); return Reply(new { text = found.GetString() ?? "" });
+    Did(who, "Looked for \"" + S(args, "text") + "\""); return Reply(new { text = found.GetString() ?? "" });
    }
    case "screenshot": {
     var (w, t, core) = await AgentPage(who, args);
@@ -530,17 +619,18 @@ public partial class MainWindow
     using var ms = new MemoryStream();
     try { await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms); }
     finally { if (previous != null && previous != t && !previous.Closed && w.active == t) await w.SelectTab(previous); }
-    Did("Took a screenshot"); return Reply(new { image = Convert.ToBase64String(ms.ToArray()), mimeType = "image/png" });
+    Did(who, "Took a screenshot"); return Reply(new { image = Convert.ToBase64String(ms.ToArray()), mimeType = "image/png" });
    }
    case "click": {
     var (w, t, core) = await AgentPage(who, args);
     var hit = await Js(core, ClickJs, new { id = Id(args), selector = S(args, "selector"), text = S(args, "text") });
     double x = hit.GetProperty("x").GetDouble(), y = hit.GetProperty("y").GetDouble();
     string label = Str(hit, "label"), before = agentTabs.GetValueOrDefault(who) ?? "";
+    await Pointer(who, t, core, x, y);
     t.AgentActedAt = DateTime.UtcNow;
     await MouseClick(core, x, y);
     await WaitLoaded(t, 8000);
-    Did("Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
+    Did(who, "Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
    }
    case "type": {
     var (w, t, core) = await AgentPage(who, args);
@@ -548,35 +638,38 @@ public partial class MainWindow
     object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked };
     var focus = await Js(core, FocusJs, Q(false));
     t.AgentActedAt = DateTime.UtcNow;
-    if (Str(focus, "done") is { Length: > 0 } picked) { Did(picked); return Reply(new { done = picked }); }
+    if (Str(focus, "done") is { Length: > 0 } picked) { Did(who, picked); return Reply(new { done = picked }); }
     if (focus.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Object) {
+     await Pointer(who, t, core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
      await MouseClick(core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
      focus = await Js(core, FocusJs, Q(true)); // the click moved the caret: put it back
     }
+    else if (focus.TryGetProperty("near", out var near) && near.ValueKind == JsonValueKind.Object)
+     await Pointer(who, t, core, near.GetProperty("x").GetDouble(), near.GetProperty("y").GetDouble());
     async Task<bool> Unchanged() => Str(await Js(core, SigJs, new { }), "sig") == Str(focus, "sig");
     if (text.Length > 0) {
      await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
      // Some editors ignore inserted text and only take key presses: type it key by key.
-     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean()); }
+     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean(), Me(who)); }
      if (await Unchanged()) return Fail("Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
     }
     else if (!B(args, "append")) await PressKey(core, "Backspace");
     if (B(args, "submit")) await PressKey(core, "Enter");
     await WaitLoaded(t, B(args, "submit") ? 8000 : 0);
     string field = Str(focus, "label");
-    Did("Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
+    Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
    }
    case "press_key": {
     var (w, t, core) = await AgentPage(who, args);
     string before = agentTabs.GetValueOrDefault(who) ?? "";
     t.AgentActedAt = DateTime.UtcNow;
     await PressKey(core, S(args, "key")); await WaitLoaded(t, 8000);
-    Did("Pressed " + S(args, "key")); return Reply(Outcome(who, t, before, "Pressed " + S(args, "key")));
+    Did(who, "Pressed " + S(args, "key")); return Reply(Outcome(who, t, before, "Pressed " + S(args, "key")));
    }
    case "scroll": {
     var (w, t, core) = await AgentPage(who, args);
     var r = await Js(core, ScrollJs, new { id = Id(args), selector = S(args, "selector"), direction = S(args, "direction"), amount = Math.Clamp(N(args, "amount", 0), 0, 20000) });
-    Did(Str(r, "done")); return Reply(new { done = Str(r, "done"), at = Str(r, "at") is { Length: > 0 } at ? at : null });
+    Did(who, Str(r, "done")); return Reply(new { done = Str(r, "done"), at = Str(r, "at") is { Length: > 0 } at ? at : null });
    }
    case "wait_for": {
     var (w, t, core) = await AgentPage(who, args);
@@ -584,7 +677,7 @@ public partial class MainWindow
     if (q.id.Length + q.selector.Length + q.text.Length == 0) return Fail("Pass an id, selector or text to wait for.");
     var until = DateTime.UtcNow.AddMilliseconds(Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000));
     while (true) {
-     if ((await Js(core, WaitJs, q)).ValueKind == JsonValueKind.True) { Did("Waited for the page"); return Reply(new { found = !q.gone, done = q.gone ? "It's gone" : "It's there", url = t.Url }); }
+     if ((await Js(core, WaitJs, q)).ValueKind == JsonValueKind.True) { Did(who, "Waited for the page"); return Reply(new { found = !q.gone, done = q.gone ? "It's gone" : "It's there", url = t.Url }); }
      if (DateTime.UtcNow >= until) return Reply(new { found = q.gone, done = q.gone ? "Still there after waiting" : "Didn't appear in time", url = t.Url });
      await Task.Delay(250);
     }
@@ -596,7 +689,7 @@ public partial class MainWindow
     string before = agentTabs.GetValueOrDefault(who) ?? "";
     w.AnswerPageDialog(t, accept, args.ValueKind == JsonValueKind.Object && args.TryGetProperty("text", out var tx) && tx.ValueKind == JsonValueKind.String ? tx.GetString() : null);
     await WaitLoaded(t, 8000);
-    Did(accept ? "Accepted a dialog" : "Dismissed a dialog"); return Reply(Outcome(who, t, before, accept ? "Accepted the dialog" : "Dismissed the dialog"));
+    Did(who, accept ? "Accepted a dialog" : "Dismissed a dialog"); return Reply(Outcome(who, t, before, accept ? "Accepted the dialog" : "Dismissed the dialog"));
    }
    case "upload_file": {
     var (w, t, core) = await AgentPage(who, args);
@@ -621,7 +714,7 @@ public partial class MainWindow
     }
     await core.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", JsonSerializer.Serialize(input));
     t.AgentUpload = null;
-    Did("Attached " + names); return Reply(new { done = "Attached " + names });
+    Did(who, "Attached " + names); return Reply(new { done = "Attached " + names });
    }
    default: return Fail("Unknown tool: " + tool);
   }
