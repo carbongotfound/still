@@ -28,3 +28,8 @@ foreach (var resource in content)
  var bytes = reader.ReadBytes(size);
  Check(bytes.AsSpan().SequenceEqual(File.ReadAllBytes(Path.Combine(args[1], "still", relative))), "Embedded content matches source: " + relative);
 }
+// The interface calls OpenAI's agent "ChatGPT", never by its CLI's name.
+var interfaceFiles = Directory.GetFiles(Path.Combine(args[1], "still", "Shell"), "*", SearchOption.AllDirectories).Where(f => Path.GetExtension(f) is ".js" or ".css" or ".html")
+ .Concat(Directory.GetFiles(Path.Combine(args[1], "still"), "*.xaml"));
+var saysCodex = interfaceFiles.Where(f => File.ReadAllText(f).Contains("Codex", StringComparison.Ordinal)).ToArray();
+Check(saysCodex.Length == 0, "The interface never says Codex" + (saysCodex.Length > 0 ? ": " + string.Join(", ", saysCodex.Select(Path.GetFileName)) : ""));

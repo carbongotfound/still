@@ -476,11 +476,6 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-pick-name { flex:1; min-width:0; display:flex; flex-direction:column; }
 .ai-pick-name small { color:var(--muted-foreground); font-size:11.5px; }
 .ai-pick-check { width:18px; height:18px; flex:none; padding:3px; border-radius:50%; background:var(--primary); color:var(--primary-foreground); stroke-width:3; }
-.ai-chip { display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:100px; font-size:11px; font-weight:500; white-space:nowrap; color:var(--muted-foreground); background:var(--muted); }
-.ai-chip i { width:6px; height:6px; border-radius:50%; background:currentColor; }
-.ai-chip svg { width:11px; height:11px; }
-.ai-chip.is-ready { color:#2f7d4a; background:color-mix(in oklab,#3fa564 13%,transparent); } .dark .ai-chip.is-ready { color:#6fd394; }
-.ai-chip.is-signin { color:#a35a12; background:color-mix(in oklab,#e8913a 15%,transparent); } .dark .ai-chip.is-signin { color:#f0b46a; }
 .ai-go[data-slot="button"] { width:100%; max-width:260px; height:40px; border-radius:100px; font-weight:600; }
 .ai-trust { display:flex; gap:9px; align-items:flex-start; max-width:300px; padding:10px 12px; border-radius:12px; background:var(--muted); color:var(--muted-foreground); font-size:12px; line-height:1.45; text-align:left; }
 .ai-trust svg { width:15px; height:15px; flex:none; margin-top:1px; color:#2f7d4a; } .dark .ai-trust svg { color:#6fd394; }
@@ -684,3 +679,29 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .companion-colors { display:flex; gap:9px; }
 .companion-colors button { --s:26px; transition:box-shadow .15s; } .companion-colors button.is-picked { box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--foreground); }
 .companion-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
+
+/* Bring your own AI: one row per agent app, with its next step on the right. */
+.byo { gap:8px; text-align:left; }
+.byo-row { display:grid; grid-template-columns:1fr auto; align-items:center; gap:4px 8px; padding:6px 10px 6px 6px; border-radius:14px; background:var(--card);
+ box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); transition:box-shadow .16s cubic-bezier(.22,1,.36,1); }
+.dark .byo-row { box-shadow:0 0 0 1px rgb(255 255 255/.08); }
+.byo-row[data-chosen] { box-shadow:0 0 0 1.5px var(--foreground); }
+.byo-main { display:flex; align-items:center; gap:12px; min-width:0; padding:6px; border:0; border-radius:10px; background:none; color:inherit; text-align:left; }
+.byo-main:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
+.byo-tile { display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:10px; background:var(--muted); font-size:13px; font-weight:600; letter-spacing:-.02em; color:var(--foreground); }
+.byo-name { display:flex; flex-direction:column; min-width:0; flex:1; }
+.byo-name strong { font-size:14px; font-weight:540; }
+.byo-name small { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--muted-foreground); }
+.byo-name small svg { width:13px; height:13px; }
+.byo-row[data-status=ready] .byo-name small { color:#2f7d4a; } .dark .byo-row[data-status=ready] .byo-name small { color:#6fd394; }
+.byo-act { border-radius:999px; }
+.byo-act svg { transition:transform .16s cubic-bezier(.22,1,.36,1); }
+.byo-act[aria-expanded=true] svg { transform:rotate(180deg); }
+.byo-how { grid-column:1 / -1; padding:2px 6px 6px 54px; font-size:12.5px; color:var(--muted-foreground); }
+.byo-how p { margin:0 0 6px; }
+.byo-cmd { display:block; padding:8px 10px; border-radius:10px; background:var(--muted); color:var(--foreground); font:13px ui-monospace,SFMono-Regular,Consolas,monospace; user-select:all; overflow-x:auto; white-space:nowrap; }
+.byo-how .ai-row { justify-content:flex-start; margin-top:4px; }
+.byo-more { display:flex; align-items:center; gap:4px; align-self:flex-start; padding:4px 6px; border:0; background:none; font-size:12.5px; color:var(--muted-foreground); }
+.byo-more svg { width:14px; height:14px; }
+.byo-more[aria-expanded=true] svg { transform:rotate(180deg); }
+.chat-info-row > b small { display:block; font-size:11.5px; color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; }

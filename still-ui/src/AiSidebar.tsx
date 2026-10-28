@@ -11,7 +11,7 @@ import { AiLogo } from "./AiLogo"
 import { Face, type Companion } from "./Buddy"
 import { Markdown } from "./Markdown"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; site: string }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
  open: boolean; harness: string; busy: boolean; running?: string; error: string; profile: string; harnesses: Harness[]
  setup: { line: string; url: string; code: string }; pending: boolean
@@ -43,23 +43,46 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
  return <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
 }
 
-function StatusChip({ h }: { h: Harness }) {
- const s = statusOf(h)
- if (settingUp(s)) return <span className="ai-chip"><Spinner />{s === "installing" ? "Installing" : "Signing in"}</span>
- if (s === "ready") return <span className="ai-chip is-ready"><i />Ready</span>
- if (s === "signedOut") return <span className="ai-chip is-signin"><i />Sign in</span>
- if (s === "missing") return <span className="ai-chip">Get it</span>
- return null
-}
-
-// The AIs Still works with and whether each is ready. Picking one signs it in, or offers to install it.
-export function AiPicker({ ai, onPick }: { ai: AiState; onPick: (id: string) => void }) {
- return <div className="ai-picker">{ai.harnesses.map(h => <button key={h.id} className="ai-pick-card" data-chosen={ai.harness === h.id || undefined} onClick={() => onPick(h.id)}>
-  <AiLogo id={h.id} size={26} />
-  <span className="ai-pick-name"><strong>{h.name}</strong><small>by {h.maker}</small></span>
-  <StatusChip h={h} />
-  {ai.harness === h.id && <Check className="ai-pick-check" />}
- </button>)}</div>
+const MONOGRAM: Record<string, string> = { chatgpt: "Gp", grok: "Gk", claude: "Cl" }
+// "Bring your own AI": each agent app on this PC, signed in with the user's own plan. Picking one makes it the AI for
+// new chats; a row that isn't ready offers the next step. Nothing is installed unless the user asks.
+export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
+ const [howTo, setHowTo] = useState("")
+ const [more, setMore] = useState(false)
+ const row = (h: Harness) => {
+  const s = statusOf(h), chosen = ai.harness === h.id
+  const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
+   : s === "ready" ? <><span className="byo-ok">Signed in with your plan</span><Check aria-hidden /></>
+   : s === "missing" ? "Not installed"
+   : s === "signedOut" ? (send ? "Installed" : "Installed · Sign in with your plan")
+   : h.installed ? "Installed" : "Checking…"
+  return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
+   <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
+    <span className="byo-tile" aria-hidden>{MONOGRAM[h.id] ?? h.name.slice(0, 2)}</span>
+    <span className="byo-name"><strong>{h.name}</strong><small>{state}</small></span>
+    {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
+   </button>
+   {s === "signedOut" && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}
+   {s === "missing" && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to install<ChevronDown /></Button>}
+   {howTo === h.id && s === "missing" && <div className="byo-how">
+    <p>Run this in PowerShell, then come back:</p>
+    <code className="byo-cmd">{h.installCommand}</code>
+    <div className="ai-row">
+     <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.installCommand)}><Copy />Copy</Button>
+     {h.installer && send && <Button size="sm" variant="ghost" onClick={() => { onPick(h.id); send("aiInstall") }}>Install it for me</Button>}
+     {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I installed it</Button>}
+    </div>
+   </div>}
+  </div>
+ }
+ const main = ai.harnesses.filter(h => !h.secondary), others = ai.harnesses.filter(h => h.secondary)
+ return <div className="ai-picker byo">
+  {main.map(row)}
+  {others.length > 0 && <>
+   <button className="byo-more" aria-expanded={more} onClick={() => setMore(!more)}>More agents ({others.length})<ChevronDown /></button>
+   {more && others.map(row)}
+  </>}
+ </div>
 }
 
 // Every AI in one list: its models when it's ready, or a way to set it up. Picking another AI's model moves the chat to it.
@@ -121,9 +144,9 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
  const pending = ai.pending && <p className="ai-fine">Your message runs as soon as {current?.name ?? "your AI"} is ready.</p>
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
-  <h3>Pick your AI</h3>
-  <p>Still works with the AI you already use. It runs on this PC with your own account, so there's nothing new to pay for.</p>
-  <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id })} />
+  <h3>Bring your own AI</h3>
+  <p>Still uses the plan you already pay for. No API keys, and nothing leaves your PC except your chats with your AI provider.</p>
+  <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
  </div>
  if (status === "missing" || status === "installing") return <div className="ai-pane ai-center">
@@ -135,9 +158,12 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
-   <p>{current.name} needs the {current.app} app from {current.maker}. Still can install it for you, then you sign in with your {current.maker} account.</p>
-   <Button className="ai-go" onClick={() => send("aiInstall")}>Install {current.app}</Button>
-   <div className="ai-trust"><ShieldCheck /><span>Uses {current.maker}'s official installer from <b title={current.installer}>{host(current.installer)}</b>. It installs just for you and needs no admin rights.</span></div>
+   <p>{current.name} needs {current.maker}'s app on this PC. Run this in PowerShell, then sign in with your plan.</p>
+   <code className="byo-cmd">{current.installCommand}</code>
+   {current.installer && <>
+    <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>
+    <div className="ai-trust"><ShieldCheck /><span>Uses {current.maker}'s official installer from <b title={current.installer}>{host(current.installer)}</b>. It installs just for you and needs no admin rights.</span></div>
+   </>}
    <div className="ai-row"><Button variant="link" size="sm" onClick={() => send("aiCheck")}>I already installed it</Button><Button variant="link" size="sm" onClick={onSettings}>Pick another AI</Button></div>
   </>}
   {pending}
@@ -168,6 +194,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
 // A conversation: in its own tab (centered, or beside the AI's page) or in the panel next to a page.
 export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void }) {
  const [tick, setTick] = useState(0)
+ const provider = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const [worked, setWorked] = useState(0)
  const ticks = useRef(0)
  const [queued, setQueued] = useState("")
@@ -233,7 +260,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
    {elsewhere ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="think" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button><Button variant="link" size="sm" onClick={() => send("aiStop")}>Stop it</Button></div>
     : <Composer ai={ai} send={send} onSubmit={submit} onStop={busy ? () => send("aiStop") : undefined}
      placeholder={busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />}
-   {ai.usage && mode === "panel" && <p className="ai-usage"><Gauge />{ai.usage}</p>}
+   {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
   </div></div>}
  </section>
 }
@@ -241,8 +268,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
 // AI apps, what the AI can see, and the saved chats.
 function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => void }) {
  return <div className="ai-pane">
-  <section><h4>AI apps</h4><p>They run on this PC, signed in to your own accounts. Switch between them in the model list under the message box.</p>
-   <AiPicker ai={ai} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
+  <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for. Switch between them in the model list under the message box.</p>
+   <AiPicker ai={ai} send={send} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
   <Separator />
   <section><h4>What it can see</h4><p>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</p></section>
   <Separator />
