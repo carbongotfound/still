@@ -1,10 +1,10 @@
-import { useState, type ReactNode } from "react"
+import { useState, type CSSProperties, type ReactNode } from "react"
 import { AnimatePresence, motion } from "motion/react"
 import { Bot, Check, Copy, CornerDownLeft, Dices, Download, Globe2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
-import { COLORS, FACE_NAMES, FALLBACK, Face, NAMES, type Companion } from "./Buddy"
+import { COLORS, FACE_NAMES, FALLBACK, Face, HUES, NAMES, type Companion } from "./Buddy"
 
 const TASKS = [
  ["Plan a weekend away", "Help me plan a weekend away. Ask me where I'm starting from and what I like, then find a few options."],
@@ -61,7 +61,7 @@ export function Welcome({ isDefault, agents, mcpCommand, ai, noAi, send, onImpor
        <h4>Face</h4>
        <div className="companion-faces" role="radiogroup" aria-label="Face">{FACE_NAMES.map(f => <button key={f} role="radio" aria-checked={c.face === f} aria-label={f} className={cn(c.face === f && "is-picked")} onClick={() => setC({ ...c, face: f })}><Face companion={{ ...c, face: f }} size={34} /></button>)}</div>
        <h4>Color</h4>
-       <div className="companion-colors" role="radiogroup" aria-label="Color">{COLORS.map(k => <button key={k} role="radio" aria-checked={c.color === k} aria-label={k} data-color={k} className={cn("face", c.color === k && "is-picked")} onClick={() => setC({ ...c, color: k })} />)}</div>
+       <div className="companion-colors" role="radiogroup" aria-label="Color">{COLORS.map(k => <button key={k} role="radio" aria-checked={c.color === k} aria-label={k} style={{ "--hue": HUES[k] } as CSSProperties} className={cn(c.color === k && "is-picked")} onClick={() => setC({ ...c, color: k })} />)}</div>
       </div>}
       {at === "ai" && ai && <>
        <Bubble>Bring your own AI.</Bubble>

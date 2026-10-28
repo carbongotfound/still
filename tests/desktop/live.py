@@ -28,6 +28,7 @@ try:
     send(process, "aiCheck")
     if MODEL:
         time.sleep(3)  # the model list loads in the background
+        send(process, "aiAdvanced", on=True)  # without Advanced, the companion's mode picks the model
         send(process, "aiModel", harness=AGENT, model=MODEL)
     started = time.monotonic()
     send(process, "aiSend", text="Open example.com and tell me its title.")
