@@ -86,8 +86,9 @@ FAKE = textwrap.dedent(r'''
     args = sys.argv[1:]
     if args[:1] == ["status"]: print("signed in"); sys.exit(0)
     prompt = sys.stdin.read()
+    logging = threading.Lock()  # two steps at once: appends from both threads would overwrite each other on Windows
     def log(entry):
-        with open(os.path.join(here, "calls.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps(entry) + "\n")
+        with logging, open(os.path.join(here, "calls.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps(entry) + "\n")
     def say(e): print(json.dumps(e), flush=True)
     server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
     still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -133,7 +134,7 @@ FAKE = textwrap.dedent(r'''
 
 def calls(chat):
     file = BIN / "calls.jsonl"
-    rows = [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines()] if file.exists() else []
+    rows = [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines() if line.endswith("}")] if file.exists() else []  # skips a line being written
     return [c for c in rows if c["chat"] == chat and c["tool"] != "open_tab"]
 
 

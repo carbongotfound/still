@@ -28,10 +28,12 @@ public partial class MainWindow
  internal MainWindow(BrowserTab moved, Point? screenPoint) : this(secondaryWindow: true)
  {
   tabs.Add(moved);
+  if (moved.View is { CoreWebView2: { } core } live) { WebHost.Children.Add(live); WireView(moved, live, core); }
   WindowState = WindowState.Normal;
   Width = 1120; Height = 760;
-  if (screenPoint is { } p) { WindowStartupLocation = WindowStartupLocation.Manual; Left = Math.Max(0, p.X - 140); Top = Math.Max(0, p.Y - 24); }
-  else { WindowStartupLocation = WindowStartupLocation.CenterScreen; }
+  // Where the tab was dropped, on any screen (one left of or above the main screen has negative coordinates).
+  if (screenPoint is { } p) { WindowStartupLocation = WindowStartupLocation.Manual; Left = Math.Max(SystemParameters.VirtualScreenLeft, p.X - 140); Top = Math.Max(SystemParameters.VirtualScreenTop, p.Y - 24); }
+  else if (!(App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_POS") != null)) { WindowStartupLocation = WindowStartupLocation.CenterScreen; } // test windows stay on the test screen
  }
 
  [DllImport("user32.dll")] static extern bool GetWindowRect(IntPtr hwnd, out NativeRect rect);
@@ -67,14 +69,16 @@ public partial class MainWindow
  async Task MoveTab(BrowserTab tab, MainWindow? target, Point? screenPoint)
  {
   if (!tabs.Contains(tab) || target == this) return;
-  double scroll = 0;
-  if (tab.View?.CoreWebView2 is { } core) {
-   try { double.TryParse(await core.RunAsync("window.scrollY"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out scroll); } catch (Exception) { }
-  }
-  var moved = new BrowserTab { Url = tab.Url, Title = tab.Title, Favicon = tab.Favicon, Pinned = tab.Pinned, Private = tab.Private, RestoreScroll = scroll };
+  if (tab.LoadingTask is { } loading) await loading;
+  if (!tabs.Contains(tab)) return;
+  // The live page goes with the tab: no reload, so it keeps its scroll, forms, sign-ins and video.
   // Leave this window (not a real close: nothing goes to "reopen closed tab").
+  var moved = tab;
   int index = tabs.IndexOf(tab);
-  tab.Closed = true; DisposeView(tab); tabs.Remove(tab);
+  if (tab == splitLeft || tab == splitRight) { splitLeft = splitRight = null; LayoutSplit(); }
+  DropPermissions(tab); tab.Group = "";
+  tabs.Remove(tab);
+  if (tab.View is { } view) { view.Visibility = Visibility.Hidden; WebHost.Children.Remove(view); if (view.CoreWebView2 == null) { view.Dispose(); tab.View = null; } }
   if (tabs.Count == 0) {
    if (secondary) { Close(); }
    else await NewTab("", false, false);
@@ -94,6 +98,7 @@ public partial class MainWindow
   if (closing) return;
   if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
   Activate();
+  if (moved.View is { CoreWebView2: { } core } live) { WebHost.Children.Add(live); WireView(moved, live, core); }
   tabs.Add(moved); await SelectTab(moved); RenderTabs(); SaveLater();
   ShellSend(new { kind = "tabArrived", id = moved.Id });
  }
