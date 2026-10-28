@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand } from "lucide-react"
+import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -14,7 +14,7 @@ import { UploadCard, type Upload } from "./UploadCard"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
 import { Command, CommandInput, CommandList, CommandEmpty, CommandGroup, CommandItem } from "@/components/ui/command"
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuShortcut, DropdownMenuLabel } from "@/components/ui/dropdown-menu"
-import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator } from "@/components/ui/context-menu"
+import { ContextMenu, ContextMenuTrigger, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuShortcut } from "@/components/ui/context-menu"
 import { TooltipProvider } from "@/components/ui/tooltip"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
@@ -73,6 +73,9 @@ const IDEAS: [LucideIcon, string, string, string, string][] = [
 const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
+// Shortcut hints in the native spelling: Cmd and Shift symbols on a Mac.
+const MAC = /Mac/.test(navigator.userAgent)
+export const keys = (k: string) => MAC ? k.replace(/Ctrl/g, "⌘").replace(/Shift/g, "⇧").replace(/Alt/g, "⌥").replace(/ /g, "") : k
 const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["Running tasks", "Ctrl Shift K"], ["Stop the AI", "Ctrl ."], ["Approve the card in front of you", "Ctrl Enter"], ["Close a preview", "Esc"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
 
 // After a crash: chats that were working when Still closed, with one button to pick them all back up.
@@ -207,17 +210,16 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
       <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent?.tab === tab.id && state.agent.paused ? "idle" : "working"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={isRunning(ai, tab.chatId) ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
-     {!tab.pinned && !tab.chatId && !!tab.url && <span className="tab-actions" onPointerDown={e => e.stopPropagation()}>
-      <button aria-label={"Pin " + tab.title} title="Pin" onClick={() => send("pin", { id: tab.id })}><Pin /></button>
-      <button aria-label={(marked ? "Remove bookmark: " : "Bookmark ") + tab.title} title={marked ? "Remove bookmark" : "Bookmark"} onClick={() => send("bookmark", { id: tab.id })}><Bookmark className={marked ? "bookmarked" : ""} /></button>
-      {!state.noAi && !!ai && !tab.isPrivate && <button aria-label={"Chat about " + tab.title} title="Open in chat" onClick={() => { send("select", { id: tab.id }); if (!ai.open) send("aiToggle") }}><MessageSquare /></button>}
-      <button aria-label={"Copy link: " + tab.title} title="Copy link" onClick={() => { send("copyText", { text: tab.url }); toast("Link copied") }}><Copy /></button>
-     </span>}
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
     </div>
    </ContextMenuTrigger>
-   <ContextMenuContent className="w-48">
-    <ContextMenuItem onSelect={() => send("pin", { id: tab.id })}><Pin />{tab.pinned ? "Unpin tab" : "Pin tab"}</ContextMenuItem>
+   <ContextMenuContent className="w-60">
+    <ContextMenuItem onSelect={() => send("pin", { id: tab.id })}>{tab.pinned ? <PinOff /> : <Pin />}{tab.pinned ? "Unpin tab" : "Pin tab"}<ContextMenuShortcut>{keys("Ctrl Shift P")}</ContextMenuShortcut></ContextMenuItem>
+    {!tab.chatId && !!tab.url && <>
+     <ContextMenuItem onSelect={() => send("bookmark", { id: tab.id })}><Bookmark />{marked ? "Remove bookmark" : "Bookmark"}<ContextMenuShortcut>{keys("Ctrl D")}</ContextMenuShortcut></ContextMenuItem>
+     <ContextMenuItem onSelect={() => { send("copyText", { text: tab.url }); toast("Link copied") }}><Link2 />Copy link</ContextMenuItem>
+     {!state.noAi && !!ai && !tab.isPrivate && <ContextMenuItem onSelect={() => { send("select", { id: tab.id }); if (!ai.open) send("aiToggle") }}><MessageSquare />Open in chat<ContextMenuShortcut>{keys("Ctrl Shift A")}</ContextMenuShortcut></ContextMenuItem>}
+    </>}
     <ContextMenuItem onSelect={() => send("duplicate", { id: tab.id })}><Copy />Duplicate</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("mute", { id: tab.id })}><VolumeX />{tab.muted ? "Unmute" : "Mute"}</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("sleep", { id: tab.id })}><MoonStar />Put to sleep</ContextMenuItem>
@@ -230,7 +232,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
      {tab.group && <ContextMenuItem onSelect={() => send("groupRemove", { id: tab.id })}><FolderMinus />Remove from group</ContextMenuItem>}
     </>}
     <ContextMenuSeparator />
-    <ContextMenuItem onSelect={() => send("closeTab", { id: tab.id, force: true })}><X />Close tab</ContextMenuItem>
+    <ContextMenuItem onSelect={() => send("closeTab", { id: tab.id, force: true })}><X />Close tab<ContextMenuShortcut>{keys("Ctrl W")}</ContextMenuShortcut></ContextMenuItem>
    </ContextMenuContent>
   </ContextMenu>
  }
