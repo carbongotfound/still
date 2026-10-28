@@ -29,3 +29,5 @@ a log of failed runs in `ai/logs` (never the prompt).
 - `python tests/desktop/live.py <exe> claude` runs one real task on your plan. By hand only.
 - `python tests/desktop/takeover.py <exe>` checks the controls over an AI's page: the pill, Take over, Hand back, Stop.
   `--live` adds one small Claude run with a takeover in the middle. By hand only.
+- `python tests/desktop/agentic.py <exe>` runs chats in parallel against a local store: files, the Library, the runner,
+  Up next, questions. `--live` does the laptops task through real Claude on Haiku. By hand only.

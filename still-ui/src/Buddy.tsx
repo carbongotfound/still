@@ -12,7 +12,7 @@ export const hueOf = (c?: { color: string }) => HUES[c?.color ?? ""] ?? HUES[BEF
 export const NAMES = ["Pip", "Hazel", "Rio", "Juno", "Milo", "Wren", "Otis", "Nova", "Bea", "Kit", "Moss", "Sol", "Fern", "Ivo", "Lumi", "Tate", "Ada", "Bo"]
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: string }
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: string; folder?: string }
 export type Mood = MascotState | "sleep"
 export const FALLBACK: Companion = { id: "pip", name: "Pip", face: "", color: "ocean", job: "" }
 // The companion the user is working with, for faces that don't name one.
