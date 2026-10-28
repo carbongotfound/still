@@ -40,7 +40,7 @@ public partial class MainWindow
   if(holedPage!=IntPtr.Zero&&holedPage!=page)SetWindowRgn(holedPage,IntPtr.Zero,true);
   holedPage=IntPtr.Zero;
   if(page==IntPtr.Zero)return;
-  if(holes.Tab!=Shown!.Id||holes.Frame<=0&&holes.Spots.Length==0||overlay||contentFullScreen){SetWindowRgn(page,IntPtr.Zero,true);return;}
+  if(holes.Tab!=Shown!.Id||holes.Frame<=0&&holes.Spots.Length==0||overlay||contentFullScreen||Partner!=null){SetWindowRgn(page,IntPtr.Zero,true);return;}
   var dpi=VisualTreeHelper.GetDpi(this);
   int X(double v)=>(int)Math.Round(v*dpi.DpiScaleX);
   int Y(double v)=>(int)Math.Round(v*dpi.DpiScaleY);
@@ -55,6 +55,7 @@ public partial class MainWindow
   bool fill=contentFullScreen&&shellRoot!=null;
   WebHost.Width=fill?Math.Max(1,shellRoot!.ActualWidth):pageWidth;WebHost.Height=fill?Math.Max(1,shellRoot!.ActualHeight):pageHeight;
   Canvas.SetLeft(WebHost,fill?0:pageX);Canvas.SetTop(WebHost,fill?0:pageY);
+  LayoutSplit();
   if(sidePanelView!=null&&!overlay)sidePanelView.Visibility=fill?Visibility.Hidden:Visibility.Visible; // a docked extension panel never covers a fullscreen video
   RestorePageWindow();
  }
@@ -67,6 +68,7 @@ public partial class MainWindow
   WebHost.UpdateLayout();
   view.UpdateWindowPos();
   if(view.Handle!=IntPtr.Zero)SetWindowPos(view.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);
+  if(Partner?.View is {IsVisible:true} side&&side.Handle!=IntPtr.Zero){side.UpdateWindowPos();SetWindowPos(side.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);}
   CutHoles();
  }
  async Task InitializeShell()
@@ -130,7 +132,24 @@ public partial class MainWindow
      case "permissionAnswer": AnswerPermission(S("id"),data.TryGetProperty("allow",out var al)&&al.ValueKind==JsonValueKind.True);break;
      case "select": if(Target() is {} selected)await SelectTab(selected);break;
      case "closeTab": if(Target() is {} closed)await CloseTab(closed,data.TryGetProperty("force",out var force)&&force.GetBoolean());break;
-     case "pin": if(Target() is {} pinned){pinned.Pinned=!pinned.Pinned;SaveLater();}break;
+     case "pin": if(Target() is {} pinned){pinned.Pinned=!pinned.Pinned;if(pinned.Pinned)LeaveGroup(pinned);SaveLater();}break;
+     case "recent": await SwitchRecent(data.TryGetProperty("step",out var p5step)&&p5step.TryGetInt32(out var p5s)?p5s:1,data.TryGetProperty("held",out var p5held)&&p5held.ValueKind==JsonValueKind.True);break;
+     case "recentPick": await PickRecent(tabs.FirstOrDefault(t=>t.Id==S("id")));break;
+     case "groupNew": if(Target() is {} p5new){var made=NewGroup(p5new);ShellSend(new{kind="groupRename",id=made.Id});}break;
+     case "groupAdd": if(Target() is {} p5add&&state.Groups.Any(g=>g.Id==S("group")))JoinGroup(p5add,S("group"));break;
+     case "groupRemove": if(Target() is {} p5out)LeaveGroup(p5out);break;
+     case "groupSet": if(state.Groups.FirstOrDefault(g=>g.Id==S("group")) is {} p5g){
+       if(data.TryGetProperty("name",out var p5name)&&p5name.ValueKind==JsonValueKind.String)p5g.Name=new string((p5name.GetString()??"").Where(ch=>!char.IsControl(ch)).Take(40).ToArray()).Trim();
+       if(GroupColors.Contains(S("color")))p5g.Color=S("color");
+       if(data.TryGetProperty("collapsed",out var p5c)&&p5c.ValueKind is JsonValueKind.True or JsonValueKind.False)p5g.Collapsed=p5c.GetBoolean();
+       foreach(var w in Windows)w.ShellPublish();SaveLater();}break;
+     case "groupUngroup": foreach(var t in tabs.Where(t=>t.Group==S("group")))t.Group="";RenderTabs();SaveLater();break;
+     case "groupClose": foreach(var t in tabs.Where(t=>t.Group==S("group")).ToList())await CloseTab(t,true);break;
+     case "split": if(Target() is {} p5split)await StartSplit(p5split,S("side")!="left");break;
+     case "splitSwap": if(Partner!=null){(splitLeft,splitRight)=(splitRight,splitLeft);LayoutSplit();ShellPublish();}break;
+     case "splitRatio": splitRatio=data.TryGetProperty("ratio",out var p5r)&&p5r.TryGetDouble(out var p5rv)?Math.Clamp(p5rv,.2,.8):.5;LayoutSplit();ShellPublish();break;
+     case "splitEnd": EndSplit();break;
+     case "addressPick": RecordPick(S("typed"),S("url"));break;
      case "duplicate": if(Target() is {} duplicate)await NewTab(duplicate.Url,duplicate.Private,false);break;
      case "sleep": if(Target() is {} sleep){DisposeView(sleep);if(sleep==active)await NewTab("",false,false);SaveLater();}break;
      case "mute": if(Target()?.View?.CoreWebView2 is {} mute)mute.IsMuted=!mute.IsMuted;break;
@@ -143,12 +162,15 @@ public partial class MainWindow
      case "incognitoWindow":OpenIncognito();break;
      case "reorder":
       var move=tabs.FirstOrDefault(t=>t.Id==S("id"));var before=tabs.FirstOrDefault(t=>t.Id==S("before"));
-      if(move!=null&&before!=null&&move!=before){tabs.Remove(move);tabs.Insert(tabs.IndexOf(before),move);SaveLater();}break;
+      if(move!=null&&before!=null&&move!=before){tabs.Remove(move);int at=tabs.IndexOf(before);tabs.Insert(at,move);
+       // Dropped between two tabs of a group, it joins; at a group's edge it stays outside, so groups stay together.
+       if(move.Group!=before.Group)move.Group=!move.Pinned&&at>0&&tabs[at-1].Group==before.Group?before.Group:"";
+       RenderTabs();SaveLater();}break;
      case "back": BackClick(this,new());break;
      case "forward": ForwardClick(this,new());break;
      case "reload": ReloadClick(this,new());break;
      case "zoom":if(Shown?.View is{} zv){double amount=data.GetProperty("amount").GetDouble();zv.ZoomFactor=amount==0?1:Math.Clamp(zv.ZoomFactor+amount,.3,3);}break;
-     case "bookmark": ToggleBookmark();break;
+     case "bookmark": ToggleBookmark(tabs.FirstOrDefault(t=>t.Id==S("id")));break;
      case "reader": CloseSheet(false);await ToggleReader();break;
      case "hide": CloseSheet(false);await PickHidden();break;
      case "pip": CloseSheet(false);await PictureInPicture();break;
@@ -168,6 +190,7 @@ public partial class MainWindow
        case "askInChat":Prefs.AgentsAskInChat=value=="true";SaveLater();break;
        case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();AnswerAgent(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "memory":Prefs.MemorySaver=value=="true";foreach(var w in Windows)w.ApplyMemoryPolicy();break;
+       case "tabLayout":if(value is "Classic" or "Modern"){Prefs.TabLayout=value;foreach(var w in Windows)w.ShellPublish();}break;
        case "autofill":Prefs.Autofill=value=="true";foreach(var t in tabs)if(t.View?.CoreWebView2 is {} ac)ac.Settings.IsGeneralAutofillEnabled=Prefs.Autofill;break;
       }SaveLater();break;
      case "bookmarkMove":{
@@ -180,7 +203,8 @@ public partial class MainWindow
      case "welcomeDone":state.Welcome=false;SaveLater();PublishAll();break;
      case "defaultBrowser":BrowserRegistration.Register();BrowserRegistration.OpenDefaultAppsSettings();break;
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;
-     case "clearHistory":state.History.Clear();Save();Toast("History cleared.");break;
+     case "sidebarResize":if(data.TryGetProperty("width",out var p5w)&&p5w.TryGetDouble(out var p5wv)){Prefs.SidebarWidth=Math.Clamp(p5wv,190,360);SaveLater();foreach(var w in Windows)w.ShellPublish();}break;
+     case "clearHistory":state.History.Clear();state.AddressPicks.Clear();Save();Toast("History cleared.");break;
      case "clearCookies":
       var regularCore=await ManagementCore();await regularCore.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllSite);Toast("Cookies and website data cleared.");break;
      case "chooseDownloads":
@@ -233,9 +257,12 @@ public partial class MainWindow
    ShellSend(new{
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),working=AtWork().Select(w=>agentTabs.GetValueOrDefault(w.Key)).Where(id=>id!=null),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
-    preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
-    tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,driverChat=t.AgentKey is{} k&&runs.ContainsKey(k)?k:null,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
+    preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,tabLayout=Prefs.TabLayout,sidebarWidth=Prefs.SidebarWidth,startupDisabled=StartupRegistration.DisabledByWindows},
+    tabs=tabs.Select(t=>new{id=t.Id,group=t.Group,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,driverChat=t.AgentKey is{} k&&runs.ContainsKey(k)?k:null,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
+    groups=state.Groups.Where(g=>tabs.Any(t=>t.Group==g.Id)).Select(g=>new{id=g.Id,name=g.Name,color=g.Color,collapsed=g.Collapsed}),
+    split=Partner!=null?new{left=splitLeft!.Id,right=splitRight!.Id,ratio=splitRatio}:null,
+    picks=(active?.Private==true?Enumerable.Empty<AddressPick>():state.AddressPicks).Select(p=>new{typed=p.Typed,url=p.Url,count=p.Count}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),
     downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
     canBack=Shown?.View?.CoreWebView2?.CanGoBack==true,canForward=Shown?.View?.CoreWebView2?.CanGoForward==true,
@@ -268,13 +295,17 @@ public partial class MainWindow
     try{
      if(snapshotCapture==null||snapshotCapture.IsCompleted){snapshotCore=core;snapshotCapture=CaptureSnapshot(core);}
      // A stalled website must never prevent browser controls from opening.
-     if(snapshotCore==core){var bytes=await snapshotCapture.WaitAsync(TimeSpan.FromMilliseconds(180));if(version==overlayVersion)ShellSend(new{kind="snapshot",data="data:image/jpeg;base64,"+Convert.ToBase64String(bytes)});}
+     var pairShot=Partner?.View?.CoreWebView2 is {} pairCore?CaptureSnapshot(pairCore):null; // split view: both halves
+     if(snapshotCore==core){var bytes=await snapshotCapture.WaitAsync(TimeSpan.FromMilliseconds(180));
+      string? partner=null;if(pairShot!=null)try{partner="data:image/jpeg;base64,"+Convert.ToBase64String(await pairShot.WaitAsync(TimeSpan.FromMilliseconds(120)));}catch(Exception){}
+      if(version==overlayVersion)ShellSend(new{kind="snapshot",data="data:image/jpeg;base64,"+Convert.ToBase64String(bytes),partner});}
     }catch(Exception){}
    }
    if(version==overlayVersion){WebHost.Visibility=Visibility.Hidden;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Hidden;}
   }else{
    WebHost.Visibility=Visibility.Visible;if(sidePanelView!=null)sidePanelView.Visibility=Visibility.Visible;
-   var shown=Shown;foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==shown?Visibility.Visible:Visibility.Hidden;
+   var shown=Shown;var partner=Partner;foreach(var tab in tabs)if(tab.View!=null)tab.View.Visibility=tab==shown||tab==partner?Visibility.Visible:Visibility.Hidden;
+   LayoutSplit();
    ShellSend(new{kind="snapshot",data=""});
    if(snapshotCapture?.IsCompleted==true){snapshotCapture=null;snapshotCore=null;}
    RestorePageWindow();

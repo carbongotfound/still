@@ -1,8 +1,10 @@
 export type SuggestionVisit = { title: string; url: string; at?: string }
+export type AddressPick = { typed: string; url: string; count: number }
 export type SiteSuggestion = { title: string; url: string; host: string; visits: number; bookmark: boolean; score: number }
 
 // Only local history and bookmarks are used. Never fetch icons or send keystrokes.
-export function rankSuggestions(query: string, history: SuggestionVisit[], bookmarks: SuggestionVisit[], privateTab = false, now = Date.now()): SiteSuggestion[] {
+// picks: what you typed before and the site you chose then. A site you keep choosing for these letters comes first.
+export function rankSuggestions(query: string, history: SuggestionVisit[], bookmarks: SuggestionVisit[], privateTab = false, now = Date.now(), picks: AddressPick[] = []): SiteSuggestion[] {
   const q = query.trim().toLowerCase().replace(/^https?:\/\//, '').replace(/^www\./, '')
   if (!q) return []
   const sites = new Map<string, SiteSuggestion & { last: number }>()
@@ -22,6 +24,7 @@ export function rankSuggestions(query: string, history: SuggestionVisit[], bookm
   return [...sites.values()].filter(site => (site.host + ' ' + site.title + ' ' + site.url).toLowerCase().includes(q)).map(site => {
     const match = site.host === q ? 1000 : site.host.startsWith(q) ? 700 : site.host.split('.').some(part => part.startsWith(q)) ? 500 : 100
     const ageDays = (now - site.last) / 86400000
-    return { ...site, score: match + Math.log2(1 + site.visits) * 30 + (site.bookmark ? 45 : 0) + Math.max(0, 30 - ageDays) }
+    const chosen = privateTab ? 0 : picks.filter(p => p.url === site.url && (q.startsWith(p.typed) || p.typed.startsWith(q))).reduce((n, p) => n + p.count, 0)
+    return { ...site, score: match + Math.log2(1 + site.visits) * 30 + (site.bookmark ? 45 : 0) + Math.max(0, 30 - ageDays) + Math.log2(1 + chosen) * 260 }
   }).sort((a, b) => b.score - a.score || a.url.localeCompare(b.url)).slice(0, 6)
 }
