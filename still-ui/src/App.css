@@ -886,3 +886,37 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .companion-folder { display:flex; align-items:center; gap:8px; }
 .companion-folder code { flex:1; min-width:0; padding:7px 10px; border-radius:9px; background:var(--muted); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 @media (prefers-reduced-motion: reduce) { .file-card { animation:none; } }
+
+/* Phase 4: approval cards, countdowns, the audit log and AI permissions */
+.approve-steps { display:flex; flex-direction:column; gap:6px; margin:12px 0 0; padding:0; list-style:none; }
+.approve-steps li { display:flex; align-items:center; gap:10px; padding:9px 10px 9px 12px; border-radius:12px; border:1px solid var(--border); background:var(--background); }
+.approve-steps li > svg { width:16px; height:16px; flex:none; color:var(--muted-foreground); }
+.approve-steps li.is-sensitive > svg { color:#c47a12; } .dark .approve-steps li.is-sensitive > svg { color:#f0b65c; }
+.approve-steps span { flex:1; min-width:0; display:flex; flex-direction:column; }
+.approve-steps b { font-size:13.5px; font-weight:550; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.approve-steps small { font-size:12px; color:var(--muted-foreground); }
+.approve-no { display:grid; place-items:center; width:24px; height:24px; flex:none; border-radius:7px; color:var(--muted-foreground); } .approve-no:hover { background:var(--muted); color:var(--foreground); }
+.approve-no svg { width:14px; height:14px; }
+.approve-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:12px; }
+.countdown-card { border-color:color-mix(in oklab,#e0a23a 55%,var(--border)); }
+.countdown-card .ask-q > svg { width:20px; height:20px; flex:none; color:#c47a12; } .dark .countdown-card .ask-q > svg { color:#f0b65c; }
+.countdown-bar { height:4px; margin-top:12px; border-radius:99px; background:var(--muted); overflow:hidden; }
+.countdown-bar i { display:block; height:100%; background:#e0a23a; transform-origin:left; animation:countdown linear forwards; }
+@keyframes countdown { from { transform:scaleX(1); } to { transform:scaleX(0); } }
+.tasks-ask small { color:var(--muted-foreground); }
+.audit-list { display:flex; flex-direction:column; gap:2px; max-height:220px; overflow:auto; margin:0; padding:0 6px; list-style:none; }
+.audit-list li { display:flex; flex-direction:column; padding:5px 0; font-size:12.5px; border-bottom:1px solid var(--border); } .audit-list li:last-child { border-bottom:0; }
+.audit-list b { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .audit-list small { color:var(--muted-foreground); font-size:11.5px; }
+.perm-settings { display:flex; flex-direction:column; gap:12px; }
+.perm-table { width:100%; border-collapse:collapse; font-size:12.5px; }
+.perm-table th { padding:0 6px 6px; text-align:left; font-weight:500; color:var(--muted-foreground); border-bottom:1px solid var(--border); }
+.perm-table td { padding:5px 6px; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }
+.perm-mode { min-width:150px; }
+.perm-remove { display:grid; place-items:center; width:26px; height:26px; border-radius:7px; color:var(--muted-foreground); } .perm-remove:hover { background:var(--muted); color:var(--foreground); }
+.perm-remove svg { width:14px; height:14px; }
+.perm-add { display:flex; flex-wrap:wrap; gap:6px; align-items:center; } .perm-add [data-slot=input] { flex:1; min-width:150px; height:28px; font-size:12.5px; }
+.perm-sites { display:flex; flex-wrap:wrap; gap:6px; align-items:center; margin-top:-8px; }
+.perm-sites form { display:flex; gap:6px; flex:1; min-width:240px; } .perm-sites [data-slot=input] { height:28px; font-size:12.5px; }
+.perm-site { display:inline-flex; align-items:center; gap:4px; height:28px; padding:0 4px 0 10px; border-radius:99px; background:var(--muted); font-size:12.5px; }
+.perm-site button { display:grid; place-items:center; width:20px; height:20px; border-radius:99px; } .perm-site button:hover { background:var(--background); } .perm-site svg { width:12px; height:12px; }
+@media (prefers-reduced-motion: reduce) { .countdown-bar i { animation:none; } }

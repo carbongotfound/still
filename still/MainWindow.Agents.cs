@@ -106,6 +106,11 @@ public partial class MainWindow
    if (stoppedAgents.TryGetValue(who, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (me.Paused) return Fail(TookOver);
    var interrupt = agentInterrupts[who] = new(TaskCreationOptions.RunContinuationsAsynchronously);
+   // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
+   var gate = Gate(who, tool, args, quick);
+   string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
+   if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
+   if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
    var working = RunTool(who, tool, args, quick);
    int limit = tool switch { "ask_user" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
@@ -371,6 +376,24 @@ public partial class MainWindow
   return o.gone ? !found : found;
  """;
  // upload_file by element: the file input itself, for DOM.setFileInputFiles.
+ // Is this click or keystroke sensitive: buying, sending, deleting, a form that posts, a password or payment field?
+ const string SensitiveJs = """
+  const e = o.id || o.selector || (o.tool === 'click' && o.text) ? target(o) : deepActive();
+  if (!e) return missing(o);
+  if (e.localName === 'body') return { error: 'nofocus' };
+  const form = e.form || (e.closest && e.closest('form'));
+  const secret = x => x.type === 'password' ? 'password' : /^cc-|card.?num|cvc|cvv|security.?code|iban/i.test((x.autocomplete || '') + ' ' + (x.name || '') + ' ' + (x.id || '')) ? 'payment' : '';
+  const posts = !!form && (form.method === 'post' || [...form.elements].some(secret));
+  const words = (label(e) + ' ' + (e.localName === 'input' ? e.value : '')).toLowerCase();
+  let why = '';
+  if (o.tool === 'type') why = secret(e) === 'password' ? 'It types into a password field.' : secret(e) ? 'It types into a payment field.' : o.submit && posts ? 'It sends a form.' : '';
+  else if (o.tool === 'press_key') why = /enter/i.test(o.key) && posts && e.matches('input,select') ? 'It sends a form.' : '';
+  else if (/\b(buy|purchase|place order|order now|pay|checkout|check out|subscribe|book now|reserve)\b/.test(words)) why = 'It looks like a purchase.';
+  else if (/\b(send|post|publish|reply|tweet|comment)\b/.test(words)) why = 'It sends something in your name.';
+  else if (/\b(delete|remove|discard|trash|unsubscribe|close account|cancel order|cancel subscription)\b/.test(words)) why = 'It deletes or cancels something.';
+  else if (posts && e.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
+  return { label: label(e) || kind(e), why, secret: !!secret(e) };
+ """;
  const string FileInputJs = """
   const e = target(o); return e && e.localName === 'input' && e.type === 'file' ? e : e?.querySelector?.('input[type=file]') || e?.closest?.('label')?.control || null;
  """;
@@ -468,6 +491,101 @@ public partial class MainWindow
   var url = ResolveAddress(input, engine);
   if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages.");
   return url;
+ }
+ // ---- The permission layer ----
+ // Every call is read, navigate, interact or sensitive: buying, sending, deleting, a form that posts, a password or
+ // payment field, or anything on a site the user marked sensitive. Settings say, per site, action and companion,
+ // whether it runs, asks once in each chat, or asks every time. A sensitive step allowed without asking still counts
+ // down 8 seconds in the chat first. Outside AI apps keep today's behavior: allowed unless a rule for everyone or a
+ // sensitive site says to ask, and then they ask in the bar at the top. Null: go ahead; otherwise the refusal for the AI.
+ static readonly string[] PermissionActions = ["read", "navigate", "interact", "sensitive"];
+ static string DefaultPermission(string action) => action switch { "interact" => "chat", "sensitive" => "ask", _ => "always" };
+ static bool OnSite(string rule, string site) => rule.Length > 0 && (site == rule || site.EndsWith("." + rule, StringComparison.Ordinal));
+ static string SiteOf(string input) => (input = input.Trim().ToLowerInvariant()).Length == 0 ? "" : Host(input.Contains("://") ? input : "https://" + input);
+ static readonly HashSet<string> sessionGrants = []; // outside apps: "who action site" allowed until Still closes
+ /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
+ string? PermissionMode(string companion, string site, string action)
+ {
+  var rules = Prefs.Permissions.Where(p => p.Action == action).ToList();
+  var rule = (companion.Length > 0 ? rules.FirstOrDefault(p => p.Companion == companion && OnSite(p.Site, site)) ?? rules.FirstOrDefault(p => p.Companion == companion && p.Site.Length == 0) : null)
+   ?? rules.FirstOrDefault(p => p.Companion.Length == 0 && OnSite(p.Site, site)) ?? rules.FirstOrDefault(p => p.Companion.Length == 0 && p.Site.Length == 0);
+  return rule?.Mode;
+ }
+ void SetPermission(string site, string action, string companion, string mode)
+ {
+  Prefs.Permissions.RemoveAll(p => p.Site == site && p.Action == action && p.Companion == companion);
+  if (mode is "always" or "chat" or "ask") Prefs.Permissions.Add(new() { Site = site, Action = action, Companion = companion, Mode = mode });
+  SaveLater();
+ }
+ async Task<string?> Gate(string who, string tool, JsonElement args, bool quick)
+ {
+  string action = tool switch {
+   "read_page" or "find" or "screenshot" or "wait_for" => "read",
+   "open_tab" or "navigate" or "go_back" or "go_forward" or "reload" or "switch_tab" or "close_tab" => "navigate",
+   "click" or "type" or "press_key" or "scroll" or "handle_dialog" => "interact",
+   _ => "" }; // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
+  if (action.Length == 0) return null;
+  string site, what, why = "";
+  try {
+   if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Open " + site; }
+   else {
+    site = Host(AgentTab(who, args).tab.Url);
+    what = tool switch { "scroll" => "Scroll the page", "press_key" => "Press " + S(args, "key"), "handle_dialog" => "Answer the page's dialog", "go_back" => "Go back",
+     "go_forward" => "Go forward", "reload" => "Reload the page", "close_tab" => "Close a tab", "switch_tab" => "Switch tabs", _ => "Read the page" };
+    if (tool is "click" or "type" or "press_key") {
+     var look = await Js((await AgentPage(who, args)).core, SensitiveJs, new { tool, id = Id(args), selector = S(args, "selector"), text = S(args, "text"), key = S(args, "key"), submit = B(args, "submit") });
+     string label = Str(look, "label"); why = Str(look, "why");
+     if (tool == "click") what = "Click “" + label + "”";
+     else if (tool == "type") what = look.GetProperty("secret").GetBoolean() || S(args, "text").Length == 0 ? "Type into “" + label + "”" : "Type “" + Clip(S(args, "text"), 60) + "” into “" + label + "”";
+    }
+   }
+  } catch (InvalidOperationException) { return null; } // no page or no such element: the tool itself says what's wrong
+  bool marked = Prefs.SensitiveSites.Any(s => OnSite(s, site));
+  if (action == "interact" && (why.Length > 0 || marked)) { action = "sensitive"; if (why.Length == 0) why = "You marked " + site + " as sensitive."; }
+  var run = runs.GetValueOrDefault(who);
+  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  string mode = PermissionMode(run?.Chat.Companion ?? "", site, action) ?? (run != null ? DefaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site;
+  bool granted = mode == "always" || mode == "chat" && (run?.Chat.Allowed.Contains(key) ?? sessionGrants.Contains(who + " " + key));
+  if (run == null) {
+   if (granted) return null;
+   string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site;
+   switch (await AskUser(who, ask, quick)) {
+    case false: return Fail("The user said no to this. Don't try it again unless they ask.");
+    case null: return NeedsConfirm(who, ask, $"Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call {tool} again.");
+   }
+   if (mode == "chat") sessionGrants.Add(who + " " + key);
+   return null;
+  }
+  if (granted && action != "sensitive") { if (action == "interact") Audit(run.Chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat"); return null; }
+  string answer = await Approve(run, what, site, action, why, countdown: granted);
+  if (answer == "always") SetPermission(site, action, "", "always");
+  if (answer == "chat" && !run.Chat.Allowed.Contains(key)) run.Chat.Allowed.Add(key);
+  Audit(run.Chat, what, site, answer switch {
+   "always" => "You always allow this on " + site, "chat" => "You allowed it in this chat", "once" => "You allowed it once",
+   "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",
+   "timeout" => "No answer in 10 minutes", _ => "You said no" });
+  PublishAiEverywhere();
+  return answer switch {
+   "always" or "chat" or "once" or "go" or "now" => null,
+   "cancel" => Fail("The user cancelled this before it ran. Don't try it again unless they ask."),
+   "stop" => Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."),
+   "timeout" => Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply."),
+   _ => Fail("The user said no to this. Don't try it again; if you need it, ask them in your reply.") };
+ }
+ // A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
+ static async Task<string> Approve(ChatRun run, string what, string site, string action, string why, bool countdown)
+ {
+  var card = new Approval(Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant(), what, site, action, why, countdown ? DateTime.UtcNow.AddSeconds(8) : null, new(TaskCreationOptions.RunContinuationsAsynchronously));
+  run.Approvals.Add(card); PublishAiEverywhere();
+  var wait = Task.Delay(countdown ? TimeSpan.FromSeconds(8) : TimeSpan.FromMinutes(10));
+  string answer = await Task.WhenAny(card.Answer.Task, wait) == wait ? (countdown ? "go" : "timeout") : await card.Answer.Task;
+  run.Approvals.Remove(card); PublishAiEverywhere();
+  return answer;
+ }
+ static void Audit(AiChat chat, string what, string site, string result)
+ {
+  chat.Audit.Add(new() { What = what, Site = site, Result = result });
+  if (chat.Audit.Count > 300) chat.Audit.RemoveRange(0, chat.Audit.Count - 300);
  }
  static void Did(string who, string action) => Me(who).Action = action.Length > 90 ? action[..90] + "…" : action;
  /// The AI's cursor: an arrow with its name, in its companion's color, glides to where it's about to click.

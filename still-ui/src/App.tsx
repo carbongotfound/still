@@ -5,6 +5,7 @@ import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, Panel
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
+import { AuditList, PermissionsSettings } from "./Permissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, Face, FALLBACK, ProviderContext, agentFace, hueOf, type Companion } from "./Buddy"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, SkillsPage, randomCompanion, type HomeView } from "./Home"
@@ -328,6 +329,8 @@ export default function App() {
  }, [modal, reduced])
  useEffect(() => {
   if (pane === "address") { const t = setTimeout(() => { if (document.activeElement !== addressRef.current) { addressRef.current?.focus(); addressRef.current?.select() } }, 30); return () => clearTimeout(t) }
+  // A closed address bar must not keep focus: when the window gets focus back, it would reopen over Settings or a dialog.
+  if (document.activeElement === addressRef.current) addressRef.current?.blur()
   if (pane === "tabs") {
    const t = setTimeout(() => { commandRef.current?.focus(); commandRef.current?.select() }, 90)
    return () => clearTimeout(t)
@@ -595,7 +598,7 @@ export default function App() {
     <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "A few things to make it yours." : displayPane === "about" ? "Give your AI a browser." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? "Your logins, protected on this PC." : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
     {["passwords","extensions","cookies","security","profiles","import"].includes(displayPane)&&<BrowserTools key={displayPane} pane={displayPane} data={toolData[displayPane]??{}} send={send} url={active?.url??""} tracking={state.preferences.tracking} memory={state.preferences.memory} autofill={state.preferences.autofill}/> }
     {displayPane === "settings" && <Tabs value={settingsPage} onValueChange={setSettingsPage} className="settings-tabs">
-     <LayoutGroup id="settings"><TabsList className="w-full">{[["appearance", "Appearance"], ["browsing", "Browsing"], ["data", "Your data"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
+     <LayoutGroup id="settings"><TabsList className="w-full">{[["appearance", "Appearance"], ["browsing", "Browsing"], ...(ai && !state.noAi ? [["permissions", "AI permissions"]] : []), ["data", "Your data"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
       {settingsPage === value && <motion.span className="settings-selection" layoutId="settings-selection" transition={FLOW} />}<span className="settings-tab-label">{label}</span>
      </TabsTrigger>)}</TabsList></LayoutGroup>
      <TabsContent value="appearance" className="settings-content">
@@ -604,6 +607,7 @@ export default function App() {
       </Button>)}</div>
       <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
      </TabsContent>
+     {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
      <TabsContent value="browsing" className="settings-content">
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
       <Separator /><div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
@@ -779,6 +783,7 @@ function ChatInfo({ ai, pages, onEdit, onSettings, onFile }: { ai: AiState; page
   <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
   {files.length > 0 && <><Separator /><h4>Files</h4>{files.map(f => <button key={f.path} className="chat-info-row" title={"Open " + f.name} onClick={() => onFile(f.path)}><FileIcon path={f.path} /><b>{f.name}</b></button>)}</>}
+  {!!ai.audit?.length && <><Separator /><h4>Permissions</h4><AuditList list={ai.audit} /></>}
   {ai.usage && <><Separator /><p className="chat-info-usage">{ai.usage}</p></>}
  </aside>
 }

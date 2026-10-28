@@ -180,7 +180,7 @@ internal static class McpServer
     using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
     writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args, elicit, run = RunId }));
     // Still answers every call within its own time limit; this only covers a Still that froze.
-    using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(tool == "ask_user" ? 12 : 2));
+    using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(tool is "list_tabs" or "save_file" ? 2 : 12)); // ask_user and permission cards wait up to 11 minutes
     try { return reader.ReadLineAsync(limit.Token).AsTask().GetAwaiter().GetResult() ?? throw new IOException("Still closed the connection."); }
     catch (OperationCanceledException) when (!cancel.IsCancellationRequested) { return JsonSerializer.Serialize(new { ok = false, error = "Still didn't answer in time. It may be busy; try again, or ask the user to check Still." }); }
    } catch (Exception ex) when (ex is IOException or TimeoutException or UnauthorizedAccessException) {

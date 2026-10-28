@@ -21,6 +21,7 @@ Script: `python tests/desktop/baseline.py <Still.exe> 3` (3 runs; medians below)
 | 0 (baseline) | 19.625 s | 634.3 / 848.6 MB | 112.0 ms | noisy, see caveat |
 | 2 (87409da) | 15.187 s | 682.9 / 858.8 MB | 51.4 ms | 1-tab idle RAM +7.7% over the first reading; Phase 6 re-measures both builds back to back |
 | 3 (c713293) | 14.485 s | 679.4 / 850.7 MB | 51.1 ms | flat against Phase 2 |
+| 4 | 6.625 s | 684.1 / 869.5 MB | 53.3 ms | RAM and switch flat (+0.7% / +2.2%, +4%). Cold start swings with machine load: an earlier run of the same build gave 16.45 s while a compile ran |
 
 `performance.py` without `--baseline` fails "Resident memory drops by at least 20 percent" on Phases 2 and 3, and on the
 untouched baseline build too (loaded 906.6 MB, idle 889.1 MB working set). It's an older check, not a regression from
