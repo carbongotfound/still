@@ -102,7 +102,7 @@ try:
 
     profile = RUN / "profile"
     profile.mkdir()
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 4, "Welcome": False, "Preferences": {"AgentsEnabled": True},
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": URL + "/home"}], "ActiveId": "home"}))
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile)])
     until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None, 30)

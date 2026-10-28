@@ -193,7 +193,7 @@ def screens(process, theme):
 def main():
     PROFILE.mkdir(parents=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"Theme": "Light", "Width": 1720, "Height": 1080},
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Theme": "Light", "Width": 1720, "Height": 1080},
         "Tabs": [{"Id": "page", "Title": "Garden notes", "Url": URL}], "ActiveId": "page",
         "History": [{"Title": "Garden notes", "Url": URL, "At": "2026-10-27T09:00:00Z"}]}))
     process = launch(EXE, PROFILE)

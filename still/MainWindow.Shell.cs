@@ -201,6 +201,7 @@ public partial class MainWindow
      case "removeHistory":state.History.RemoveAll(v=>v.Url==S("url"));SaveLater();break;
      case "startup":StartupRegistration.Set(data.GetProperty("enabled").GetBoolean());break;
      case "welcomeDone":state.Welcome=false;SaveLater();PublishAll();break;
+     case "welcomeAgain":state.Welcome=true;PublishAll();break;
      case "defaultBrowser":BrowserRegistration.Register();BrowserRegistration.OpenDefaultAppsSettings();break;
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;
      case "sidebarResize":if(data.TryGetProperty("width",out var p5w)&&p5w.TryGetDouble(out var p5wv)){Prefs.SidebarWidth=Math.Clamp(p5wv,190,360);SaveLater();foreach(var w in Windows)w.ShellPublish();}break;

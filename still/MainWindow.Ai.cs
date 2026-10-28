@@ -33,14 +33,15 @@ public sealed class AiAudit
  public string Result { get; set; } = "";
 }
 
-/// A companion: the persona the user works with. Its face is one of the shell's mascots, its job goes into the AI's
+/// A companion: the persona the user works with. Its look is the shell's JSON (look.ts), its job goes into the AI's
 /// instructions. Its memory is a Markdown file the user edits (companions\<id>\memory.md).
 public sealed class Companion
 {
  public string Id { get; set; } = "";
  public string Name { get; set; } = "";
  public string Face { get; set; } = "";
- public string Color { get; set; } = "";
+ public string Color { get; set; } = ""; // before looks: one of the old hue names
+ public string Look { get; set; } = "";
  public string Job { get; set; } = "";
  public string Ai { get; set; } = ""; // the AI it runs on, "" = the one picked for chats
  public string Mode { get; set; } = "default"; // efficient, default or expert
@@ -154,12 +155,15 @@ public partial class MainWindow
  }
 
  static List<Companion> DefaultCompanions() => [
-  new() { Id = "pip", Name = "Pip", Face = "", Color = "ocean", Job = "An all-round helper: researches, compares options and gets things done on the web." },
-  new() { Id = "hazel", Name = "Hazel", Face = "", Color = "sage", Job = "A careful researcher: reads several sources, checks the facts and cites them." },
-  new() { Id = "rio", Name = "Rio", Face = "", Color = "apricot", Job = "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking." },
-  new() { Id = "juno", Name = "Juno", Face = "", Color = "blush", Job = "An organizer: handles email, calendars, documents and online busywork." },
+  new() { Id = "pip", Name = "Pip", Job = "An all-round helper: researches, compares options and gets things done on the web." },
+  new() { Id = "hazel", Name = "Hazel", Job = "A careful researcher: reads several sources, checks the facts and cites them." },
+  new() { Id = "rio", Name = "Rio", Job = "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking." },
+  new() { Id = "juno", Name = "Juno", Job = "An organizer: handles email, calendars, documents and online busywork." },
  ];
- List<Companion> Companions => Prefs.Companions.Count > 0 ? Prefs.Companions : DefaultCompanions();
+ /// Before 1.9 everyone got these four. Setup makes your own now, so the ones nobody changed go.
+ internal static void DropUntouchedDefaults(Preferences prefs) =>
+  prefs.Companions.RemoveAll(c => DefaultCompanions().Any(d => d.Id == c.Id && d.Name == c.Name && d.Job == c.Job && c.Look.Length == 0 && c.Folder.Length == 0 && c.Skills.Count == 0));
+ List<Companion> Companions => Prefs.Companions;
  // Memory: what every companion knows about the user (companions\memory.md), and what one companion knows (companions\<id>\memory.md).
  static readonly Dictionary<string, string> memories = [];
  static string MemoryFile(string id) => Path.Combine(App.DataRoot, "companions", id, "memory.md");
@@ -245,7 +249,7 @@ public partial class MainWindow
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id), folder = c.Folder }),
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id), folder = c.Folder }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived }) } }); }
 
  async Task HandleAi(string op, JsonElement data)
@@ -335,8 +339,9 @@ public partial class MainWindow
    case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
     var list = Companions.ToList();
     var c = list.FirstOrDefault(x => x.Id == S("id"));
-    if (c == null) list.Add(c = new() { Id = Guid.NewGuid().ToString("N")[..10] });
+    if (c == null) list.Add(c = new() { Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
     c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
+    if (data.TryGetProperty("look", out _)) c.Look = S("look") is { Length: <= 2000 } lk && lk.StartsWith('{') ? lk : "";
     c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
     if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
     if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
@@ -351,7 +356,6 @@ public partial class MainWindow
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
     break;
    case "companionMode" when S("mode") is "efficient" or "default" or "expert":
-    if (Prefs.Companions.Count == 0) Prefs.Companions = DefaultCompanions(); // the default crew is rebuilt on every read until saved
     if (Prefs.Companions.FirstOrDefault(x => x.Id == S("id")) is { } moded) { moded.Mode = S("mode"); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); }
     break;
    case "aiAdvanced": Prefs.AiAdvanced = B("on"); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); break;
@@ -433,8 +437,8 @@ public partial class MainWindow
  async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "")
  {
   if (chat == null) {
-   var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions[0];
-   chat = aiChat = new AiChat { Harness = with.Ai.Length > 0 ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with.Id };
+   var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "" };
    AiChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
   }

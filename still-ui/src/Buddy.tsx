@@ -1,33 +1,36 @@
-import { createContext, useContext, type CSSProperties } from "react"
-import { cn } from "@/lib/utils"
-import { KINDS, Mascot, isKind, type Kind, type MascotState } from "./Mascot"
+import { createContext, useContext, useMemo } from "react"
+import { Mascot, type MascotState } from "./Mascot"
+import { AGENT_LOOKS, DEFAULT_LOOK, parseLook, type Look } from "./look"
 
-// Companion faces are Still's own 3D mascots (see Mascot.tsx), on a soft tint of the companion's hue when small.
-export const FACE_NAMES: string[] = [...KINDS]
-// The eight companion hues. A companion's hue tints its face and is the accent while you work with it.
-export const HUES: Record<string, string> = { sage: "#5c7a76", lavender: "#8f80aa", apricot: "#e8a76c", mint: "#8fcbbc", blush: "#f2a487", periwinkle: "#bbadea", berry: "#ed5a31", ocean: "#4f7cf0" }
-export const COLORS = Object.keys(HUES)
-const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" } // the old color names
-export const hueOf = (c?: { color: string }) => HUES[c?.color ?? ""] ?? HUES[BEFORE[c?.color ?? ""]] ?? HUES.ocean
-export const NAMES = ["Pip", "Hazel", "Rio", "Juno", "Milo", "Wren", "Otis", "Nova", "Bea", "Kit", "Moss", "Sol", "Fern", "Ivo", "Lumi", "Tate", "Ada", "Bo"]
+// The old companion hues: a companion saved before looks existed keeps its color.
+export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be0", apricot: "#f4c2a8", mint: "#9ed8c6", blush: "#f3b7c1", periwinkle: "#b8c4f0", berry: "#e58fa8", ocean: "#8fb8e8" }
+const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
+export const NAMES = ["Pip", "Hazel", "Rio", "Juno", "Milo", "Wren", "Otis", "Nova", "Bea", "Kit", "Moss", "Sol", "Fern", "Ivo", "Lumi", "Tate", "Ada", "Bo", "Pico", "Tula", "Momo", "Ziggy", "Olli", "Puck"]
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: string; folder?: string }
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: string; folder?: string; look?: string }
 export type Mood = MascotState | "sleep"
-export const FALLBACK: Companion = { id: "pip", name: "Pip", face: "", color: "ocean", job: "" }
+export const FALLBACK: Companion = { id: "", name: "Still", face: "", color: "", job: "" }
 // The companion the user is working with, for faces that don't name one.
 export const CompanionContext = createContext<Companion | undefined>(undefined)
-// The AI the chat in view runs on: a companion without a mascot of its own wears that AI's.
-export const ProviderContext = createContext<Kind>("claude")
 
-// Another AI app working in Still wears its maker's mascot, when there is one.
+// Another AI app working in Still wears its maker's look, when there is one.
 export const agentFace = (name = "") => /claude/i.test(name) ? "claude" : /gpt|openai|codex/i.test(name) ? "chatgpt" : /grok/i.test(name) ? "grok" : ""
+export function lookOf(c?: Companion): Look {
+ if (!c) return DEFAULT_LOOK
+ if (c.look) return parseLook(c.look)
+ if (!c.id && AGENT_LOOKS[c.face]) return AGENT_LOOKS[c.face]
+ const hue = HUES[c.color] ?? HUES[BEFORE[c.color]]
+ return hue ? { ...DEFAULT_LOOK, color: hue } : DEFAULT_LOOK
+}
+/// The companion's color, used as its accent while you work with it.
+export const hueOf = (c?: Companion) => lookOf(c).color
 
-export function Face({ companion, mood = "idle", size = 56, look, className }: { companion?: Companion; mood?: Mood; size?: number; look?: boolean; className?: string }) {
- const fallback = useContext(CompanionContext), provider = useContext(ProviderContext)
- const c = companion ?? fallback ?? FALLBACK
- return <span className={cn("face", className)} data-mood={mood} data-big={size >= 48 || undefined} style={{ "--s": `${size}px`, "--hue": hueOf(c) } as CSSProperties} aria-hidden>
-  <Mascot kind={isKind(c.face) ? c.face : provider} state={mood === "sleep" ? "idle" : mood} size={size} look={look} />
- </span>
+export function Face({ companion, mood = "idle", size = 56, follow, gesture, gestureAt, className }: { companion?: Companion; mood?: Mood; size?: number; follow?: boolean; gesture?: string; gestureAt?: number; className?: string }) {
+ const fallback = useContext(CompanionContext)
+ const c = companion ?? fallback
+ const look = useMemo(() => lookOf(c), [c?.look, c?.color, c?.face, c?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+ return <Mascot look={look} state={mood === "sleep" ? "idle" : mood} size={size} follow={follow} gesture={gesture} gestureAt={gestureAt}
+  className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face

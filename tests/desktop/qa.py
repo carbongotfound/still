@@ -66,6 +66,12 @@ def launch(exe, profile, env=None):
     return process
 
 
+# The companions Still used to start with. Tests that talk to them bring them along (setup makes your own now).
+CREW = [{"Id": "pip", "Name": "Pip", "Job": "An all-round helper: researches, compares options and gets things done on the web."},
+        {"Id": "hazel", "Name": "Hazel", "Job": "A careful researcher: reads several sources, checks the facts and cites them."},
+        {"Id": "rio", "Name": "Rio", "Job": "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking."},
+        {"Id": "juno", "Name": "Juno", "Job": "An organizer: handles email, calendars, documents and online busywork."}]
+
 ROOT = Path(__file__).resolve().parents[2]
 SIZES = ((1720, 1080), (1280, 800))
 
@@ -81,7 +87,7 @@ def shots(exe, name, version, setup, preferences=None, reference=None):
         for width, height in SIZES:
             profile = ROOT / "artifacts" / ("shot-" + uuid.uuid4().hex[:8]) / "profile"
             profile.mkdir(parents=True)
-            (profile / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False,
+            (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False,
                 "Preferences": {"Theme": theme, "Width": width, "Height": height, **(preferences or {})},
                 "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
             process = launch(exe, profile)

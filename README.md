@@ -2,7 +2,7 @@
 
 # still.
 
-**The browser you share with your AI.** Hand Claude, Codex or any MCP app a job, like comparing flights, filling in a form or researching what to buy, and it gets done in tabs next to yours while you keep browsing. It uses the AI you already have: no credits, no extra subscription, no Still account.
+**The open-source browser with an AI helper built in.** It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps: no API keys, no credits, no extra subscription. Switch AI any time, even halfway through a task. Other AI apps can use it too, once you say yes. Everything stays on your computer.
 
 [**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**What it does**](#what-you-can-hand-off) · [**Connect your AI**](#connect-your-ai) · [**Install**](#install) · [**Build from source**](#build-from-source)
 
@@ -36,13 +36,13 @@ And it's a good browser without the AI: fast, with ads and trackers blocked (You
 - *"Read my open tabs and tell me what each one says."*
 - *"Check the order status on these three shops."*
 
-Type it into the address bar and choose **Ask AI**, press <kbd>Ctrl Shift A</kbd>, or ask from Claude Code, Claude Desktop, Cursor or Codex.
+Type it into the address bar and choose **Ask AI**, press <kbd>Ctrl Shift A</kbd>, or ask from Claude Code, Claude Desktop, Cursor or another MCP app.
 
 ## Features
 
 **For your AI**
 
-- **Works with the AI you have.** Chat in Still with the Claude, Codex or Grok app on your PC, signed in to your own account. Or connect any MCP app.
+- **Works with the AI you have.** Chat in Still with the Claude, ChatGPT or Grok app on your PC, signed in to your own account. Or connect any MCP app.
 - **Its own tabs.** Agents work in background tabs grouped under *AI*, so your tab never changes under you. Several agents can work at once.
 - **Handles real sites.** Shadow DOM, iframes, dropdowns, date fields, rich text editors, file uploads, pop-up windows and alert, confirm and prompt dialogs.
 - **Cheap on tokens.** Pages come back as short numbered lines, not screenshots. `find` searches a whole page for a fraction of the cost, and ids stay valid between reads.

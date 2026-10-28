@@ -135,7 +135,7 @@ process = None
 try:
     profile = RUN / "profile"
     profile.mkdir()
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 3, "Welcome": False,
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False,
         "Preferences": {"MemorySaver": True}, "Tabs": [{"Id": "restored", "Title": "Restored", "Url": URL + "/restored"}], "ActiveId": "restored"}))
     started = time.monotonic()
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), URL + "/launch"])

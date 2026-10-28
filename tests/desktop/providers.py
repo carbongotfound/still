@@ -15,6 +15,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
+from qa import CREW  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("providers-" + uuid.uuid4().hex)
 EXE = Path(sys.argv[1]).resolve()
@@ -105,7 +106,7 @@ try:
     manifest("fake-out", name="Fake signed out", command=fake, detect=["status-out"], expect="^signed in", run=["run"], output="stream-json")
     manifest("fake-missing", name="Fake missing", command=str(BIN / "not-installed"), install="pip install not-a-real-agent", run=["run"])
     (PROFILE / "agents" / "broken.json").write_text("{ not json")
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True},
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     env = {**os.environ, "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(PROFILE), "--profiles-root", str(PROFILE)], env=env)

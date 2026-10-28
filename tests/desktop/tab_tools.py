@@ -85,7 +85,7 @@ def frames(process, act):
 def main():
     PROFILE.mkdir(parents=True)
     OUT.mkdir(parents=True, exist_ok=True)
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False,
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False,
         "Preferences": {"Theme": "Light", "Width": 1720, "Height": 1080, "TabTearOff": True},
         "Tabs": [{"Id": i, "Title": "Page " + i.upper(), "Url": f"{URL}/{i}"} for i in IDS], "ActiveId": "a"}))
     process = launch(EXE, PROFILE)

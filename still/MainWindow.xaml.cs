@@ -44,6 +44,7 @@ public partial class MainWindow : Window
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   if(state.UiVersion<4){state.Preferences.OfferPasswordSave=state.Preferences.OfferPasswordUpdate=true;state.UiVersion=4;} // offering to save logins is on by default, like other browsers
   if(state.UiVersion<5){MigrateAgentIds(state.Preferences);state.UiVersion=5;}
+  if(state.UiVersion<6){state.Welcome=true;DropUntouchedDefaults(state.Preferences);state.UiVersion=6;} // 1.9: everyone makes their own companion, once
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
