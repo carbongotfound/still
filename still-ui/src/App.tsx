@@ -1,11 +1,12 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type { ReactNode } from "react"
+import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, Dices, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, companionOf, type AiState } from "./AiSidebar"
 import { AiLogo } from "./AiLogo"
-import { Buddy, Face, FACE_NAMES, COLORS, NAMES, FALLBACK, ProviderContext, agentFace, type Companion } from "./Buddy"
+import { Buddy, Face, FALLBACK, ProviderContext, agentFace, hueOf, type Companion } from "./Buddy"
+import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage, isKind } from "./Mascot"
 import { UploadCard, type Upload } from "./UploadCard"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog"
@@ -64,7 +65,7 @@ const IDEAS: [LucideIcon, string, string, string, string][] = [
  [Newspaper, "amber", "Catch me up on the news", "Today's top stories in a few bullets", "Catch me up on today's top news in a few bullet points, with links."],
  [CookingPot, "rose", "What's for dinner?", "An easy, well-reviewed recipe for tonight", "Find me an easy, well-reviewed dinner recipe for tonight."],
 ]
-const randomCompanion = (): Companion => { const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]; return { id: "", name: pick(NAMES), face: pick(FACE_NAMES), color: pick(COLORS), job: "" } }
+const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
 const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
@@ -129,7 +130,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
-      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent && !state.agent.pending && !state.agent.paused ? "working" : "idle"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={ai?.running === tab.chatId ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
+      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent && !state.agent.pending && !state.agent.paused ? "working" : "idle"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={ai?.running === tab.chatId ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
@@ -163,6 +164,8 @@ export default function App() {
  const [ai, setAi] = useState<AiState>()
  const [aiView, setAiView] = useState<"chat" | "settings">("chat")
  const [buddy, setBuddy] = useState("") // the companion picked on the new tab page
+ const [views, setViews] = useState<Record<string, HomeView>>({}) // per new tab: the home page it shows
+ const wantView = useRef<HomeView>(undefined)
  const [editing, setEditing] = useState<Companion | null>(null)
  const [railOpen, setRailOpenState] = useState(() => { try { return localStorage.getItem("still.chatRail") !== "closed" } catch { return true } })
  const setRailOpen = (v: boolean) => { setRailOpenState(v); try { localStorage.setItem("still.chatRail", v ? "open" : "closed") } catch { /* storage unavailable */ } }
@@ -187,6 +190,13 @@ export default function App() {
  const [splitInfo, setSplitInfo] = useState(false) // beside a page, details stay closed until asked for
  const setInfo = (v: boolean) => { setInfoState(v); try { localStorage.setItem("still.chatInfo", v ? "open" : "closed") } catch { /* storage unavailable */ } }
  const companion = ai?.companions?.find(c => c.id === buddy) ?? ai?.companions?.[0]
+ const blank = !!active && !active.url && !active.chatId && !active.isPrivate
+ const view = views[active?.id ?? ""] ?? "home"
+ const setView = (v: HomeView) => { if (active) setViews(m => ({ ...m, [active.id]: v })) }
+ const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
+ useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+ const idea = state.tabs.find(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && t.id !== active?.id)
+ const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []), ...IDEAS].slice(0, 3)
  const [typing, setTyping] = useState(false) // to the companion on the new tab: it listens
  const openAiSettings = () => { setAiView("settings"); if (!ai?.open) send("aiToggle") }
  const suggestions = useMemo(() => rankSuggestions(query, state.history, state.bookmarks, active?.isPrivate), [query, state.history, state.bookmarks, active?.isPrivate])
@@ -438,7 +448,7 @@ export default function App() {
     </div>
    </header>}
    <div className="workspace">
-    {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={setEditing} onSettings={openAiSettings} openPanel={open} />}
+    {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={setEditing} onSettings={openAiSettings} openPanel={open} goHome={goHome} />}
     <main className={cn("page-column", chatTab && "is-chat", split && "is-split")}>
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
      {!state.focusMode && !state.fullScreen && state.bookmarks.length > 0 && <nav className={cn("bookmarks-bar", barOpen && state.bookmarks.length >= 5 && "is-expanded")} aria-label="Bookmarks bar">
@@ -488,22 +498,33 @@ export default function App() {
      </div>}
      <div className="page-slot" ref={pageRef}>
       {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} />}
-      {active?.url || active?.chatId ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : !active?.isPrivate && !state.noAi && ai && companion ? <motion.div key={active?.id} className="new-tab-page is-home" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
-       <div className="home-hero">
-        <div className="home-hero-text">
-         <div className="home-crew" role="radiogroup" aria-label="Who to work with">
-          {ai.companions?.map(c => <button key={c.id} role="radio" aria-checked={c.id === companion.id} className={cn("home-mate", c.id === companion.id && "is-picked")} title={c.name} onClick={() => setBuddy(c.id)} onDoubleClick={() => setEditing(c)}><Face companion={c} size={30} /></button>)}
-          <button className="home-mate is-add" aria-label="Add a companion" title="Add a companion" onClick={() => setEditing(randomCompanion())}><Plus /></button>
-         </div>
-         <h1>Work with {companion.name}</h1>
-         <button className="home-job" title="Edit" onClick={() => setEditing(companion)}>{companion.job || "Tell " + companion.name + " what they're good at, and they'll work that way."}<Pencil /></button>
-        </div>
-        <Face key={companion.id} companion={companion} size={112} look mood={typing ? "listening" : "idle"} className="home-face" />
+      {active?.url || active?.chatId ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : !active?.isPrivate && !state.noAi && ai && companion ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+       <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
+       <div className="home-main">
+        {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
+         : view === "companions" ? <CompanionsPage key={ai.memory} ai={ai} send={send} onEdit={setEditing} onChat={id => { setBuddy(id); setView("home") }} />
+         : view === "skills" ? <SkillsPage ai={ai} send={send} />
+         : view === "library" ? <LibraryPage />
+         : <>
+          <div className="home-top">
+           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={setEditing} onManage={() => setView("companions")} />
+           {ai.busy && ai.running && <button className="home-running" title="Go to the chat that's working" onClick={() => send("chatOpen", { id: ai.running })}><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={18} mood="working" />1 running</button>}
+          </div>
+          <div className="home-center">
+           <Face key={companion.id} companion={companion} size={96} look mood={typing ? "listening" : "idle"} className="home-face" />
+           <div className="home-compose">{ai.busy ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button></div>
+            : <Composer ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs} placeholder={`Ask ${companion.name} anything, or give it a job…`} onSubmit={text => send("aiSend", { text, home: true, companion: companion.id })} />}</div>
+           <div className="home-chips">
+            <button onClick={() => setView("skills")}><BookOpen />Skills</button>
+            <button onClick={() => setView("companions")}><Users />Companions</button>
+            <button onClick={() => setView("library")}><Library />Library</button>
+            <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
+           </div>
+           <div className="home-ideas"><h2>Ideas for you</h2><div>{ideas.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" disabled={ai.busy} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
+           {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
+          </div>
+         </>}
        </div>
-       <div className="home-compose">{ai.busy ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button></div>
-        : <Composer key={companion.id} ai={ai} send={send} onTyping={setTyping} placeholder={`Work with ${companion.name}…`} onSubmit={text => send("aiSend", { text, home: true, companion: companion.id })} />}</div>
-       <div className="home-ideas"><h2>Some ideas for you</h2><div>{IDEAS.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" disabled={ai.busy} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
-       {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
       </motion.div> : <motion.div key={active?.id} className="new-tab-page" initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <Face size={64} mood={active?.isPrivate ? "sleep" : "idle"} className="new-tab-buddy" />
        <h1>{active?.isPrivate ? "Private tab" : greeting()}</h1>
@@ -639,7 +660,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   </AlertDialogContent></AlertDialog>
   <AlertDialog open={!!confirm} onOpenChange={o => { if (!o) setConfirm(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.body}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (confirm) send(confirm.op); setConfirm(null) }}>Clear</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   {upload && <UploadCard upload={upload} send={send} />}
-  {editing && <CompanionEditor companion={editing} canDelete={!!editing.id && (ai?.companions?.length ?? 0) > 1} onClose={() => setEditing(null)} onSave={c => { send("companionSave", c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
+  {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id && (ai?.companions?.length ?? 0) > 1} onClose={() => setEditing(null)} onSave={c => { send("companionSave", c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />
  </TooltipProvider></MotionConfig></ProviderContext.Provider></UICtx.Provider>
 }
@@ -672,10 +693,8 @@ function prettyUrl(url: string) {
 }
 
 // A chat tab's sidebar: new chat, recent chats, and the profile menu. Beside a page it shrinks to the logo.
-function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSettings, openPanel }: { ai: AiState; state: State; activeChat?: string; open: boolean; setOpen: (v: boolean) => void; split: boolean; onEdit: (c: Companion) => void; onSettings: () => void; openPanel: (name: string) => void }) {
- const [all, setAll] = useState(false)
- const [find, setFind] = useState("")
- const chats = all ? ai.chats.filter(c => c.title.toLowerCase().includes(find.trim().toLowerCase())) : ai.chats.slice(0, 15)
+function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSettings, openPanel, goHome }: { ai: AiState; state: State; activeChat?: string; open: boolean; setOpen: (v: boolean) => void; split: boolean; onEdit: (c: Companion) => void; onSettings: () => void; openPanel: (name: string) => void; goHome: (v: HomeView) => void }) {
+ const chats = ai.chats.filter(c => !c.archived).slice(0, 15)
  if (!open || split) return <nav className="chat-side is-closed" aria-label="Chats">
   <Button variant="ghost" size="icon-sm" aria-label="Show sidebar" title="Show sidebar" onClick={() => { setOpen(true); if (split) send("chatPage", { on: false }) }}><span className="still-mark is-small"><i /><i /></span></Button>
  </nav>
@@ -683,15 +702,15 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
   <div className="chat-side-head"><span className="still-mark is-small"><i /><i /></span><b>Still</b><Button variant="ghost" size="icon-sm" aria-label="Hide sidebar" title="Hide sidebar" onClick={() => setOpen(false)}><PanelLeftClose /></Button></div>
   <div className="chat-side-nav">
    <button onClick={() => send("new")}><SquarePen />New Chat</button>
-   <button aria-pressed={all} onClick={() => { setAll(!all); setFind("") }}><MessageSquare />Chat History</button>
-   <button onClick={() => openPanel("bookmarks")}><Library />Library</button>
+   <button onClick={() => goHome("chats")}><MessageSquare />Chat History</button>
+   <button onClick={() => goHome("companions")}><Users />Companions</button>
+   <button onClick={() => goHome("library")}><Library />Library</button>
   </div>
-  <h3>{all ? "All chats" : "Recent chats"}</h3>
-  {all && <div className="chat-rail-find"><Search /><input autoFocus aria-label="Search chats" placeholder="Search chats" value={find} onChange={e => setFind(e.target.value)} /></div>}
+  <h3>Recent chats</h3>
   <ScrollArea className="chat-side-list">
-   {!chats.length && <p className="chat-rail-empty">{find ? "No chats match." : "Your chats show up here."}</p>}
+   {!chats.length && <p className="chat-rail-empty">Your chats show up here.</p>}
    {chats.map(c => <div key={c.id} className={cn("chat-side-item", c.id === activeChat && "is-on")}>
-    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{ai.running === c.id && <Loader2 className="chat-side-busy spin" aria-label="Working" />}</button>
+    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{ai.running === c.id ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
     {ai.running !== c.id && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
    </div>)}
   </ScrollArea>
@@ -723,9 +742,10 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
   return () => { observer.disconnect(); send("pageHoles", { tab: tab.id, frame: 0, spots: [] }) }
  }, [tab.id])
  const kind = agentFace(who.face) || "claude"
+ const hue = who.id ? { "--drive": hueOf(who) } as CSSProperties : undefined // a companion wears its hue; another AI app its maker's color
  return <>
-  <div className="page-glow" data-kind={kind} aria-hidden />
-  <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} role="status" aria-label="AI at work">
+  <div className="page-glow" data-kind={kind} style={hue} aria-hidden />
+  <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label="AI at work">
    <div className="page-control-head"><MousePointer2 />{agent.paused ? "You're in control" : "Controlled by " + who.name}</div>
    <div className="page-control-row">
     <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
@@ -748,27 +768,4 @@ function ChatInfo({ ai, pages, onEdit, onSettings }: { ai: AiState; pages: Tab[]
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
   {ai.usage && <><Separator /><p className="chat-info-usage">{ai.usage}</p></>}
  </aside>
-}
-
-// Name a companion, say what they're for, and pick a face and color.
-function CompanionEditor({ companion, canDelete, onClose, onSave, onDelete }: { companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
- const [c, setC] = useState(companion)
- const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
- return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-  <DialogContent className="app-dialog companion-dialog">
-   <DialogHeader><DialogTitle>{companion.id ? "Edit " + companion.name : "New companion"}</DialogTitle><DialogDescription>Who you work with in a chat. Their job tells your AI how to help.</DialogDescription></DialogHeader>
-   <form className="companion-form" onSubmit={e => { e.preventDefault(); if (c.name.trim()) onSave({ ...c, name: c.name.trim() }) }}>
-    <div className="companion-preview"><Face companion={c} size={88} look key={c.face + c.color} /><Button type="button" variant="outline" size="sm" onClick={() => setC({ ...c, name: c.id ? c.name : pick(NAMES), face: pick(FACE_NAMES), color: pick(COLORS) })}><Dices />Randomize</Button></div>
-    <label><span>Name</span><Input required maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} /></label>
-    <label><span>What they're good at</span><textarea className="companion-job" rows={3} maxLength={1000} placeholder="For example: a careful researcher who checks sources and cites them." value={c.job} onChange={e => setC({ ...c, job: e.target.value })} /></label>
-    <div className="companion-faces" role="radiogroup" aria-label="Face">{FACE_NAMES.map(f => <button type="button" key={f} role="radio" aria-checked={c.face === f} aria-label={f} className={cn(c.face === f && "is-picked")} onClick={() => setC({ ...c, face: f })}><Face companion={{ ...c, face: f }} size={34} /></button>)}</div>
-    <div className="companion-colors" role="radiogroup" aria-label="Color">{COLORS.map(k => <button type="button" key={k} role="radio" aria-checked={c.color === k} aria-label={k} data-color={k} className={cn("face", c.color === k && "is-picked")} onClick={() => setC({ ...c, color: k })} />)}</div>
-    <div className="companion-actions">
-     {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={onDelete}><Trash2 />Delete</Button>}
-     <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-     <Button type="submit" disabled={!c.name.trim()}>Save</Button>
-    </div>
-   </form>
-  </DialogContent>
- </Dialog>
 }

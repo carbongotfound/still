@@ -180,6 +180,7 @@ try:
         time.sleep(31)  # Stop holds the agent off for 30 seconds
         send(process, "aiCheck")
         time.sleep(3)
+        send(process, "aiAdvanced", on=True)  # without Advanced, the companion's mode picks the model
         send(process, "aiModel", harness="claude", model="haiku")
         send(process, "aiToggle")
         send(process, "aiSend", text=f"Open {URL} in a new tab. Type Ada in the Name box and press Add. Then type Linus and press Add. Then type Grace and press Add. Then tell me how many names are listed.")
