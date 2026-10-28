@@ -42,3 +42,17 @@ Tab overflow regression (checks inline button placement with three tabs, clicks 
 ```powershell
 python tests/desktop/tabs.py artifacts/Still-QA/Still.exe
 ```
+
+Agent control regression checks (`--cli help` snapshot, `as=` required, approval bar for a new caller, block for the session, the per-profile switch, private tabs hidden from `list_tabs`, and `profile=temp`). `--cli` always targets the default profile, so only its offline behavior runs; the rest goes through `--mcp --profile`, which shares the same call path. After an intended change to the tool list, refresh the snapshot with `--update-snapshot`.
+
+```powershell
+python tests/desktop/agents.py artifacts/Still-QA/Still.exe
+```
+
+Performance baseline for `docs/agentic/PERF.md` (cold start, idle RAM with 1 and 10 tabs, tab-switch latency; about 6 minutes for 3 runs):
+
+```powershell
+python tests/desktop/baseline.py artifacts/Still-QA/Still.exe 3
+```
+
+Set `STILL_QA_POS=x,y` to open test windows at a fixed spot (for example on a second monitor) without taking focus.
