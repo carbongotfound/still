@@ -126,19 +126,65 @@ def run(process):
     rpc(process, "key", key="S", mods="Control, Shift")
     check(until(lambda: tabs(process)["layout"] == "Classic" and shell(process, "!document.querySelector('.browser-sidebar')"), 5), "Ctrl+Shift+S switches back to tabs on top")
 
-    # ---- hover actions ----
-    labels = json.loads(shell(process, "JSON.stringify([...document.querySelectorAll('[data-tab-id=\"b\"] .tab-actions button')].map(b=>b.title))"))
-    check(labels[:2] == ["Pin", "Bookmark"] and labels[-1] == "Copy link", f"A tab shows Pin, Bookmark and Copy link on hover ({', '.join(labels)})")
-    check("Open in chat" in labels or state(process).get("noAi"), "A tab offers Open in chat")
-    shell(process, "document.querySelector('[data-tab-id=\"b\"] .tab-actions button[title=Bookmark]').click()")
-    check(until(lambda: any(v["Url"] == f"{URL}/b" for v in state(process)["bookmarks"]), 5) and active(process) == "a",
-          "Bookmark on hover saves that tab, not the one you're on")
-    shell(process, "document.querySelector('[data-tab-id=\"b\"] .tab-actions button[title=\"Remove bookmark\"]').click()")
-    check(until(lambda: not any(v["Url"] == f"{URL}/b" for v in state(process)["bookmarks"]), 5), "Pressing it again removes the bookmark")
-    shell(process, "document.querySelector('[data-tab-id=\"d\"] .tab-actions button[title=Pin]').click()")
-    check(until(lambda: any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]), 5), "Pin on hover pins the tab")
+    # ---- hover shows only the X; the rest is in the right-click menu ----
+    VISIBLE = "[...document.querySelectorAll('[data-tab-id=\"%s\"] button:not(.tab-main)')].filter(b=>{const c=getComputedStyle(b),r=b.getBoundingClientRect();return c.display!=='none'&&c.visibility!=='hidden'&&+c.opacity>.5&&r.width>0}).map(b=>b.getAttribute('aria-label'))"
+    def hover_buttons(i):
+        r = json.loads(shell(process, "JSON.stringify((r=>({x:r.left+r.width/2,y:r.top+r.height/2}))(document.querySelector('[data-tab-id=\"%s\"]').getBoundingClientRect()))" % i))
+        rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": r["x"], "y": r["y"]})
+        time.sleep(.3)
+        return json.loads(shell(process, "JSON.stringify(" + VISIBLE % i + ")"))
+    for layout in ["Classic", "Modern"]:
+        send(process, "preference", key="tabLayout", value=layout)
+        until(lambda: tabs(process)["layout"] == layout, 5)
+        time.sleep(.4)
+        shown = hover_buttons("b")
+        check(shown == ["Close Page B"], f"{layout}: hovering a tab shows exactly one button, the X ({', '.join(shown)})")
+        size = shell(process, "(r=>Math.round(r.width)+'x'+Math.round(r.height)+'@'+Math.round(document.querySelector('[data-tab-id=\"b\"]').getBoundingClientRect().right-r.right))(document.querySelector('[data-tab-id=\"b\"] .close-tab').getBoundingClientRect())")
+        check(size == "22x22@6", f"{layout}: the X is 22 by 22 at the right edge ({size})")
+        rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": 2, "y": 600})
+        time.sleep(.3)
+        check(json.loads(shell(process, "JSON.stringify(" + VISIBLE % "a" + ")")) == ["Close Page A"] and json.loads(shell(process, "JSON.stringify(" + VISIBLE % "b" + ")")) == [],
+              f"{layout}: the tab you're on keeps its X; the others show it only on hover")
+        capture(process, f"tabs-hover-{layout.lower()}")
+    send(process, "preference", key="tabLayout", value="Classic")
+    until(lambda: tabs(process)["layout"] == "Classic", 5)
+    send(process, "pin", id="d")
+    until(lambda: any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]), 5)
+    check(hover_buttons("d") == [], "A pinned tab shows only its icon, with no X")
     send(process, "pin", id="d")
     until(lambda: not any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]), 5)
+    def menu(i):
+        until(lambda: shell(process, "!document.querySelector('[role=menu]')"), 3)  # the last menu has finished closing
+        shell(process, "(t=>{const r=t.getBoundingClientRect();t.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+20,clientY:r.top+10}))})(document.querySelector('[data-tab-id=\"%s\"]'))" % i)
+        return until(lambda: json.loads(shell(process, "JSON.stringify([...document.querySelectorAll('[role=menuitem]')].map(i=>i.textContent))")), 3) or []
+    def pick(label):
+        shell(process, "[...document.querySelectorAll('[role=menuitem]')].find(i=>i.textContent.startsWith(%s)).click()" % json.dumps(label))
+    items = menu("b")
+    names = ["Pin tab", "Bookmark", "Copy link", "Duplicate", "Close tab"] + ([] if state(process).get("noAi") else ["Open in chat"])
+    check(all(any(t.startswith(n) for t in items) for n in names), f"The right-click menu has Pin, Bookmark, Copy link, Open in chat, Duplicate and Close ({' | '.join(items)})")
+    check(any(t.startswith("Pin tab") and t.endswith("Ctrl Shift P") for t in items) and any(t.startswith("Bookmark") and t.endswith("Ctrl D") for t in items),
+          "The menu shows the keyboard shortcuts")
+    capture(process, "tabs-menu")
+    pick("Bookmark")
+    check(until(lambda: any(v["Url"] == f"{URL}/b" for v in state(process)["bookmarks"]), 5) and active(process) == "a",
+          "Bookmark in the menu saves that tab, not the one you're on")
+    menu("b"); pick("Remove bookmark")
+    check(until(lambda: not any(v["Url"] == f"{URL}/b" for v in state(process)["bookmarks"]), 5), "Choosing it again removes the bookmark")
+    menu("d"); pick("Pin tab")
+    check(until(lambda: any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]), 5), "Pin in the menu pins the tab")
+    if any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]): send(process, "pin", id="d")
+    until(lambda: not any(t["Id"] == "d" and t["Pinned"] for t in state(process)["tabs"]), 5)
+    rpc(process, "key", key="D", mods="Control")
+    check(until(lambda: any(v["Url"] == f"{URL}/a" for v in state(process)["bookmarks"]), 5), "Ctrl+D still bookmarks the page")
+    rpc(process, "key", key="D", mods="Control")
+    until(lambda: not any(v["Url"] == f"{URL}/a" for v in state(process)["bookmarks"]), 5)
+
+    send(process, "new", url=URL + "/d")
+    extra = until(lambda: next((t["Id"] for t in state(process)["tabs"] if t["Id"] not in IDS), None), 5)
+    send(process, "select", id="a")
+    until(lambda: active(process) == "a")
+    shell(process, "document.querySelector('[data-tab-id=\"%s\"]').dispatchEvent(new MouseEvent('auxclick',{bubbles:true,cancelable:true,button:1}))" % extra)
+    check(bool(extra) and until(lambda: extra not in tabs(process)["order"], 5), "Middle-click still closes a tab")
 
     # ---- Ctrl+Tab: most recent first ----
     for i in ["b", "c", "a"]:
