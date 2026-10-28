@@ -21,6 +21,15 @@ public sealed class AiChat
  [System.Text.Json.Serialization.JsonIgnore] public string Error { get; set; } = ""; // why its last run failed, until the next one
  public DateTime Updated { get; set; } = DateTime.UtcNow;
  public List<AiMessage> Messages { get; set; } = [];
+ public List<string> Allowed { get; set; } = []; // "action site" the user allowed for the rest of this chat
+ public List<AiAudit> Audit { get; set; } = []; // what the AI asked to do on sites, and what happened
+}
+public sealed class AiAudit
+{
+ public DateTime At { get; set; } = DateTime.UtcNow;
+ public string What { get; set; } = "";
+ public string Site { get; set; } = "";
+ public string Result { get; set; } = "";
 }
 
 /// A companion: the persona the user works with. Its face is one of the shell's mascots, its job goes into the AI's
@@ -173,6 +182,8 @@ public partial class MainWindow
  bool Showing(AiChat chat) => active?.ChatId == chat.Id || (active?.ChatId == null && aiOpen && aiChat?.Id == chat.Id);
  // A question the AI asked with ask_user, waiting for the user's answer in the chat.
  sealed record AiQuestion(string Text, string[] Options, TaskCompletionSource<string> Answer);
+ // A step waiting for the user's OK in the chat; with Until, a sensitive step counting down to go ahead on its own.
+ sealed record Approval(string Id, string What, string Site, string Action, string Why, DateTime? Until, TaskCompletionSource<string> Answer);
  /// A chat at work. Any number run at once, each its own AI app process with its own question and follow-ups.
  sealed class ChatRun(AiChat chat, string who)
  {
@@ -183,12 +194,14 @@ public partial class MainWindow
   public bool Stopped;
   public AiQuestion? Question;
   public readonly List<string> Queue = []; // typed while it worked: sent together when it finishes
+  public readonly List<Approval> Approvals = [];
  }
  static readonly Dictionary<string, ChatRun> runs = []; // by chat id
  static bool Busy(AiChat? c) => c != null && runs.ContainsKey(c.Id);
  static void StopRun(ChatRun r)
  {
   r.Question?.Answer.TrySetResult("The user pressed Stop."); r.Question = null;
+  foreach (var card in r.Approvals.ToList()) card.Answer.TrySetResult("stop");
   if (!r.Stopped) { r.Stopped = true; r.Run?.Cancel(); r.Chat.Messages.Add(new() { Role = "note", Text = "Stopped." }); }
  }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
@@ -213,7 +226,7 @@ public partial class MainWindow
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked,
-  runs = runs.Values.Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
+  runs = runs.Values.Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, memory = Memory(),
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
@@ -224,6 +237,11 @@ public partial class MainWindow
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options } : null,
+  approvals = run?.Approvals.Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until }),
+  audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
+  permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
+   .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
+  sensitiveSites = Prefs.SensitiveSites,
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id), folder = c.Folder }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived }) } }); }
 
@@ -279,6 +297,15 @@ public partial class MainWindow
     asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
     break; }
+   case "permAnswer" when runs.GetValueOrDefault(S("run") is { Length: > 0 } permRun ? permRun : ShownChat?.Id ?? "") is { } asking: // a card's answer; no id: Approve all
+    foreach (var card in asking.Approvals.Where(c => S("id").Length > 0 ? c.Id == S("id") : c.Until == null).ToList())
+     card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" ? S("answer") : "deny");
+    break;
+   case "permSet" when PermissionActions.Contains(S("action")): SetPermission(SiteOf(S("site")), S("action"), S("companion"), S("mode")); PublishAiEverywhere(); break;
+   case "permSensitive" when SiteOf(S("site")) is { Length: > 0 } marked:
+    Prefs.SensitiveSites.Remove(marked); if (B("on")) Prefs.SensitiveSites.Add(marked);
+    SaveLater(); PublishAiEverywhere(); break;
+   case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); SaveLater(); PublishAiEverywhere(); break;
    case "chatOpen" when S("id") is { Length: > 0 } open && AiChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
    case "chatPage" when active?.ChatId is { } pageChat: // show or hide the AI's page beside the chat
     if (tabs.FirstOrDefault(t => t.Id == S("id") && (t.InChat ?? t.RunChat) == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;

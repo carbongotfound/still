@@ -140,6 +140,7 @@ try:
     if not ok and "Allow" in text:  # the user counted as away: the answer applies to the next call
         ok, text = second.call("list_tabs", seconds=20)
     check(not ok and "blocked this agent" in text, "Block refuses the caller")
+    until(lambda: "Probe Two" not in shell_text(process), 5)  # the bar's exit animation
     started = time.monotonic()
     ok, text = second.call("list_tabs", seconds=20)
     check(not ok and "blocked this agent" in text and time.monotonic() - started < 5 and "Probe Two" not in shell_text(process),
