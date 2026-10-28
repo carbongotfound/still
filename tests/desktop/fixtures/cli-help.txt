@@ -1,0 +1,43 @@
+Usage: Still.exe --cli <tool> as=<your name> [key=value ...]
+
+Tools:
+  list_profiles 
+      List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or "temp" for a clean temporary window.
+  list_tabs profile=
+      List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.
+  open_tab url= profile=
+      Open a URL or search terms in a new background tab and work there from now on. The user keeps their own tab and can keep browsing. Start most tasks here.
+  navigate url= tabId= profile=
+      Load a URL or search terms in your current tab (or tabId).
+  switch_tab tabId= show= profile=
+      Work in another tab from now on. It stays in the background unless show is true.
+  close_tab tabId= profile=
+      Close your current tab (or tabId).
+  go_back tabId= profile=
+      Go back in your tab's history.
+  go_forward tabId= profile=
+      Go forward in your tab's history.
+  reload tabId= profile=
+      Reload your tab.
+  read_page text= all= offset= tabId= profile=
+      See the page: title, URL and scroll position, then one line per button, link and field near the visible part as [id] kind "label" (→ link, =value, {options}, ✓/☐ checked), then the page text (8000 characters at a time). An id keeps working as long as its element is on the page.
+  find text= tabId= profile=
+      Search the page for text: the buttons, links and fields that match (with ids) and the matching lines of text, from anywhere on the page. Much cheaper than read_page on a big page.
+  click id= text= selector= tabId= profile=
+      Click an element like a real mouse click (it's scrolled into view first). Says where you ended up, and whether a new tab, dialog or file picker opened.
+  type text= id= selector= submit= append= tabId= profile=
+      Type into a field, replacing what's in it (append=true adds instead). Without an id, types into the focused field. On a dropdown, picks the option with that text. submit=true presses Enter afterwards.
+  press_key key= tabId= profile=
+      Press a key in the page: Enter, Escape, Tab, ArrowDown, PageDown, Backspace, a letter, or a combination like Control+A or Shift+Tab.
+  scroll direction= amount= id= tabId= profile=
+      Scroll down or up (the page, or the scrolling panel in the middle of the view), or bring element id into view.
+  wait_for text= id= selector= gone= timeoutMs= tabId= profile=
+      Wait until an element or some text appears (or, with gone=true, disappears), for up to timeoutMs.
+  handle_dialog accept= text= tabId= profile=
+      Answer the alert, confirm, prompt or "leave page?" dialog the page is paused on (other tools tell you when one opens).
+  upload_file paths= id= tabId= profile=
+      Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.
+  user_confirmed code= allow= profile=
+      Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.
+  screenshot tabId= profile=
+      PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.
