@@ -33,8 +33,7 @@ public partial class MainWindow
  async Task SetupFilePaste(BrowserTab tab, CoreWebView2 core)
  {
   var events = core.GetDevToolsProtocolEventReceiver("Page.fileChooserOpened");
-  events.DevToolsProtocolEventReceived += (_, e) => Dispatcher.BeginInvoke(async () => await OfferFiles(tab, core, e.ParameterObjectAsJson));
-  tab.FileChooserEvents = events;
+  tab.FileChooserEvents = events; // WireView listens
   try {
    await core.CallDevToolsProtocolMethodAsync("Page.enable", "{}");
    await core.CallDevToolsProtocolMethodAsync("Page.setInterceptFileChooserDialog", "{\"enabled\":true}");

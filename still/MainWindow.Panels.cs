@@ -159,11 +159,12 @@ public partial class MainWindow
    SheetContent.Children.Add(g);
   }
  }
- void ToggleBookmark()
+ void ToggleBookmark(BrowserTab? tab = null)
  {
-  if (active == null || active.Url.Length == 0) return;
-  if (state.Bookmarks.Any(b => b.Url == active.Url)) { state.Bookmarks.RemoveAll(b => b.Url == active.Url); Toast("Bookmark removed."); }
-  else { state.Bookmarks.Add(new Visit { Title = active.Title, Url = active.Url, Favicon = active.Private || active.Favicon.Length == 0 ? null : active.Favicon }); Toast("Page bookmarked."); }
+  var page = tab ?? Shown;
+  if (page == null || page.Url.Length == 0) return;
+  if (state.Bookmarks.Any(b => b.Url == page.Url)) { state.Bookmarks.RemoveAll(b => b.Url == page.Url); Toast("Bookmark removed."); }
+  else { state.Bookmarks.Add(new Visit { Title = page.Title, Url = page.Url, Favicon = page.Private || page.Favicon.Length == 0 ? null : page.Favicon }); Toast("Page bookmarked."); }
   SaveLater(); UpdateChrome();
  }
  void ShowLibrary(bool bookmarks)

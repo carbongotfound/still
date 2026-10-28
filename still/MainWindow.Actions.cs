@@ -258,6 +258,7 @@ public partial class MainWindow
  {
   bool ctrl = mods.HasFlag(ModifierKeys.Control), shift = mods.HasFlag(ModifierKeys.Shift), alt = mods.HasFlag(ModifierKeys.Alt);
   if(key==Key.F11){await ToggleFullScreen();return;}
+  if (key == Key.Escape && recent != null) { await PickRecent(null); return; }
   if (key == Key.Escape) {
    ShellSend(new{kind="escape"});
    if (panel.Length > 0) CloseSheet();
@@ -266,6 +267,7 @@ public partial class MainWindow
    else if (active?.View?.CoreWebView2 is { } escCore) await escCore.RunAsync("if(window.__stillCancelPicker)window.__stillCancelPicker();if(document.fullscreenElement)document.exitFullscreen();");
    return;
   }
+  if (ctrl && alt && key is Key.Left or Key.Right) { await CycleTabs(key == Key.Right ? 1 : -1); return; }
   if (alt && key == Key.Left) { BackClick(this, new()); return; }
   if (alt && key == Key.Right) { ForwardClick(this, new()); return; }
   if (!ctrl) return;
@@ -275,7 +277,7 @@ public partial class MainWindow
   else if (key == Key.T) await NewTab();
   else if (key == Key.N && shift) OpenIncognito();
   else if (key == Key.W && active != null) await CloseTab(active);
-  else if (key == Key.Tab && tabs.Count > 0) await SelectTab(tabs[(tabs.IndexOf(active!) + (shift ? -1 : 1) + tabs.Count) % tabs.Count]);
+  else if (key == Key.Tab) await SwitchRecent(shift ? -1 : 1);
   else if (key >= Key.D1 && key <= Key.D9 && tabs.Count > 0) { int index = key == Key.D9 ? tabs.Count - 1 : Math.Min((int)key - (int)Key.D1, tabs.Count - 1); await SelectTab(tabs[index]); }
   else if (key == Key.R && shift) await ToggleReader();
   else if (key == Key.R) ReloadClick(this, new());
@@ -285,8 +287,9 @@ public partial class MainWindow
   else if (key == Key.H) ShowLibrary(false);
   else if (key == Key.J) ShowDownloads();
   else if (key == Key.F && shift) { focusMode = !focusMode; ApplyLayout(); }
+  else if (key == Key.S && shift) { Prefs.TabLayout = Prefs.TabLayout == "Modern" ? "Classic" : "Modern"; foreach (var w in Windows) w.ShellPublish(); SaveLater(); }
   else if (key == Key.F) ShowFind();
-  else if (key == Key.P && shift && active != null) { active.Pinned = !active.Pinned; RenderTabs(); SaveLater(); }
+  else if (key == Key.P && shift && active != null) { active.Pinned = !active.Pinned; if (active.Pinned) LeaveGroup(active); RenderTabs(); SaveLater(); }
   else if (key == Key.A && shift) await HandleAi("aiToggle", default);
   else if (key == Key.U && active?.Url is { Length: > 0 } source && !source.StartsWith("view-source:")) await NewTab("view-source:" + source, active.Private, false);
   else if (key == Key.OemComma) ShowSettings();

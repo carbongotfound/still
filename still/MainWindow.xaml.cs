@@ -122,6 +122,7 @@ public partial class MainWindow : Window
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
  internal void Save()
  {
+  state.Groups.RemoveAll(g => !Windows.Any(w => w.tabs.Any(t => t.Group == g.Id)));
   state.Tabs = SavedTabs().ToList();
   var main = Windows.FirstOrDefault(w => !w.closing) ?? this;
   state.ActiveId = main.active?.Private == false ? main.active.Id : state.Tabs.FirstOrDefault()?.Id;
@@ -214,8 +215,8 @@ public partial class MainWindow : Window
  /// Puts the shown page on screen and hides the rest.
  void ShowPage()
  {
-  var shown = Shown;
-  foreach (var t in tabs) if (t.View != null) t.View.Visibility = t == shown && panel == "" ? Visibility.Visible : Visibility.Hidden;
+  var shown = Shown; var partner = Partner;
+  foreach (var t in tabs) if (t.View != null) t.View.Visibility = (t == shown || t == partner) && panel == "" ? Visibility.Visible : Visibility.Hidden;
   RestorePageWindow();
  }
  /// The tab that shows this chat, opened next to the others if it isn't.
@@ -231,7 +232,8 @@ public partial class MainWindow : Window
   if (tab.Closed || !tabs.Contains(tab)) return;
   if(active!=tab&&contentFullScreen)await ExitContentFullScreen();
   CloseSheet(false); CancelUpload();
-  foreach (var t in tabs) if (t.View != null) t.View.Visibility = Visibility.Hidden;
+  var pair = tab == splitLeft ? splitRight : tab == splitRight ? splitLeft : null; // switching within a split keeps the other half up
+  foreach (var t in tabs) if (t.View != null && t != pair) t.View.Visibility = Visibility.Hidden;
   var leaving=active; if(leaving!=null)leaving.LastActive=DateTime.UtcNow;
   active = tab;tab.LastActive=DateTime.UtcNow;
   if(tab.View?.CoreWebView2 is {IsSuspended:true} sleeping)sleeping.Resume(); // instant: page state was kept
@@ -243,7 +245,8 @@ public partial class MainWindow : Window
   if (tab.ChatId is { } chat) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
   if (tab.ChatId != null || leaving?.ChatId != null) PublishAi();
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
-  if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;RestorePageWindow(); if (shown == tab) view.Focus(); }
+  if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;LayoutSplit();RestorePageWindow(); if (shown == tab) view.Focus(); }
+  if (active == tab && Partner is { } partner) { await EnsureView(partner); LayoutSplit(); RestorePageWindow(); }
   if(active==tab)await InspectLogin(tab);
  }
  async Task CloseTab(BrowserTab tab, bool removePin = false)
@@ -256,6 +259,7 @@ public partial class MainWindow : Window
   var index = tabs.IndexOf(tab);
   if (index < 0) return;
   if (!tab.Private && tab.InChat == null) { closedTabs.Push(new BrowserTab { Url = tab.Url, Title = tab.Title, Pinned = tab.Pinned }); while (closedTabs.Count > 25) { var keep = closedTabs.Take(25).Reverse().ToArray(); closedTabs.Clear(); foreach (var t in keep) closedTabs.Push(t); } }
+  if (tab == splitLeft || tab == splitRight) { splitLeft = splitRight = null; LayoutSplit(); }
   tab.Closed = true; DisposeView(tab); tabs.Remove(tab);
   if (tab.ChatId is { } chat) foreach (var page in tabs.Where(t => t.InChat == chat).ToList()) { page.Closed = true; DisposeView(page); tabs.Remove(page); } // its pages go with it
   var rest = tabs.Where(t => t.InChat == null).ToList();
@@ -308,7 +312,6 @@ public partial class MainWindow : Window
   };
   tab.View = view; WebHost.Children.Add(view); tab.Loading = true; UpdateChrome();
   view.Loaded+=(_,_)=>RestorePageWindow();
-  view.IsVisibleChanged+=(_,_)=>{if(view.IsVisible)Dispatcher.BeginInvoke(DispatcherPriority.Loaded,RestorePageWindow);};
   WebHost.UpdateLayout();
   try {
    var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=tab.Private?privateProfile:"Default";options.IsInPrivateModeEnabled=tab.Private;
@@ -324,142 +327,11 @@ public partial class MainWindow : Window
    core.Settings.AreBrowserAcceleratorKeysEnabled = true;
    // Alerts, confirms and prompts show inside Still (and AI agents can answer them) instead of a Windows dialog.
    core.Settings.AreDefaultScriptDialogsEnabled = false;
-   core.ScriptDialogOpening += (_, e) => OpenPageDialog(tab, e);
    ApplyProtection(core);
-   core.FaviconChanged+=async(_,_)=>await UpdateFavicon(tab,core);
-   core.LaunchingExternalUriScheme+=(_,e)=>{e.Cancel=true;var uri=e.Uri;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri));};
-   core.ServerCertificateErrorDetected+=(_,e)=>{e.Action=CoreWebView2ServerCertificateErrorAction.Cancel;tab.CertificateError=true;tab.Secure=false;ShellPublish();};
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
    // Black while a page loads (no white flash in the dark theme), then the normal canvas: white unless the page asks for dark, as in Edge.
    core.DOMContentLoaded += (_, _) => view.DefaultBackgroundColor = System.Drawing.Color.White;
-   core.NavigationStarting += (_, e) => {
-    view.DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White;
-    App.Breadcrumb="page navigating "+Host(e.Uri);
-    tab.NavigationId=e.NavigationId;
-    tab.LoginFilled=false;tab.LoginDetected=false;
-    if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
-    if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension" or "view-source" or "edge")) {
-     e.Cancel = true;
-     Dispatcher.BeginInvoke(() => OpenAppLink(tab, e.Uri));
-     return;
-    }
-    if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
-    tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
-    if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
-    if (tab == Shown) UpdateChrome();
-   };
-   core.SourceChanged += (_, _) => { if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == Shown) UpdateChrome(); SaveLater(); };
-   core.DocumentTitleChanged += (_, _) => {
-    if (!tab.Reader) tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? Host(tab.Url) : core.DocumentTitle;
-    RenderTabs(); if (tab == Shown) UpdateChrome(); SaveLater();
-   };
-   core.HistoryChanged += (_, _) => { if (tab == Shown) UpdateChrome(); };
-   core.NavigationCompleted += async (_, e) => {
-    App.Breadcrumb="page loaded "+Host(tab.Url);
-    bool ok=e.IsSuccess;var status=e.WebErrorStatus;var navId=e.NavigationId;
-    // A link that turns into a download ends its navigation as "aborted", sometimes just before the
-    // download is announced. Give it a moment so a download is never shown as "connection lost".
-    if(!ok&&status==CoreWebView2WebErrorStatus.ConnectionAborted&&navId==tab.NavigationId)await Task.Delay(800);
-    // A replaced navigation can finish with ConnectionAborted after a new page starts.
-    if(navId!=tab.NavigationId)return;
-    // Cancelling a certificate error can leave the previous document displayed.
-    // Keep the address tied to that document, not to the failed destination.
-    var failedUrl=tab.Url;
-    bool becameDownload=!ok&&DateTime.UtcNow-tab.DownloadStartedAt<TimeSpan.FromSeconds(10);
-    // Any HTTP answer (404/401/500 JSON from an API, etc.) is the site's real response and stays on screen;
-    // WebView2 still reports those as "not successful". Only failures with no response at all get an error page.
-    if(!ok&&!becameDownload&&e.HttpStatusCode>0)ok=true;
-    bool showError=!ok&&!becameDownload&&status!=CoreWebView2WebErrorStatus.OperationCanceled;
-    if(becameDownload){
-     tab.Loading=false;
-     // Pages whose only job was to hand over a file (a new tab/pop-up with nothing loaded) close, like Chrome.
-     if(string.IsNullOrEmpty(core.Source)||core.Source=="about:blank"){_=Dispatcher.BeginInvoke(async()=>{if(!tab.Closed)await CloseTab(tab,true);if(shellReady)ShellOpen("downloads");});return;}
-     tab.Url=core.Source;
-    }
-    if(!ok&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
-    tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
-    tab.Loading = false; if (tab == Shown) UpdateChrome();
-    if(ok)_=InspectLogin(tab);
-    if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.RunAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
-    if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
-     state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
-     state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });
-     if (state.History.Count > 2000) state.History.RemoveRange(2000, state.History.Count - 2000);
-     SaveLater();
-    }
-    if(showError){
-     // Show a full-page error for this cause; keep the address on the page that failed.
-     tab.ShowingError=true;tab.Url=failedUrl;
-     core.NavigateToString(ErrorPages.Html(status,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
-     if(tab==Shown)UpdateChrome();
-    }
-   };
-   core.NewWindowRequested += async (_, e) => {
-    var deferral = e.GetDeferral(); e.Handled = true;
-    try {
-     if (!e.IsUserInitiated && !Prefs.AllowedPopups.Contains(Host(tab.Url))) { PopupBlocked(tab, e.Uri); return; }
-     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
-     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
-     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-     var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
-     if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
-    } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
-    finally { deferral.Complete(); }
-   };
-   core.DownloadStarting += (_, e) => {
-    tab.DownloadStartedAt = DateTime.UtcNow;
-    var operation = e.DownloadOperation;
-    Directory.CreateDirectory(Prefs.DownloadFolder);
-    string name = Path.GetFileName(e.ResultFilePath);
-    if (string.IsNullOrEmpty(name)) name = "download";
-    string path = Path.Combine(Prefs.DownloadFolder, name);
-    for (int i = 1; File.Exists(path); i++) path = Path.Combine(Prefs.DownloadFolder, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
-    e.ResultFilePath = path;
-    downloads.Insert(0, new DownloadItem { Path = path, Operation = operation, Private = tab.Private });
-    tab.ActiveDownloads++;
-    operation.StateChanged += (_, _) => {
-     if (operation.State != CoreWebView2DownloadState.InProgress && --tab.ActiveDownloads <= 0 && tab.Closed) { tab.ActiveDownloads = 0; DisposeView(tab); }
-     if (operation.State == CoreWebView2DownloadState.Completed) Toast("Downloaded " + Path.GetFileName(path));
-     if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
-     ShellPublish();
-    };
-    // Keep the toolbar progress ring moving, at most ~4 updates a second.
-    operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
-    e.Handled=true;
-    // Show the downloads card as soon as a download starts, like Chrome/Opera.
-    if (shellReady) Dispatcher.BeginInvoke(() => ShellOpen("downloads")); else Toast("Downloading " + name);
-    ShellPublish();
-   };
-   core.PermissionRequested += async (_, e) => {
-    using var deferral=e.GetDeferral();
-    // Ask inside Still (a bar above the page), never with a separate Windows dialog.
-    var site=Host(e.Uri);var allow=await AskPermission(tab,string.IsNullOrWhiteSpace(site)?"This page":site,e.PermissionKind);
-    e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
-    e.SavesInProfile = !tab.Private; // remember the choice per site, like Chrome (reset in Privacy & security)
-    // Dispose completes this deferral. Completing it explicitly as well causes
-    // WebView2's E_ILLEGAL_METHOD_CALL after the prompt closes.
-   };
-   core.ProcessFailed += (_, e) => Dispatcher.BeginInvoke(() => {
-    if (tab.Closed || closing) return;
-    switch (e.ProcessFailedKind) {
-     // The page's own renderer died: show a crash screen in place. It is not reloaded until you choose to.
-     case CoreWebView2ProcessFailedKind.RenderProcessExited:
-      tab.ShowingError = true; tab.Loading = false;
-      try { core.NavigateToString(ErrorPages.Crashed(tab.Url, dark)); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { DisposeView(tab); }
-      if (tab == Shown) UpdateChrome(); break;
-     // The whole engine exited: this view can't be reused; it reloads when you next open the tab.
-     case CoreWebView2ProcessFailedKind.BrowserProcessExited:
-      DisposeView(tab); if (tab == active) { Toast("The browser engine restarted. Reload to continue."); UpdateChrome(); } break;
-     // A hung page usually recovers; an iframe/GPU/utility process restart is handled by the engine itself.
-     case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
-      if (tab == active) Toast("This page isn't responding. Wait, or reload it."); break;
-     default: break;
-    }
-   });
-   // A page that closes itself (window.close) closes its tab, e.g. download hand-off pages.
-   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(async () => { if (!tab.Closed) await CloseTab(tab, true); });
-   core.ContainsFullScreenElementChanged += (_, _) => { if(tab!=Shown||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
    core.IsDocumentPlayingAudioChanged += (_, _) => { if (core.IsDocumentPlayingAudio) { tab.Media = true; core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } };
    SetupBlocking(tab, core);
    await InstallHiddenRules(tab);
@@ -469,12 +341,7 @@ public partial class MainWindow : Window
    await core.AddScriptToExecuteOnDocumentCreatedAsync(MemoryActivityScript);
    await core.AddScriptToExecuteOnDocumentCreatedAsync(StoreButtonScript);
    if (!tab.Private) await core.AddScriptToExecuteOnDocumentCreatedAsync(DraftScript);
-   core.WebMessageReceived += async (_, e) => {
-    // "Add to Still" on a Chrome Web Store page; installing still goes through the permission review.
-    if (e.Source.StartsWith("https://chromewebstore.google.com/", StringComparison.Ordinal) && e.WebMessageAsJson.Contains("\"still-store-add\"")) { await PrepareStoreExtension(e.Source); return; }
-    await ReceiveHidden(tab, e);
-   };
-   core.WebMessageReceived += async (_, e) => await ReceiveLogin(tab, e);
+   WireView(tab, view, core);
    core.Navigate(tab.Url);
    StartupMetrics.Mark("page-navigation");
   } catch (Exception ex) {
@@ -482,6 +349,153 @@ public partial class MainWindow : Window
    App.Log(ex); DisposeView(tab);
    if (tab == active) ShowError("The browser engine couldn't start.", ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message);
   } finally { if (tab.View == view) tab.LoadingTask = null; }
+ }
+ // Page events go to the window that holds the tab. Moving a tab to another window wires them again
+ // there, and the old window's handlers stand down: the page itself keeps running, with no reload.
+ void WireView(BrowserTab tab, WebView2 view, CoreWebView2 core)
+ {
+  var wire = tab.Wire = new object();
+  bool Off() => tab.Wire != wire;
+  core.ScriptDialogOpening += (_, e) => { if (Off()) return; OpenPageDialog(tab, e); };
+  core.FaviconChanged+=async(_,_)=>{ if (Off()) return; await UpdateFavicon(tab,core); };
+  core.LaunchingExternalUriScheme+=(_,e)=>{if (Off()) return; e.Cancel=true;var uri=e.Uri;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri));};
+  core.ServerCertificateErrorDetected+=(_,e)=>{if (Off()) return; e.Action=CoreWebView2ServerCertificateErrorAction.Cancel;tab.CertificateError=true;tab.Secure=false;ShellPublish();};
+  core.NavigationStarting += (_, e) => { if (Off()) return; 
+   view.DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White;
+   App.Breadcrumb="page navigating "+Host(e.Uri);
+   tab.NavigationId=e.NavigationId;
+   tab.LoginFilled=false;tab.LoginDetected=false;
+   if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
+   if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension" or "view-source" or "edge")) {
+    e.Cancel = true;
+    Dispatcher.BeginInvoke(() => OpenAppLink(tab, e.Uri));
+    return;
+   }
+   if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
+   tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
+   if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
+   if (tab == Shown) UpdateChrome();
+  };
+  core.SourceChanged += (_, _) => { if (Off()) return;  if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == Shown) UpdateChrome(); SaveLater(); };
+  core.DocumentTitleChanged += (_, _) => { if (Off()) return; 
+   if (!tab.Reader) tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? Host(tab.Url) : core.DocumentTitle;
+   RenderTabs(); if (tab == Shown) UpdateChrome(); SaveLater();
+  };
+  core.HistoryChanged += (_, _) => { if (Off()) return;  if (tab == Shown) UpdateChrome(); };
+  core.NavigationCompleted += async (_, e) => { if (Off()) return; 
+   App.Breadcrumb="page loaded "+Host(tab.Url);
+   bool ok=e.IsSuccess;var status=e.WebErrorStatus;var navId=e.NavigationId;
+   // A link that turns into a download ends its navigation as "aborted", sometimes just before the
+   // download is announced. Give it a moment so a download is never shown as "connection lost".
+   if(!ok&&status==CoreWebView2WebErrorStatus.ConnectionAborted&&navId==tab.NavigationId)await Task.Delay(800);
+   // A replaced navigation can finish with ConnectionAborted after a new page starts.
+   if(navId!=tab.NavigationId)return;
+   // Cancelling a certificate error can leave the previous document displayed.
+   // Keep the address tied to that document, not to the failed destination.
+   var failedUrl=tab.Url;
+   bool becameDownload=!ok&&DateTime.UtcNow-tab.DownloadStartedAt<TimeSpan.FromSeconds(10);
+   // Any HTTP answer (404/401/500 JSON from an API, etc.) is the site's real response and stays on screen;
+   // WebView2 still reports those as "not successful". Only failures with no response at all get an error page.
+   if(!ok&&!becameDownload&&e.HttpStatusCode>0)ok=true;
+   bool showError=!ok&&!becameDownload&&status!=CoreWebView2WebErrorStatus.OperationCanceled;
+   if(becameDownload){
+    tab.Loading=false;
+    // Pages whose only job was to hand over a file (a new tab/pop-up with nothing loaded) close, like Chrome.
+    if(string.IsNullOrEmpty(core.Source)||core.Source=="about:blank"){_=Dispatcher.BeginInvoke(async()=>{if(!tab.Closed)await CloseTab(tab,true);if(shellReady)ShellOpen("downloads");});return;}
+    tab.Url=core.Source;
+   }
+   if(!ok&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
+   tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
+   tab.Loading = false; if (tab == Shown) UpdateChrome();
+   if(ok)_=InspectLogin(tab);
+   if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.RunAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
+   if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
+    state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
+    state.History.Insert(0, new Visit { Title = tab.Title, Url = tab.Url });
+    if (state.History.Count > 2000) state.History.RemoveRange(2000, state.History.Count - 2000);
+    SaveLater();
+   }
+   if(showError){
+    // Show a full-page error for this cause; keep the address on the page that failed.
+    tab.ShowingError=true;tab.Url=failedUrl;
+    core.NavigateToString(ErrorPages.Html(status,tab.CertificateError,failedUrl,dark,Prefs.SearchEngine));
+    if(tab==Shown)UpdateChrome();
+   }
+  };
+  core.NewWindowRequested += async (_, e) => { if (Off()) return; 
+   var deferral = e.GetDeferral(); e.Handled = true;
+   try {
+    if (!e.IsUserInitiated && !Prefs.AllowedPopups.Contains(Host(tab.Url))) { PopupBlocked(tab, e.Uri); return; }
+    bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
+    if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
+    // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
+    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank") : await NewTab("about:blank", tab.Private, false);
+    if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
+   } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
+   finally { deferral.Complete(); }
+  };
+  core.DownloadStarting += (_, e) => { if (Off()) return; 
+   tab.DownloadStartedAt = DateTime.UtcNow;
+   var operation = e.DownloadOperation;
+   Directory.CreateDirectory(Prefs.DownloadFolder);
+   string name = Path.GetFileName(e.ResultFilePath);
+   if (string.IsNullOrEmpty(name)) name = "download";
+   string path = Path.Combine(Prefs.DownloadFolder, name);
+   for (int i = 1; File.Exists(path); i++) path = Path.Combine(Prefs.DownloadFolder, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
+   e.ResultFilePath = path;
+   downloads.Insert(0, new DownloadItem { Path = path, Operation = operation, Private = tab.Private });
+   tab.ActiveDownloads++;
+   operation.StateChanged += (_, _) => {
+    if (operation.State != CoreWebView2DownloadState.InProgress && --tab.ActiveDownloads <= 0 && tab.Closed) { tab.ActiveDownloads = 0; DisposeView(tab); }
+    if (operation.State == CoreWebView2DownloadState.Completed) Toast("Downloaded " + Path.GetFileName(path));
+    if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
+    ShellPublish();
+   };
+   // Keep the toolbar progress ring moving, at most ~4 updates a second.
+   operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
+   e.Handled=true;
+   // Show the downloads card as soon as a download starts, like Chrome/Opera.
+   if (shellReady) Dispatcher.BeginInvoke(() => ShellOpen("downloads")); else Toast("Downloading " + name);
+   ShellPublish();
+  };
+  core.PermissionRequested += async (_, e) => { if (Off()) return; 
+   using var deferral=e.GetDeferral();
+   // Ask inside Still (a bar above the page), never with a separate Windows dialog.
+   var site=Host(e.Uri);var allow=await AskPermission(tab,string.IsNullOrWhiteSpace(site)?"This page":site,e.PermissionKind);
+   e.State = allow ? CoreWebView2PermissionState.Allow : CoreWebView2PermissionState.Deny;
+   e.SavesInProfile = !tab.Private; // remember the choice per site, like Chrome (reset in Privacy & security)
+   // Dispose completes this deferral. Completing it explicitly as well causes
+   // WebView2's E_ILLEGAL_METHOD_CALL after the prompt closes.
+  };
+  core.ProcessFailed += (_, e) => { if (Off()) return; Dispatcher.BeginInvoke(() => {
+   if (tab.Closed || closing) return;
+   switch (e.ProcessFailedKind) {
+    // The page's own renderer died: show a crash screen in place. It is not reloaded until you choose to.
+    case CoreWebView2ProcessFailedKind.RenderProcessExited:
+     tab.ShowingError = true; tab.Loading = false;
+     try { core.NavigateToString(ErrorPages.Crashed(tab.Url, dark)); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { DisposeView(tab); }
+     if (tab == Shown) UpdateChrome(); break;
+    // The whole engine exited: this view can't be reused; it reloads when you next open the tab.
+    case CoreWebView2ProcessFailedKind.BrowserProcessExited:
+     DisposeView(tab); if (tab == active) { Toast("The browser engine restarted. Reload to continue."); UpdateChrome(); } break;
+    // A hung page usually recovers; an iframe/GPU/utility process restart is handled by the engine itself.
+    case CoreWebView2ProcessFailedKind.RenderProcessUnresponsive:
+     if (tab == active) Toast("This page isn't responding. Wait, or reload it."); break;
+    default: break;
+   }
+  }); };
+  // A page that closes itself (window.close) closes its tab, e.g. download hand-off pages.
+  core.WindowCloseRequested += (_, _) => { if (Off()) return; Dispatcher.BeginInvoke(async () => { if (!tab.Closed) await CloseTab(tab, true); }); };
+  core.ContainsFullScreenElementChanged += (_, _) => { if (Off()) return;  if(tab!=Shown||tab.Closed||closing)return;contentFullScreen=core.ContainsFullScreenElement;ApplyFullScreen(); };
+  core.WebMessageReceived += async (_, e) => { if (Off()) return; 
+   // "Add to Still" on a Chrome Web Store page; installing still goes through the permission review.
+   if (e.Source.StartsWith("https://chromewebstore.google.com/", StringComparison.Ordinal) && e.WebMessageAsJson.Contains("\"still-store-add\"")) { await PrepareStoreExtension(e.Source); return; }
+   await ReceiveHidden(tab, e);
+  };
+  core.WebMessageReceived += async (_, e) => { if (Off()) return; await ReceiveLogin(tab, e); };
+  if (tab.FileChooserEvents is CoreWebView2DevToolsProtocolEventReceiver chooser) chooser.DevToolsProtocolEventReceived += (_, e) => { if (Off()) return; Dispatcher.BeginInvoke(async () => await OfferFiles(tab, core, e.ParameterObjectAsJson)); };
+  view.IsVisibleChanged += (_, _) => { if (!Off() && view.IsVisible) Dispatcher.BeginInvoke(DispatcherPriority.Loaded, RestorePageWindow); };
+  view.GotFocus += (_, _) => { if (!Off()) FocusSplitSide(tab); }; // clicking the other half of a split view
  }
  void OpenPageDialog(BrowserTab tab, CoreWebView2ScriptDialogOpeningEventArgs e)
  {
