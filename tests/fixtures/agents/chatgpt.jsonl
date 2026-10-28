@@ -1,0 +1,9 @@
+{"type":"thread.started","thread_id":"0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}
+{"type":"turn.started"}
+{"type":"item.completed","item":{"id":"item_0","type":"reasoning","text":"**Opening the page**"}}
+{"type":"item.started","item":{"id":"item_1","type":"mcp_tool_call","server":"still","tool":"open_tab","arguments":{"url":"https://example.com"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"still","tool":"open_tab","arguments":{"url":"https://example.com"},"result":{"content":[{"type":"text","text":"Opened tab 7: Example Domain"}]},"error":null,"status":"completed"}}
+{"type":"item.started","item":{"id":"item_2","type":"mcp_tool_call","server":"still","tool":"read_page","arguments":{"tabId":"7"},"result":null,"error":null,"status":"in_progress"}}
+{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"still","tool":"read_page","arguments":{"tabId":"7"},"result":{"content":[{"type":"text","text":"# Example Domain"}]},"error":null,"status":"completed"}}
+{"type":"item.completed","item":{"id":"item_3","type":"agent_message","text":"The page title is Example Domain."}}
+{"type":"turn.completed","usage":{"input_tokens":5210,"cached_input_tokens":3072,"output_tokens":118}}

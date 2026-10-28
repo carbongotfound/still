@@ -7,3 +7,4 @@ tools/
 .vs/
 mac/.build/
 mac/build/
+__pycache__/

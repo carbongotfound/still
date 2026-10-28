@@ -64,9 +64,9 @@ export function Welcome({ isDefault, agents, mcpCommand, ai, noAi, send, onImpor
        <div className="companion-colors" role="radiogroup" aria-label="Color">{COLORS.map(k => <button key={k} role="radio" aria-checked={c.color === k} aria-label={k} data-color={k} className={cn("face", c.color === k && "is-picked")} onClick={() => setC({ ...c, color: k })} />)}</div>
       </div>}
       {at === "ai" && ai && <>
-       <Bubble>Which AI should I think with?</Bubble>
-       <Bubble>I use the AI app you already have, signed in with your own account, so there's nothing new to pay for. Private tabs, passwords and cookies stay off-limits to me.</Bubble>
-       <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id })} />
+       <Bubble>Bring your own AI.</Bubble>
+       <Bubble>Still uses the plan you already pay for. No API keys, and nothing leaves your PC except your chats with your AI provider.</Bubble>
+       <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
       </>}
       {at === "import" && <>
        <Bubble>Want to bring your stuff over?</Bubble>
