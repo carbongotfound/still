@@ -53,7 +53,7 @@ internal static class McpServer
  internal static string AgentName(string client)
  {
   string c = client.ToLowerInvariant();
-  foreach (var (key, name) in new[] { ("claude", "Claude"), ("codex", "Codex"), ("openai", "Codex"), ("grok", "Grok"), ("gemini", "Gemini"), ("cursor", "Cursor"), ("copilot", "Copilot"), ("windsurf", "Windsurf") })
+  foreach (var (key, name) in new[] { ("claude", "Claude"), ("codex", "ChatGPT"), ("openai", "ChatGPT"), ("chatgpt", "ChatGPT"), ("grok", "Grok"), ("gemini", "Gemini"), ("cursor", "Cursor"), ("copilot", "Copilot"), ("windsurf", "Windsurf") })
    if (c.Contains(key)) return name;
   return client;
  }
