@@ -36,20 +36,33 @@ public partial class MainWindow
 {
  // Installer: the maker's own install script, at a fixed address shown to the user before they press Install.
  // Domains: the only sites a sign-in page may be on; anything else the app prints is never opened.
- sealed record AiCli(string Id, string Name, string App, string Command, string Maker, string Installer, string Site, string[] SignIn, string[] Domains);
- static readonly AiCli[] AiClis = [
-  new("claude", "Claude", "Claude Code", "claude", "Anthropic", "https://claude.ai/install.ps1", "https://claude.com/product/claude-code", ["auth", "login"], ["claude.ai", "claude.com", "anthropic.com"]),
-  new("codex", "Codex", "Codex", "codex", "OpenAI", "https://chatgpt.com/codex/install.ps1", "https://chatgpt.com/codex", ["login"], ["openai.com", "chatgpt.com"]),
-  new("grok", "Grok", "Grok Build", "grok", "xAI", "https://x.ai/cli/install.ps1", "https://x.ai/cli", ["login", "--device-auth"], ["x.ai"]),
+ static readonly AgentAdapter[] BuiltInAgents = [
+  new ClaudeAdapter { Id = "claude", Name = "Claude", App = "Claude Code", Command = "claude", Maker = "Anthropic", Installer = "https://claude.ai/install.ps1",
+   InstallCommand = "irm https://claude.ai/install.ps1 | iex", Site = "https://claude.com/product/claude-code", SignIn = ["auth", "login"], Domains = ["claude.ai", "claude.com", "anthropic.com"] },
+  // Never installed by Still: the user installs it themselves if they want it.
+  new ChatGptAdapter { Id = "chatgpt", Name = "ChatGPT", App = "ChatGPT", Command = "codex", Maker = "OpenAI",
+   InstallCommand = "npm install -g @openai/codex", Site = "https://chatgpt.com", SignIn = ["login"], Domains = ["openai.com", "chatgpt.com"] },
+  new GrokAdapter { Id = "grok", Name = "Grok", App = "Grok Build", Command = "grok", Maker = "xAI", Installer = "https://x.ai/cli/install.ps1",
+   InstallCommand = "irm https://x.ai/cli/install.ps1 | iex", Site = "https://x.ai/cli", SignIn = ["login", "--device-auth"], Domains = ["x.ai"] },
  ];
+ static AgentAdapter[]? aiClis;
+ /// The built-in agents, then the manifests in Still's agents folder (read again when the user rechecks).
+ static AgentAdapter[] AiClis => aiClis ??= [.. BuiltInAgents, .. ManifestAdapter.Load()];
+ /// ChatGPT's id was "codex" before adapters.
+ static void MigrateAgentIds(Preferences prefs)
+ {
+  if (prefs.AiHarness == "codex") prefs.AiHarness = "chatgpt";
+  foreach (var map in new[] { prefs.AiModels, prefs.AiEfforts }) if (map.Remove("codex", out var v)) map["chatgpt"] = v;
+ }
 
  static List<AiChat>? aiChats;
- static string AiFolder => Path.Combine(App.DataRoot, "ai");
+ internal static string AiFolder => Path.Combine(App.DataRoot, "ai");
  static List<AiChat> AiChats
  {
   get {
    if (aiChats != null) return aiChats;
    try { aiChats = JsonSerializer.Deserialize<List<AiChat>>(File.ReadAllText(Path.Combine(AiFolder, "chats.json"))); } catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+   foreach (var c in aiChats ?? []) if (c.Harness == "codex") c.Harness = "chatgpt"; // its id before adapters
    return aiChats ??= [];
   }
  }
@@ -62,36 +75,19 @@ public partial class MainWindow
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
 
- sealed record AiModel(string Id, string Name, string[] Efforts);
- static readonly string[] Efforts = ["low", "medium", "high"];
- static readonly Dictionary<string, AiModel[]> aiModels = new() {
-  ["claude"] = [new("", "Default", ["low", "medium", "high", "xhigh", "max"]), new("fable", "Fable", ["low", "medium", "high", "xhigh", "max"]), new("opus", "Opus", ["low", "medium", "high", "xhigh", "max"]), new("sonnet", "Sonnet", ["low", "medium", "high", "xhigh", "max"]), new("haiku", "Haiku", ["low", "medium", "high", "xhigh", "max"])],
- };
+ internal static readonly string[] Efforts = ["low", "medium", "high"];
+ static readonly Dictionary<string, AgentModel[]> aiModels = [];
  static readonly Dictionary<string, string> aiUsage = []; // per AI: the latest usage the CLI reported
  static readonly HashSet<string> aiModelsLoading = [];
- /// Codex and Grok list their own models; asked once per run of Still, in the background.
- async Task LoadAiModels(AiCli cli)
+ /// Each AI's models: asked once per run of Still, in the background.
+ async Task LoadAiModels(AgentAdapter cli)
  {
-  if (aiModels.ContainsKey(cli.Id) || cli.Id == "claude" || FindCli(cli.Command) is not { } exe || !aiModelsLoading.Add(cli.Id)) return;
-  try {
-   var start = Launch(exe, AiFolder, cli.Id == "codex" ? ["debug", "models"] : ["models"]); start.RedirectStandardOutput = start.RedirectStandardError = true; start.StandardOutputEncoding = new UTF8Encoding(false);
-   Directory.CreateDirectory(AiFolder);
-   using var p = Process.Start(start)!; var err = p.StandardError.ReadToEndAsync();
-   string output = await p.StandardOutput.ReadToEndAsync().WaitAsync(TimeSpan.FromSeconds(20)); await err;
-   List<AiModel> list = [new("", "Default", cli.Id == "codex" ? ["low", "medium", "high", "xhigh"] : Efforts)];
-   if (cli.Id == "codex") {
-    foreach (var m in JsonNode.Parse(output)?["models"] as JsonArray ?? [])
-     if (m?["visibility"]?.GetValue<string>() == "list" && m["slug"]?.GetValue<string>() is { } slug)
-      list.Add(new(slug, m["display_name"]?.GetValue<string>() ?? slug, (m["supported_reasoning_levels"] as JsonArray ?? []).Select(l => l?["effort"]?.GetValue<string>() ?? "").Where(l => l.Length > 0).ToArray()));
-   } else foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(output, @"^\s*[*-]\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Multiline))
-    list.Add(new(m.Groups[1].Value, m.Groups[1].Value, Efforts));
-   aiModels[cli.Id] = [.. list];
-  } catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
+  if (aiModels.ContainsKey(cli.Id) || FindCli(cli.Command) is not { } exe || !aiModelsLoading.Add(cli.Id)) return;
+  try { aiModels[cli.Id] = await cli.Models(exe); }
+  catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { App.Log(ex); }
   finally { aiModelsLoading.Remove(cli.Id); }
   foreach (var w in Windows) w.PublishAi();
  }
- static string Pct(JsonNode? window) => window?["utilization"]?.GetValue<double>() is double u ? Math.Round(u * 100) + "%" : "?";
- static string Tokens(long n) => n >= 1000 ? Math.Round(n / 1000.0, n >= 10000 ? 0 : 1) + "k" : n.ToString();
 
  static List<Companion> DefaultCompanions() => [
   new() { Id = "pip", Name = "Pip", Face = "robot", Color = "sky", Job = "An all-round helper: researches, compares options and gets things done on the web." },
@@ -108,7 +104,7 @@ public partial class MainWindow
  bool aiOpen, aiBusy;
  string aiError = "";
  AiChat? aiChat; // null = a new, empty chat
- Process? aiProcess;
+ AgentRun? aiRun;
 
  /// Finds an installed CLI on the user's current PATH (re-read, so a fresh install is found without restarting Still).
  static string? FindCli(string name)
@@ -129,7 +125,7 @@ public partial class MainWindow
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
-  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, site = c.Site }),
+  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
@@ -153,7 +149,7 @@ public partial class MainWindow
    case "aiLogin" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c: _ = AiSignIn(c); break;
    case "aiInstall" when AiClis.FirstOrDefault(c => c.Id == harness) is { } c: _ = AiInstall(c); break;
    case "aiSetupCancel": aiSetupCancelled = true; try { aiSetupProcess?.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } break;
-   case "aiCheck": _ = CheckAis(true); break;
+   case "aiCheck": aiClis = null; _ = CheckAis(true); break;
    case "aiToggle": aiOpen = !aiOpen; if (aiOpen) _ = CheckAis(); break;
    case "aiAsk" when S("text").Trim() is { Length: > 0 and <= 20000 } ask: // typed in the address bar: a new chat, in its own tab
     if (aiBusy) { Toast("Your AI is still working. Stop it or wait, then ask again."); break; }
@@ -173,7 +169,7 @@ public partial class MainWindow
     break;
    case "aiStop":
     aiQuestion?.Answer.TrySetResult("The user pressed Stop."); aiQuestion = null;
-    try { aiProcess?.Kill(true); aiChat?.Messages.Add(new() { Role = "note", Text = "Stopped." }); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } break;
+    if (aiRun != null) { aiRun.Cancel(); aiChat?.Messages.Add(new() { Role = "note", Text = "Stopped." }); } break;
    case "aiSend" when !aiBusy && S("text").Trim() is { Length: > 0 and <= 20000 } text:
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
     if (active?.ChatId is { } chatId) aiChat = AiChats.FirstOrDefault(c => c.Id == chatId);
@@ -220,7 +216,7 @@ public partial class MainWindow
   if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
  }
 
- static string AiInstructions(AiCli cli, string profile, Companion? who) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n\n") + $"""
+ static string AiInstructions(AgentAdapter cli, string profile, Companion? who) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
   You are not in a terminal: you have no files or shell here, only the `still` browser tools, working in the user's "{profile}" Still profile.
 
@@ -272,80 +268,43 @@ public partial class MainWindow
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
 
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), Companions.FirstOrDefault(c => c.Id == chat.Companion)) + "\n\n") + AiContext() + "\n\n" + text;
-  string folder = AiFolder, promptFile = Path.Combine(folder, "prompt-" + chat.Id + ".txt");
+  string folder = AiFolder, promptFile = "";
   Directory.CreateDirectory(folder);
   List<string> mcp = ["--mcp", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
-  bool said = false, stopped = false; var errors = new List<string>();
+  bool said = false, stopped = false;
   string model = Prefs.AiModels.GetValueOrDefault(cli.Id, ""), effort = Prefs.AiEfforts.GetValueOrDefault(cli.Id, "");
-  // Only Still's own catalog values reach the command line (cmd.exe and TOML quoting).
+  // Only the adapter's own catalog values reach the command line (cmd.exe and TOML quoting).
   if (!aiModels.GetValueOrDefault(cli.Id, []).Any(m => m.Id == model && (effort == "" || m.Efforts.Contains(effort)))) model = effort = "";
+  AgentRun? run = null;
   try {
-   List<string> args;
-   switch (cli.Id) {
-    case "claude":
-     File.WriteAllText(Path.Combine(folder, "mcp.json"), JsonSerializer.Serialize(new { mcpServers = new { still = new { command = Environment.ProcessPath, args = mcp } } }));
-     chat.Session ??= Guid.NewGuid().ToString();
-     args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", Path.Combine(folder, "mcp.json"), "--strict-mcp-config", "--tools", "", "--allowedTools", "mcp__still", chat.Started ? "--resume" : "--session-id", chat.Session];
-     if (model.Length > 0) args.AddRange(["--model", model]);
-     if (effort.Length > 0) args.AddRange(["--effort", effort]);
-     break;
-    case "grok":
-     // Grok reads MCP servers from the folder's .grok/config.toml, and only starts them with --trust.
-     await RunQuiet(exe, folder, ["mcp", "add", "-s", "project", "still", Environment.ProcessPath!, "--", .. mcp]);
-     File.WriteAllText(promptFile, prompt, new UTF8Encoding(false));
-     chat.Session ??= Guid.NewGuid().ToString();
-     args = ["--prompt-file", promptFile, "--output-format", "streaming-messages-json", "--trust", "--tools", "search_tool,use_tool", "--no-subagents", "--always-approve", chat.Started ? "-r" : "-s", chat.Session];
-     if (model.Length > 0) args.AddRange(["-m", model]);
-     if (effort.Length > 0) args.AddRange(["--reasoning-effort", effort]);
-     break;
-    default: // codex. TOML literal strings ('...') need no escaping but can't hold an apostrophe; cmd.exe eats "!".
-     if (mcp.Append(Environment.ProcessPath!).Any(a => a.Contains('\'') || a.Contains('!'))) { aiError = "Codex can't run Still from a folder whose name has an apostrophe or !."; return; }
-     static string Q(string v) => "'" + v + "'";
-     bool resume = chat.Started && chat.Session != null;
-     args = ["exec", .. resume ? new[] { "resume" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
-      "-c", "mcp_servers.still.command=" + Q(Environment.ProcessPath!), "-c", "mcp_servers.still.args=[" + string.Join(",", mcp.Select(Q)) + "]"];
-     if (model.Length > 0) args.AddRange(["-c", "model=" + Q(model)]);
-     if (effort.Length > 0) args.AddRange(["-c", "model_reasoning_effort=" + Q(effort)]);
-     if (resume) args.Add(chat.Session!);
-     args.Add("-");
-     break;
-   }
-   var start = Launch(exe, folder, args);
-   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
-   start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
-   using var process = aiProcess = Process.Start(start) ?? throw new InvalidOperationException("couldn't start it.");
-   // The message only ever travels through stdin (or Grok's prompt file), never the command line.
-   if (cli.Id != "grok") await process.StandardInput.BaseStream.WriteAsync(new UTF8Encoding(false).GetBytes(prompt));
-   process.StandardInput.Close();
-   var stderr = Task.Run(async () => { while (await process.StandardError.ReadLineAsync() is { } line) lock (errors) { errors.Add(line); if (errors.Count > 20) errors.RemoveAt(0); } });
-   while (await process.StandardOutput.ReadLineAsync() is { } line) {
-    if (LostSession(line)) lock (errors) errors.Add(line);
-    JsonNode? e; try { e = JsonNode.Parse(line); } catch (JsonException) { continue; }
-    if (e is not JsonObject) continue;
-    said |= cli.Id == "codex" ? CodexEvent(chat, e) : MessagesEvent(chat, cli, e);
-    PublishAi();
-   }
-   await process.WaitForExitAsync(); await stderr;
+   if (cli.NamesSession) chat.Session ??= Guid.NewGuid().ToString();
+   var request = new RunRequest(prompt, model, effort, folder, mcp, chat.Session, chat.Started && chat.Session != null);
+   promptFile = request.PromptFile;
+   run = aiRun = await cli.Start(exe, request);
+   await foreach (var e in run.Events()) { said |= ApplyEvent(chat, cli, e); PublishAi(); }
    chat.Started = chat.Session != null;
-   stopped = chat.Messages.LastOrDefault()?.Text == "Stopped.";
-   bool lost; lock (errors) lost = errors.Any(LostSession);
-   if (lost && !said && !stopped && cli.Id != "codex") {
+   stopped = run.Cancelled && !run.TimedOut;
+   bool lost = run.Errors.Any(LostSession) || LostSession(aiError);
+   if (lost && !said && !stopped && cli.NamesSession) {
     // The CLI never saved this chat (it was stopped before it could): a new session brings the chat over.
     chat.Session = null; chat.Started = false; aiError = "";
     chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
-    aiBusy = false; aiProcess = null;
+    aiBusy = false; aiRun = null; run.Dispose(); run = null;
     await RunAi(shown);
     return;
    }
-   if (process.ExitCode != 0 && !said && !stopped && aiError.Length == 0)
-    lock (errors) aiError = $"{cli.App} stopped: " + (errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {process.ExitCode}");
+   if (run.TimedOut) aiError = $"{cli.Name} stopped after {AgentRun.Limit.TotalMinutes:0} minutes. Ask again to carry on.";
+   else if (run.ExitCode != 0 && !said && !stopped && aiError.Length == 0)
+    aiError = $"{cli.App} stopped: " + (run.Errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {run.ExitCode}");
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { aiError = $"{cli.App} failed: {ex.Message}"; }
   finally {
-   if (aiBusy) { aiBusy = false; aiProcess = null; agentAction = ""; ReleaseAgentTabs(cli.Name); }
+   if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
+   run?.Dispose();
+   if (aiBusy) { aiBusy = false; aiRun = null; agentAction = ""; ReleaseAgentTabs(cli.Name); }
    aiQuestion?.Answer.TrySetResult("The chat ended."); aiQuestion = null;
    chat.Updated = DateTime.UtcNow; SaveAiChats();
-   try { File.Delete(promptFile); } catch (IOException) { }
+   try { if (promptFile.Length > 0) File.Delete(promptFile); } catch (IOException) { }
   }
   if (!said && SignedOutError().IsMatch(aiError)) {
    // Signed out: sign in right here, then the message runs again by itself.
@@ -379,30 +338,18 @@ public partial class MainWindow
   PublishAiEverywhere();
  }
 
- static async Task CheckAi(AiCli cli)
+ static async Task CheckAi(AgentAdapter cli)
  {
   if (aiStatus.GetValueOrDefault(cli.Id) is "installing" or "signingIn") return;
   if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; return; }
-  Process? p = null;
   try {
-   Directory.CreateDirectory(AiFolder);
-   var start = Launch(exe, AiFolder, cli.Id switch { "claude" => ["auth", "status"], "codex" => ["login", "status"], _ => ["models"] });
-   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
-   p = Process.Start(start)!; p.StandardInput.Close();
-   var output = await Task.WhenAll(p.StandardOutput.ReadToEndAsync(), p.StandardError.ReadToEndAsync()).WaitAsync(TimeSpan.FromSeconds(20));
-   string text = string.Join("\n", output);
-   bool signedIn = cli.Id switch {
-    "claude" => (JsonNode.Parse(output[0])?["loggedIn"]?.GetValue<bool>()).GetValueOrDefault(),
-    "codex" => text.Contains("Logged in") && !text.Contains("Not logged in"),
-    _ => !text.Contains("not authenticated", StringComparison.OrdinalIgnoreCase),
-   };
-   aiStatus[cli.Id] = signedIn ? "ready" : "signedOut";
+   if (await cli.Detect(exe) is bool signedIn) aiStatus[cli.Id] = signedIn ? "ready" : "signedOut";
+   else aiStatus.Remove(cli.Id);
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or JsonException or TimeoutException or System.ComponentModel.Win32Exception) { aiStatus.Remove(cli.Id); }
-  finally { try { if (p is { HasExited: false }) p.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } p?.Dispose(); }
  }
 
  /// After the user picks an AI: sign in if it needs it, then run what they asked before it was set up.
- async Task AiPicked(AiCli cli)
+ async Task AiPicked(AgentAdapter cli)
  {
   await CheckAi(cli); PublishAiEverywhere();
   if (aiStatus.GetValueOrDefault(cli.Id) == "signedOut") await AiSignIn(cli);
@@ -417,19 +364,19 @@ public partial class MainWindow
   await RunAi(ask); PublishAi();
  }
 
- static bool Official(AiCli cli, string url) =>
+ static bool Official(AgentAdapter cli, string url) =>
   Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == "https" && cli.Domains.Any(d => u.Host == d || u.Host.EndsWith("." + d));
 
  /// Signs in with the AI app's own sign-in. Its official page opens in a tab here and the app itself receives the
  /// login when the user approves; Still never sees a password, key or token.
- async Task AiSignIn(AiCli cli)
+ async Task AiSignIn(AgentAdapter cli)
  {
   if (aiSetupProcess != null || FindCli(cli.Command) is not { } exe) return;
   aiStatus[cli.Id] = "signingIn"; aiSignInUrl = aiSignInCode = aiError = ""; aiSetupCancelled = false; aiOpen = true; PublishAiEverywhere();
   int tabsBefore = 0; Process? p = null;
   try {
    Directory.CreateDirectory(AiFolder);
-   var start = Launch(exe, AiFolder, cli.SignIn);
+   var start = AgentAdapter.Launch(exe, AiFolder, cli.SignIn);
    start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
    start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
    p = aiSetupProcess = Process.Start(start)!;
@@ -461,9 +408,9 @@ public partial class MainWindow
  }
 
  /// Runs the maker's official installer, only after the user pressed Install. It installs for this Windows user, no admin.
- async Task AiInstall(AiCli cli)
+ async Task AiInstall(AgentAdapter cli)
  {
-  if (aiSetupProcess != null) return;
+  if (aiSetupProcess != null || cli.Installer.Length == 0) return; // some apps the user installs themselves
   aiStatus[cli.Id] = "installing"; aiSetupLine = aiError = ""; aiSetupCancelled = false; PublishAiEverywhere();
   Process? p = null;
   try {
@@ -491,23 +438,6 @@ public partial class MainWindow
   if (aiStatus.GetValueOrDefault(cli.Id) == "missing" && !aiSetupCancelled) aiError = $"{cli.App} didn't install. You can get it from {Host(cli.Site)} instead.";
   else await RunPending();
   PublishAiEverywhere();
- }
-
- static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args)
- {
-  var start = new ProcessStartInfo { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true };
-  if (exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) { start.FileName = exe; foreach (var a in args) start.ArgumentList.Add(a); return start; }
-  // npm installs .cmd launchers, which only cmd.exe runs. Every argument is Still's own (paths, flags, ids).
-  start.FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe");
-  start.Arguments = "/d /s /c \"" + string.Join(" ", args.Prepend(exe).Select(a => "\"" + a + "\"")) + "\"";
-  return start;
- }
-
- static async Task RunQuiet(string exe, string folder, IEnumerable<string> args)
- {
-  var start = Launch(exe, folder, args); start.RedirectStandardOutput = start.RedirectStandardError = true;
-  using var process = Process.Start(start)!;
-  await Task.WhenAll(process.StandardOutput.ReadToEndAsync(), process.StandardError.ReadToEndAsync(), process.WaitForExitAsync());
  }
 
  static string ToolLabel(string name, JsonNode? input)
@@ -545,44 +475,16 @@ public partial class MainWindow
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
  }
 
- /// Claude Code (stream-json) and Grok Build (streaming-messages-json) both stream Anthropic Messages events.
- bool MessagesEvent(AiChat chat, AiCli cli, JsonNode e)
+ /// One step of a run, shown in the chat. Returns true when the AI said something.
+ bool ApplyEvent(AiChat chat, AgentAdapter cli, AgentEvent e)
  {
-  string? type = e["type"]?.GetValue<string>();
-  if (type == "result" && e["is_error"]?.GetValue<bool>() == true && e["result"] != null) aiError = $"{cli.App}: " + e["result"];
-  if (type == "rate_limit_event" && e["rate_limit_info"]?["unifiedWindows"] is { } windows)
-   aiUsage[cli.Id] = $"5-hour limit {Pct(windows["five_hour"])} used · weekly {Pct(windows["seven_day"])}";
-  else if (type == "result" && cli.Id != "claude" && e["usage"] is { } u)
-   aiUsage[cli.Id] = $"Last reply: {Tokens((u["input_tokens"]?.GetValue<long>() ?? 0) + (u["cache_read_input_tokens"]?.GetValue<long>() ?? 0))} in, {Tokens(u["output_tokens"]?.GetValue<long>() ?? 0)} out";
-  if (type != "assistant") return false;
-  bool said = false;
-  foreach (var block in e["message"]?["content"] as JsonArray ?? []) {
-   switch (block?["type"]?.GetValue<string>()) {
-    case "text" when block["text"]?.GetValue<string>() is { Length: > 0 } text: chat.Messages.Add(new() { Role = "assistant", Text = text }); said = true; break;
-    case "tool_use":
-     string name = block["name"]?.GetValue<string>() ?? "";
-     if (name == "use_tool") Step(chat, ToolLabel(block["input"]?["tool_name"]?.GetValue<string>() ?? "", block["input"]?["tool_input"]));
-     else if (name != "search_tool") Step(chat, ToolLabel(name, block["input"]));
-     break;
-   }
-  }
-  return said;
- }
-
- bool CodexEvent(AiChat chat, JsonNode e)
- {
-  var item = e["item"];
-  switch (e["type"]?.GetValue<string>()) {
-   case "thread.started": chat.Session = e["thread_id"]?.GetValue<string>(); break;
-   case "item.started" when (item?["type"]?.GetValue<string>() == "mcp_tool_call"): Step(chat, ToolLabel(item["tool"]?.GetValue<string>() ?? "", item["arguments"])); break;
-   case "item.completed" when (item?["type"]?.GetValue<string>() == "agent_message" && item["text"]?.GetValue<string>() is { Length: > 0 } text): chat.Messages.Add(new() { Role = "assistant", Text = text }); return true;
-   case "turn.completed" when e["usage"] is { } u:
-    aiUsage["codex"] = $"Last reply: {Tokens(u["input_tokens"]?.GetValue<long>() ?? 0)} in ({Tokens(u["cached_input_tokens"]?.GetValue<long>() ?? 0)} cached), {Tokens(u["output_tokens"]?.GetValue<long>() ?? 0)} out";
-    break;
-   case "turn.failed":
-    string message = e["error"]?["message"]?.GetValue<string>() ?? "failed";
-    aiError = "Codex: " + (message.Contains("401") ? "not signed in. Sign in, then try again." : message);
-    break;
+  switch (e) {
+   case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last: last.Text += join + m.Text; return true;
+   case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text }); return true;
+   case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); break;
+   case AgentEvent.Session session: chat.Session ??= session.Id; break;
+   case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
+   case AgentEvent.Error error: aiError = $"{cli.Name}: " + error.Text; break;
   }
   return false;
  }

@@ -71,7 +71,7 @@ public sealed class Preferences
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public List<Companion> Companions { get; set; } = []; // empty = the default crew
- public string AiHarness { get; set; } = ""; // the AI sidebar's CLI: "claude", "codex", "grok", or "" until chosen
+ public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", a manifest id, or "" until chosen
  public bool Autofill { get; set; } = true;
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

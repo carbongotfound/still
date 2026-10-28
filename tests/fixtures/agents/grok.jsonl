@@ -1,0 +1,9 @@
+{"type":"system","subtype":"init","session_id":"5f1c2a9e-3b7d-4c1e-9a8f-2d6b0e4f7a13"}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"I'll open the page and read its title."},{"type":"tool_use","id":"toolu_g1","name":"search_tool","input":{"query":"open a tab"}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_g1","content":"open_tab, read_page"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_g2","name":"use_tool","input":{"tool_name":"open_tab","tool_input":{"url":"https://example.com"}}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_g2","content":"Opened tab 7: Example Domain"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"toolu_g3","name":"use_tool","input":{"tool_name":"read_page","tool_input":{"tabId":"7"}}}]}}
+{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"toolu_g3","content":"# Example Domain"}]}}
+{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"The page title is **Example Domain**."}]}}
+{"type":"result","subtype":"success","is_error":false,"session_id":"5f1c2a9e-3b7d-4c1e-9a8f-2d6b0e4f7a13","result":"The page title is **Example Domain**.","usage":{"input_tokens":1840,"cache_read_input_tokens":12400,"output_tokens":96}}

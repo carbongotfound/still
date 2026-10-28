@@ -1,0 +1,7 @@
+{"type":"init","timestamp":"2026-10-28T06:00:00Z","session_id":"g-7d1e","model":"example-model"}
+{"type":"message","role":"user","content":"open example.com and tell me its title"}
+{"type":"tool_use","tool_name":"mcp_still_open_tab","tool_id":"x1","parameters":{"url":"https://example.com"}}
+{"type":"tool_result","tool_id":"x1","status":"success","output":"Opened tab 7: Example Domain"}
+{"type":"message","role":"assistant","content":"The title is ","delta":true}
+{"type":"message","role":"assistant","content":"Example Domain.","delta":true}
+{"type":"result","status":"success","stats":{"total_tokens":2100}}
