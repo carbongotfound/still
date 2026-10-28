@@ -24,7 +24,7 @@ OUT.mkdir(parents=True, exist_ok=True)
 def gallery(theme):
     profile = ROOT / "artifacts" / ("mascots-" + uuid.uuid4().hex[:8]) / "profile"
     profile.mkdir(parents=True)
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"Theme": theme, "Width": 1260, "Height": 860},
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Theme": theme, "Width": 1260, "Height": 860},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, profile)
     js(process, "document.dispatchEvent(new Event('still-mascot-sheet'))")
@@ -38,7 +38,7 @@ def plain_window():
     """A window on a web page doesn't load three.js for the toolbar's small mascot; once the chat opens, it comes alive."""
     profile = ROOT / "artifacts" / ("mascots-" + uuid.uuid4().hex[:8]) / "profile"
     profile.mkdir(parents=True)
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AiHarness": "claude", "Width": 1260, "Height": 860},
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AiHarness": "claude", "Width": 1260, "Height": 860},
         "Tabs": [{"Id": "page", "Title": "Page", "Url": "data:text/html,<title>Page</title><p>Page"}], "ActiveId": "page"}))
     process = launch(EXE, profile)
     try:

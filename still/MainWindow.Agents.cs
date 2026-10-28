@@ -31,10 +31,10 @@ public partial class MainWindow
   if (workers.TryGetValue(who, out var w)) return w;
   var run = runs.GetValueOrDefault(who);
   var c = run == null ? null : Home.Companions.FirstOrDefault(x => x.Id == run.Chat.Companion);
-  return workers[who] = new() { Name = run?.Who ?? who, Label = c?.Name ?? run?.Who ?? who, Color = Hue(c?.Color) };
+  return workers[who] = new() { Name = run?.Who ?? who, Label = c?.Name ?? run?.Who ?? who, Color = Hue(c) };
  }
- // The companions' colors, as in the shell's Buddy.tsx.
- static string Hue(string? color) => color switch { "sage" => "#5c7a76", "lavender" => "#8f80aa", "apricot" => "#e8a76c", "mint" => "#8fcbbc", "blush" => "#f2a487",
+ // The companion's color: its look's, or for one saved before looks, the old hue as in the shell's Buddy.tsx.
+ static string Hue(Companion? c) => c?.Look is { Length: > 0 } look && System.Text.RegularExpressions.Regex.Match(look, "\"color\":\"(#[0-9a-fA-F]{6})\"") is { Success: true } m ? m.Groups[1].Value : c?.Color switch { "sage" => "#5c7a76", "lavender" => "#8f80aa", "apricot" => "#e8a76c", "mint" => "#8fcbbc", "blush" => "#f2a487",
   "periwinkle" => "#bbadea", "berry" => "#ed5a31", _ => "#4f7cf0" };
  /// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
  static IEnumerable<KeyValuePair<string, Worker>> AtWork() => workers.Where(w => approvedAgents.Contains(w.Value.Name) && (w.Value.Paused || DateTime.UtcNow - w.Value.Seen < TimeSpan.FromMinutes(2)));

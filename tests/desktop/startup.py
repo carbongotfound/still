@@ -59,7 +59,7 @@ process=None
 try:
     for index, arg in enumerate(a for a in sys.argv[1:] if not a.startswith('--')):
         exe=Path(arg).resolve(); profile=RUN/('profile-'+str(index));profile.mkdir()
-        (profile/'state.json').write_text(json.dumps({'UiVersion':3,'Welcome':False}))
+        (profile/'state.json').write_text(json.dumps({'UiVersion':6,'Welcome':False}))
         samples=[]
         for cycle in range(4):
             url=URL+'/closed-'+str(cycle)

@@ -2,7 +2,9 @@ bin/
 obj/
 node_modules/
 artifacts/
-tools/
+tools/*
+!tools/mascot/
+tools/mascot/out/
 *.user
 .vs/
 mac/.build/

@@ -1,0 +1,117 @@
+{
+ "face": {
+  "cx": 0.0,
+  "cz": 0.655,
+  "size": 0.58
+ },
+ "shapes": {
+  "round": {
+   "lift": 0.0,
+   "sx": 1.0,
+   "sy": 1.0,
+   "peak": false
+  },
+  "mochi": {
+   "lift": -0.049,
+   "sx": 1.0968,
+   "sy": 0.9783,
+   "peak": false
+  },
+  "bean": {
+   "lift": 0.049,
+   "sx": 0.9245,
+   "sy": 0.9768,
+   "peak": false
+  },
+  "kitty": {
+   "lift": 0.0,
+   "sx": 1.0,
+   "sy": 1.0,
+   "peak": false
+  },
+  "fox": {
+   "lift": 0.0,
+   "sx": 1.0077,
+   "sy": 1.0,
+   "peak": false
+  },
+  "pebble": {
+   "lift": -0.006,
+   "sx": 0.947,
+   "sy": 0.9551,
+   "peak": false
+  },
+  "droopy": {
+   "lift": 0.0,
+   "sx": 1.0,
+   "sy": 1.0,
+   "peak": false
+  },
+  "drop": {
+   "lift": -0.01,
+   "sx": 1.0014,
+   "sy": 0.9982,
+   "peak": true
+  }
+ },
+ "shapesOrder": [
+  "round",
+  "mochi",
+  "bean",
+  "kitty",
+  "fox",
+  "pebble",
+  "droopy",
+  "drop"
+ ],
+ "clips": {
+  "idle": {
+   "seconds": 4.2,
+   "loop": true
+  },
+  "talk": {
+   "seconds": 2.4,
+   "loop": true
+  },
+  "think": {
+   "seconds": 3.6,
+   "loop": true
+  },
+  "work": {
+   "seconds": 1.05,
+   "loop": true
+  },
+  "point": {
+   "seconds": 1.6,
+   "loop": false
+  },
+  "needs": {
+   "seconds": 1.6,
+   "loop": true
+  },
+  "happy": {
+   "seconds": 2.0,
+   "loop": false
+  },
+  "done": {
+   "seconds": 2.0,
+   "loop": false
+  },
+  "sad": {
+   "seconds": 3.2,
+   "loop": true
+  },
+  "wave": {
+   "seconds": 1.9,
+   "loop": false
+  },
+  "admire": {
+   "seconds": 2.3,
+   "loop": false
+  },
+  "pop": {
+   "seconds": 0.9,
+   "loop": false
+  }
+ }
+}

@@ -11,7 +11,7 @@ import { AiLogo } from "./AiLogo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
-import { Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
+import { FALLBACK, Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
@@ -56,7 +56,8 @@ const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Read skill/, BookOpen], [/^(Read|
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // Next steps the AI offers end its answer, one per line starting with ">> ".
 const nextSteps = (text: string) => { const next: string[] = []; const body = text.replace(/^>>\s*(.+)$/gm, (_, s: string) => { next.push(s.trim()); return "" }).trim(); return { body, next } }
-export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0]
+// Before setup makes one there's no companion: Still itself talks, with the default look.
+export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
 function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
  return <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
@@ -247,7 +248,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
   <h3>Bring your own AI</h3>
-  <p>Still uses the plan you already pay for. No API keys, and nothing leaves your PC except your chats with your AI provider.</p>
+  <p>Still runs on the AI you already pay for, through its own app on this computer. No API keys, no credits, no extra plan. Your chats go only to your AI provider.</p>
   <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
  </div>
@@ -333,11 +334,11 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!items.length && (mode === "tab" ? <div className="chat-hello">
     <Face companion={companion} size={72} />
     <h3>Work with {name}</h3>
-    {companion?.job && <p>{companion.job}</p>}
+    <p>{companion?.job || "Ask me anything, or hand me a task. I work in my own background tabs while you keep browsing."}</p>
    </div> : <div className="ai-hello">
     <Face companion={companion} size={64} />
     <h3>What should we do?</h3>
-    <p>I can read this page, search, compare and click around in my own pages.</p>
+    <p>I can read this page, search the web, compare and click around in my own background tabs. Switch AI any time, even mid-task.</p>
     <div className="ai-ideas">{IDEAS.map(([Icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span><Icon aria-hidden /></span>{label}</button>)}</div>
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}

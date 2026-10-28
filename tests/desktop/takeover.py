@@ -103,7 +103,7 @@ def control(process):
     return js(process, "document.querySelector('.page-control')?.innerText ?? ''")
 
 
-(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}], "ApprovedAgents": ["Claude"], "AiHarness": "claude"},
+(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}], "ApprovedAgents": ["Claude"], "AiHarness": "claude"},
     "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
 process = launch(EXE, PROFILE)
 agent = None

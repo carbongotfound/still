@@ -105,7 +105,7 @@ def remove_registry(path):
 
 try:
     profile = RUN / "profile"; profile.mkdir()
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 3, "Welcome": False,
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False,
         "Preferences": {"OfferPasswordSave": True}}))
     marker = RUN / "opened.txt"
     opener = RUN / "opener.py"

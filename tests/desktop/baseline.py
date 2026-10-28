@@ -108,7 +108,7 @@ def ready(process, tab):
 def launch(tabs):
     profile = ROOT / "artifacts" / ("baseline-" + uuid.uuid4().hex) / "profile"
     profile.mkdir(parents=True)
-    (profile / "state.json").write_text(json.dumps({"UiVersion": 4, "Welcome": False, "Preferences": {"MemorySaver": True},
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"MemorySaver": True},
         "Tabs": [{"Id": "t%d" % i, "Title": "Tab %d" % i, "Url": URL + "/tab-%d" % i} for i in range(tabs)], "ActiveId": "t0"}))
     started = time.monotonic()
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile)])

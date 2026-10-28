@@ -1,13 +1,14 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
-import { cn } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
-import { COLORS, FACE_NAMES, HUES, NAMES, Face, hueOf, type Companion, type Mode } from "./Buddy"
+import { NAMES, Face, hueOf, type Companion, type Mode } from "./Buddy"
+import { lookKey, surprise } from "./look"
+import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 
@@ -15,7 +16,7 @@ import { FileIcon, nameOf } from "./Files"
 export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
 type Send = (op: string, payload?: Record<string, unknown>) => void
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
-export const randomCompanion = (): Companion => ({ id: "", name: pick(NAMES), face: pick(FACE_NAMES), color: pick(COLORS), job: "", mode: "default" })
+export const randomCompanion = (): Companion => ({ id: "", name: pick(NAMES), face: "", color: "", job: "", mode: "default", look: lookKey(surprise()) })
 
 export function HomeRail({ view, setView, profile, onSettings }: { view: HomeView; setView: (v: HomeView) => void; profile: string; onSettings: () => void }) {
  const item = (v: HomeView, label: string, Icon: typeof Users) => <button className="home-rail-item" aria-label={label} title={label} aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}><Icon /></button>
@@ -105,7 +106,7 @@ export function CompanionsPage({ ai, send, onEdit, onChat }: { ai: AiState; send
   <p className="home-page-lead">Who you work with. Each one has a job, a way of thinking, skills and things to remember, on top of your own AI plan.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
-    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={112} look /><Pencil className="mate-edit" /></button>
+    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={140} follow /><Pencil className="mate-edit" /></button>
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name} · Your {h.name} plan</> : "Pick your AI"}</span>
@@ -186,6 +187,7 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
 const MODE_NAMES: [Mode, string][] = [["efficient", "Efficient"], ["default", "Default"], ["expert", "Expert"]]
 export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
  const [c, setC] = useState<Companion>({ mode: "default", skills: [], memory: "", ai: "", ...companion })
+ const [styling, setStyling] = useState(false)
  const skills = ai.skills ?? []
  useEffect(() => { // the folder picked in Windows' own dialog
   const got = (e: MessageEvent) => { if (e.data?.kind === "folder") setC(old => ({ ...old, folder: e.data.data.path })) }
@@ -196,13 +198,13 @@ export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onD
   <DialogContent className="app-dialog companion-dialog" style={{ "--hue": hueOf(c) } as CSSProperties}>
    <DialogHeader><DialogTitle>{companion.id ? "Edit " + companion.name : "New companion"}</DialogTitle><DialogDescription>Who you work with in a chat. Their job tells your AI how to help.</DialogDescription></DialogHeader>
    <form className="companion-form" onSubmit={e => { e.preventDefault(); if (c.name.trim()) onSave({ ...c, name: c.name.trim() }) }}>
-    <div className="companion-preview"><Face companion={c} size={88} look key={c.face + c.color} />
+    <div className="companion-preview"><Face companion={c} size={120} follow />
      <div className="companion-look">
-      <div className="companion-colors" role="radiogroup" aria-label="Color">{COLORS.map(k => <button type="button" key={k} role="radio" aria-checked={c.color === k} aria-label={k} style={{ "--hue": HUES[k] } as CSSProperties} className={cn(c.color === k && "is-picked")} onClick={() => setC({ ...c, color: k })} />)}</div>
-      <div className="companion-faces" role="radiogroup" aria-label="Look">{FACE_NAMES.map(f => <button type="button" key={f} role="radio" aria-checked={c.face === f} aria-label={f} className={cn(c.face === f && "is-picked")} onClick={() => setC({ ...c, face: f })}><Face companion={{ ...c, face: f }} size={30} /></button>)}
-       <Button type="button" variant="outline" size="sm" className="companion-random" onClick={() => setC({ ...c, name: c.id ? c.name : pick(NAMES), face: pick(FACE_NAMES), color: pick(COLORS) })}><Dices />Randomize</Button></div>
+      <Button type="button" variant="outline" size="sm" onClick={() => setStyling(true)}><Palette />Customize</Button>
+      <Button type="button" variant="ghost" size="sm" className="companion-random" onClick={() => setC({ ...c, look: lookKey(surprise()) })}><Dices />Surprise me</Button>
      </div>
     </div>
+    {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { setC({ ...c, look }); setStyling(false) }} />}
     <label><span>Name</span><Input required maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} /></label>
     <label><span>What should they do?</span><textarea className="companion-job" rows={3} maxLength={1000} placeholder="For example: a careful researcher who checks sources and cites them." value={c.job} onChange={e => setC({ ...c, job: e.target.value })} /></label>
     <div className="companion-row">

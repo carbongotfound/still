@@ -94,7 +94,7 @@ try:
     profile = RUN / 'profile'; profile.mkdir()
     count = 10 if '--baseline' in sys.argv else 3
     fixture = [{'Id':'tab-'+str(i),'Title':'Fixture '+str(i),'Url':''} for i in range(count)]
-    (profile/'state.json').write_text(json.dumps({'UiVersion':3,'Welcome':False,'ActiveId':fixture[-1]['Id'],
+    (profile/'state.json').write_text(json.dumps({'UiVersion':6,'Welcome':False,'ActiveId':fixture[-1]['Id'],
         'Preferences':{'Layout':'Sidebar'},'Tabs':fixture}))
     process = subprocess.Popen([str(Path(sys.argv[1]).resolve()),'--qa','--profile',str(profile)])
     wait(lambda: (profile/'qa-pipe.txt').exists(),40)

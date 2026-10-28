@@ -19,7 +19,7 @@ MODEL = sys.argv[3] if len(sys.argv) > 3 else {"claude": "haiku"}.get(AGENT, "")
 RUN = ROOT / "artifacts" / ("live-" + AGENT + "-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 PROFILE.mkdir(parents=True)
-(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 5, "Welcome": False, "Preferences": {"AgentsEnabled": True, "AiHarness": AGENT},
+(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "AiHarness": AGENT},
     "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
 result = {"agent": AGENT, "model": MODEL}
 process = launch(EXE, PROFILE)
