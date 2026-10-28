@@ -23,6 +23,7 @@ internal static class McpServer
   Tool("find", "Search the page for text: the buttons, links and fields that match (with ids) and the matching lines of text, from anywhere on the page. Much cheaper than read_page on a big page.", new { text = Str("Text to look for"), tabId = Str("Tab id (optional)") }, "text"),
   Tool("click", "Click an element like a real mouse click (it's scrolled into view first). Says where you ended up, and whether a new tab, dialog or file picker opened.", new { id = Str("Element id from read_page or find"), text = Str("Or: visible text of the button or link"), selector = Str("Or: CSS selector"), tabId = Str("Tab id (optional)") }),
   Tool("type", "Type into a field, replacing what's in it (append=true adds instead). Without an id, types into the focused field. On a dropdown, picks the option with that text. submit=true presses Enter afterwards.", new { text = Str("Text to type, or the option to pick"), id = Str("Element id from read_page or find"), selector = Str("Or: CSS selector"), submit = Bool("Press Enter afterwards"), append = Bool("Add to the field's text instead of replacing it"), tabId = Str("Tab id (optional)") }, "text"),
+  Tool("save_file", "Save a file for the user: a table as CSV, notes as Markdown, data as JSON, or plain text. It goes in their Library and shows in the chat as a card they can open, so don't paste its contents into your reply. Saving again with the same name replaces the one you saved. Up to 5 MB.", new { name = Str("File name with its ending, like laptops-under-800.csv"), content = Str("The whole file") }, "name", "content"),
   Tool("press_key", "Press a key in the page: Enter, Escape, Tab, ArrowDown, PageDown, Backspace, a letter, or a combination like Control+A or Shift+Tab.", new { key = Str("Key or combination"), tabId = Str("Tab id (optional)") }, "key"),
   Tool("scroll", "Scroll down or up (the page, or the scrolling panel in the middle of the view), or bring element id into view.", new { direction = new { type = "string", @enum = new[] { "down", "up" } }, amount = Num("Pixels (default: most of a screen)"), id = Str("Element id: scroll it into view, or with direction, scroll the panel it's in"), tabId = Str("Tab id (optional)") }),
   Tool("wait_for", "Wait until an element or some text appears (or, with gone=true, disappears), for up to timeoutMs.", new { text = Str("Text to wait for"), id = Str("Or: element id"), selector = Str("Or: CSS selector"), gone = Bool("Wait for it to disappear instead"), timeoutMs = Num("Up to 30000 (default 10000)"), tabId = Str("Tab id (optional)") }),
@@ -63,6 +64,7 @@ internal static class McpServer
  static object Tool(string name, string description, object properties, params string[] required) =>
   new { name, description, inputSchema = new { type = "object", properties, required } };
 
+ internal static string RunId = ""; // Still's own chat: which chat this server works for (--run)
  public static void Run(string instance, string? forcedName = null, bool lockProfile = false)
  {
   string client = forcedName ?? "An AI agent";
@@ -176,7 +178,7 @@ internal static class McpServer
     pipe.Connect(3000);
     using var reader = new StreamReader(pipe, new UTF8Encoding(false));
     using var writer = new StreamWriter(pipe, new UTF8Encoding(false)) { AutoFlush = true };
-    writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args, elicit }));
+    writer.WriteLine(JsonSerializer.Serialize(new { client, tool, args, elicit, run = RunId }));
     // Still answers every call within its own time limit; this only covers a Still that froze.
     using var limit = CancellationTokenSource.CreateLinkedTokenSource(cancel); limit.CancelAfter(TimeSpan.FromMinutes(tool == "ask_user" ? 12 : 2));
     try { return reader.ReadLineAsync(limit.Token).AsTask().GetAwaiter().GetResult() ?? throw new IOException("Still closed the connection."); }

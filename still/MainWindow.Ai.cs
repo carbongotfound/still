@@ -17,6 +17,8 @@ public sealed class AiChat
  public string Companion { get; set; } = ""; // who the user is working with in this chat
  public bool Unread { get; set; } // a reply landed while the user was elsewhere
  public bool Archived { get; set; }
+ public int Worked { get; set; } // how long its last run took, in seconds
+ [System.Text.Json.Serialization.JsonIgnore] public string Error { get; set; } = ""; // why its last run failed, until the next one
  public DateTime Updated { get; set; } = DateTime.UtcNow;
  public List<AiMessage> Messages { get; set; } = [];
 }
@@ -33,6 +35,7 @@ public sealed class Companion
  public string Ai { get; set; } = ""; // the AI it runs on, "" = the one picked for chats
  public string Mode { get; set; } = "default"; // efficient, default or expert
  public List<string> Skills { get; set; } = []; // skills it reads at the start of every chat
+ public string Folder { get; set; } = ""; // a working folder: its AI app may read and write files there, and nowhere else
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -170,13 +173,29 @@ public partial class MainWindow
  bool Showing(AiChat chat) => active?.ChatId == chat.Id || (active?.ChatId == null && aiOpen && aiChat?.Id == chat.Id);
  // A question the AI asked with ask_user, waiting for the user's answer in the chat.
  sealed record AiQuestion(string Text, string[] Options, TaskCompletionSource<string> Answer);
- AiQuestion? aiQuestion;
+ /// A chat at work. Any number run at once, each its own AI app process with its own question and follow-ups.
+ sealed class ChatRun(AiChat chat, string who)
+ {
+  public readonly AiChat Chat = chat;
+  public readonly string Who = who; // the AI app's name, as its MCP client
+  public readonly DateTime Started = DateTime.UtcNow;
+  public AgentRun? Run;
+  public bool Stopped;
+  public AiQuestion? Question;
+  public readonly List<string> Queue = []; // typed while it worked: sent together when it finishes
+ }
+ static readonly Dictionary<string, ChatRun> runs = []; // by chat id
+ static bool Busy(AiChat? c) => c != null && runs.ContainsKey(c.Id);
+ static void StopRun(ChatRun r)
+ {
+  r.Question?.Answer.TrySetResult("The user pressed Stop."); r.Question = null;
+  if (!r.Stopped) { r.Stopped = true; r.Run?.Cancel(); r.Chat.Messages.Add(new() { Role = "note", Text = "Stopped." }); }
+ }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
  AiChat? ShownChat => active?.ChatId is { } id ? AiChats.FirstOrDefault(c => c.Id == id) : aiChat;
- bool aiOpen, aiBusy;
+ bool aiOpen;
  string aiError = "";
  AiChat? aiChat; // null = a new, empty chat
- AgentRun? aiRun;
 
  /// Finds an installed CLI on the user's current PATH (re-read, so a fresh install is found without restarting Still).
  static string? FindCli(string name)
@@ -192,8 +211,9 @@ public partial class MainWindow
   return null;
  }
 
- void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; ShellSend(new { kind = "ai", data = new {
-  open = aiOpen, harness = Prefs.AiHarness, busy = aiBusy, running = aiBusy ? aiChat?.Id : null, error = aiError, profile = ProfileCatalog.CurrentName(),
+ void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
+  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked,
+  runs = runs.Values.Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, memory = Memory(),
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
@@ -203,8 +223,8 @@ public partial class MainWindow
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
-  question = aiQuestion is { } q ? new { text = q.Text, options = q.Options } : null,
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id) }),
+  question = run?.Question is { } q ? new { text = q.Text, options = q.Options } : null,
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id), folder = c.Folder }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived }) } }); }
 
  async Task HandleAi(string op, JsonElement data)
@@ -215,7 +235,7 @@ public partial class MainWindow
   switch (op) {
    // One list holds every AI's models: picking another AI's model moves the chat to it.
    case "aiModel" when AiClis.FirstOrDefault(c => c.Id == (S("harness") is { Length: > 0 } hh ? hh : harness)) is { } cli && aiModels.GetValueOrDefault(cli.Id) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
-    if (cli.Id != harness) { if (aiBusy) break; UseAi(cli.Id); harness = cli.Id; }
+    if (cli.Id != harness) { if (Busy(aiChat)) break; UseAi(cli.Id); harness = cli.Id; }
     Prefs.AiModels[cli.Id] = model.Id;
     Prefs.AiEfforts[cli.Id] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
     SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
@@ -226,36 +246,39 @@ public partial class MainWindow
    case "aiCheck": aiClis = null; _ = CheckAis(true); break;
    case "aiToggle": aiOpen = !aiOpen; if (aiOpen) _ = CheckAis(); break;
    case "aiAsk" when S("text").Trim() is { Length: > 0 and <= 20000 } ask: // typed in the address bar: a new chat, in its own tab
-    if (aiBusy) { Toast("Your AI is still working. Stop it or wait, then ask again."); break; }
     var into = active is { Url.Length: 0, ChatId: null, Private: false } blank ? blank : await NewTab("", false, false);
-    aiChat = null; aiError = ""; await RunAi(ask, into: into);
+    aiError = ""; await RunAi(null, ask, into: into);
     break;
    case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h); break;
-   case "aiNew" when !aiBusy: aiChat = null; aiError = ""; break;
-   case "aiOpenChat" when !aiBusy: aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
-   case "aiDeleteChat" when !(aiBusy && aiChat?.Id == S("id")):
+   case "aiNew": aiChat = null; aiError = ""; break;
+   case "aiOpenChat": aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
+   case "aiDeleteChat" when !runs.ContainsKey(S("id")):
     AiChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId == S("id")).ToList()) await CloseTab(t, true);
     break;
-   case "aiDeleteAll" when !aiBusy:
+   case "aiDeleteAll" when runs.Count == 0:
     AiChats.Clear(); aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId != null).ToList()) await CloseTab(t, true);
     break;
-   case "aiStop":
-    aiQuestion?.Answer.TrySetResult("The user pressed Stop."); aiQuestion = null;
-    if (aiRun != null) { aiRun.Cancel(); aiChat?.Messages.Add(new() { Role = "note", Text = "Stopped." }); } break;
-   case "aiSend" when !aiBusy && S("text").Trim() is { Length: > 0 and <= 20000 } text:
+   case "aiStop" when runs.GetValueOrDefault(S("id") is { Length: > 0 } stopId ? stopId : ShownChat?.Id ?? "") is { } stopping:
+    stopping.Queue.Clear(); StopRun(stopping); break;
+   case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
+   case "aiUnqueue" when ShownChat is { } unq && runs.GetValueOrDefault(unq.Id) is { } unqueued: unqueued.Queue.Clear(); break;
+   case "aiSend" when S("text").Trim() is { Length: > 0 and <= 20000 } text: {
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
-    if (active?.ChatId is { } chatId) aiChat = AiChats.FirstOrDefault(c => c.Id == chatId);
-    else if (B("home")) aiChat = null;
-    await RunAi(text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"));
-    break;
-   case "aiAnswer" when aiQuestion is { } q:
+    // A chat that's still working takes it as a follow-up for when it finishes.
+    var target = active?.ChatId is { } chatId ? AiChats.FirstOrDefault(c => c.Id == chatId) : B("home") ? null : aiChat;
+    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(text); break; }
+    if (active?.ChatId != null || B("home")) aiChat = target;
+    await RunAi(target, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"));
+    break; }
+   case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
+    var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
-    aiQuestion = null;
-    aiChat?.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
+    answering.Question = null;
+    asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
-    break;
+    break; }
    case "chatOpen" when S("id") is { Length: > 0 } open && AiChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
    case "chatPage" when active?.ChatId is { } pageChat: // show or hide the AI's page beside the chat
     if (tabs.FirstOrDefault(t => t.Id == S("id") && (t.InChat ?? t.RunChat) == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;
@@ -264,8 +287,7 @@ public partial class MainWindow
     ShowPage(); ShellPublish(); break;
    case "chatPopOut" when active?.ChatId != null && Shown is { } page: page.InChat = null; await SelectTab(page); break; // the AI's page becomes an ordinary tab
    case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Go to chat"
-    if (!aiBusy || aiChat?.Id == run) aiChat = runChat;
-    aiOpen = true; break;
+    aiChat = runChat; aiOpen = true; break;
    case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
     var list = Companions.ToList();
     var c = list.FirstOrDefault(x => x.Id == S("id"));
@@ -274,6 +296,7 @@ public partial class MainWindow
     c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
     if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
     if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
+    if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
     if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
     if (data.TryGetProperty("memory", out _)) SaveMemory(c.Id, S("memory"));
     Prefs.Companions = list; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
@@ -298,6 +321,21 @@ public partial class MainWindow
     if (Prefs.Companions.Count(c => c.Skills.Remove(S("id"))) > 0) SaveLater();
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
+   case "pickFolder": { // a companion's working folder
+    var folderDialog = new Microsoft.Win32.OpenFolderDialog { Title = "Pick a working folder" };
+    if (folderDialog.ShowDialog(this) == true) ShellSend(new { kind = "folder", data = new { path = folderDialog.FolderName } });
+    return; }
+   case "fileRead" when LibraryFile(S("path")) is { } read:
+    try {
+     using var reader = new StreamReader(read, true);
+     var buffer = new char[2_000_000]; int got = await reader.ReadBlockAsync(buffer);
+     ShellSend(new { kind = "file", data = new { path = S("path"), text = new string(buffer, 0, got), truncated = !reader.EndOfStream } });
+    } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { ShellSend(new { kind = "file", data = new { path = S("path"), error = "Couldn't open that file." } }); }
+    return;
+   case "fileShow" when LibraryFile(S("path")) is { } show: Process.Start("explorer.exe", "/select,\"" + show + "\"")?.Dispose(); return;
+   case "fileDelete" when LibraryFile(S("path")) is { } gone:
+    try { File.Delete(gone); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+    library = null; foreach (var w in Windows) if (w != this) w.PublishAi(); break;
    case "chatArchive" when AiChats.FirstOrDefault(c => c.Id == S("id")) is { } archived:
     archived.Archived = B("on"); SaveAiChats(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
@@ -309,7 +347,7 @@ public partial class MainWindow
  void UseAi(string h)
  {
   Prefs.AiHarness = h; SaveLater(); aiError = "";
-  if (!aiBusy && aiChat != null && aiChat.Harness != h) {
+  if (!Busy(aiChat) && aiChat != null && aiChat.Harness != h) {
    if (h == "") aiChat = null;
    else { aiChat.Harness = h; aiChat.Session = null; aiChat.Started = false; SaveAiChats(); }
   }
@@ -317,9 +355,9 @@ public partial class MainWindow
   if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
  }
 
- static string AiInstructions(AgentAdapter cli, string profile, Companion? who) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n\n") + $"""
+ static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
-  You are not in a terminal: you have no files or shell here, only the `still` browser tools, working in the user's "{profile}" Still profile.
+  {(folder.Length > 0 ? $"You may read and write files in the user's working folder {folder}, and nowhere else. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
 
   How to work:
   - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).
@@ -327,6 +365,7 @@ public partial class MainWindow
   - Use find to locate something on a long page instead of reading all of it. Ids stay valid while the element exists.
   - Actions tell you where you ended up and about any new tab, dialog or file picker. Read the page again only when you need to see what changed.
   - Pages you open with open_tab show in this chat, so the user can watch you work and take over.
+  - When the user wants a table, a list or notes they can keep, make a file with save_file: CSV for tables, Markdown for notes. It shows in the chat as a card.
   - Keep going until the task is done. Don't ask permission for harmless steps like reading, searching, scrolling or opening tabs.
   - When you need the user to decide something, call ask_user with a short question and 2-4 short options, then carry on with their answer.
   - Use ask_user before buying anything, sending messages, posts or emails, submitting personal data, accepting terms, or deleting anything.
@@ -345,10 +384,9 @@ public partial class MainWindow
   return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open.";
  }
 
- /// into: the tab that becomes this chat's tab when the message starts a new chat.
- async Task RunAi(string text, string? shown = null, BrowserTab? into = null, string companion = "")
+ /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null).
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "")
  {
-  var chat = aiChat;
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions[0];
    chat = aiChat = new AiChat { Harness = with.Ai.Length > 0 ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with.Id };
@@ -359,25 +397,30 @@ public partial class MainWindow
   if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
   var cli = AiClis.FirstOrDefault(c => c.Id == chat.Harness) ?? AiClis[0];
   if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; aiPending = shown ?? text; return; }
+  if (runs.ContainsKey(chat.Id)) return;
+  var me = runs[chat.Id] = new ChatRun(chat, cli.Name);
+  stoppedAgents.Remove(chat.Id); workers.Remove(chat.Id);
   shown ??= text;
   // A chat on a new session (moved to another AI, or its CLI lost it) brings what was said so far.
   if (!chat.Started && chat.Messages.Any(m => m.Role is "user" or "assistant"))
    text = "(Our conversation so far, for context:)\n" + string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(20).Select(m => (m.Role == "user" ? "User: " : "You: ") + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text))) + "\n\n" + text;
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
-  aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown }); chat.Updated = DateTime.UtcNow;
+  aiError = chat.Error = ""; chat.Messages.Add(new() { Role = "user", Text = shown }); chat.Updated = DateTime.UtcNow;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
   var skills = Skill.Invoked(shown);
   if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
   foreach (var k in skills) Step(chat, "Read skill " + k.Name);
-  AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
+  AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
+  string work = cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
   string memory = string.Join("\n\n", new[] { Memory().Trim(), who == null ? "" : Memory(who.Id).Trim() }.Where(m => m.Length > 0));
-  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who) + "\n\n" + (memory.Length > 0 ? "What the user asked you to remember:\n" + memory + "\n\n" : ""))
+  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n" + (memory.Length > 0 ? "What the user asked you to remember:\n" + memory + "\n\n" : ""))
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext() + "\n\n" + text;
-  string folder = AiFolder, promptFile = "";
+  // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
+  string folder = Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
   Directory.CreateDirectory(folder);
-  List<string> mcp = ["--mcp", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
+  List<string> mcp = ["--mcp", "--as", cli.Name, "--run", chat.Id, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   bool said = false, stopped = false;
   var (model, effort) = Prefs.AiAdvanced ? (Prefs.AiModels.GetValueOrDefault(cli.Id, ""), Prefs.AiEfforts.GetValueOrDefault(cli.Id, "")) : ForMode(cli.Id, who?.Mode);
@@ -386,39 +429,43 @@ public partial class MainWindow
   AgentRun? run = null;
   try {
    if (cli.NamesSession) chat.Session ??= Guid.NewGuid().ToString();
-   var request = new RunRequest(prompt, model, effort, folder, mcp, chat.Session, chat.Started && chat.Session != null);
+   var request = new RunRequest(prompt, model, effort, folder, mcp, chat.Session, chat.Started && chat.Session != null) { WorkFolder = work };
    promptFile = request.PromptFile;
-   run = aiRun = await cli.Start(exe, request);
-   await foreach (var e in run.Events()) { said |= ApplyEvent(chat, cli, e); PublishAi(); }
+   run = me.Run = await cli.Start(exe, request);
+   if (me.Stopped) run.Cancel();
+   await foreach (var e in run.Events()) { said |= ApplyEvent(chat, cli, e); PublishAiEverywhere(); }
    chat.Started = chat.Session != null;
    stopped = run.Cancelled && !run.TimedOut;
-   bool lost = run.Errors.Any(LostSession) || LostSession(aiError);
+   bool lost = run.Errors.Any(LostSession) || LostSession(chat.Error);
    if (lost && !said && !stopped && cli.NamesSession) {
-    // The CLI never saved this chat (it was stopped before it could): a new session brings the chat over.
-    chat.Session = null; chat.Started = false; aiError = "";
+    // The CLI has no record of this chat (stopped before it saved it, or from before chats had their own folders):
+    // a new session brings the chat over.
+    chat.Session = null; chat.Started = false; chat.Error = "";
     chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
-    aiBusy = false; aiRun = null; run.Dispose(); run = null;
-    await RunAi(shown);
+    runs.Remove(chat.Id); run.Dispose(); run = null;
+    await RunAi(chat, shown);
     return;
    }
-   if (run.TimedOut) aiError = $"{cli.Name} stopped after {AgentRun.Limit.TotalMinutes:0} minutes. Ask again to carry on.";
-   else if (run.ExitCode != 0 && !said && !stopped && aiError.Length == 0)
-    aiError = $"{cli.App} stopped: " + (run.Errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {run.ExitCode}");
-  } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { aiError = $"{cli.App} failed: {ex.Message}"; }
+   if (run.TimedOut) chat.Error = $"{cli.Name} stopped after {AgentRun.Limit.TotalMinutes:0} minutes. Ask again to carry on.";
+   else if (run.ExitCode != 0 && !said && !stopped && chat.Error.Length == 0)
+    chat.Error = $"{cli.App} stopped: " + (run.Errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {run.ExitCode}");
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { chat.Error = $"{cli.App} failed: {ex.Message}"; }
   finally {
    if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
    run?.Dispose();
-   if (aiBusy) { aiBusy = false; aiRun = null; agentAction = ""; ReleaseAgentTabs(cli.Name); }
-   aiQuestion?.Answer.TrySetResult("The chat ended."); aiQuestion = null;
+   if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; }
+   me.Question?.Answer.TrySetResult("The chat ended."); me.Question = null;
    chat.Updated = DateTime.UtcNow; chat.Unread = !Windows.Any(w => w.Showing(chat)); SaveAiChats();
    try { if (promptFile.Length > 0) File.Delete(promptFile); } catch (IOException) { }
   }
-  if (!said && SignedOutError().IsMatch(aiError)) {
+  if (!said && SignedOutError().IsMatch(chat.Error)) {
    // Signed out: sign in right here, then the message runs again by itself.
-   aiError = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text;
+   chat.Error = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text; aiChat = chat;
    if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
    _ = AiSignIn(cli);
   }
+  else if (me.Queue.Count > 0 && run != null) { string next = string.Join("\n\n", me.Queue); me.Queue.Clear(); await RunAi(chat, next); }
+  PublishAiEverywhere();
  }
 
  // The CLI has no record of the session it was asked to resume (Claude says "No conversation found", Grok's server answers 404).
@@ -465,10 +512,10 @@ public partial class MainWindow
 
  async Task RunPending()
  {
-  if (aiPending.Length == 0 || aiBusy) return;
+  if (aiPending.Length == 0 || Busy(aiChat)) return;
   string ask = aiPending; aiPending = "";
   if (aiChat == null) aiOpen = true; // a chat tab shows it itself
-  await RunAi(ask); PublishAi();
+  await RunAi(aiChat, ask); PublishAi();
  }
 
  static bool Official(AgentAdapter cli, string url) =>
@@ -557,9 +604,26 @@ public partial class MainWindow
    "open_tab" => "Opened " + arg, "navigate" => "Went to " + arg, "click" => "Clicked " + (o2(input, "text") ?? "element " + arg),
    "type" => "Typed “" + arg + "”", "scroll" => "Scrolled " + (arg.Length > 0 ? arg : "the page"), "wait_for" => "Waited for the page",
    "go_back" => "Went back", "go_forward" => "Went forward", "reload" => "Reloaded", "switch_tab" => "Switched tabs", "close_tab" => "Closed a tab", "ask_user" => "",
+   "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
+   "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
+   "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
    _ => tool.Replace('_', ' ') + (arg.Length > 0 ? " " + arg : ""),
   };
   static string? o2(JsonNode? n, string k) => n?[k]?.ToString() is { Length: > 0 } v ? "“" + v + "”" : null;
+ }
+
+ // The Library: files AIs saved with save_file, one folder per chat (or per outside AI app).
+ internal static string LibraryFolder => Path.Combine(App.DataRoot, "library");
+ static List<object>? library;
+ static List<object> Library() => library ??= !Directory.Exists(LibraryFolder) ? [] : [.. new DirectoryInfo(LibraryFolder).EnumerateFiles("*", SearchOption.AllDirectories)
+  .OrderByDescending(f => f.LastWriteTimeUtc).Take(300)
+  .Select(f => new { path = Path.GetRelativePath(LibraryFolder, f.FullName).Replace('\\', '/'), name = f.Name, size = f.Length, saved = f.LastWriteTimeUtc, chat = f.Directory!.Name })];
+ /// A file in the Library by its relative path, or null when the path leads anywhere else.
+ static string? LibraryFile(string path)
+ {
+  if (path.Length == 0) return null;
+  string root = Path.GetFullPath(LibraryFolder) + Path.DirectorySeparatorChar, full = Path.GetFullPath(Path.Combine(root, path));
+  return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
  }
 
  static void Step(AiChat chat, string label) { if (label.Length > 0) chat.Messages.Add(new() { Role = "tool", Text = label }); }
@@ -567,18 +631,18 @@ public partial class MainWindow
  /// ask_user: the question shows in the chat with its options, and the AI waits (up to 10 minutes) for the answer.
  static async Task<string> AskInChat(string who, JsonElement args)
  {
-  if (ChatRunner(who) is not { } w) return Fail("Only Still's own chat can ask the user this way. Ask in your reply instead.");
+  if (runs.GetValueOrDefault(who) is not { } r) return Fail("Only Still's own chat can ask the user this way. Ask in your reply instead.");
   string text = S(args, "question").Trim();
   if (text.Length == 0) return Fail("Pass the question.");
   string[] options = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("options", out var o) && o.ValueKind == JsonValueKind.Array
    ? [.. o.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.String).Select(x => Clip(x.GetString()!.Trim(), 120)).Where(x => x.Length > 0).Take(6)] : [];
-  w.aiQuestion?.Answer.TrySetResult("Replaced by a newer question.");
-  var asked = w.aiQuestion = new(Clip(text, 600), options, new(TaskCreationOptions.RunContinuationsAsynchronously));
-  w.aiChat?.Messages.Add(new() { Role = "assistant", Text = asked.Text });
-  w.PublishAi();
+  r.Question?.Answer.TrySetResult("Replaced by a newer question.");
+  var asked = r.Question = new(Clip(text, 600), options, new(TaskCreationOptions.RunContinuationsAsynchronously));
+  r.Chat.Messages.Add(new() { Role = "assistant", Text = asked.Text });
+  PublishAiEverywhere();
   bool answered = await Task.WhenAny(asked.Answer.Task, Task.Delay(TimeSpan.FromMinutes(10))) == asked.Answer.Task;
-  if (w.aiQuestion == asked) w.aiQuestion = null;
-  w.PublishAi();
+  if (r.Question == asked) r.Question = null;
+  PublishAiEverywhere();
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
  }
 
@@ -591,7 +655,7 @@ public partial class MainWindow
    case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); break;
    case AgentEvent.Session session: chat.Session ??= session.Id; break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
-   case AgentEvent.Error error: aiError = $"{cli.Name}: " + error.Text; break;
+   case AgentEvent.Error error: chat.Error = $"{cli.Name}: " + error.Text; break;
   }
   return false;
  }

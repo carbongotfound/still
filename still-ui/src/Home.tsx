@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, ChevronDown, Dices, Library, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { useEffect, useState, type CSSProperties } from "react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -8,7 +8,8 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { cn } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
 import { COLORS, FACE_NAMES, HUES, NAMES, Face, hueOf, type Companion, type Mode } from "./Buddy"
-import { companionOf, type AiState, type Skill } from "./AiSidebar"
+import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
+import { FileIcon, nameOf } from "./Files"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
 export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
@@ -54,7 +55,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const [who, setWho] = useState("")
  const [oldest, setOldest] = useState(false)
  const [wipe, setWipe] = useState(false)
- const needs = (id: string) => !!ai.question && ai.running === id
+ const needs = (id: string) => needsYou(ai, id)
  const first = ai.companions?.[0]?.id
  const chats = ai.chats.filter(c => (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
   && (!who || (c.companion || first) === who) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
@@ -65,7 +66,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  return <section className="home-page" aria-label="Chat History">
   <header className="home-page-head"><h1>Chat History</h1>
    <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
-    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || ai.busy} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
    <Button className="home-new" onClick={onNew}><Plus />New chat</Button>
   </header>
   <label className="history-find"><Search /><input aria-label="Search chats" placeholder="Search chats..." value={find} onChange={e => setFind(e.target.value)} /></label>
@@ -81,10 +82,10 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
   {!chats.length && <p className="home-empty">{find || only || who ? "No chats match." : "Your chats show up here. Start one from the new tab page."}</p>}
   {groups.map(([day, list]) => <div key={day} className="history-group"><h2>{day}</h2>
    {list.map(c => <div key={c.id} className="history-row">
-    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={30} mood={ai.running === c.id ? "working" : "idle"} /><b>{c.title}</b>
-     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : ai.running === c.id ? <small>Working</small> : <small>{ago(c.updated)}</small>}</button>
+    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
+     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</button>
     <button className="history-act" aria-label={c.archived ? "Unarchive " + c.title : "Archive " + c.title} title={c.archived ? "Unarchive" : "Archive"} onClick={() => send("chatArchive", { id: c.id, on: !c.archived })}>{c.archived ? <ArchiveRestore /> : <Archive />}</button>
-    <button className="history-act" disabled={ai.running === c.id} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>
+    <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>
    </div>)}
   </div>)}
   <AlertDialog open={wipe} onOpenChange={setWipe}><AlertDialogContent>
@@ -152,10 +153,32 @@ function SkillEditor({ skill, onClose, onSave }: { skill: Skill; onClose: () => 
  </Dialog>
 }
 
-export function LibraryPage() {
+// Every file an AI saved, newest first, with the chat it came from.
+export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onOpen: (path: string) => void }) {
+ const [find, setFind] = useState("")
+ const [who, setWho] = useState("")
+ const first = ai.companions?.[0]?.id, mate = companionOf(ai, who)
+ const chatOf = (id: string) => ai.chats.find(c => c.id === id)
+ const files = (ai.files ?? []).filter(f => f.name.toLowerCase().includes(find.trim().toLowerCase()) && (!who || (chatOf(f.chat)?.companion || first) === who && !!chatOf(f.chat)))
  return <section className="home-page" aria-label="Library">
   <header className="home-page-head"><h1>Library</h1></header>
-  <div className="home-empty is-big"><Library /><p>Nothing here yet. Files your companions make will land here.</p></div>
+  {!ai.files?.length ? <div className="home-empty is-big"><Library /><p>Nothing here yet. Ask a companion for a table or notes, and the file lands here.</p></div> : <>
+   <label className="history-find"><Search /><input aria-label="Search files" placeholder="Search files..." value={find} onChange={e => setFind(e.target.value)} /></label>
+   <div className="history-chips">
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="history-chip" aria-pressed={!!who}>{who && mate ? <><Face companion={mate} size={16} />{mate.name}</> : "Companion"}<ChevronDown /></button></DropdownMenuTrigger>
+     <DropdownMenuContent align="start" className="w-52">
+      <DropdownMenuItem onSelect={() => setWho("")}>Everyone</DropdownMenuItem>
+      {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => setWho(c.id)}><Face companion={c} size={18} />{c.name}</DropdownMenuItem>)}
+     </DropdownMenuContent></DropdownMenu>
+   </div>
+   {!files.length && <p className="home-empty">No files match.</p>}
+   <div className="library-list">{files.map(f => { const chat = chatOf(f.chat); return <div key={f.path} className="history-row">
+    <button className="history-open" onClick={() => onOpen(f.path)}><FileIcon path={f.path} /><b>{nameOf(f.path)}</b><small>{chat ? chat.title + " · " : ""}{ago(f.saved)}</small></button>
+    {chat && <button className="history-act" aria-label={"Go to the chat for " + f.name} title="Go to chat" onClick={() => send("chatOpen", { id: chat.id })}><MessageSquare /></button>}
+    <button className="history-act" aria-label={"Show " + f.name + " in its folder"} title="Show in folder" onClick={() => send("fileShow", { path: f.path })}><FolderOpen /></button>
+    <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => send("fileDelete", { path: f.path })}><Trash2 /></button>
+   </div> })}</div>
+  </>}
  </section>
 }
 
@@ -164,6 +187,10 @@ const MODE_NAMES: [Mode, string][] = [["efficient", "Efficient"], ["default", "D
 export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
  const [c, setC] = useState<Companion>({ mode: "default", skills: [], memory: "", ai: "", ...companion })
  const skills = ai.skills ?? []
+ useEffect(() => { // the folder picked in Windows' own dialog
+  const got = (e: MessageEvent) => { if (e.data?.kind === "folder") setC(old => ({ ...old, folder: e.data.data.path })) }
+  window.chrome?.webview?.addEventListener("message", got); return () => window.chrome?.webview?.removeEventListener("message", got)
+ }, [])
  const state = (id: string) => { const h = ai.harnesses.find(x => x.id === id); return !h ? "" : !h.installed || h.status === "missing" ? "Not installed" : h.status === "signedOut" ? "Sign in first" : "" }
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog companion-dialog" style={{ "--hue": hueOf(c) } as CSSProperties}>
@@ -189,6 +216,11 @@ export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onD
     <div className="companion-field"><span>Skills they always use</span>
      {skills.length ? <div className="companion-skills">{skills.map(k => { const on = c.skills?.includes(k.id); return <button type="button" key={k.id} aria-pressed={on} title={k.description} onClick={() => setC({ ...c, skills: on ? c.skills?.filter(x => x !== k.id) : [...(c.skills ?? []), k.id] })}><BookOpen />{k.name}{on && <X />}</button> })}</div>
       : <p className="companion-note">No skills yet. Make some on the Skills page, then give them to {c.name || "your companion"} here.</p>}</div>
+    <div className="companion-field"><span>Working folder</span>
+     <div className="companion-folder"><code title={c.folder}>{c.folder || "None, so they can't touch your files."}</code>
+      <Button type="button" variant="outline" size="sm" onClick={() => window.chrome?.webview?.postMessage({ op: "pickFolder" })}><FolderOpen />{c.folder ? "Change" : "Pick a folder"}</Button>
+      {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
+     {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
     <label><span>What should {c.name.trim() || "they"} remember?</span><textarea className="companion-job" rows={3} maxLength={20000} placeholder="For example: my favorite stores, sizes I wear, sites I trust." value={c.memory} onChange={e => setC({ ...c, memory: e.target.value })} /></label>
     <div className="companion-actions">
      {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={onDelete}><Trash2 />Delete</Button>}
