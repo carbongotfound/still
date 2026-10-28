@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, Check, ChevronDown, Copy, ExternalLink, FileText, Gauge, Globe, Lightbulb, LockKeyhole, Luggage, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { ArrowLeft, ArrowUp, BookOpen, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, FileText, Gauge, Globe, Lightbulb, LockKeyhole, Luggage, Plus, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -8,7 +8,9 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AiLogo } from "./AiLogo"
-import { Face, type Companion, type Mood } from "./Buddy"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { Switch } from "@/components/ui/switch"
+import { Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
 import { Markdown } from "./Markdown"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
@@ -18,10 +20,12 @@ export type AiState = {
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: { role: string; text: string }[]
  question?: { text: string; options: string[] } | null; companions?: Companion[]
- chats: { id: string; title: string; harness: string; updated: string; companion?: string }[]
+ chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean }[]
+ advanced?: boolean; memory?: string; skills?: Skill[]
 }
+export type Skill = { id: string; name: string; description: string; when: string; body: string }
 type Send = (op: string, payload?: Record<string, unknown>) => void
-type TabRef = { id: string; title: string; url: string; inChat?: string }
+type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean }
 
 const IDEAS = [
  [FileText, "Sum up this page", "Summarize this page in a few short bullet points."],
@@ -105,6 +109,43 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
  </>
 }
 
+// Who you work with and how hard they think: Expert (the strongest model, thinking hard), Default (the AI app's own
+// defaults) or Efficient (the quickest). Advanced swaps the modes for the model and effort pickers.
+const MODES: [Mode, string, typeof Star, string, number, number][] = [
+ ["expert", "Expert", Star, "The strongest model, thinking hard. For tricky research and long jobs.", 100, 38],
+ ["default", "Default", Diamond, "Balanced thinking for everyday work.", 74, 62],
+ ["efficient", "Efficient", Zap, "Quick and light on your plan. For small, simple jobs.", 46, 100],
+]
+function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
+ const [find, setFind] = useState("")
+ const [hover, setHover] = useState<Mode>()
+ const mode = companion?.mode ?? "default"
+ const shown = MODES.find(m => m[0] === (hover ?? mode)) ?? MODES[1]
+ const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
+ return <DropdownMenu onOpenChange={o => { if (!o) { setFind(""); setHover(undefined) } }}>
+  <DropdownMenuTrigger asChild disabled={disabled}><button type="button" className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
+  <DropdownMenuContent side="top" align="end" sideOffset={8} className="mode-menu">
+   {onCompanion && <>
+    <input className="mode-find" aria-label="Search companions" placeholder="Search companions..." value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} />
+    {mates.map(c => <DropdownMenuItem key={c.id} onSelect={() => onCompanion(c.id)}><Face companion={c} size={22} />{c.name}{c.id === companion?.id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
+    {!mates.length && <p className="mode-none">No one by that name.</p>}
+    <DropdownMenuSeparator />
+   </>}
+   {MODES.map(([id, label, Icon]) => <DropdownMenuItem key={id} disabled={!companion} onMouseEnter={() => setHover(id)} onFocus={() => setHover(id)} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }); if (ai.advanced) send("aiAdvanced", { on: false }) }}>
+    <Icon className="mode-icon" />{label}{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
+   <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
+   <div className="mode-card" aria-hidden><b>{shown[1]} Mode</b><p>{shown[3]}</p><i style={{ "--w": shown[4] + "%" } as CSSProperties}><Star /></i><i style={{ "--w": shown[5] + "%" } as CSSProperties}><Zap /></i></div>
+  </DropdownMenuContent>
+ </DropdownMenu>
+}
+
+// "/" in the message box picks a skill. A skill named in the text (/id) shows as a chip above it.
+const skillToken = (id: string) => new RegExp(`(^|\\s)/${id}(?=\\s|$)`)
+export function SkillText({ text, skills }: { text: string; skills?: Skill[] }) {
+ const ids = new Set(skills?.map(k => k.id))
+ return <>{text.split(/(?<=^|\s)(\/[a-z0-9-]+)(?=\s|$)/).map((part, i) => part.startsWith("/") && ids.has(part.slice(1)) ? <span key={i} className="skill-chip"><BookOpen />{skills?.find(k => k.id === part.slice(1))?.name}</span> : part)}</>
+}
+
 // The message box: the model on the right, then send, or a red stop while the AI works (Enter then queues a follow-up).
 // How the companion looks through a run: thinking until its first step, working through steps, waiting on the user's
 // answer, a small celebration when it finishes, a droop on an error. Listening while the user types to it.
@@ -127,14 +168,37 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void }) {
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const [text, setTextState] = useState("")
- const setText = (v: string) => { setTextState(v); onTyping?.(!!v.trim()) }
+ const [pick, setPick] = useState(0)
+ const box = useRef<HTMLTextAreaElement>(null)
+ const setText = (v: string) => { setTextState(v); setPick(0); onTyping?.(!!v.trim()) }
  const submit = () => { if (!text.trim() || disabled) return; onSubmit(text.trim()); setText("") }
- return <InputGroup className="composer">
-  <InputGroupTextarea aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
+ const skills = ai.skills ?? []
+ const typed = /(^|\s)\/([\w-]*)$/.exec(text)?.[2].toLowerCase()
+ const matches = typed === undefined ? [] : skills.filter(k => k.id.startsWith(typed) || k.name.toLowerCase().includes(typed)).slice(0, 6)
+ const used = skills.filter(k => skillToken(k.id).test(text))
+ const useSkill = (k: Skill) => { setText(typed === undefined ? `/${k.id} ${text}` : text.replace(/(^|\s)\/[\w-]*$/, `$1/${k.id} `)); box.current?.focus() }
+ const pages = (tabs ?? []).filter(t => t.url && !t.isPrivate && !t.chatId && !t.inChat).slice(0, 6)
+ return <InputGroup className="composer" style={{ "--hue": hueOf(companion) } as CSSProperties}>
+  {matches.length > 0 && <div className="skill-menu" role="listbox" aria-label="Skills">{matches.map((k, i) => <button type="button" key={k.id} role="option" aria-selected={i === pick % matches.length} onMouseDown={e => { e.preventDefault(); useSkill(k) }}><BookOpen /><b>/{k.id}</b><span>{k.description || k.name}</span></button>)}</div>}
+  {used.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">{used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}</InputGroupAddon>}
+  <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => {
+   if (matches.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : matches.length - 1)); return }
+   if (matches.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); useSkill(matches[pick % matches.length]); return }
+   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
   <InputGroupAddon align="block-end">
-   <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />
+   <DropdownMenu><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
+    <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72">
+     <DropdownMenuLabel>Skills</DropdownMenuLabel>
+     {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => useSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
+     {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
+     {pages.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Add a tab</DropdownMenuLabel>
+      {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => { setText(`${text}${text && !text.endsWith(" ") ? " " : ""}[${t.title || host(t.url)}](${t.url}) `); box.current?.focus() }}><Globe /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
+    </DropdownMenuContent></DropdownMenu>
+   <span className="composer-gap" />
+   <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
+   {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
    {onStop && !text.trim() ? <InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton>
     : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim() || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>
@@ -221,7 +285,9 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
  const ticks = useRef(0)
  const [queued, setQueued] = useState("")
  const log = useRef<HTMLDivElement>(null)
- const companion = companionOf(ai, ai.chatCompanion)
+ const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
+ const fresh = !ai.messages.length
+ const companion = companionOf(ai, fresh && picked ? picked : ai.chatCompanion)
  const name = companion?.name ?? "your AI"
  const busy = ai.busy && ai.running === ai.chatId
  const elsewhere = ai.busy && !busy
@@ -230,7 +296,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [ai.messages.length, busy, !!ai.question])
  useEffect(() => { if (!busy) return; ticks.current = 0; setTick(0); setWorked(0); const t = setInterval(() => setTick(++ticks.current), 1000); return () => { clearInterval(t); setWorked(ticks.current) } }, [busy])
  useEffect(() => { if (!ai.busy && queued && !ai.error) { send("aiSend", { text: queued }); setQueued("") } }, [ai.busy]) // eslint-disable-line react-hooks/exhaustive-deps
- const submit = (value: string) => { if (busy) setQueued(value); else send("aiSend", { text: value }) }
+ const submit = (value: string) => { if (busy) setQueued(value); else send("aiSend", { text: value, companion: companion?.id }) }
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
@@ -262,7 +328,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
    </div>)}
    {items.map((m, i) => {
     if ("steps" in m) return <div key={i} className="ai-turn">{face(i)}<details className="ai-steps-group"><summary><span className="ai-steps-icon"><Globe /></span><span className="ai-steps-text"><b>{m.steps[m.steps.length - 1]}</b>{m.steps.length > 1 && <small> (and {m.steps.length - 1} more action{m.steps.length === 2 ? "" : "s"})</small>}</span><ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => <li key={j}>{s}</li>)}</ol></details></div>
-    if (m.role === "user") return <div key={i} className="ai-msg is-user">{m.text}</div>
+    if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
     const last = i === items.length - 1 && !busy
@@ -282,7 +348,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings }: {
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
    {queued && <div className="ai-queued"><span>Up next</span><p>{queued}</p><button aria-label="Don't send" onClick={() => setQueued("")}><X /></button></div>}
    {elsewhere ? <div className="chat-elsewhere"><Face companion={companionOf(ai, ai.chats.find(c => c.id === ai.running)?.companion)} size={20} mood="working" /><span>Busy in another chat</span><Button variant="link" size="sm" onClick={() => send("chatOpen", { id: ai.running })}>Go to it</Button><Button variant="link" size="sm" onClick={() => send("aiStop")}>Stop it</Button></div>
-    : <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined}
+    : <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
      placeholder={busy ? (queued ? "Change what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />}
    {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
   </div></div>}
