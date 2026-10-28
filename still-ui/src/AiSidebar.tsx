@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { AiLogo } from "./AiLogo"
+import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
@@ -18,11 +19,11 @@ import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissi
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
- runs?: Run[]; queued?: string[]; files?: LibFile[]; worked?: number
+ runs?: Run[]; interrupted?: string[]; queued?: string[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: { role: string; text: string }[]
- question?: { text: string; options: string[] } | null; companions?: Companion[]
+ question?: { text: string; options: string[]; page?: string | null } | null; companions?: Companion[]
  chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean }[]
  advanced?: boolean; memory?: string; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
@@ -213,20 +214,21 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
    {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
-   {onStop && !text.trim() ? <InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton>
+   {onStop && !text.trim() ? <InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" title="Stop · Ctrl+." onClick={onStop}><Square /></InputGroupButton>
     : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim() || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>
  </InputGroup>
 }
 
 // The AI asked something with ask_user: pick an option, write an answer, or skip.
-function QuestionCard({ q, companion, send }: { q: { text: string; options: string[] }; companion?: Companion; send: Send }) {
+function QuestionCard({ q, companion, send }: { q: { text: string; options: string[]; page?: string | null }; companion?: Companion; send: Send }) {
  const [own, setOwn] = useState("")
  useEffect(() => { // 1-9 picks an option, unless the user is typing
   const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) send("aiAnswer", { text: q.options[n - 1] }) }
   addEventListener("keydown", key); return () => removeEventListener("keydown", key)
  }, [q, send])
  return <div className="ask-card" role="group" aria-label="Question from your AI">
+  {q.page && <div className="ask-help"><strong>Help with this page</strong><Button size="sm" variant="outline" onClick={() => send("aiHelpPage", { id: q.page })}>Open the page</Button></div>}
   <div className="ask-q"><Face companion={companion} size={22} /><p>{q.text}</p></div>
   {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => send("aiAnswer", { text: o })}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
   <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) send("aiAnswer", { text: own }) }}>
@@ -362,7 +364,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    })}
    {busy && !ai.question && <div className="ai-turn">{face(items.length)}<p className="ai-timer">Working for {clock(tick)}</p></div>}
   </div></div>}
-  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription></Alert>}
+  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <span className="chat-chip" title={activeTab.url}><Globe />{activeTab.title || host(activeTab.url)}</span>}
@@ -411,10 +413,26 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { 
 
 // Top right: the chats at work (green spinner), the ones waiting on you (amber) and new replies (blue).
 // A question can be answered right here.
+// Screen readers hear when a chat starts, needs you, or finishes.
+export function RunAnnouncer({ ai }: { ai: AiState }) {
+ const [say, setSay] = useState("")
+ const last = useRef<Record<string, boolean>>({})
+ useEffect(() => {
+  const runs = ai.runs ?? [], title = (id: string) => ai.chats.find(c => c.id === id)?.title || "Your chat", lines: string[] = []
+  const now: Record<string, boolean> = Object.fromEntries(runs.map(r => [r.id, waits(r)]))
+  for (const r of runs) if (!(r.id in last.current)) lines.push(title(r.id) + ": working"); else if (now[r.id] && !last.current[r.id]) lines.push(title(r.id) + " needs you")
+  for (const id in last.current) if (!(id in now)) lines.push(title(id) + ": done")
+  last.current = now
+  if (lines.length) setSay(lines.join(". "))
+ }, [ai.runs, ai.chats])
+ return <div className="sr-only run-announcer" role="status" aria-live="polite">{say}</div>
+}
+
 export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; onOpen: (open: boolean) => void }) {
  const [open, setOpenState] = useState(false)
  const setOpen = (o: boolean) => { setOpenState(o); onOpen(o) }
  useEffect(() => () => onOpen(false), []) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => { const flip = () => setOpen(!open); window.addEventListener("still-tasks", flip); return () => window.removeEventListener("still-tasks", flip) }) // Ctrl+Shift+K
  const [, setNow] = useState(0)
  useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [open])
  const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), empty = !runs.length && !unread.length
@@ -423,7 +441,7 @@ export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; on
  const waiting = runs.filter(waits).length
  const chat = (id: string) => ai.chats.find(c => c.id === id)
  return <DropdownMenu open={open} onOpenChange={setOpen}>
-  <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks">
+  <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks · Ctrl+Shift+K">
    {runs.length > waiting ? <Spinner className="tasks-spin" /> : <ListTodo />}{runs.length > 0 && <b>{runs.length}</b>}
    {waiting > 0 && <i className="is-needs" />}{unread.length > 0 && <i className="is-unread" />}
   </Button></DropdownMenuTrigger>
