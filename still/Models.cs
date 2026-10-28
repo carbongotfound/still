@@ -12,6 +12,8 @@ public sealed class BrowserTab
  [JsonIgnore] public string? Agent { get; set; } // the AI working in this tab right now (bot icon)
  [JsonIgnore] public bool AgentGroup { get; set; } // opened by an AI: shown together in the AI group
  public bool Pinned { get; set; }
+ public string Group { get; set; } = ""; // a TabGroup id, "" = none
+ [JsonIgnore] public object? Wire { get; set; } // which window's page handlers are live (see MainWindow.WireView)
  public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page
  [JsonIgnore] public bool PageOpen { get; set; } // a chat tab showing its AI's page beside the conversation
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
@@ -93,8 +95,24 @@ public sealed class Preferences
  public List<string> ApprovedAgents { get; set; } = [];
  public List<SitePermission> Permissions { get; set; } = []; // on top of the defaults: read and navigate always, interact once per chat, sensitive every time
  public List<string> SensitiveSites { get; set; } = []; // every click or keystroke there counts as sensitive
+ public string TabLayout { get; set; } = "Classic"; // Classic: tabs across the top. Modern: a sidebar down the left.
+ public double SidebarWidth { get; set; } = 248;
  public double Width { get; set; } = 1260;
  public double Height { get; set; } = 810;
+}
+public sealed class TabGroup
+{
+ public string Id { get; set; } = Guid.NewGuid().ToString("N");
+ public string Name { get; set; } = "";
+ public string Color { get; set; } = "blue";
+ public bool Collapsed { get; set; }
+}
+public sealed class AddressPick
+{
+ public string Typed { get; set; } = "";
+ public string Url { get; set; } = "";
+ public int Count { get; set; }
+ public DateTime At { get; set; } = DateTime.UtcNow;
 }
 public sealed class SavedState
 {
@@ -105,6 +123,8 @@ public sealed class SavedState
  public string? ActiveId { get; set; }
  public List<Visit> History { get; set; } = [];
  public List<Visit> Bookmarks { get; set; } = [];
+ public List<TabGroup> Groups { get; set; } = [];
+ public List<AddressPick> AddressPicks { get; set; } = []; // what you typed and the site you picked (never private tabs)
  public Dictionary<string, List<string>> Hidden { get; set; } = [];
 }
 public sealed class DownloadItem

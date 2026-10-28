@@ -19,3 +19,12 @@ test('unsafe schemes, credential URLs and invalid URLs are excluded', () => asse
 test('clearing history removes its suggestions', () => assert.deepEqual(rankSuggestions('chat', [], []), []))
 test('empty input returns no suggestions', () => assert.deepEqual(rankSuggestions('  ', visits, []), []))
 test('large history stays bounded to six suggestions', () => assert.equal(rankSuggestions('site', Array.from({length:2000}, (_,i)=>({title:'site',url:`https://site${i}.example/`})), []).length, 6))
+test('a site you keep picking for the same letters comes first', () => {
+  const sites = [{title: 'Maps', url: 'https://maps.example/', at: '2026-09-23T11:00:00Z'}, ...Array.from({length: 9}, () => ({title: 'Mail', url: 'https://mail.example/', at: '2026-09-23T11:00:00Z'}))]
+  assert.equal(rankSuggestions('ma', sites, [], false, now)[0].url, 'https://mail.example/')
+  const picks = [{typed: 'ma', url: 'https://maps.example/', count: 2}]
+  assert.equal(rankSuggestions('ma', sites, [], false, now, picks)[0].url, 'https://maps.example/')
+  assert.equal(rankSuggestions('map', sites, [], false, now, picks)[0].url, 'https://maps.example/')
+  assert.equal(rankSuggestions('mai', sites, [], false, now, picks)[0].url, 'https://mail.example/')
+})
+test('private tabs ignore learned picks', () => assert.deepEqual(rankSuggestions('ma', [], [], true, now, [{typed: 'ma', url: 'https://maps.example/', count: 5}]), []))

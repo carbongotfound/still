@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import } from "lucide-react"
+import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -27,12 +27,14 @@ import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import { cn } from "@/lib/utils"
 import "./app.css"
-import { rankSuggestions } from "./suggestions"
+import { rankSuggestions, type AddressPick } from "./suggestions"
 import { BrowserTools } from "./BrowserTools"
 import { Welcome } from "./Welcome"
 import type { ToolData } from "./BrowserTools"
 
-type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string }
+type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
+type Group = { id: string; name: string; color: string; collapsed: boolean }
+const splittable = (t?: Tab) => !!t?.url && !t.chatId && !t.inChat
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
 type DownloadItem = { id: string; name: string; status: string; bytes: number; total?: number }
 type ExtensionRef = { id:string; name:string; icon?:string|null }
@@ -53,7 +55,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null }
+type State = { welcome?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -70,7 +72,7 @@ const IDEAS: [LucideIcon, string, string, string, string][] = [
 const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
-const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Next / previous tab", "Ctrl Tab / Ctrl Shift Tab"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
+const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
 
 const FLOW = { type: "spring" as const, stiffness: 460, damping: 34, mass: .75 }
 const AnimatedButton = motion.create(Button)
@@ -82,14 +84,54 @@ function FlowTabs({ tabs, top = false }: { tabs: Tab[]; top?: boolean }) {
   <TabView tab={tab} top={top} />
  </motion.div>)}</AnimatePresence>
 }
-type Ghost = { title: string; favicon?: string; x: number; y: number; tearing: boolean }
-const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>void;open:(name:string,value?:string)=>void;arriving:string;setGhost:(g:Ghost|null)=>void}|null>(null)
+// Tabs in strip order, with each group's tabs gathered under its chip.
+function TabStrip({ tabs, top }: { tabs: Tab[]; top: boolean }) {
+ const { state } = useContext(UICtx)!
+ const groups = state.groups ?? [], out: ReactNode[] = []
+ for (let i = 0; i < tabs.length;) {
+  const group = groups.find(g => g.id === tabs[i].group)
+  let j = i + 1
+  while (j < tabs.length && (group ? tabs[j].group === group.id : !groups.some(g => g.id === tabs[j].group))) j++
+  out.push(group ? <TabGroupView key={group.id} group={group} tabs={tabs.slice(i, j)} top={top} /> : <FlowTabs key={"f" + tabs[i].id} tabs={tabs.slice(i, j)} top={top} />)
+  i = j
+ }
+ return <>{out}</>
+}
+const GROUP_COLORS = ["blue", "green", "amber", "rose", "violet", "cyan", "orange", "grey"]
+function TabGroupView({ group, tabs, top }: { group: Group; tabs: Tab[]; top: boolean }) {
+ const { state, setContext, renaming, setRenaming } = useContext(UICtx)!
+ const shown = group.collapsed ? tabs.filter(t => t.id === state.activeId) : tabs // the tab you're on stays in view
+ const label = group.name || "Unnamed group"
+ const save = (name: string) => { setRenaming(""); if (name.trim() !== group.name) send("groupSet", { group: group.id, name }) }
+ return <div className={cn("tab-group", top && "is-top", group.collapsed && "is-collapsed")} data-color={group.color} role="group" aria-label={`${label}, ${tabs.length} ${tabs.length === 1 ? "tab" : "tabs"}`}>
+  {renaming === group.id ? <input className="tab-group-name" autoFocus defaultValue={group.name} aria-label="Group name" placeholder="Name this group" maxLength={40}
+   onKeyDown={e => { if (e.key === "Enter") save(e.currentTarget.value); else if (e.key === "Escape") { e.stopPropagation(); setRenaming("") } }} onBlur={e => save(e.currentTarget.value)} />
+  : <ContextMenu onOpenChange={setContext}><ContextMenuTrigger asChild>
+   <button className="tab-group-chip" aria-expanded={!group.collapsed} aria-label={`${label}, ${group.collapsed ? "show" : "hide"} its tabs`} title={tabs.map(t => t.title).join("\n")} onClick={() => send("groupSet", { group: group.id, collapsed: !group.collapsed })}>
+    {!top && <ChevronDown className="tab-group-chevron" />}
+    {group.name ? <span className="tab-group-label">{group.name}</span> : <i className="group-dot" data-color={group.color} />}
+    {group.collapsed && <span className="tab-group-icons" aria-hidden>{tabs.slice(0, 3).map(t => t.favicon ? <img key={t.id} src={t.favicon} alt="" /> : <Globe2 key={t.id} />)}{tabs.length > 3 && <b>+{tabs.length - 3}</b>}</span>}
+   </button></ContextMenuTrigger>
+   <ContextMenuContent className="w-52">
+    <ContextMenuItem onSelect={() => setTimeout(() => setRenaming(group.id), 0)}><Pencil />Rename group</ContextMenuItem>
+    <div className="group-colors" role="radiogroup" aria-label="Group color">{GROUP_COLORS.map(c => <button key={c} role="radio" aria-checked={group.color === c} aria-label={c} className="group-dot" data-color={c} onClick={() => send("groupSet", { group: group.id, color: c })} />)}</div>
+    <ContextMenuItem onSelect={() => send("groupSet", { group: group.id, collapsed: !group.collapsed })}>{group.collapsed ? <ChevronDown /> : <ChevronRight />}{group.collapsed ? "Show its tabs" : "Collapse"}</ContextMenuItem>
+    <ContextMenuItem onSelect={() => send("groupUngroup", { group: group.id })}><FolderMinus />Ungroup</ContextMenuItem>
+    <ContextMenuSeparator />
+    <ContextMenuItem onSelect={() => send("groupClose", { group: group.id })}><X />Close group</ContextMenuItem>
+   </ContextMenuContent></ContextMenu>}
+  <FlowTabs tabs={shown} top={top} />
+ </div>
+}
+type Ghost = { id: string; title: string; favicon?: string; x: number; y: number; tearing: boolean; side?: string }
+const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>void;open:(name:string,value?:string)=>void;arriving:string;setGhost:(g:Ghost|null)=>void;renaming:string;setRenaming:(id:string)=>void}|null>(null)
  function IconButton({ label, caption = label, children, onClick, disabled = false }: { label: string; caption?:string; children: ReactNode; onClick: (e: React.MouseEvent<HTMLButtonElement>) => void; disabled?: boolean }) {
   return <AnimatedButton variant="ghost" size="icon-sm" className="chrome-button expanding-button" aria-label={label} disabled={disabled} onClick={onClick} whileTap={{ scale: .97 }} transition={FLOW}><span className="chrome-icon">{children}</span><span className="chrome-label" aria-hidden="true"><span>{caption}</span></span></AnimatedButton>
  }
  function TabView({ tab, top = false }: { tab: Tab; top?: boolean }) {
   const {state,ai,setContext,arriving,setGhost}=useContext(UICtx)!
   const selected = tab.id === state.activeId
+  const marked = state.bookmarks.some(b => b.url === tab.url)
   const chat = tab.chatId ? companionOf(ai, ai?.chats.find(c => c.id === tab.chatId)?.companion) : undefined
   const driver = tab.agent && !state.agent?.pending && state.working?.includes(tab.id) ? driverOf(ai, tab) : undefined // only while it is at work here
   const [tearing, setTearing] = useState(false)
@@ -97,18 +139,25 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
   const drag = useRef<{ sx: number; sy: number; active: boolean } | null>(null)
   const suppressClick = useRef(false)
   const outsideList = (el: Element, x: number, y: number) => {
-   const list = el.closest(".top-tab-strip")?.getBoundingClientRect()
+   const list = el.closest(".top-tab-strip, .browser-sidebar")?.getBoundingClientRect()
    const out = x < 0 || y < 0 || x > innerWidth || y > innerHeight
    return out || !list || x < list.left - 40 || x > list.right + 40 || y < list.top - 40 || y > list.bottom + 40
+  }
+  // Over the page, a dragged tab opens beside the one you're on (left or right half).
+  const pageSide = (x: number, y: number) => {
+   const r = document.querySelector(".page-slot")?.getBoundingClientRect()
+   if (!r || x < r.left || x > r.right || y < r.top || y > r.bottom || tab.id === state.activeId || !splittable(tab) || !splittable(state.tabs.find(t => t.id === state.activeId))) return ""
+   return x < r.left + r.width / 2 ? "left" : "right"
   }
   const onPointerDown = (e: React.PointerEvent) => { if (e.button === 0) drag.current = { sx: e.clientX, sy: e.clientY, active: false } }
   const onPointerMove = (e: React.PointerEvent) => {
    const d = drag.current; if (!d) return
    // Button no longer held (the release happened elsewhere, e.g. a pop-up took the mouse): end the drag.
    if (!(e.buttons & 1)) { drag.current = null; setGhost(null); return }
-   if (!d.active) { if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 7) return; d.active = true; e.currentTarget.setPointerCapture(e.pointerId) }
-   const tear = !!state.preferences.tearOff && outsideList(e.currentTarget, e.clientX, e.clientY)
-   setGhost({ title: tab.title, favicon: tab.favicon, x: e.clientX, y: e.clientY, tearing: tear })
+   if (!d.active) { if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 7) return; d.active = true; try { e.currentTarget.setPointerCapture(e.pointerId) } catch { /* pointer already gone */ } }
+   const side = pageSide(e.clientX, e.clientY)
+   const tear = !side && !!state.preferences.tearOff && outsideList(e.currentTarget, e.clientX, e.clientY)
+   setGhost({ id: tab.id, title: tab.title, favicon: tab.favicon, x: e.clientX, y: e.clientY, tearing: tear, side })
   }
   const onPointerUp = (e: React.PointerEvent) => {
    const d = drag.current; drag.current = null
@@ -116,6 +165,8 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
    suppressClick.current = true
    setGhost(null)
    try { e.currentTarget.releasePointerCapture(e.pointerId) } catch { /* not captured */ }
+   const side = pageSide(e.clientX, e.clientY)
+   if (side) { send("split", { id: tab.id, side }); return }
    if (state.preferences.tearOff && outsideList(e.currentTarget, e.clientX, e.clientY)) {
     setTearing(true)
     setTimeout(() => send("tearOff", { id: tab.id, x: e.screenX, y: e.screenY }), 190)
@@ -127,7 +178,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
   const onClickCapture = (e: React.MouseEvent) => { if (suppressClick.current) { suppressClick.current = false; e.stopPropagation(); e.preventDefault() } }
   return <ContextMenu onOpenChange={setContext}>
    <ContextMenuTrigger asChild>
-    <div className={cn("tab-row", tab.pinned && "pin-tab", driver && "is-driven", selected && "is-selected", top && "top-tab", tearing && "is-tearing", arriving === tab.id && "is-arriving")}
+    <div className={cn("tab-row", tab.pinned && "pin-tab", (state.split?.left === tab.id || state.split?.right === tab.id) && "is-split", driver && "is-driven", selected && "is-selected", top && "top-tab", tearing && "is-tearing", arriving === tab.id && "is-arriving")}
      data-tab-id={tab.id} onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerUp} onPointerCancel={() => { drag.current = null; setGhost(null) }} onLostPointerCapture={() => { if (drag.current?.active) { drag.current = null; setGhost(null) } }} onClickCapture={onClickCapture}
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
@@ -135,6 +186,12 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
       <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent?.tab === tab.id && state.agent.paused ? "idle" : "working"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={isRunning(ai, tab.chatId) ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
+     {!tab.pinned && !tab.chatId && !!tab.url && <span className="tab-actions" onPointerDown={e => e.stopPropagation()}>
+      <button aria-label={"Pin " + tab.title} title="Pin" onClick={() => send("pin", { id: tab.id })}><Pin /></button>
+      <button aria-label={(marked ? "Remove bookmark: " : "Bookmark ") + tab.title} title={marked ? "Remove bookmark" : "Bookmark"} onClick={() => send("bookmark", { id: tab.id })}><Bookmark className={marked ? "bookmarked" : ""} /></button>
+      {!state.noAi && !!ai && !tab.isPrivate && <button aria-label={"Chat about " + tab.title} title="Open in chat" onClick={() => { send("select", { id: tab.id }); if (!ai.open) send("aiToggle") }}><MessageSquare /></button>}
+      <button aria-label={"Copy link: " + tab.title} title="Copy link" onClick={() => { send("copyText", { text: tab.url }); toast("Link copied") }}><Copy /></button>
+     </span>}
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}
     </div>
    </ContextMenuTrigger>
@@ -143,6 +200,13 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
     <ContextMenuItem onSelect={() => send("duplicate", { id: tab.id })}><Copy />Duplicate</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("mute", { id: tab.id })}><VolumeX />{tab.muted ? "Unmute" : "Mute"}</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("sleep", { id: tab.id })}><MoonStar />Put to sleep</ContextMenuItem>
+    {splittable(tab) && !selected && splittable(state.tabs.find(t => t.id === state.activeId)) && <ContextMenuItem onSelect={() => send("split", { id: tab.id })}><Columns2 />Open in split view</ContextMenuItem>}
+    {!tab.pinned && !tab.inChat && <>
+     <ContextMenuSeparator />
+     <ContextMenuItem onSelect={() => send("groupNew", { id: tab.id })}><FolderPlus />Add to new group</ContextMenuItem>
+     {(state.groups ?? []).filter(g => g.id !== tab.group).map(g => <ContextMenuItem key={g.id} onSelect={() => send("groupAdd", { id: tab.id, group: g.id })}><i className="group-dot" data-color={g.color} />Add to {g.name || "group"}</ContextMenuItem>)}
+     {tab.group && <ContextMenuItem onSelect={() => send("groupRemove", { id: tab.id })}><FolderMinus />Remove from group</ContextMenuItem>}
+    </>}
     <ContextMenuSeparator />
     <ContextMenuItem onSelect={() => send("closeTab", { id: tab.id, force: true })}><X />Close tab</ContextMenuItem>
    </ContextMenuContent>
@@ -174,6 +238,7 @@ export default function App() {
  const extButton = useRef<HTMLButtonElement>(null)
  const [context, setContext] = useState(false)
  const [snapshot, setSnapshot] = useState("")
+ const [pairShot, setPairShot] = useState("") // split view: the other half, while a menu covers the pages
  const [viewing, setViewing] = useState("") // a Library file open in the viewer
  const [tasksOpen, setTasksOpen] = useState(false)
  const [fileData, setFileData] = useState<FileData | null>(null)
@@ -190,6 +255,12 @@ export default function App() {
  const active = state.tabs.find(t => t.id === state.activeId) ?? state.tabs[0]
  const chatTab = !!active?.chatId && !!ai
  const split = chatTab && !!state.chatPage
+ const modern = state.preferences.tabLayout === "Modern" && !state.focusMode && !state.fullScreen
+ const pair = !chatTab ? state.split : null // split view: this tab and another side by side
+ const [renaming, setRenaming] = useState("")
+ const [recent, setRecent] = useState<{ ids: string[]; index: number }>({ ids: [], index: 0 })
+ const resize = useRef<{ x: number; width: number; current: number } | null>(null)
+ useEffect(() => { document.documentElement.style.setProperty("--sidebar-width", (state.preferences.sidebarWidth ?? 248) + "px") }, [state.preferences.sidebarWidth])
  const chatPages = state.tabs.filter(t => (t.inChat ?? t.runChat) && (t.inChat ?? t.runChat) === active?.chatId)
  const [info, setInfoState] = useState(() => { try { return localStorage.getItem("still.chatInfo") !== "closed" } catch { return true } })
  const [splitInfo, setSplitInfo] = useState(false) // beside a page, details stay closed until asked for
@@ -208,7 +279,8 @@ export default function App() {
  const openFile = (path: string) => { setViewing(path); if (split) send("chatPage", { on: false }) }
  const sideViewer = chatTab && !!viewing && !split
  useEffect(() => { setViewing("") }, [state.activeId, split])
- const suggestions = useMemo(() => rankSuggestions(query, state.history, state.bookmarks, active?.isPrivate), [query, state.history, state.bookmarks, active?.isPrivate])
+ const suggestions = useMemo(() => rankSuggestions(query, state.history, state.bookmarks, active?.isPrivate, Date.now(), state.picks), [query, state.history, state.bookmarks, active?.isPrivate, state.picks])
+ const learn = (url: string) => { if (!active?.isPrivate && query.trim()) send("addressPick", { typed: query.trim(), url }) }
  const addressRef = useRef<HTMLInputElement>(null)
  const paneRef = useRef("")
  const [pick, setPick] = useState(-1)
@@ -247,7 +319,7 @@ export default function App() {
   if (q && q !== active?.url && !completion) items.push({ key: "go", icon: <Search size={15} />, title: q, sub: /^[^\s]+\.[^\s]+$/.test(q) || /^https?:/.test(q) ? "Go to address" : "Search " + state.preferences.search, run: () => go(q) })
   // Anything that isn't an address can go to the AI as a task.
   if (q && !state.noAi && !/^[^\s]+\.[^\s]+$/.test(q) && !/^[a-z]+:/i.test(q)) items.push({ key: "ai", icon: <Face size={16} />, title: q, sub: "Start a chat", run: () => { send("aiAsk", { text: q }); close() } })
-  suggestions.forEach(v => items.push({ key: "s" + v.url, icon: <Globe2 size={15} />, title: v.host, sub: v.bookmark ? v.title + " · Bookmark" : "Visited", value: prettyUrl(v.url), run: () => go(v.url) }))
+  suggestions.forEach(v => items.push({ key: "s" + v.url, icon: <Globe2 size={15} />, title: v.host, sub: v.bookmark ? v.title + " · Bookmark" : "Visited", value: prettyUrl(v.url), run: () => { learn(v.url); go(v.url) } }))
   const lower = q.toLowerCase()
   state.tabs.filter(t => t.url && t.id !== state.activeId && (!q || q === active?.url || (t.title + t.url).toLowerCase().includes(lower))).slice(0, 4)
    .forEach(t => items.push({ key: "t" + t.id, icon: t.favicon ? <img className="tab-favicon" src={t.favicon} alt="" /> : <Globe2 size={15} />, title: t.title, sub: "Switch to tab", run: () => action("select", { id: t.id }) }))
@@ -256,7 +328,7 @@ export default function App() {
  const pinned = state.tabs.filter(t => t.pinned)
  const ordinary = state.tabs.filter(t => !t.pinned && !t.aiGroup && !t.inChat)
  const aiTabs = state.tabs.filter(t => !t.pinned && t.aiGroup && !t.inChat)
- const aiGroup = aiTabs.length > 0 && <div className="ai-tab-group" role="group" aria-label="AI tabs"><span className="ai-tab-group-label"><Buddy size={16} />AI</span><FlowTabs tabs={aiTabs} top /></div>
+ const aiGroup = (top: boolean) => aiTabs.length > 0 && <div className={cn("ai-tab-group", !top && "is-side")} role="group" aria-label="AI tabs"><span className="ai-tab-group-label"><Buddy size={16} />AI</span><FlowTabs tabs={aiTabs} top={top} /></div>
  useLayoutEffect(() => {
   const root = tabsRef.current
   const viewport = root?.matches('.top-tab-list') ? root : root?.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]')
@@ -311,8 +383,10 @@ export default function App() {
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage("appearance") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
-   if (data.kind === "snapshot") setSnapshot(data.data)
+   if (data.kind === "snapshot") { setSnapshot(data.data); setPairShot(data.partner ?? "") }
    if (data.kind === "upload") setUpload(data.data)
+   if (data.kind === "recent") setRecent({ ids: data.ids, index: data.index })
+   if (data.kind === "groupRename") setRenaming(data.id)
    if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
    if (data.kind === "escape") { setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
   }
@@ -356,7 +430,7 @@ export default function App() {
 
  const commandOpen = pane === "tabs"
  const openAddress = (_el?: Element | null) => { addressRef.current?.focus() }
- const dialogOpen = !!pane && !commandOpen && pane !== "find" && pane !== "address" && pane !== "downloads"
+ const dialogOpen = !!pane && !commandOpen && pane !== "find" && pane !== "address" && pane !== "downloads" && pane !== "recent"
  const title = ({ profiles:"Profiles", import:"Import browsing data", passwords:"Passwords", extensions:"Extensions", cookies:"Cookies", security:"Privacy & security", settings: "Settings", history: "History", bookmarks: "Bookmarks", downloads: "Downloads", site: host(active?.url ?? "") || "Site controls", shortcuts: "Keyboard shortcuts", about: "Still" } as Record<string, string>)[displayPane] ?? ""
  const filtered = (displayPane === "bookmarks" ? state.bookmarks : state.history).filter(v => (v.title + v.url).toLowerCase().includes(filter.toLowerCase())).slice(0, 100)
  const windowControls = (
@@ -367,9 +441,10 @@ export default function App() {
     </div>
  )
  const provider = ai?.chatHarness || ai?.harness
- return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost}}><ProviderContext.Provider value={isKind(provider) ? provider : "claude"}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
-  <div className={cn("browser-shell", "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
-   {!state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><FlowTabs tabs={[...pinned, ...ordinary]} top />{aiGroup}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
+ return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><ProviderContext.Provider value={isKind(provider) ? provider : "claude"}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
+  <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
+   {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
+   {!modern && !state.focusMode && !state.fullScreen && <div className="top-tab-strip" onDoubleClick={e => { if (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list")) send("maximize") }} onPointerDown={e => { if (e.button === 0 && (e.target === e.currentTarget || (e.target as HTMLElement).classList.contains("top-tab-list"))) send("drag") }}><LayoutGroup id="top"><div className="top-tab-list" ref={tabsRef} onWheel={e => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX) && e.currentTarget.scrollWidth > e.currentTarget.clientWidth) e.currentTarget.scrollLeft += e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? e.currentTarget.clientWidth : 1) }}><TabStrip tabs={[...pinned, ...ordinary]} top />{aiGroup(true)}<Button variant="ghost" size="icon-sm" className="top-new-tab" aria-label="New tab" onClick={() => send("new")}><Plus /></Button></div></LayoutGroup>{windowControls}</div>}
    {!split && <header className="window-bar" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>
     <nav className="nav-controls" aria-label="Page navigation">
      <IconButton label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></IconButton>
@@ -377,6 +452,15 @@ export default function App() {
      <IconButton label={active?.loading ? "Stop loading" : "Reload"} caption={active?.loading?"Stop":"Reload"} onClick={() => send("reload")}>{active?.loading ? <X /> : <RotateCw />}</IconButton>
     </nav>
     {state.incognito && <span className="incognito-badge"><LockKeyhole />Incognito</span>}
+    {!chatTab && (pair || splittable(active)) && <DropdownMenu onOpenChange={setContext}><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className={cn("split-button", pair && "is-on")} aria-label={pair ? "Split view options" : "Split view"} title={pair ? "Split view" : "Split view: open your last tab beside this one"} onClick={e => { if (!pair) { e.preventDefault(); send("split") } }}><Columns2 /></Button></DropdownMenuTrigger>
+     {pair && <DropdownMenuContent align="start" sideOffset={8} className="w-52">
+      <DropdownMenuItem onSelect={() => send("splitSwap")}><ArrowLeftRight />Swap sides</DropdownMenuItem>
+      <DropdownMenuItem disabled={Math.abs(pair.ratio - .5) < .01} onSelect={() => send("splitRatio", { ratio: .5 })}><Columns2 />Resize to 50/50</DropdownMenuItem>
+      <DropdownMenuSeparator />
+      {(["left", "right"] as const).map(side => <DropdownMenuItem key={side} onSelect={() => send("closeTab", { id: pair[side] })}><X />Close {side}<DropdownMenuShortcut className="split-close-title">{state.tabs.find(t => t.id === pair[side])?.title}</DropdownMenuShortcut></DropdownMenuItem>)}
+      <DropdownMenuSeparator />
+      <DropdownMenuItem onSelect={() => send("splitEnd")}><SeparatorVertical />Separate tabs</DropdownMenuItem>
+     </DropdownMenuContent>}</DropdownMenu>}
     <ContextMenu onOpenChange={setContext}><ContextMenuTrigger asChild>
     <div className={cn("address-bar", pane === "address" && "is-editing", chatTab && pane !== "address" && "is-chat")} onMouseDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); addressRef.current?.focus() } }}>
      {active?.isPrivate ? <LockKeyhole /> : active?.secure ? <Shield /> : <Search />}
@@ -391,7 +475,7 @@ export default function App() {
        else if (e.key === "ArrowUp") { e.preventDefault(); setPick(p => Math.max(-1, p - 1)) }
        else if ((e.key === "Tab" && !e.shiftKey || e.key === "ArrowRight") && completion) { e.preventDefault(); typedRef.current = false; setQuery(query + completion); setCompletion("") }
        else if (e.key === "Tab" && !e.shiftKey && suggestions.length) { e.preventDefault(); typedRef.current = false; setQuery(suggestions[0].host) }
-       else if (e.key === "Enter") { e.preventDefault(); const item = pick >= 0 ? addressItems[pick] : null; if (item) item.run(); else if (completion) go(query + completion); else if (query.trim()) go(query); addressRef.current?.blur() }
+       else if (e.key === "Enter") { e.preventDefault(); const item = pick >= 0 ? addressItems[pick] : null; if (item) item.run(); else if (completion) { const hit = suggestions.find(v => v.host.toLowerCase() === (query + completion).toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "")); if (hit) learn(hit.url); go(query + completion) } else if (query.trim()) go(query); addressRef.current?.blur() }
        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); addressRef.current?.blur() }
       }}
       onBlur={() => { setTimeout(() => { if (document.activeElement !== addressRef.current && paneRef.current === "address") close() }, 120) }} />
@@ -454,13 +538,39 @@ export default function App() {
        <DropdownMenuSeparator />
        <DropdownMenuItem onSelect={() => send("fullscreen")}><Expand />Full screen<DropdownMenuShortcut>F11</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("focus")}><Expand />{state.focusMode ? "Leave focus mode" : "Focus mode"}</DropdownMenuItem>
+       <DropdownMenuItem onSelect={() => preference("tabLayout", state.preferences.tabLayout === "Modern" ? "Classic" : "Modern")}><PanelLeft />{state.preferences.tabLayout === "Modern" ? "Tabs on top" : "Tabs on the side"}<DropdownMenuShortcut>Ctrl Shift S</DropdownMenuShortcut></DropdownMenuItem>
        <MenuPanelItem name="settings" label="Settings" icon={<Settings2 />} keys="Ctrl ," />
        <MenuPanelItem name="about" label="About Still" icon={<Info />} />
       </DropdownMenuContent>
      </DropdownMenu>
     </div>
+    {modern && windowControls}
    </header>}
    <div className="workspace">
+    {modern && <aside className="browser-sidebar" aria-label="Tabs">
+     <div className="sidebar-resize" role="separator" aria-label="Resize the sidebar" aria-orientation="vertical" aria-valuenow={state.preferences.sidebarWidth ?? 248} aria-valuemin={190} aria-valuemax={360} tabIndex={0}
+      onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); send("sidebarResize", { width: (state.preferences.sidebarWidth ?? 248) + (e.key === "ArrowRight" ? 10 : -10) }) } }}
+      onPointerDown={e => { e.currentTarget.setPointerCapture(e.pointerId); resize.current = { x: e.clientX, width: e.currentTarget.parentElement!.getBoundingClientRect().width, current: state.preferences.sidebarWidth ?? 248 } }}
+      onPointerMove={e => { if (resize.current) { const value = Math.max(190, Math.min(360, resize.current.width + e.clientX - resize.current.x)); resize.current.current = value; document.documentElement.style.setProperty("--sidebar-width", value + "px") } }}
+      onPointerUp={() => { if (resize.current) { send("sidebarResize", { width: resize.current.current }); resize.current = null } }}
+      onPointerCancel={() => { resize.current = null; document.documentElement.style.setProperty("--sidebar-width", (state.preferences.sidebarWidth ?? 248) + "px") }} />
+     <ScrollArea className="tabs-scroll" ref={tabsRef}><LayoutGroup id="side">
+      {pinned.length > 0 && <div className="pinned-tabs"><FlowTabs tabs={pinned} /></div>}
+      <nav className="sidebar-links" aria-label="Go to">
+       <Button variant="ghost" className="sidebar-link" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>Ctrl T</kbd></Button>
+       {ai && !state.noAi && <><Button variant="ghost" className="sidebar-link" onClick={() => goHome("chats")}><MessageSquare /><span>Chat history</span></Button>
+       <Button variant="ghost" className="sidebar-link" onClick={() => goHome("library")}><Library /><span>Library</span></Button></>}
+      </nav>
+      {ordinary.some(t => t.chatId) && <><h3 className="sidebar-head">Chats</h3><div className="tab-list"><FlowTabs tabs={ordinary.filter(t => t.chatId)} /></div></>}
+      <h3 className="sidebar-head">Tabs</h3>
+      <div className="tab-list"><TabStrip tabs={ordinary.filter(t => !t.chatId)} top={false} /></div>
+      {aiGroup(false)}
+     </LayoutGroup></ScrollArea>
+     <footer className="sidebar-footer">
+      <Button variant="ghost" size="icon-sm" aria-label="Settings" title="Settings" onClick={() => open("settings")}><Settings2 /></Button>
+      <Button variant="ghost" className="still-signature" onClick={() => open("about")}>still<span>{state.profileName}</span></Button>
+     </footer>
+    </aside>}
     {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={setEditing} onSettings={openAiSettings} openPanel={open} goHome={goHome} />}
     <main className={cn("page-column", chatTab && "is-chat", split && "is-split", sideViewer && "is-viewing")}>
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
@@ -510,8 +620,15 @@ export default function App() {
       <Button variant="ghost" size="icon-sm" aria-label="Hide the page" title="Hide the page" onClick={() => send("chatPage", { on: false })}><X /></Button>
      </div>}
      <div className="page-slot" ref={pageRef}>
+      {pair && !modal && <div className="split-divider" role="separator" aria-label="Resize the split" aria-orientation="vertical" aria-valuenow={Math.round(pair.ratio * 100)} tabIndex={0} style={{ left: `calc((100% - 6px) * ${pair.ratio})` }}
+       onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); send("splitRatio", { ratio: pair.ratio + (e.key === "ArrowRight" ? .05 : -.05) }) } }}
+       onDoubleClick={() => send("splitRatio", { ratio: .5 })}
+       onPointerDown={e => e.currentTarget.setPointerCapture(e.pointerId)}
+       onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; const r = pageRef.current!.getBoundingClientRect(); send("splitRatio", { ratio: (e.clientX - r.left - 3) / (r.width - 6) }) }} />}
+      {ghost?.side && <div className="split-zones" aria-hidden><div className={cn("split-zone", ghost.side === "left" && "is-on")}><span><Columns2 />Open on the left</span></div><div className={cn("split-zone", ghost.side === "right" && "is-on")}><span><Columns2 />Open on the right</span></div></div>}
       {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} />}
-      {active?.url || active?.chatId ? (snapshot && <img className="page-snapshot" src={snapshot} alt="" />) : !active?.isPrivate && !state.noAi && ai && companion ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+      {pair && snapshot && pairShot && <img className={cn("page-snapshot", pair.right !== active?.id && "is-right")} src={pairShot} alt="" style={{ width: `calc((100% - 6px) * ${pair.right === active?.id ? pair.ratio : 1 - pair.ratio})` }} />}
+      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : !active?.isPrivate && !state.noAi && ai && companion ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
@@ -571,6 +688,13 @@ export default function App() {
       <Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button>
      </div> }) : <p className="dl-empty">Files you download will show up here.</p>}</div>
    </div></>}
+  {pane === "recent" && recent.ids.length > 1 && <div className="recent-switcher" onMouseDown={e => { if (e.target === e.currentTarget) send("recentPick", { id: "" }) }}>
+   <div className="recent-card" role="listbox" aria-label="Recent tabs">
+    {recent.ids.map((id, i) => { const t = state.tabs.find(x => x.id === id); return t && <button key={id} role="option" aria-selected={i === recent.index} className={cn("recent-item", i === recent.index && "is-picked")} onClick={() => send("recentPick", { id })}>
+     <span className="recent-icon">{t.favicon ? <img src={t.favicon} alt="" /> : t.chatId ? <MessageSquare /> : <Globe2 />}</span>
+     <span className="recent-title">{t.title || "New tab"}<small>{t.url ? host(t.url) : t.chatId ? "Chat" : "New tab"}</small></span></button> })}
+    <p className="recent-hint">Keep holding Ctrl and press Tab to move. Let go to switch.</p>
+   </div></div>}
   {ghost && <div className={cn("tab-ghost", ghost.tearing && "is-tearing")} style={{ left: ghost.x + 14, top: ghost.y + 10 }}>
    <span className="tab-ghost-icon">{ghost.favicon ? <img src={ghost.favicon} alt="" /> : <Globe2 />}</span><span className="tab-ghost-title">{ghost.title}</span>
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
@@ -605,6 +729,7 @@ export default function App() {
       <div className="setting-label">Theme</div><div className="theme-choices">{["Light", "Dark", "System"].map(theme => <Button key={theme} variant="outline" className={cn("theme-choice", state.preferences.theme === theme && "chosen")} onClick={() => preference("theme", theme)}>
        <div className={cn("theme-preview", theme.toLowerCase())}><i /><span /><b /></div><span>{theme === "Dark" ? "Black" : theme}{state.preferences.theme === theme && <Check />}</span>
       </Button>)}</div>
+      <div className="setting-row"><div><strong>Tab layout</strong><p>Classic puts tabs across the top. Modern puts them down the side, with your chats.</p></div><Select value={state.preferences.tabLayout ?? "Classic"} onValueChange={v => preference("tabLayout", v)}><SelectTrigger className="w-32" aria-label="Tab layout"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Classic">Classic</SelectItem><SelectItem value="Modern">Modern</SelectItem></SelectContent></Select></div>
       <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
      </TabsContent>
      {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}

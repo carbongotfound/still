@@ -39,6 +39,11 @@ public partial class MainWindow
        });
        if (op == "windowAt") { double x = doc.RootElement.GetProperty("x").GetDouble(), y = doc.RootElement.GetProperty("y").GetDouble(); return JsonSerializer.Serialize(new { found = WindowAt(new System.Windows.Point(x, y))?.WindowId }); }
        if (op == "checkUpdate") { await CheckForUpdate(); return JsonSerializer.Serialize(new { update = UpdateData(), installer = update?.Installer, exists = update?.Installer != null && File.Exists(update.Installer) }); }
+       if (op == "evalTab") { var id = doc.RootElement.GetProperty("id").GetString(); return Windows.SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id)?.View?.CoreWebView2 is { } any ? await any.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? "") : "{\"error\":\"no page\"}"; }
+       if (op == "tabs") return JsonSerializer.Serialize(new { layout = Prefs.TabLayout, groups = state.Groups, picks = state.AddressPicks, recent = recent?.Select(t => t.Id), recentIndex,
+        split = new { left = splitLeft?.Id, right = splitRight?.Id, ratio = splitRatio, partner = Partner?.Id, leftWidth = splitLeft?.View?.ActualWidth, rightWidth = splitRight?.View?.ActualWidth, rightVisible = splitRight?.View?.IsVisible, leftVisible = splitLeft?.View?.IsVisible },
+        windows = Windows.Select(w => new { id = w.WindowId, active = w.active?.Id, tabs = w.tabs.Select(t => new { t.Id, t.Url, t.Group, wired = t.Wire != null, visible = t.View?.IsVisible }) }),
+        order = tabs.Select(t => t.Id) });
        if (op == "eval" && active?.View?.CoreWebView2 is { } core) return await core.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
@@ -62,9 +67,16 @@ public partial class MainWindow
          page=new();page.BeginInit();page.CacheOption=System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;page.StreamSource=stream;page.EndInit();page.Freeze();
          var point=Shown.View.TransformToAncestor(shellRoot).Transform(new System.Windows.Point(0,0));pageRect=new(point.X,point.Y,Shown.View.ActualWidth,Shown.View.ActualHeight);
         }
+        System.Windows.Media.Imaging.BitmapImage? side=null;System.Windows.Rect sideRect=default;
+        if(WebHost.Visibility==System.Windows.Visibility.Visible&&Partner?.View is {IsVisible:true} pv&&pv.CoreWebView2 is {} pc){
+         using var ps=new MemoryStream();await pc.CapturePreviewAsync(Microsoft.Web.WebView2.Core.CoreWebView2CapturePreviewImageFormat.Png,ps).WaitAsync(TimeSpan.FromSeconds(3));ps.Position=0;
+         side=new();side.BeginInit();side.CacheOption=System.Windows.Media.Imaging.BitmapCacheOption.OnLoad;side.StreamSource=ps;side.EndInit();side.Freeze();
+         var sp=pv.TransformToAncestor(shellRoot).Transform(new System.Windows.Point(0,0));sideRect=new(sp.X,sp.Y,pv.ActualWidth,pv.ActualHeight);
+        }
         var visual=new System.Windows.Media.DrawingVisual();
         using(var dc=visual.RenderOpen()) {
          dc.DrawImage(native,new System.Windows.Rect(0,0,width,height));
+         if(side!=null)dc.DrawImage(side,sideRect);
          if(page!=null){
           // The page window leaves the AI's glow and controls open (CutHoles): show the picture the same way.
           bool holed=holedPage!=IntPtr.Zero&&holes.Tab==Shown!.Id;
