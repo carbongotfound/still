@@ -2,13 +2,13 @@
 
 Run: python tests/desktop/tabs.py artifacts/Still-QA/Still.exe [--baseline]
 """
-import ctypes
 import json
 from pathlib import Path
 import subprocess
 import sys
 import time
 import uuid
+import qa  # the Windows pipe, or the Mac's socket
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / 'artifacts' / ('tabs-' + uuid.uuid4().hex)
@@ -17,20 +17,7 @@ RESULT = {'checks': []}
 process = None
 
 def rpc(op='state', **args):
-    pipe = r'\\.\pipe\StillQa-' + str(process.pid)
-    end = time.monotonic() + 30
-    while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
-        if process.poll() is not None or time.monotonic() > end:
-            raise RuntimeError('QA pipe unavailable')
-        time.sleep(.05)
-    with open(pipe, 'r+b', buffering=0) as stream:
-        stream.write((json.dumps({'op': op, **args}) + '\n').encode())
-        data = b''
-        while not data.endswith(b'\n'):
-            part = stream.read(65536)
-            if not part: raise RuntimeError('QA pipe closed')
-            data += part
-    value = json.loads(data)
+    value = qa.rpc(process, op, **args)
     if isinstance(value, dict) and 'error' in value: raise RuntimeError(str(value))
     return value
 

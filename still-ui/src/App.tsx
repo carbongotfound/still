@@ -27,7 +27,7 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
-import { cn } from "@/lib/utils"
+import { cn, MAC } from "@/lib/utils"
 import "./app.css"
 import { rankSuggestions, type AddressPick } from "./suggestions"
 import { BrowserTools } from "./BrowserTools"
@@ -76,9 +76,10 @@ const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
 // Shortcut hints in the native spelling: Cmd and Shift symbols on a Mac.
-const MAC = /Mac/.test(navigator.userAgent)
-export const keys = (k: string) => MAC ? k.replace(/Ctrl/g, "⌘").replace(/Shift/g, "⇧").replace(/Alt/g, "⌥").replace(/ /g, "") : k
-const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["Running tasks", "Ctrl Shift K"], ["Stop the AI", "Ctrl ."], ["Approve the card in front of you", "Ctrl Enter"], ["Close a preview", "Esc"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]]
+export const keys = (k: string) => MAC ? k.replace(/Ctrl Alt/g, "⌥⌘").replace(/Ctrl Shift/g, "⇧⌘").replace(/Ctrl/g, "⌘").replace(/Shift/g, "⇧").replace(/Alt/g, "⌥").replace(/Right/g, "→").replace(/Left/g, "←").replace(/ /g, "") : k
+// Where the Mac menu bar differs from Windows: Control+Tab stays Control, and the rest follow Safari.
+const MAC_KEYS: Record<string, [string, string]> = { "Private tab": ["Private window", "Ctrl Shift N"], "Recent tabs (hold Ctrl)": ["Recent tabs (hold Control)", "⌃Tab"], "Bookmarks": ["Bookmarks", "Ctrl Alt B"], "History": ["History", "Ctrl Y"], "Downloads": ["Downloads", "Ctrl Alt L"], "View page source": ["View page source", "Ctrl Alt U"], "Full screen": ["Full screen", "⌃⌘F"] }
+const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["Running tasks", "Ctrl Shift K"], ["Stop the AI", "Ctrl ."], ["Approve the card in front of you", "Ctrl Enter"], ["Close a preview", "Esc"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]].map(([label, key]) => MAC ? (MAC_KEYS[label] ?? [label, key]).map((v, i) => i ? keys(v) : v) : [label, key])
 
 // After a crash: chats that were working when Still closed, with one button to pick them all back up.
 let offered = false
@@ -420,6 +421,7 @@ export default function App() {
    if (data.kind === "groupRename") setRenaming(data.id)
    if (data.kind === "tasks") { if (document.querySelector(".tasks-button")) window.dispatchEvent(new Event("still-tasks")); else toast("Nothing is running right now.") }
    if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
+   if (data.kind === "pointerAway") { const root = document.documentElement; root.classList.add("pointer-away"); addEventListener("pointermove", () => root.classList.remove("pointer-away"), { once: true }) }
    if (data.kind === "escape") { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
   }
   window.chrome?.webview?.addEventListener("message", listener)
@@ -452,7 +454,7 @@ export default function App() {
  useEffect(() => {
   const handler = (e: KeyboardEvent) => {
    if (e.key === "F11") { e.preventDefault(); send("fullscreen"); return }
-   if (e.key === "Escape") { if(!document.querySelector("[role=dialog],[role=alertdialog],[role=menu]")){send("exitFullscreen");setViewing("")} close(); return }
+   if (e.key === "Escape") { if(!document.querySelector(":is([role=dialog],[role=alertdialog],[role=menu]):not([aria-hidden=true])")){send("exitFullscreen");setViewing("")} close(); return }
    if (!(e.ctrlKey || e.metaKey)) return
    if (e.key === "Enter" && approveCard()) { e.preventDefault(); return }
    if (e.key.toLowerCase() === "l") { e.preventDefault(); openAddress() }
@@ -511,7 +513,7 @@ export default function App() {
        else if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); close(); addressRef.current?.blur() }
       }}
       onBlur={() => { setTimeout(() => { if (document.activeElement !== addressRef.current && paneRef.current === "address") close() }, 120) }} />
-     {pane !== "address" && <kbd>Ctrl L</kbd>}
+     {pane !== "address" && <kbd>{keys("Ctrl L")}</kbd>}
      {pane === "address" && addressItems.length > 0 && <div className="address-suggest" role="listbox" onMouseDown={e => e.preventDefault()}>
       {addressItems.map((item, i) => <button key={item.key} role="option" aria-selected={i === pick} className={cn("address-option", i === pick && "is-picked")} onMouseEnter={() => setPick(i)} onClick={() => { item.run(); addressRef.current?.blur() }}>
        <span className="address-option-icon">{item.icon}</span><span className="address-option-main">{item.title}</span><small>{item.sub}</small>
@@ -548,7 +550,7 @@ export default function App() {
       </DropdownMenuContent></DropdownMenu>}
      <DropdownMenu open={menu} onOpenChange={setMenu}><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Menu" className="chrome-button expanding-button"><span className="chrome-icon"><MoreHorizontal /></span><span className="chrome-label" aria-hidden="true"><span>Menu</span></span></Button></DropdownMenuTrigger>
       <DropdownMenuContent align="end" sideOffset={10} className="w-60">
-       <DropdownMenuItem onSelect={() => send("new")}><Plus />New tab<DropdownMenuShortcut>Ctrl T</DropdownMenuShortcut></DropdownMenuItem>
+       <DropdownMenuItem onSelect={() => send("new")}><Plus />New tab<DropdownMenuShortcut>{keys("Ctrl T")}</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("incognitoWindow")}><LockKeyhole />New incognito window<DropdownMenuShortcut>Ctrl Shift N</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("reopen")}><RotateCw />Reopen closed tab</DropdownMenuItem>
        <DropdownMenuSeparator />
@@ -568,7 +570,7 @@ export default function App() {
        <DropdownMenuItem onSelect={()=>send("reader")}><BookOpen/>Reading mode</DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("pip")}><ExternalLink />Picture in picture</DropdownMenuItem>
        <DropdownMenuSeparator />
-       <DropdownMenuItem onSelect={() => send("fullscreen")}><Expand />Full screen<DropdownMenuShortcut>F11</DropdownMenuShortcut></DropdownMenuItem>
+       <DropdownMenuItem onSelect={() => send("fullscreen")}><Expand />Full screen<DropdownMenuShortcut>{MAC ? "⌃⌘F" : "F11"}</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("focus")}><Expand />{state.focusMode ? "Leave focus mode" : "Focus mode"}</DropdownMenuItem>
        <DropdownMenuItem onSelect={() => preference("tabLayout", state.preferences.tabLayout === "Modern" ? "Classic" : "Modern")}><PanelLeft />{state.preferences.tabLayout === "Modern" ? "Tabs on top" : "Tabs on the side"}<DropdownMenuShortcut>Ctrl Shift S</DropdownMenuShortcut></DropdownMenuItem>
        <MenuPanelItem name="settings" label="Settings" icon={<Settings2 />} keys="Ctrl ," />
@@ -589,7 +591,7 @@ export default function App() {
      <ScrollArea className="tabs-scroll" ref={tabsRef}><LayoutGroup id="side">
       {pinned.length > 0 && <div className="pinned-tabs"><FlowTabs tabs={pinned} /></div>}
       <nav className="sidebar-links" aria-label="Go to">
-       <Button variant="ghost" className="sidebar-link" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>Ctrl T</kbd></Button>
+       <Button variant="ghost" className="sidebar-link" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>{keys("Ctrl T")}</kbd></Button>
        {ai && !state.noAi && <><Button variant="ghost" className="sidebar-link" onClick={() => goHome("chats")}><MessageSquare /><span>Chat history</span></Button>
        <Button variant="ghost" className="sidebar-link" onClick={() => goHome("library")}><Library /><span>Library</span></Button></>}
       </nav>
@@ -698,7 +700,7 @@ export default function App() {
        <Face size={64} mood={active?.isPrivate ? "sleep" : "idle"} className="new-tab-buddy" />
        <h1>{active?.isPrivate ? "Private tab" : greeting()}</h1>
        <p>{active?.isPrivate ? "A little privacy." : "Where to?"}</p>
-       <Button variant="outline" className="start-search" onClick={e => openAddress(e.currentTarget)}><Search /><span>Search or enter an address</span><kbd>Ctrl L</kbd></Button>
+       <Button variant="outline" className="start-search" onClick={e => openAddress(e.currentTarget)}><Search /><span>Search or enter an address</span><kbd>{keys("Ctrl L")}</kbd></Button>
        {!active?.isPrivate && state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
        {active?.isPrivate && <span className="private-caption"><LockKeyhole />This tab and its history won't be saved.</span>}
       </motion.div>}
@@ -770,9 +772,9 @@ export default function App() {
       <div className="setting-row"><div><strong>Setup</strong><p>Go through the first steps again: your helper, your AI and how Still looks.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></div>
       {ai && !state.noAi && ai.companions?.[0] && <div className="setting-row"><div><strong>Set me up with {ai.companions[0].name}</strong><p>{ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more. You check every change.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></div>}<Separator />
       <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : "Open links from other apps in Still. Windows asks you to confirm."}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
-      <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>Start with your launch profile when you sign in to Windows.</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
-      {state.preferences.startupDisabled && <p className="tool-caption">Windows has disabled this startup entry. <Button variant="link" onClick={() => send("startupSettings")}>Open Windows startup settings</Button></p>}
+      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : `Open links from other apps in Still. ${MAC ? "macOS" : "Windows"} asks you to confirm.`}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
+      <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>{MAC ? "Start with your launch profile when you log in to your Mac." : "Start with your launch profile when you sign in to Windows."}</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
+      {state.preferences.startupDisabled && <p className="tool-caption">{MAC ? "Still is switched off in Login Items. " : "Windows has disabled this startup entry. "}<Button variant="link" onClick={() => send("startupSettings")}>{MAC ? "Open Login Items" : "Open Windows startup settings"}</Button></p>}
       <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
       <Separator /><div className="download-setting"><strong>Download folder</strong><p>{state.preferences.downloads}</p><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change folder</Button></div>
       <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
@@ -838,7 +840,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id} onDoubleClick={e => { if (d.status === "Completed" && !(e.target as HTMLElement).closest("button")) send("openDownload", { id: d.id }) }}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source browser with an AI helper built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra subscription, and you can switch AI any time, even halfway through a task.</p><ul className="about-points"><li>Your helper works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Other AI apps can use Still too, through MCP or the command line, once you say yes.</li><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins.</li></ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">Still updates itself automatically. New versions download in the background and install the next time you close Still.</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.34"} · Powered by Microsoft Edge WebView2</p></div>}
+    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source browser with an AI helper built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra subscription, and you can switch AI any time, even halfway through a task.</p><ul className="about-points"><li>Your helper works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Other AI apps can use Still too, through MCP or the command line, once you say yes.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks and history from Safari, Chrome, Edge, Brave and Arc, and passwords from a CSV export.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.34"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>}
    </DialogContent>
   </Dialog>
 

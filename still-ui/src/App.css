@@ -40,7 +40,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .bookmarked { fill:currentColor; }
 .workspace { display:flex;min-height:0;flex:1; }
 .tab-row { position:relative;height:38px;container-type:inline-size;border-radius:10px;flex:none;isolation:isolate;transition:background 220ms var(--ease-flow); }
-.tab-row:hover:not(.is-selected) { background:color-mix(in srgb,var(--muted) 55%,transparent); }
+:root:not(.pointer-away) .tab-row:hover:not(.is-selected) { background:color-mix(in srgb,var(--muted) 55%,transparent); }
 .selected-tab { position:absolute;inset:0;border-radius:10px;background:var(--sidebar-accent);z-index:-1;box-shadow:inset 0 1px 0 #ffffff06,inset 0 0 0 1px #ffffff04,0 2px 5px #0001; }
 .tab-main[data-slot="button"] { width:100%;height:100%;padding:0 10px;gap:10px;justify-content:flex-start;font-size:12px;font-weight:450;color:var(--muted-foreground);background:transparent!important; }
 .is-selected .tab-main { color:var(--foreground); }
@@ -49,10 +49,11 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .tab-letter.is-sleeping { opacity:.6; }
 /* The title fades out at the edge instead of being cut, and makes room for the X wherever the X shows. */
 .tab-label { min-width:0;overflow:hidden;white-space:nowrap;flex:1;text-align:left;mask-image:linear-gradient(to right,#000 calc(100% - 22px),transparent); }
-.tab-row.is-selected .tab-label,.tab-row:hover .tab-label,.tab-row:focus-within .tab-label { margin-right:18px; }
+.tab-row.is-selected .tab-label,:root:not(.pointer-away) .tab-row:hover .tab-label,.tab-row:focus-within .tab-label { margin-right:18px; }
 .close-tab[data-slot="button"] { width:22px;height:22px;position:absolute;right:6px;top:50%;translate:0 -50%;opacity:0;transition:opacity 120ms;color:var(--muted-foreground);border-radius:6px; }
 .close-tab svg { width:12px;height:12px; }
-.tab-row.is-selected .close-tab,.tab-row:hover .close-tab,.tab-row:focus-within .close-tab { opacity:1; }
+/* pointer-away: the Mac's page sits over the interface, which then keeps a stale hover until the pointer comes back */
+.tab-row.is-selected .close-tab,:root:not(.pointer-away) .tab-row:hover .close-tab,.tab-row:focus-within .close-tab { opacity:1; }
 .close-tab[data-slot="button"]:hover { background:color-mix(in srgb,var(--foreground) 9%,transparent);color:var(--foreground); }
 /* Too narrow for a title and an X: only the tab you're on keeps its X, like Edge and Chrome. */
 @container (max-width: 96px) {

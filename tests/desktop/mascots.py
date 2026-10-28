@@ -16,7 +16,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = sys.argv[1]
 OUT = ROOT / "docs" / "agentic" / "compare"
@@ -44,6 +44,8 @@ def quit(process):
 
 
 def engine_loaded(process):
+    if MAC:  # WebKit keeps no resource timing for still:// files: the app says what it served
+        return any("companion3d" in f for f in rpc(process, "served")["files"])
     return js(process, "performance.getEntriesByType('resource').some(e => e.name.includes('companion3d'))")
 
 

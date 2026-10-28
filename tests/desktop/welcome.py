@@ -26,7 +26,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("welcome-" + uuid.uuid4().hex[:8])
@@ -155,7 +155,12 @@ class BITMAPINFOHEADER(ctypes.Structure):
 
 
 def record(pid, out, fps=20):
-    """Frames come from the window itself (PrintWindow with full content), so it records wherever the window is, even off screen."""
+    """Frames come from the window itself (PrintWindow with full content), so it records wherever the window is, even off screen.
+    On the Mac, macOS records the whole screen to a .mov (Screen Recording must be allowed for the terminal or SSH)."""
+    if MAC:
+        recorder = subprocess.Popen(["screencapture", "-v", "-x", "-C", str(Path(out).with_suffix(".mov"))], stdin=subprocess.PIPE)
+        recorder.done = None
+        return recorder
     hwnd, ww, wh, x, y, w, h = window_of(pid)
     user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
     screen = user32.GetDC(0)
@@ -197,6 +202,9 @@ def record(pid, out, fps=20):
 
 
 def stop(recorder):
+    if recorder.done is None:  # screencapture stops at a keypress
+        recorder.communicate(b"\n", timeout=60)
+        return
     recorder.done.set()
     recorder.thread.join(timeout=10)
     recorder.wait(timeout=60)
@@ -262,7 +270,7 @@ def main():
     (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
     (BIN / "site.txt").write_text(SITE)
     (BIN / "seconds.txt").write_text("14")
-    (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
     process = launch(EXE, PROFILE, {**os.environ, "STILL_QA_SEARCH": SITE + "/search?q="})
@@ -272,14 +280,16 @@ def main():
         again(process)
         interview(process)
         looks(process)
-        check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
+        errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
+        check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
 
 
 def setup(process):
-    ctypes.windll.shcore.SetProcessDpiAwareness(2)  # window sizes in real pixels
+    if not MAC:
+        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # window sizes in real pixels
     check(until(lambda: js(process, "!!document.querySelector('.welcome.ob .ob-next')"), 20), "A fresh profile opens on setup")
     check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "10", "Setup has 10 steps")
     check(rpc(process).get("theme") == "System", "The theme follows the system until you pick one")
@@ -443,7 +453,7 @@ def interview(process):
     check(mate.get("Tone") == "Keep it short and cheerful." and "Cooks most weeknights." in facts and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts,
           f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
     js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
-    check(until(lambda: rpc(process).get("theme") == "System", 5) and js(process, "document.querySelector('.ob-summary li')?.innerText.includes('Undone')"), "Undo puts the theme back")
+    check(until(lambda: rpc(process).get("theme") == "System" and js(process, "document.querySelector('.ob-summary li')?.innerText.includes('Undone')"), 5), "Undo puts the theme back")
     check(rpc(process).get("aiCalls") - calls == 2, f"It took two small AI runs ({rpc(process).get('aiCalls') - calls})")
     click(process, ".ob-next")
     check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Done closes setup")

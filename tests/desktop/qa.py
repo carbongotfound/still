@@ -1,11 +1,16 @@
-"""Helpers for driving a QA build of Still over its test pipe."""
+"""Helpers for driving a QA build of Still over its test pipe (a Unix socket on the Mac)."""
 import ctypes
 import json
+import sys
 import time
 from pathlib import Path
 
+MAC = sys.platform == "darwin"
+
 
 def rpc(process, op="state", **args):
+    if MAC:
+        return mac_rpc(process, {"op": op, **args})
     pipe = r"\\.\pipe\StillQa-" + str(process.pid)
     end = time.monotonic() + 15
     while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
@@ -21,6 +26,46 @@ def rpc(process, op="state", **args):
                 raise RuntimeError("QA pipe closed")
             response += part
     return json.loads(response)
+
+
+def mac_rpc(process, request):
+    """The Mac's test channel: the socket whose path Still wrote to qa-pipe.txt in the profile it was started with."""
+    import socket
+    end = time.monotonic() + 15
+    while True:
+        try:
+            with socket.socket(socket.AF_UNIX) as stream:
+                stream.connect((profile_of(process) / "qa-pipe.txt").read_text().strip())
+                stream.sendall((json.dumps(request) + "\n").encode())
+                response = b""
+                while not response.endswith(b"\n"):
+                    part = stream.recv(65536)
+                    if not part:
+                        raise RuntimeError("QA pipe closed")
+                    response += part
+            return json.loads(response)
+        except OSError:
+            if time.monotonic() > end or process.poll() is not None:
+                raise RuntimeError("QA pipe unavailable")
+            time.sleep(.05)
+
+
+def profile_of(process):
+    """The --profile a Still was started with (Popen keeps its arguments; otherwise ps shows them)."""
+    import subprocess
+    args = [str(a) for a in getattr(process, "args", None) or subprocess.run(["ps", "-o", "command=", "-p", str(process.pid)], capture_output=True, text=True).stdout.split()]
+    return Path(args[args.index("--profile") + 1]) if "--profile" in args else Path.home() / "Library" / "Application Support" / "Still"
+
+
+def launcher(path, script):
+    """A command the AI-app manifests can run: path.cmd on Windows, an executable shell script at path on the Mac.
+    script is the Python file it runs (isolated, with the arguments passed on)."""
+    path = Path(path)
+    if MAC:
+        path.write_text(f'#!/bin/sh\nexec "{sys.executable}" -I "{script}" "$@"\n')
+        path.chmod(0o755)
+    else:
+        path.with_suffix(".cmd").write_text(f'@"{sys.executable}" -I "{script}" %*\r\n')
 
 
 def send(process, op, **args):
@@ -47,6 +92,9 @@ def until(predicate, seconds=20, step=.1):
 
 
 def alive(pid):
+    if MAC:  # a zombie counts as gone, as an exit code does on Windows
+        import subprocess
+        return subprocess.run(["ps", "-o", "stat=", "-p", str(pid)], capture_output=True, text=True).stdout.strip()[:1] not in ("", "Z")
     handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
     if not handle:
         return False

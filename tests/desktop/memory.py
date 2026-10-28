@@ -20,7 +20,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("memory-" + uuid.uuid4().hex[:8])
@@ -120,7 +120,7 @@ def main():
     BIN.mkdir(parents=True)
     (PROFILE / "agents").mkdir(parents=True)
     (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
-    (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "AiHarness": "fake",
@@ -181,7 +181,8 @@ def main():
         rpc(process, "capture", name="memory-page.png")
         js(process, "[...document.querySelectorAll('.memory-row')].find(r => r.innerText.includes('Maya'))?.querySelector('[aria-label^=Forget]')?.click()")
         check(until(lambda: not any("Maya" in f["Text"] for f in facts()), 5), "Forget on the Memory page forgets it")
-        check(not js(process, "window.__shellErrors?.length") and not rpc(process).get("shellErrors"), "No interface errors")
+        errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
+        check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)

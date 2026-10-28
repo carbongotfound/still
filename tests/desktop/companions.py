@@ -12,7 +12,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, rpc, send, shots, text, until  # noqa: E402
+from qa import CREW, ROOT, js, launch, launcher, rpc, send, shots, text, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("companions-" + uuid.uuid4().hex[:8])
@@ -90,7 +90,7 @@ def main():
     BIN.mkdir(parents=True)
     (PROFILE / "agents").mkdir(parents=True)
     (BIN / "fake_agent.py").write_text(FAKE)
-    (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run"], "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"], "output": "stream-json"}))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "AiHarness": "fake"},
@@ -220,6 +220,7 @@ def main():
         click_text(process, ".history-chip", "Unread")
         check(until(lambda: len(rows()) == 1 and "WAIT" in rows()[0], 5), "The Unread filter keeps only unread chats")
         click_text(process, ".history-chip", "Unread")
+        until(lambda: any("Lisbon" in r for r in rows()), 5)  # the filter is off once the other chat is back
         js(process, "[...document.querySelectorAll('.history-row')].find(r => r.innerText.includes('Lisbon')).querySelector('[aria-label^=Archive]').click()")
         check(until(lambda: len(rows()) == 1, 5), "Archive hides a chat")
         click_text(process, ".history-chip", "Archived")

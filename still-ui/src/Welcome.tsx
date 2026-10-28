@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNod
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type TargetAndTransition, type Transition } from "motion/react"
 import { ArrowLeft, ArrowUp, Bot, Check, CornerDownLeft, Dices, Download, Globe2, MessageCircle, Monitor, Moon, Palette, Sun, Undo2, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn } from "@/lib/utils"
+import { cn, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
 import { NAMES, lookOf, type Companion } from "./Buddy"
 import { CrewCards, INTERESTS, fromPremade, starters, type Premade } from "./crew"
@@ -200,7 +200,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   <header className="ob-top">
    <span className="still-mark is-small" aria-hidden><i /><i /></span>
    <div className="ob-dots" role="progressbar" aria-valuemin={1} aria-valuemax={flow.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${flow.length}`}>{flow.map((s, i) => <i key={s} className={cn(i === step && "is-on", i < step && "is-done")} />)}</div>
-   <div className="ob-theme" role="radiogroup" aria-label="Theme">{THEMES.map(([k, Icon]) => <button key={k} role="radio" aria-checked={(theme ?? "System") === k} aria-label={k} title={k === "System" ? "Match Windows" : k} onClick={() => send("preference", { key: "theme", value: k })}><Icon /></button>)}</div>
+   <div className="ob-theme" role="radiogroup" aria-label="Theme">{THEMES.map(([k, Icon]) => <button key={k} role="radio" aria-checked={(theme ?? "System") === k} aria-label={k} title={k === "System" ? (MAC ? "Match your Mac" : "Match Windows") : k} onClick={() => send("preference", { key: "theme", value: k })}><Icon /></button>)}</div>
    <button className="ob-skip-all" onClick={() => finish()}>Skip setup</button>
   </header>
   <main className={cn("ob-stage", wide && "is-wide")} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !(e.target as HTMLElement).closest("button,textarea,form")) { e.preventDefault(); next() } }}>
@@ -218,7 +218,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Bubbles lines={["Moving in from another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
       <Reveal after={2}><div className="ob-options">
        <button className="ob-option" onClick={onImport}><Download /><span><strong>Bring my stuff over</strong><small>Chrome, Edge, Brave, Opera GX or a saved export. You check it before anything is copied.</small></span></button>
-       <button className="ob-option" disabled={isDefault} onClick={() => send("defaultBrowser")}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : "Windows asks you to confirm"}</small></span>{isDefault && <Check />}</button>
+       <button className="ob-option" disabled={isDefault} onClick={() => send("defaultBrowser")}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : `${MAC ? "macOS" : "Windows"} asks you to confirm`}</small></span>{isDefault && <Check />}</button>
       </div></Reveal>
      </>}
      {at === "ai" && ai && <>

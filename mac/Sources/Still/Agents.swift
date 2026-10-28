@@ -1,8 +1,9 @@
-// Lets AI agents control Still, like the Windows app: `Still --mcp` is a Model Context Protocol server (JSON-RPC over stdio)
-// and `Still --cli <tool> as=<name> key=value ...` makes one call from a terminal. Both relay each call to the running Still
-// over a Unix socket only this user can open. Off by default. Every agent must be approved by the user, a bar shows what it
-// is doing and can stop it, and agents never see private tabs, saved passwords or cookies. Every call answers within a time
-// limit, so an agent can never hang on a slow page, a dialog or a question the user hasn't answered yet.
+// Lets AI agents control Still, like the Windows app (MainWindow.Agents.cs, McpServer.cs): `Still --mcp` is a Model Context
+// Protocol server (JSON-RPC over stdio) and `Still --cli <tool> as=<name> key=value ...` makes one call from a terminal. Both
+// relay each call to the running Still over a Unix socket only this user can open. Off by default. Every agent must be
+// approved by the user, a bar shows what it is doing and can stop it, and agents never see private tabs, saved passwords or
+// cookies. Every call answers within a time limit, so an agent can never hang on a slow page, a dialog or a question the user
+// hasn't answered yet.
 import AppKit
 import Darwin
 import WebKit
@@ -10,6 +11,11 @@ import WebKit
 struct AgentError: LocalizedError {
  let message: String
  init(_ message: String) { self.message = message }
+ var errorDescription: String? { message }
+}
+/// A page script's error. missed: the element moved, vanished or is covered.
+struct PageMiss: LocalizedError {
+ let missed: Bool, message: String
  var errorDescription: String? { message }
 }
 
@@ -26,22 +32,115 @@ struct PageDialog { let kind: String, message: String, defaultText: String, site
 struct AgentUpload { let multiple: Bool; let complete: ([URL]?) -> Void }
 
 var approvedAgents = Set<String>(), blockedAgents = Set<String>() // lowercased names
-var stoppedAgents: [String: Date] = [:]
-var agentName = "", agentAction = "", agentSeen = Date.distantPast
-// One question in the agent bar at a time: letting a new agent in, or an upload that needs the user's OK.
+/// One AI at work, by run key: a chat's id for Still's own chat (so two chats on the same AI app stay apart),
+/// otherwise the outside agent's name.
+final class Worker {
+ var name = "", label = "", color = "", action = "" // name: the app; label and color: who the user sees (a companion)
+ var seen = Date.distantPast
+ var paused = false // the user took over: its calls wait until they hand it back
+}
+var workers: [String: Worker] = [:]
+func worker(_ who: String) -> Worker {
+ if let known = workers[who] { return known }
+ let run = runs[who], companion = run.flatMap { r in companions.first { $0.id == r.chat.companion } }
+ let made = Worker()
+ made.name = run?.who ?? who; made.label = companion?.name ?? run?.who ?? who; made.color = hue(companion)
+ workers[who] = made
+ return made
+}
+/// The companion's color: its look's, or for one saved before looks, the old hue as in the shell's Buddy.tsx.
+func hue(_ companion: Companion?) -> String {
+ if let look = companion?.look, let found = look.range(of: ##""color":"#[0-9a-fA-F]{6}""##, options: .regularExpression) { return String(look[found].dropFirst(9).dropLast()) }
+ switch companion?.color {
+ case "sage": return "#5c7a76"
+ case "lavender": return "#8f80aa"
+ case "apricot": return "#e8a76c"
+ case "mint": return "#8fcbbc"
+ case "blush": return "#f2a487"
+ case "periwinkle": return "#bbadea"
+ case "berry": return "#ed5a31"
+ default: return "#4f7cf0"
+ }
+}
+/// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
+func atWork() -> [String: Worker] { workers.filter { approvedAgents.contains($0.value.name.lowercased()) && ($0.value.paused || Date().timeIntervalSince($0.value.seen) < 120) } }
+func did(_ who: String, _ action: String) { worker(who).action = action.count > 90 ? String(action.prefix(90)) + "…" : action }
+
+// One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
 var approvalWaiters: [Once<Bool?>]? = nil
 var askClient = "", askText = ""
 var lastAnswer: (client: String, ask: String, allow: Bool, at: Date)? = nil
-// Ends an agent's running call early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
-var agentInterrupts: [String: Once<String>] = [:]
-var agentTabs: [String: String] = [:] // agent name -> the tab it is working in
+// Ends an agent's running call early with this reply, by run key: a dialog or file picker opened in its tab, or the user
+// took over or pressed Stop.
+var agentInterrupts: [String: Answer] = [:]
+var agentTabs: [String: String] = [:] // run key -> the tab it is working in
+var stoppedAgents: [String: Date] = [:] // run key -> until when its calls are refused
+var agentServerStarted = false
 // The user is away from Still: the agent asks them in its own chat and passes the answer on with this code.
 var confirmCodes: [String: (client: String, ask: String, until: Date)] = [:]
+let stopText = "The user pressed Stop. Stop what you are doing and wait for the user's next message."
+let tookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page."
+
+/// The window agent calls land in: the one used last.
+var homeBrowser: Browser? {
+ if let last = lastActiveBrowser, browsers.contains(where: { $0 === last }) { return last }
+ return browsers.first
+}
+func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
+ for browser in browsers { if let tab = browser.tabs.first(where: { $0.id == id }) { return (browser, tab) } }
+ return nil
+}
+/// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
+func chatRunner(_ who: String) -> Browser? {
+ guard let run = runs[who] else { return nil }
+ return browsers.first { $0.showing(run.chat) } ?? browsers.first { $0.tabs.contains { $0.chatId == run.chat.id } } ?? homeBrowser
+}
+/// No keyboard or mouse for a minute, or Still is hidden or every window minimized: nobody will see the bar.
+func userAway() -> Bool {
+ let idle = [CGEventType.mouseMoved, .keyDown, .leftMouseDown, .scrollWheel].map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
+ return idle > 60 || NSApp.isHidden || browsers.allSatisfy { $0.window.isMiniaturized || !$0.window.isVisible }
+}
+
+// ---- The permission layer ----
+// Every call is read, navigate, interact or sensitive: buying, sending, deleting, a form that posts, a password or
+// payment field, or anything on a site the user marked sensitive. Settings say, per site, action and companion,
+// whether it runs, asks once in each chat, or asks every time. A sensitive step allowed without asking still counts
+// down 8 seconds in the chat first. Outside AI apps keep today's behavior: allowed unless a rule for everyone or a
+// sensitive site says to ask, and then they ask in the bar at the top. Rules: prefs["Permissions"], [{Site, Action, Companion, Mode}].
+let permissionActions = ["read", "navigate", "interact", "sensitive"]
+func defaultPermission(_ action: String) -> String { action == "interact" ? "chat" : action == "sensitive" ? "ask" : "always" }
+func onSite(_ rule: String, _ site: String) -> Bool { !rule.isEmpty && (site == rule || site.hasSuffix("." + rule)) }
+func siteOf(_ input: String) -> String {
+ let text = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+ return text.isEmpty ? "" : hostName(text.contains("://") ? text : "https://" + text)
+}
+func ruleText(_ rule: [String: Any], _ key: String) -> String { rule[key] as? String ?? "" }
+var sessionGrants = Set<String>() // outside apps: "who action site" allowed until Still closes
+
+/// A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
+@MainActor func approve(_ run: ChatRun, _ what: String, _ site: String, _ action: String, _ why: String, countdown: Bool) async -> String {
+ let card = Approval(id: String((0..<8).map { _ in "0123456789abcdef".randomElement()! }), what: what, site: site, action: action, why: why, until: countdown ? Date().addingTimeInterval(8) : nil)
+ run.approvals.append(card); publishAiEverywhere()
+ let answer: String = await withCheckedContinuation { done in card.answer.wait(countdown ? 8 : 600) { done.resume(returning: $0 ?? (countdown ? "go" : "timeout")) } }
+ run.approvals.removeAll { $0 === card }; publishAiEverywhere()
+ return answer
+}
+
+/// What came first: the work's own result, an interrupt's reply (a dialog, a file picker, Take over or Stop), or the time limit.
+enum Raced { case done(String?), interrupted(String), late }
+@MainActor func race(_ interrupt: Answer, _ seconds: Double, _ work: @escaping @MainActor () async -> String?) async -> Raced {
+ await withCheckedContinuation { (finish: CheckedContinuation<Raced, Never>) in
+  let once = Once<Raced>()
+  once.action = { finish.resume(returning: $0) }
+  Task { @MainActor in let result = await work(); once.fire(.done(result)) }
+  interrupt.wait(seconds) { reply in once.fire(reply.map { .interrupted($0) } ?? .late) }
+ }
+}
 
 // The page scripts come straight from the Windows app (mac/build.sh copies them), so both stay in step.
 let agentScripts: [String: String] = {
  var scripts: [String: String] = [:]
- for name in ["Page", "Snapshot", "Find", "Click", "Focus", "Scroll", "Wait", "FileInput"] {
+ for name in ["Page", "Snapshot", "Find", "Click", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor"] {
   scripts[name] = (try? String(contentsOf: resources.appendingPathComponent("agent-\(name).js"), encoding: .utf8)) ?? ""
  }
  return scripts
@@ -79,13 +178,136 @@ func scriptError(_ code: String, _ reply: [String: Any]) -> String {
  }
 }
 
+/// Runs an agent script in the page, wrapped like the Windows app's: the shared helpers, then the tool's own code. It runs
+/// in Still's own world, so the page can't see or change it (they share the DOM).
+@MainActor func agentJs(_ view: WKWebView, _ body: String, _ o: [String: Any]) async throws -> Any? {
+ let source = "((o)=>{try{" + (agentScripts["Page"] ?? "") + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + jsonText(o) + ") ?? null"
+ let result: Any
+ do { result = try await withCheckedThrowingContinuation { done in view.evaluateJavaScript(source, in: nil, in: stillWorld) { done.resume(with: $0) } } }
+ catch { throw AgentError("The page's script failed: " + error.localizedDescription) }
+ if let reply = result as? [String: Any], let code = reply["error"] as? String { throw PageMiss(missed: ["gone", "notfound", "hidden", "covered"].contains(code), message: scriptError(code, reply)) }
+ return result is NSNull ? nil : result
+}
+/// Pages re-render under the AI: when the element is missing, wait for the page to settle and try once more.
+/// Still missing: the error carries a fresh read of the page, so the AI picks again (and asks again if that step needs asking).
+@MainActor func settled(_ tab: Tab, _ view: WKWebView, _ act: () async throws -> Any?) async throws -> Any? {
+ do { return try await act() } catch let miss as PageMiss where miss.missed { await waitLoaded(tab, 3); try? await Task.sleep(nanoseconds: 500_000_000) }
+ do { return try await act() } catch let miss as PageMiss where miss.missed {
+  let now = (try? await agentJs(view, agentScripts["Snapshot"] ?? "", ["text": false, "all": false, "offset": 0])) as? String ?? ""
+  throw AgentError(miss.message + "\n\nThe page now:\n" + now)
+ }
+}
+@MainActor func waitLoaded(_ tab: Tab, _ seconds: Double = 15) async {
+ let until = Date().addingTimeInterval(seconds)
+ try? await Task.sleep(nanoseconds: 250_000_000)
+ while tab.view?.isLoading == true && Date() < until { try? await Task.sleep(nanoseconds: 100_000_000) }
+}
+/// The AI's cursor: an arrow with its name, in its companion's color, glides to where it's about to click.
+/// It's drawn inside the page, clicks pass through it, and it fades on its own.
+@MainActor func pointer(_ who: String, _ tab: Tab, _ view: WKWebView, _ x: Double, _ y: Double) async {
+ let me = worker(who)
+ do { _ = try await agentJs(view, agentScripts["Cursor"] ?? "", ["x": x, "y": y, "name": me.label, "color": me.color]) } catch { return }
+ if browsers.contains(where: { $0.shown === tab }) { try? await Task.sleep(nanoseconds: 450_000_000) } // let the user see where it's going first
+}
+/// What an action led to: where the agent is now, and the new tab it's in if the action opened one.
+func outcome(_ who: String, _ tab: Tab, _ before: String, _ done: String) -> [String: Any] {
+ let opened = agentTabs[who].flatMap { $0 != before ? findTab($0)?.tab : nil }
+ let now = opened ?? tab
+ var reply: [String: Any] = ["done": done, "url": now.url, "title": now.title]
+ if let opened { reply["tabId"] = opened.id; reply["note"] = "This opened a new tab; you're working in it now." }
+ return reply
+}
+
+// ---- Input ----
+// Clicks and keys go to the page as real (trusted) events, straight to its view. A page out of view may not take them,
+// so a probe in Still's world notes whether the page got them, and if not, the same input is played by script instead
+// (WebKit has no DevTools input events). ponytail: a page that stops mousedown/keydown at the window before the probe
+// sees it gets the input twice; read real delivery from WebKit if that shows up.
+let agentProbeArm = #"""
+const P = window.__stillProbe || (window.__stillProbe = { got: false, on: new WeakSet() });
+for (const d of [document, ...frames()]) { const w = d.defaultView; if (w && !P.on.has(w)) { P.on.add(w); for (const t of ['mousedown', 'keydown']) w.addEventListener(t, e => { if (e.isTrusted) P.got = true; }, true); } }
+P.got = false;
+return true;
+"""#
+let agentProbeRead = "return !!(window.__stillProbe && window.__stillProbe.got);"
+/// Arms the probe, sends the events, and says whether the page got them.
+@MainActor func trusted(_ view: WKWebView, _ send: () -> Bool) async -> Bool {
+ guard (try? await agentJs(view, agentProbeArm, [:])) != nil, send() else { return false }
+ for _ in 0..<5 {
+  try? await Task.sleep(nanoseconds: 100_000_000)
+  if (try? await agentJs(view, agentProbeRead, [:])) as? Bool == true { return true }
+ }
+ return false
+}
+/// Mouse events at a point in the page (CSS pixels from its top left).
+@MainActor func sendClick(_ view: WKWebView, _ x: Double, _ y: Double) -> Bool {
+ guard let window = view.window else { return false }
+ let zoom = Double(view.pageZoom)
+ let at = view.convert(NSPoint(x: x * zoom, y: view.isFlipped ? y * zoom : Double(view.bounds.height) - y * zoom), to: nil)
+ for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+  guard let event = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                       context: nil, eventNumber: 0, clickCount: type == .mouseMoved ? 0 : 1, pressure: type == .leftMouseDown ? 1 : 0) else { return false }
+  switch type {
+  case .mouseMoved: view.mouseMoved(with: event)
+  case .leftMouseDown: view.mouseDown(with: event)
+  default: view.mouseUp(with: event)
+  }
+ }
+ return true
+}
+/// Clicks like a real mouse; if the page didn't get it, the same click is played by script on the element.
+@MainActor func mouseClick(_ view: WKWebView, _ x: Double, _ y: Double, _ o: [String: Any]) async throws {
+ if await trusted(view, { sendClick(view, x, y) }) { return }
+ _ = try await agentJs(view, "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail, o)
+}
+// The Mac's key codes and characters for named keys; letters and digits by their place on the ANSI keyboard.
+let macKeys: [String: (keyCode: UInt16, text: String)] = [
+ "Enter": (36, "\r"), "Tab": (48, "\t"), "Escape": (53, "\u{1b}"), "Backspace": (51, "\u{7f}"), "Delete": (117, "\u{f728}"),
+ "ArrowUp": (126, "\u{f700}"), "ArrowDown": (125, "\u{f701}"), "ArrowLeft": (123, "\u{f702}"), "ArrowRight": (124, "\u{f703}"),
+ "Home": (115, "\u{f729}"), "End": (119, "\u{f72b}"), "PageUp": (116, "\u{f72c}"), "PageDown": (121, "\u{f72d}"), "Space": (49, " ")
+]
+let macKeyOrder = Array("asdfhgzxcv§bqweryt123465=97-80]ou[ip\rlj'k;\\,/nm.\t `")
+/// Key events for a key from keyInfo.
+@MainActor func sendKey(_ view: WKWebView, _ info: [String: Any]) -> Bool {
+ guard let window = view.window else { return false }
+ let key = info["key"] as? String ?? "", named = macKeys[info["code"] as? String ?? ""]
+ var flags: NSEvent.ModifierFlags = []
+ if info["alt"] as? Bool == true { flags.insert(.option) }
+ if info["ctrl"] as? Bool == true { flags.insert(.control) }
+ if info["meta"] as? Bool == true { flags.insert(.command) }
+ if info["shift"] as? Bool == true { flags.insert(.shift) }
+ let text = named?.text ?? key, code = named?.keyCode ?? UInt16(key.lowercased().first.flatMap { macKeyOrder.firstIndex(of: $0) } ?? 0)
+ for type in [NSEvent.EventType.keyDown, .keyUp] {
+  guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+                                     context: nil, characters: text, charactersIgnoringModifiers: text.lowercased(), isARepeat: false, keyCode: code) else { return false }
+  if type == .keyDown { view.keyDown(with: event) } else { view.keyUp(with: event) }
+ }
+ if (flags.contains(.command) || flags.contains(.control)) && key.lowercased() == "a" { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: view, from: nil) } // the menu's job on the Mac
+ return true
+}
+/// Presses a key like a person would, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab".
+@MainActor func pressKey(_ view: WKWebView, _ combo: String) async throws {
+ let info = try keyInfo(combo)
+ if await trusted(view, { sendKey(view, info) }) { return }
+ _ = try await agentJs(view, agentKeyScript, info)
+}
+/// Types text one key at a time; a new line is Enter where the field has lines.
+@MainActor func typeKeys(_ view: WKWebView, _ text: String, _ multiline: Bool, _ me: Worker) async {
+ for character in text.replacingOccurrences(of: "\r\n", with: "\n") {
+  if me.paused { return } // the user took over mid-word
+  if character == "\n" { if multiline { try? await pressKey(view, "Enter") }; continue }
+  _ = sendKey(view, ["key": String(character), "code": ""])
+  try? await Task.sleep(nanoseconds: 1_000_000)
+ }
+}
+
 let agentKeys: [String: (code: String, keyCode: Int, text: String)] = [
  "enter": ("Enter", 13, "\r"), "tab": ("Tab", 9, ""), "escape": ("Escape", 27, ""), "esc": ("Escape", 27, ""), "backspace": ("Backspace", 8, ""), "delete": ("Delete", 46, ""),
  "arrowup": ("ArrowUp", 38, ""), "arrowdown": ("ArrowDown", 40, ""), "arrowleft": ("ArrowLeft", 37, ""), "arrowright": ("ArrowRight", 39, ""),
  "home": ("Home", 36, ""), "end": ("End", 35, ""), "pageup": ("PageUp", 33, ""), "pagedown": ("PageDown", 34, ""), "space": ("Space", 32, " ")
 ]
 
-/// A key like a person presses it, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab", for agentKeyScript.
+/// A key like a person presses it, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab", for sendKey and agentKeyScript.
 func keyInfo(_ combo: String) throws -> [String: Any] {
  let parts = combo.split(separator: "+").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
  guard let key = parts.last else { throw AgentError("Pass a key, like Enter or Control+A.") }
@@ -112,8 +334,8 @@ func keyInfo(_ combo: String) throws -> [String: Any] {
  return ["key": name, "code": code, "keyCode": keyCode, "text": text, "alt": alt, "ctrl": ctrl, "meta": meta, "shift": shift]
 }
 
-// WebKit has no DevTools input events, so the Mac app clicks, types and presses keys with DOM events from the page itself.
-// These run after the shared page helpers (agent-Page.js); evaluateJavaScript counts as a user gesture, so pop-ups and file pickers open.
+// The script fallbacks for clicks and keys run after the shared page helpers (agent-Page.js); evaluateJavaScript counts as
+// a user gesture, so pop-ups and file pickers open.
 let agentClickTail = #"""
 const el = target(o), w = view(el), rect = el.getBoundingClientRect(), cx = rect.left + rect.width / 2, cy = rect.top + rect.height / 2, rootNode = el.getRootNode();
 let at = typeof rootNode.elementFromPoint === 'function' ? rootNode.elementFromPoint(cx, cy) : null;
@@ -188,6 +410,19 @@ if (ok && o.click) pick.click();
 return ok;
 """#
 
+// Agents work in pages out of view, which never have focus; editors like Notion ignore typing without it. This tells the
+// page it's in view and focused (Windows: Emulation.setFocusEmulationEnabled). It runs in the page's own world.
+let agentFocusScript = #"""
+(() => { const k = Symbol.for('still.focus'); if (window[k]) return true; window[k] = true;
+ const no = { get: () => false, configurable: true }, shown = { get: () => 'visible', configurable: true };
+ try { Document.prototype.hasFocus = () => true; Object.defineProperty(Document.prototype, 'hidden', no); Object.defineProperty(Document.prototype, 'webkitHidden', no);
+  Object.defineProperty(Document.prototype, 'visibilityState', shown); Object.defineProperty(Document.prototype, 'webkitVisibilityState', shown); } catch {}
+ const quiet = e => e.stopImmediatePropagation();
+ document.addEventListener('visibilitychange', quiet, true); document.addEventListener('webkitvisibilitychange', quiet, true);
+ window.addEventListener('blur', e => { if (e.target === window) quiet(e); }, true);
+ return true; })()
+"""#
+
 let pipScript = #"""
 (() => { const v = [...document.querySelectorAll('video')].find(v => v.readyState > 0); if (!v) return 'No playable video found on this page';
  if (document.pictureInPictureElement || v.webkitPresentationMode === 'picture-in-picture') { if (document.pictureInPictureElement && document.exitPictureInPicture) document.exitPictureInPicture(); else v.webkitSetPresentationMode('inline'); return 'closed'; }
@@ -199,51 +434,71 @@ let pipScript = #"""
 extension Browser {
  // MARK: AI agents
 
+ /// Any number of agents at once, from every window's profile: one server per Still process.
  func startAgentServer() {
-  AgentSocket.serve { [weak self] line, reply in
-   guard let self else { reply(agentFail("Still is closing.")); return }
-   self.handleAgent(line, reply)
+  if agentServerStarted { return }
+  agentServerStarted = true
+  AgentSocket.serve { line, reply in
+   guard let home = homeBrowser else { reply(agentFail("Still is closing.")); return }
+   home.handleAgent(line, reply)
   }
  }
 
- func handleAgent(_ line: String, _ reply: @escaping (String) -> Void) {
-  guard let root = jsonObject(line), let tool = root["tool"] as? String else { reply(agentFail("Invalid request.")); return }
+ func handleAgent(_ line: String, _ reply: @escaping (String) -> Void) { Task { @MainActor in reply(await self.agentCall(line)) } }
+
+ @MainActor func agentCall(_ line: String) async -> String {
+  guard let root = jsonObject(line), let tool = root["tool"] as? String else { return agentFail("Invalid request.") }
   let raw = root["client"] as? String ?? "An AI agent"
   let cleaned = String(raw.filter { ch in !ch.unicodeScalars.contains { $0.value < 32 || ($0.value >= 127 && $0.value < 160) } }.prefix(40))
   let client = cleaned.isEmpty ? "An AI agent" : cleaned, key = client.lowercased()
+  // Still's own chat runs say which chat they are; anyone else is known by name.
+  let run = root["run"] as? String ?? ""
+  let who = runs[run]?.who == client ? run : client
   let args = root["args"] as? [String: Any] ?? [:]
-  guard pref("AgentsEnabled", false) else { reply(agentFail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.")); return }
-  if tool == "user_confirmed" { reply(confirmed(client, args)); return }
+  guard pref("AgentsEnabled", false) else { return agentFail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.") }
+  if tool == "user_confirmed" { return confirmed(client, args) }
   // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
   let quick = root["elicit"] as? Bool == true || userAway()
-  if blockedAgents.contains(key) { reply(agentFail("The user blocked this agent in Still for this session.")); return }
-  if let until = stoppedAgents[key], Date() < until { reply(agentFail("The user pressed Stop. Stop what you are doing and wait for the user's next message.")); return }
+  if blockedAgents.contains(key) { return agentFail("The user blocked this agent in Still for this session.") }
+  if let until = stoppedAgents[who], Date() < until { return agentFail(stopText) }
   if pref("ApprovedAgents", [String]()).contains(where: { Mcp.agentName($0).lowercased() == key }) { approvedAgents.insert(key) } // approved once = remembered across restarts
-  if approvedAgents.contains(key) { startTool(client, tool, args, quick, reply); return }
-  askUser(client, "", now: quick) { answer in
-   switch answer {
-   case .some(true): self.startTool(client, tool, args, quick, reply)
-   case .some(false): reply(agentFail("The user blocked this agent in Still for this session."))
-   default: reply(self.needsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again."))
+  if !approvedAgents.contains(key) {
+   switch await askUser(client, "", now: quick) {
+   case .some(false): return agentFail("The user blocked this agent in Still for this session.")
+   case nil: return needsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.")
+   default: break
    }
   }
- }
-
- func startTool(_ client: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ reply: @escaping (String) -> Void) {
-  agentName = client; agentSeen = Date()
-  let key = client.lowercased(), call = Once<String>()
-  call.action = { [weak self] result in
-   if agentInterrupts[key] === call { agentInterrupts[key] = nil }
-   reply(result)
-   self?.schedulePublish()
-   DispatchQueue.main.asyncAfter(deadline: .now() + 121) { self?.schedulePublish() } // the bar goes once the agent is quiet
+  let me = worker(who)
+  me.seen = Date()
+  // The user took over: wait for them to hand it back, like a person would.
+  let paused = Date().addingTimeInterval(40)
+  while me.paused && Date() < paused { try? await Task.sleep(nanoseconds: 250_000_000); me.seen = Date() }
+  if let until = stoppedAgents[who], Date() < until { return agentFail(stopText) }
+  if me.paused { return agentFail(tookOver) }
+  let interrupt = Answer()
+  agentInterrupts[who] = interrupt
+  defer {
+   if agentInterrupts[who] === interrupt { agentInterrupts[who] = nil }
+   publishEverywhere()
+   DispatchQueue.main.asyncAfter(deadline: .now() + 121) { publishEverywhere() } // the pill goes once the agent is quiet
   }
-  agentInterrupts[key] = call
-  let limit = tool == "wait_for" ? Int(min(30000, max(100, argNumber(args, "timeoutMs", 10000)))) + 5000 : tool == "upload_file" ? 60000 : 30000
-  DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(limit)) {
-   call.fire(agentFail("\(tool) didn't finish within \(limit / 1000) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is."))
+  // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
+  let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick) }
+  var refused: String?
+  switch gate {
+  case .done(let reply): refused = reply
+  case .interrupted(let reply): refused = reply
+  case .late: refused = agentFail(stopText)
   }
-  runTool(client, tool, args, quick) { call.fire($0) }
+  if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
+  if let refused { return refused }
+  let limit: Double = tool == "ask_user" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
+  switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
+  case .done(let reply): return reply ?? agentFail("Failed.")
+  case .interrupted(let reply): return reply
+  case .late: return agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
+  }
  }
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Nil: no answer yet; the question stays up.
@@ -256,11 +511,14 @@ extension Browser {
    if now || Date() >= deadline { done(nil); return }
    wait.action = { [weak self] _ in self?.askUser(client, ask, now: false, until: deadline, done) } // another question is up: ask once it's answered
   } else {
-   if approvalWaiters == nil { approvalWaiters = []; askClient = client; askText = ask; schedulePublish() }
+   if approvalWaiters == nil { approvalWaiters = []; askClient = client; askText = ask; publishEverywhere() }
    wait.action = done
   }
   approvalWaiters?.append(wait)
   DispatchQueue.main.asyncAfter(deadline: .now() + max(0, deadline.timeIntervalSinceNow)) { wait.fire(nil) }
+ }
+ @MainActor func askUser(_ client: String, _ ask: String, now: Bool) async -> Bool? {
+  await withCheckedContinuation { done in askUser(client, ask, now: now) { done.resume(returning: $0) } }
  }
 
  func answerAgent(_ allow: Bool) {
@@ -268,7 +526,7 @@ extension Browser {
   settle(askClient, askText, allow)
   approvalWaiters = nil; askClient = ""; askText = ""
   for wait in waiters { wait.fire(allow) }
-  schedulePublish()
+  publishEverywhere()
  }
 
  func settle(_ client: String, _ ask: String, _ allow: Bool) {
@@ -307,258 +565,364 @@ extension Browser {
   return agentOk(["done": allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask."])
  }
 
- /// No keyboard or mouse for a minute, or Still is minimized or hidden: nobody will see the bar.
- func userAway() -> Bool {
-  let idle = [CGEventType.mouseMoved, .keyDown, .leftMouseDown, .scrollWheel].map { CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: $0) }.min() ?? 0
-  return idle > 60 || window.isMiniaturized || !window.isVisible || NSApp.isHidden
- }
-
+ /// The agent bar's question, or the AI at work for the pill: the one in the page on screen, else the latest.
  func agentData() -> [String: Any]? {
-  if approvalWaiters != nil { return ["client": askClient, "pending": true, "action": "", "ask": askText] }
-  if approvedAgents.contains(agentName.lowercased()) && Date().timeIntervalSince(agentSeen) < 120 { return ["client": agentName, "pending": false, "action": agentAction, "ask": ""] }
-  return nil
+  if approvalWaiters != nil { return ["client": askClient, "pending": true, "action": "", "ask": askText, "paused": false] }
+  let shownId = shown?.id
+  guard let (key, me) = atWork().max(by: { a, b in
+   let x = agentTabs[a.key] == shownId, y = agentTabs[b.key] == shownId
+   return x != y ? !x : a.value.seen < b.value.seen
+  }) else { return nil }
+  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "key": key]
+  if let tab = agentTabs[key] { data["tab"] = tab }
+  return data
  }
 
- // Stop cancels what the agent is doing now; it stays allowed, so its next task needs no new approval.
- func stopAgent() {
-  if !agentName.isEmpty {
-   releaseAgentTabs(agentName)
-   stoppedAgents[agentName.lowercased()] = Date().addingTimeInterval(30)
-   agentInterrupts.removeValue(forKey: agentName.lowercased())?.fire(agentFail("The user pressed Stop. Stop what you are doing and wait for the user's next message."))
-  }
-  for tab in tabs { if let upload = tab.agentUpload { tab.agentUpload = nil; upload.complete(nil) } }
-  agentAction = ""; agentSeen = .distantPast
-  schedulePublish()
-  toast("Stopped " + (agentName.isEmpty ? "the AI agent" : agentName) + ".")
+ // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
+ func takeOver(_ on: Bool, _ key: String) {
+  guard let me = workers[key] else { return }
+  me.paused = on
+  if on { agentInterrupts.removeValue(forKey: key)?.set(agentFail(tookOver)) }
+  if on, let id = agentTabs[key], let (browser, tab) = findTab(id) { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
+  publishEverywhere()
+ }
+
+ // Stop cancels what the agent is doing now and lets go of its tabs; it stays allowed, so its next task needs no new approval.
+ func stopAgent(_ key: String? = nil) {
+  let key = key.flatMap { $0.isEmpty ? nil : $0 } ?? agentData()?["key"] as? String ?? "" // none given: the one in the pill
+  let me = workers[key]
+  for browser in browsers { for tab in browser.tabs where tab.agentKey == key { if let upload = tab.agentUpload { tab.agentUpload = nil; upload.complete(nil) } } }
+  releaseAgentTabs(key)
+  stoppedAgents[key] = Date().addingTimeInterval(30)
+  agentInterrupts.removeValue(forKey: key)?.set(agentFail(stopText))
+  if let run = runs[key] { run.queue.removeAll(); stopRun(run) }
+  workers[key] = nil
+  publishEverywhere(); publishAiEverywhere()
+  toast("Stopped " + (me?.label ?? "the AI agent") + ".")
  }
 
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  func interruptAgent(_ tab: Tab, _ reply: [String: Any]) {
-  guard let who = tab.agent, agentTabs[who] == tab.id, let running = agentInterrupts.removeValue(forKey: who.lowercased()) else { return }
-  running.fire(agentOk(reply))
+  guard let who = tab.agentKey, agentTabs[who] == tab.id, let running = agentInterrupts.removeValue(forKey: who) else { return }
+  running.set(agentOk(reply))
  }
 
  func claim(_ who: String, _ tab: Tab) {
+  let before = shown
   agentTabs[who] = tab.id; tab.lastSeen = Date() // in use: memory saver leaves it awake
-  if tab.agent != who { tab.agent = who; schedulePublish() }
+  if tab.agentKey != who { tab.agent = worker(who).name; tab.agentKey = who; schedulePublish() }
+  if shown !== before { // a chat shows the page its AI just moved to
+   if let page = shown, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) }
+   layoutPages(); schedulePublish()
+  }
  }
 
- /// The agent's work is done: its icon leaves the user's own tabs. Tabs it opened stay in the AI group.
- func releaseAgentTabs(_ name: String) {
-  agentTabs[name] = nil
-  for tab in tabs where tab.agent == name && !tab.aiGroup { tab.agent = nil }
-  schedulePublish()
+ /// The agent's work is done: its icon leaves the user's own tabs (in every window). Tabs it opened stay in the AI group.
+ /// One the user took over is done too.
+ func releaseAgentTabs(_ key: String) {
+  agentTabs[key] = nil
+  if workers[key]?.paused == true { workers[key] = nil }
+  for browser in browsers {
+   var changed = false
+   for tab in browser.tabs where tab.agentKey == key && !tab.aiGroup { tab.agent = nil; tab.agentKey = nil; changed = true }
+   if changed { browser.schedulePublish() }
+  }
  }
 
- /// Opens in the background, next to the other AI tabs, so the user can keep browsing. A configuration means a pop-up WebKit loads itself.
+ // Background (the default for Still's own chat): the page belongs to the chat and shows only beside it, never in the
+ // user's tab strip. Otherwise Still's chat opens it as the user's own tab, beside the chat, and other AI apps open it
+ // next to the other AI tabs. An AI app's background tabs belong to it ("app:" + who) and show in the running tasks.
+ // A configuration means a pop-up from an agent's click, which WebKit loads itself.
  @discardableResult
- func openAgentTab(_ who: String, _ url: String, configuration: WKWebViewConfiguration? = nil) -> Tab {
+ func openAgentTab(_ who: String, _ url: String, background: Bool? = nil, configuration: WKWebViewConfiguration? = nil) -> Tab {
+  var who = who, background = background ?? (runs[who] != nil)
+  if configuration != nil, let opener = tabs.filter({ $0.agent == who && Date().timeIntervalSince($0.agentActedAt) < 10 }).max(by: { $0.agentActedAt < $1.agentActedAt }) {
+   who = opener.agentKey ?? who; background = opener.inChat != nil // the agent that clicked, where its page is
+  }
+  let chat = runs[who] != nil ? who : nil
   let tab = Tab()
-  tab.url = url; tab.title = url.isEmpty ? "New tab" : hostName(url); tab.agent = who; tab.aiGroup = true
-  tabs.insert(tab, at: tabs.lastIndex(where: { $0.aiGroup }).map { $0 + 1 } ?? tabs.count)
+  tab.url = url; tab.title = url.isEmpty ? "New tab" : hostName(url)
+  tab.agent = worker(who).name; tab.agentKey = who
+  tab.aiGroup = chat == nil && !background
+  tab.runChat = background ? nil : chat
+  tab.inChat = background ? chat ?? "app:" + who : nil
+  if background { tabs.append(tab) }
+  else if chat != nil { tabs.insert(tab, at: tabs.firstIndex { $0 === active }.map { $0 + 1 } ?? tabs.count) }
+  else { tabs.insert(tab, at: tabs.lastIndex { $0.aiGroup }.map { $0 + 1 } ?? tabs.count) }
   let view = createView(tab, configuration: configuration)
-  if active == nil || active?.url.isEmpty == true && active?.pinned == false && tabs.count == 2 { select(tab) } // nothing to keep the user on
-  claim(who, tab); saveLater(); schedulePublish()
-  if configuration == nil, let address = URL(string: url) { load(address, in: view) }
+  if configuration == nil, !url.isEmpty, let address = URL(string: url) { load(address, in: view) }
+  if !background && chat == nil, active == nil || active?.url.isEmpty == true && active?.chatId == nil && active?.pinned == false && tabs.count == 2 { select(tab) } // nothing to keep the user on
+  claim(who, tab); schedulePublish(); saveLater()
+  if background { if let chat, active?.chatId == chat { select(tab) } } // the chat in view splits to show it
+  else if let run = chat.flatMap({ runs[$0] }), showing(run.chat) || active?.runChat == run.chat.id { if active?.chatId == run.chat.id { aiView.open = true }; select(tab) }
   return tab
  }
 
- /// A tab the agent may use: never private tabs. Without a tabId it keeps working in the tab it used last.
- func agentTab(_ who: String, _ args: [String: Any]) throws -> Tab {
+ /// Finds a tab the agent may use: never private tabs. Without a tabId the agent keeps working in the tab it used last,
+ /// even after the user switches to another one.
+ func agentTab(_ who: String, _ args: [String: Any]) throws -> (browser: Browser, tab: Tab) {
   var id = argText(args, "tabId")
-  if id.isEmpty, let last = agentTabs[who], tabs.contains(where: { $0.id == last }) { id = last }
-  guard let tab = id.isEmpty ? active : tabs.first(where: { $0.id == id }) else { throw AgentError(id.isEmpty ? "There is no active tab." : "No tab with that id. Call list_tabs.") }
-  if tab.isPrivate { throw AgentError("Private tabs are off-limits to agents.") }
-  claim(who, tab)
-  return tab
+  if id.isEmpty, let last = agentTabs[who], findTab(last) != nil { id = last }
+  for browser in browsers {
+   guard let tab = id.isEmpty ? (browser === self ? browser.active : nil) : browser.tabs.first(where: { $0.id == id }) else { continue }
+   if tab.isPrivate { throw AgentError("Private tabs are off-limits to agents.") }
+   browser.claim(who, tab)
+   return (browser, tab)
+  }
+  throw AgentError(id.isEmpty ? "There is no active tab." : "No tab with that id. Call list_tabs.")
  }
 
  /// The agent's tab, ready for page work. A page paused on a dialog can't run scripts, so that comes first.
- func agentPage(_ who: String, _ args: [String: Any], _ work: @escaping (Tab, WKWebView) -> Void) throws {
-  let tab = try agentTab(who, args)
+ @MainActor func agentPage(_ who: String, _ args: [String: Any]) async throws -> (browser: Browser, tab: Tab, view: WKWebView) {
+  let (browser, tab) = try agentTab(who, args)
   if let dialog = tab.dialog { throw AgentError("The page is waiting on a dialog (\(dialog.kind)): \"\(clipped(dialog.message, 200))\". Answer it with handle_dialog first.") }
-  if let view = tab.view { work(tab, view); return }
-  let view = createView(tab) // a sleeping tab wakes up first
-  if !tab.url.isEmpty, let url = URL(string: tab.url) { load(url, in: view) }
-  waitLoaded(tab, 15) { work(tab, view) }
+  let view: WKWebView
+  if let open = tab.view { view = open } else {
+   view = browser.createView(tab) // a sleeping tab wakes up first
+   if !tab.url.isEmpty, let url = URL(string: tab.url) { browser.load(url, in: view) }
+   await waitLoaded(tab)
+  }
+  view.evaluateJavaScript(agentFocusScript, in: nil, in: .page) { _ in }
+  return (browser, tab, view)
  }
 
- func waitLoaded(_ tab: Tab, _ seconds: Double, _ then: @escaping () -> Void) {
-  let until = Date().addingTimeInterval(seconds)
-  DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.pollLoaded(tab, until, then) }
- }
- func pollLoaded(_ tab: Tab, _ until: Date, _ then: @escaping () -> Void) {
-  if tab.view?.isLoading != true || Date() >= until { then(); return }
-  DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.pollLoaded(tab, until, then) }
+ func agentWebUrl(_ input: String) throws -> String {
+  let text = input.trimmingCharacters(in: .whitespacesAndNewlines), url = resolve(text)
+  guard !text.isEmpty, let scheme = URL(string: url)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { throw AgentError("Agents can only open http and https pages.") }
+  return url
  }
 
- func webUrl(_ input: String) -> String? {
-  let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
-  guard !text.isEmpty, let url = URL(string: resolve(text)), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
-  return url.absoluteString
+ /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
+ func permissionMode(_ companion: String, _ site: String, _ action: String) -> String? {
+  let rules = pref("Permissions", [[String: Any]]()).filter { ruleText($0, "Action") == action }
+  let mine = companion.isEmpty ? nil : rules.first { ruleText($0, "Companion") == companion && onSite(ruleText($0, "Site"), site) } ?? rules.first { ruleText($0, "Companion") == companion && ruleText($0, "Site").isEmpty }
+  let rule = mine ?? rules.first { ruleText($0, "Companion").isEmpty && onSite(ruleText($0, "Site"), site) } ?? rules.first { ruleText($0, "Companion").isEmpty && ruleText($0, "Site").isEmpty }
+  return rule.map { ruleText($0, "Mode") }
+ }
+ func setPermission(_ site: String, _ action: String, _ companion: String, _ mode: String) {
+  var list = pref("Permissions", [[String: Any]]()).filter { !(ruleText($0, "Site") == site && ruleText($0, "Action") == action && ruleText($0, "Companion") == companion) }
+  if ["always", "chat", "ask"].contains(mode) { list.append(["Site": site, "Action": action, "Companion": companion, "Mode": mode]) }
+  prefs["Permissions"] = list; saveLater()
  }
 
- /// Runs an agent script in the page, wrapped like the Windows app's: the shared helpers, then the tool's own code.
- func js(_ view: WKWebView, _ body: String, _ o: [String: Any], _ fail: @escaping (String) -> Void, _ ok: @escaping (Any?) -> Void) {
-  let source = "((o)=>{try{" + (agentScripts["Page"] ?? "") + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + jsonText(o) + ")"
-  view.evaluateJavaScript(source) { result, error in
-   if let error { fail(agentFail("The page's script failed: " + error.localizedDescription)); return }
-   if let reply = result as? [String: Any], let code = reply["error"] as? String { fail(agentFail(scriptError(code, reply))); return }
-   ok(result)
+ /// Whether this call may go ahead: nil, or the refusal for the AI.
+ @MainActor func gate(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String? {
+  var action: String
+  switch tool {
+  case "read_page", "find", "screenshot", "wait_for", "web_search", "read_url": action = "read"
+  case "open_tab", "navigate", "go_back", "go_forward", "reload", "switch_tab", "close_tab": action = "navigate"
+  case "click", "type", "press_key", "scroll", "handle_dialog": action = "interact"
+  default: return nil // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
+  }
+  var site = "", what = "", why = ""
+  do {
+   if tool == "open_tab" || tool == "navigate" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Open " + site }
+   else if tool == "read_url" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Read " + site }
+   else if tool == "web_search" { site = hostName(searchUrl("x")); what = "Search for “" + clipped(argText(args, "query"), 60) + "”" }
+   else {
+    site = hostName(try agentTab(who, args).tab.url)
+    let named = ["scroll": "Scroll the page", "press_key": "Press " + argText(args, "key"), "handle_dialog": "Answer the page's dialog", "go_back": "Go back",
+                 "go_forward": "Go forward", "reload": "Reload the page", "close_tab": "Close a tab", "switch_tab": "Switch tabs"]
+    what = named[tool] ?? "Read the page"
+    if tool == "click" || tool == "type" || tool == "press_key" {
+     let o: [String: Any] = ["tool": tool, "id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "key": argText(args, "key"), "submit": argFlag(args, "submit")]
+     let look = try await agentJs(try await agentPage(who, args).view, agentScripts["Sensitive"] ?? "", o) as? [String: Any] ?? [:]
+     let label = look["label"] as? String ?? ""
+     why = look["why"] as? String ?? ""
+     if tool == "click" { what = "Click “" + label + "”" }
+     else if tool == "type" { what = look["secret"] as? Bool == true || argText(args, "text").isEmpty ? "Type into “" + label + "”" : "Type “" + clipped(argText(args, "text"), 60) + "” into “" + label + "”" }
+    }
+   }
+  } catch { return nil } // no page or no such element: the tool itself says what's wrong
+  let marked = pref("SensitiveSites", [String]()).contains { onSite($0, site) }
+  if action == "interact" && (!why.isEmpty || marked) { action = "sensitive"; if why.isEmpty { why = "You marked " + site + " as sensitive." } }
+  let run = runs[who]
+  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  let mode = permissionMode(run?.chat.companion ?? "", site, action) ?? (run != nil ? defaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site
+  let granted = mode == "always" || mode == "chat" && (run.map { $0.chat.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  guard let run else {
+   if granted { return nil }
+   let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site
+   switch await askUser(who, ask, now: quick) {
+   case .some(false): return agentFail("The user said no to this. Don't try it again unless they ask.")
+   case nil: return needsConfirm(who, ask, "Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call \(tool) again.")
+   default: break
+   }
+   if mode == "chat" { sessionGrants.insert(who + " " + key) }
+   return nil
+  }
+  if granted && action != "sensitive" { if action == "interact" { audit(run.chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat") }; return nil }
+  let answer = await approve(run, what, site, action, why, countdown: granted)
+  if answer == "always" { setPermission(site, action, "", "always") }
+  if answer == "chat" && !run.chat.allowed.contains(key) { run.chat.allowed.append(key) }
+  let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
+                 "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
+  audit(run.chat, what, site, results[answer] ?? "You said no")
+  publishAiEverywhere()
+  switch answer {
+  case "always", "chat", "once", "go", "now": return nil
+  case "cancel": return agentFail("The user cancelled this before it ran. Don't try it again unless they ask.")
+  case "stop": return agentFail(stopText)
+  case "timeout": return agentFail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.")
+  default: return agentFail("The user said no to this. Don't try it again; if you need it, ask them in your reply.")
   }
  }
 
- func did(_ action: String) { agentAction = action.count > 90 ? String(action.prefix(90)) + "…" : action }
-
- /// What an action led to: where the agent is now, and the new tab it's in if the action opened one.
- func outcome(_ who: String, _ tab: Tab, _ before: String, _ done: String) -> [String: Any] {
-  let opened = agentTabs[who].flatMap { id in id != before ? tabs.first(where: { $0.id == id }) : nil }
-  let now = opened ?? tab
-  var reply: [String: Any] = ["done": done, "url": now.url, "title": now.title]
-  if let opened { reply["tabId"] = opened.id; reply["note"] = "This opened a new tab; you're working in it now." }
-  return reply
- }
-
- func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ done: @escaping (String) -> Void) {
+ @MainActor func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String {
   do {
    switch tool {
+   case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
+   case "remember", "recall", "forget": return memoryTool(who, tool, args)
+   case "save_file":
+    let reply = saveFile(who, args)
+    if let done = (jsonObject(reply)?["result"] as? [String: Any])?["done"] as? String, let space = done.firstIndex(of: " "), let end = done.range(of: " in the user's Library") {
+     did(who, (done.hasPrefix("Replaced") ? "Updated" : "Saved") + done[space..<end.lowerBound]); publishAiEverywhere()
+    }
+    return reply
    case "list_tabs":
-    done(agentOk(tabs.filter { !$0.isPrivate }.map { tab -> [String: Any] in
-     var item: [String: Any] = ["tabId": tab.id, "title": tab.title, "url": tab.url, "window": 1]
-     if tab === active { item["active"] = true }
-     if agentTabs[who] == tab.id { item["yours"] = true }
-     return item
-    }))
+    var list: [[String: Any]] = []
+    for (index, browser) in browsers.enumerated() {
+     for tab in browser.tabs where !tab.isPrivate {
+      var item: [String: Any] = ["tabId": tab.id, "title": tab.title, "url": tab.url, "window": index + 1]
+      if tab === browser.active { item["active"] = true }
+      if agentTabs[who] == tab.id { item["yours"] = true }
+      list.append(item)
+     }
+    }
+    return agentOk(list)
+   case "web_search": return try await webSearch(who, args)
+   case "read_url": return try await readUrl(who, args)
    case "open_tab":
-    guard let url = webUrl(argText(args, "url")) else { done(agentFail("Agents can only open http and https pages.")); return }
-    let tab = openAgentTab(who, url)
-    waitLoaded(tab, 15) { self.did("Opened " + hostName(tab.url)); done(agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])) }
+    let background = args["background"] as? Bool ?? (runs[who] != nil)
+    let url = try agentWebUrl(argText(args, "url")), chat = runs[who] != nil ? who : nil
+    let mine = browsers.flatMap(\.tabs).filter { !$0.closed && (chat != nil ? ($0.runChat ?? $0.inChat) == chat : $0.aiGroup && $0.agentKey == who || $0.inChat == "app:" + who) }
+    if mine.count >= 6 { return agentFail("You already have 6 tabs open. Reuse one with navigate, or close one with close_tab first.") } // tabs one chat (or one outside AI) may have open at once
+    let tab = (chatRunner(who) ?? self).openAgentTab(who, url, background: background)
+    await waitLoaded(tab)
+    did(who, "Opened " + hostName(tab.url)); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "navigate":
-    try agentPage(who, args) { tab, view in
-     guard let url = self.webUrl(argText(args, "url")), let address = URL(string: url) else { done(agentFail("Agents can only open http and https pages.")); return }
-     self.load(address, in: view)
-     self.waitLoaded(tab, 15) { self.did("Went to " + hostName(tab.url)); done(agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])) }
-    }
+    let (_, tab, view) = try await agentPage(who, args)
+    guard let address = URL(string: try agentWebUrl(argText(args, "url"))) else { return agentFail("Agents can only open http and https pages.") }
+    view.load(URLRequest(url: address)); await waitLoaded(tab)
+    did(who, "Went to " + hostName(tab.url)); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "switch_tab":
-    let tab = try agentTab(who, args)
-    if argFlag(args, "show") { select(tab); window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
-    did("Switched to " + tab.title); done(agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url]))
+    let (browser, tab) = try agentTab(who, args)
+    if argFlag(args, "show") { browser.select(tab); browser.window.makeKeyAndOrderFront(nil); NSApp.activate(ignoringOtherApps: true) }
+    did(who, "Switched to " + tab.title); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "close_tab":
-    let tab = try agentTab(who, args)
-    close(tab); agentTabs[who] = nil; did("Closed a tab"); done(agentOk(["done": "Closed the tab"]))
+    let (browser, tab) = try agentTab(who, args)
+    browser.close(tab, force: true); agentTabs[who] = nil
+    did(who, "Closed a tab"); return agentOk(["done": "Closed the tab"])
    case "go_back", "go_forward", "reload":
-    try agentPage(who, args) { tab, view in
-     if tool == "go_back" { guard view.canGoBack else { done(agentFail("There's no earlier page in this tab.")); return }; view.goBack() }
-     else if tool == "go_forward" { guard view.canGoForward else { done(agentFail("There's no later page in this tab.")); return }; view.goForward() }
-     else { view.reload() }
-     self.waitLoaded(tab, 15) { self.did(tool == "reload" ? "Reloaded the page" : tool == "go_back" ? "Went back" : "Went forward"); done(agentOk(["url": tab.url, "title": tab.title])) }
-    }
+    let (_, tab, view) = try await agentPage(who, args)
+    if tool == "go_back" { guard view.canGoBack else { return agentFail("There's no earlier page in this tab.") }; view.goBack() }
+    else if tool == "go_forward" { guard view.canGoForward else { return agentFail("There's no later page in this tab.") }; view.goForward() }
+    else { view.reload() }
+    await waitLoaded(tab)
+    did(who, tool == "reload" ? "Reloaded the page" : tool == "go_back" ? "Went back" : "Went forward"); return agentOk(["url": tab.url, "title": tab.title])
    case "read_page":
-    try agentPage(who, args) { tab, view in
-     let text = !(args["text"] as? Bool == false || args["text"] as? String == "false")
-     self.js(view, agentScripts["Snapshot"] ?? "", ["text": text, "all": argFlag(args, "all"), "offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))], done) { page in
-      self.did("Read " + hostName(tab.url)); done(agentOk(["text": page as? String ?? ""]))
-     }
-    }
+    let (_, tab, view) = try await agentPage(who, args)
+    let text = !(args["text"] as? Bool == false || args["text"] as? String == "false")
+    let page = try await agentJs(view, agentScripts["Snapshot"] ?? "", ["text": text, "all": argFlag(args, "all"), "offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))])
+    did(who, "Read " + hostName(tab.url)); return agentOk(["text": page as? String ?? ""])
    case "find":
-    try agentPage(who, args) { _, view in
-     self.js(view, agentScripts["Find"] ?? "", ["text": argText(args, "text")], done) { found in
-      self.did("Looked for \"" + argText(args, "text") + "\""); done(agentOk(["text": found as? String ?? ""]))
-     }
-    }
+    let (_, _, view) = try await agentPage(who, args)
+    let found = try await agentJs(view, agentScripts["Find"] ?? "", ["text": argText(args, "text")])
+    did(who, "Looked for \"" + argText(args, "text") + "\""); return agentOk(["text": found as? String ?? ""])
    case "screenshot":
-    try agentPage(who, args) { tab, view in
-     // A page only paints while it's on screen: show it for a moment, then give the user their tab back.
-     let previous = self.active
-     if tab !== previous { self.select(tab) }
-     DispatchQueue.main.asyncAfter(deadline: .now() + (tab !== previous ? 0.3 : 0)) {
-      view.takeSnapshot(with: nil) { image, error in
-       if let previous, previous !== tab, self.active === tab, self.tabs.contains(where: { $0 === previous }) { self.select(previous) }
-       guard let image, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
-        done(agentFail("Couldn't take the screenshot" + (error.map { ": " + $0.localizedDescription } ?? ".")))
-        return
-       }
-       self.did("Took a screenshot"); done(agentOk(["image": png.base64EncodedString(), "mimeType": "image/png"]))
-      }
-     }
+    let (browser, tab, view) = try await agentPage(who, args)
+    // A page only paints while it's on screen: show it for a moment, then give the user their tab back.
+    let previous = browser.active
+    if tab !== previous { browser.select(tab); try? await Task.sleep(nanoseconds: 300_000_000) }
+    let shot: (NSImage?, Error?) = await withCheckedContinuation { done in view.takeSnapshot(with: nil) { done.resume(returning: ($0, $1)) } }
+    if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
+    guard let image = shot.0, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
+     return agentFail("Couldn't take the screenshot" + (shot.1.map { ": " + $0.localizedDescription } ?? "."))
     }
+    did(who, "Took a screenshot"); return agentOk(["image": png.base64EncodedString(), "mimeType": "image/png"])
    case "click":
-    try agentPage(who, args) { tab, view in
-     let before = agentTabs[who] ?? ""
-     tab.agentActedAt = Date() // a pop-up or file picker it opens belongs to the agent
-     let script = "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail
-     self.js(view, script, ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text")], done) { hit in
-      let label = (hit as? [String: Any])?["label"] as? String ?? ""
-      self.waitLoaded(tab, 8) { self.did("Clicked '" + label + "'"); done(agentOk(self.outcome(who, tab, before, "Clicked \"" + label + "\""))) }
-     }
-    }
+    let (_, tab, view) = try await agentPage(who, args)
+    let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text")]
+    let hit = try await settled(tab, view) { try await agentJs(view, agentScripts["Click"] ?? "", o) } as? [String: Any] ?? [:]
+    let x = (hit["x"] as? NSNumber)?.doubleValue ?? 0, y = (hit["y"] as? NSNumber)?.doubleValue ?? 0
+    let label = hit["label"] as? String ?? "", before = agentTabs[who] ?? ""
+    await pointer(who, tab, view, x, y)
+    tab.agentActedAt = Date() // a pop-up or file picker it opens belongs to the agent
+    try await mouseClick(view, x, y, o)
+    await waitLoaded(tab, 8)
+    // The chat's step only had the element's number from the AI's call ("Clicked element 7"): name what it was. The AI
+    // may have sent more calls in the same breath, so it isn't always the last step.
+    let numbered = "Clicked element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
+    if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicked “" + label + "”" }
+    did(who, "Clicked '" + label + "'"); return agentOk(outcome(who, tab, before, "Clicked \"" + label + "\""))
    case "type":
-    try agentPage(who, args) { tab, view in
-     let text = argText(args, "text"), append = argFlag(args, "append"), submit = argFlag(args, "submit"), before = agentTabs[who] ?? ""
-     self.js(view, agentScripts["Focus"] ?? "", ["id": argId(args), "selector": argText(args, "selector"), "value": text, "append": append], done) { focused in
-      tab.agentActedAt = Date()
-      let focus = focused as? [String: Any] ?? [:]
-      if let picked = focus["done"] as? String, !picked.isEmpty { self.did(picked); done(agentOk(["done": picked])); return }
-      let field = focus["label"] as? String ?? ""
-      let verb: String = text.isEmpty ? "Cleared \"" : "Typed into \"", enter: String = submit ? " and pressed Enter" : ""
-      let finish: () -> Void = {
-       self.waitLoaded(tab, submit ? 8 : 0) {
-        self.did("Typed into " + field)
-        done(agentOk(self.outcome(who, tab, before, verb + field + "\"" + enter)))
-       }
-      }
-      self.js(view, agentInsertScript, ["text": text, "append": append], done) { _ in
-       if submit, let enter = try? keyInfo("Enter") { self.js(view, agentKeyScript, enter, done) { _ in finish() } } else { finish() }
-      }
-     }
+    let (_, tab, view) = try await agentPage(who, args)
+    let text = argText(args, "text"), append = argFlag(args, "append"), submit = argFlag(args, "submit"), before = agentTabs[who] ?? ""
+    let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    if typed.count >= 4 { runs[who]?.typed.insert(typed) } // form data: memory never keeps it
+    let q = { (clicked: Bool) -> [String: Any] in ["id": argId(args), "selector": argText(args, "selector"), "value": text, "append": append, "clicked": clicked] }
+    var focus = try await settled(tab, view) { try await agentJs(view, agentScripts["Focus"] ?? "", q(false)) } as? [String: Any] ?? [:]
+    tab.agentActedAt = Date()
+    if let picked = focus["done"] as? String, !picked.isEmpty { did(who, picked); return agentOk(["done": picked]) }
+    if let at = focus["at"] as? [String: Any], let x = (at["x"] as? NSNumber)?.doubleValue, let y = (at["y"] as? NSNumber)?.doubleValue {
+     await pointer(who, tab, view, x, y)
+     try? await mouseClick(view, x, y, q(false))
+     focus = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)) as? [String: Any] ?? [:] // the click moved the caret: put it back
+    } else if let near = focus["near"] as? [String: Any], let x = (near["x"] as? NSNumber)?.doubleValue, let y = (near["y"] as? NSNumber)?.doubleValue {
+     await pointer(who, tab, view, x, y)
     }
+    let field = focus["label"] as? String ?? ""
+    func unchanged() async -> Bool { ((try? await agentJs(view, "return { sig: sig(deepActive()) };", [:])) as? [String: Any])?["sig"] as? String == focus["sig"] as? String }
+    if !text.isEmpty {
+     view.insertText(text)
+     // Some editors ignore inserted text: put it in the way typing would, or type it key by key.
+     if await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); _ = try await agentJs(view, agentInsertScript, ["text": text, "append": append]) }
+     if text.count <= 4000, await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who)) }
+     if await unchanged() { return agentFail("Typed, but \"" + field + "\" didn't change. Click it first, then type without an id, or use press_key.") }
+    } else if !append { try await pressKey(view, "Backspace") }
+    if submit { try await pressKey(view, "Enter") }
+    await waitLoaded(tab, submit ? 8 : 0)
+    did(who, "Typed into " + field)
+    return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "")))
    case "press_key":
-    let key = try keyInfo(argText(args, "key"))
-    try agentPage(who, args) { tab, view in
-     let before = agentTabs[who] ?? ""
-     tab.agentActedAt = Date()
-     self.js(view, agentKeyScript, key, done) { _ in
-      self.waitLoaded(tab, 8) { self.did("Pressed " + argText(args, "key")); done(agentOk(self.outcome(who, tab, before, "Pressed " + argText(args, "key")))) }
-     }
-    }
+    let (_, tab, view) = try await agentPage(who, args)
+    let before = agentTabs[who] ?? ""
+    tab.agentActedAt = Date()
+    try await pressKey(view, argText(args, "key")); await waitLoaded(tab, 8)
+    did(who, "Pressed " + argText(args, "key")); return agentOk(outcome(who, tab, before, "Pressed " + argText(args, "key")))
    case "scroll":
-    try agentPage(who, args) { _, view in
-     let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "direction": argText(args, "direction"), "amount": min(20000, max(0, argNumber(args, "amount", 0)))]
-     self.js(view, agentScripts["Scroll"] ?? "", o, done) { scrolled in
-      let result = scrolled as? [String: Any] ?? [:], text = result["done"] as? String ?? ""
-      var reply: [String: Any] = ["done": text]
-      if let at = result["at"] as? String, !at.isEmpty { reply["at"] = at }
-      self.did(text); done(agentOk(reply))
-     }
-    }
+    let (_, _, view) = try await agentPage(who, args)
+    let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "direction": argText(args, "direction"), "amount": min(20000, max(0, argNumber(args, "amount", 0)))]
+    let scrolled = try await agentJs(view, agentScripts["Scroll"] ?? "", o) as? [String: Any] ?? [:], done = scrolled["done"] as? String ?? ""
+    var reply: [String: Any] = ["done": done]
+    if let at = scrolled["at"] as? String, !at.isEmpty { reply["at"] = at }
+    did(who, done); return agentOk(reply)
    case "wait_for":
-    let query: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "gone": argFlag(args, "gone")]
-    if argId(args).isEmpty && argText(args, "selector").isEmpty && argText(args, "text").isEmpty { done(agentFail("Pass an id, selector or text to wait for.")); return }
+    let (_, tab, view) = try await agentPage(who, args)
+    let gone = argFlag(args, "gone"), q: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "gone": gone]
+    if argId(args).isEmpty && argText(args, "selector").isEmpty && argText(args, "text").isEmpty { return agentFail("Pass an id, selector or text to wait for.") }
     let until = Date().addingTimeInterval(min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000)
-    try agentPage(who, args) { tab, view in self.waitFor(tab, view, query, until, done) }
+    while true {
+     if try await agentJs(view, agentScripts["Wait"] ?? "", q) as? Bool == true { did(who, "Waited for the page"); return agentOk(["found": !gone, "done": gone ? "It's gone" : "It's there", "url": tab.url]) }
+     if Date() >= until { return agentOk(["found": gone, "done": gone ? "Still there after waiting" : "Didn't appear in time", "url": tab.url]) }
+     try? await Task.sleep(nanoseconds: 250_000_000)
+    }
    case "handle_dialog":
-    let tab = try agentTab(who, args)
-    guard tab.dialog != nil else { done(agentFail("No dialog is open in this tab.")); return }
+    let (browser, tab) = try agentTab(who, args)
+    guard tab.dialog != nil else { return agentFail("No dialog is open in this tab.") }
     let accept = !(args["accept"] as? Bool == false || args["accept"] as? String == "false"), before = agentTabs[who] ?? ""
-    answerDialog(tab, accept, args["text"] as? String)
-    waitLoaded(tab, 8) { self.did(accept ? "Accepted a dialog" : "Dismissed a dialog"); done(agentOk(self.outcome(who, tab, before, accept ? "Accepted the dialog" : "Dismissed the dialog"))) }
+    browser.answerDialog(tab, accept, args["text"] as? String)
+    await waitLoaded(tab, 8)
+    did(who, accept ? "Accepted a dialog" : "Dismissed a dialog"); return agentOk(outcome(who, tab, before, accept ? "Accepted the dialog" : "Dismissed the dialog"))
    case "upload_file":
-    try agentPage(who, args) { tab, view in self.uploadFiles(who, tab, view, args, quick, done) }
-   default: done(agentFail("Unknown tool: " + tool))
+    let (_, tab, view) = try await agentPage(who, args)
+    return try await uploadFiles(who, tab, view, args, quick)
+   default: return agentFail("Unknown tool: " + tool)
    }
-  } catch { done(agentFail(error.localizedDescription)) }
+  } catch { return agentFail(error.localizedDescription) }
  }
 
- func waitFor(_ tab: Tab, _ view: WKWebView, _ query: [String: Any], _ until: Date, _ done: @escaping (String) -> Void) {
-  let gone = query["gone"] as? Bool ?? false
-  js(view, agentScripts["Wait"] ?? "", query, done) { found in
-   if found as? Bool == true { self.did("Waited for the page"); done(agentOk(["found": !gone, "done": gone ? "It's gone" : "It's there", "url": tab.url] as [String: Any])); return }
-   if Date() >= until { done(agentOk(["found": gone, "done": gone ? "Still there after waiting" : "Didn't appear in time", "url": tab.url] as [String: Any])); return }
-   DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { self.waitFor(tab, view, query, until, done) }
-  }
- }
-
- func uploadFiles(_ who: String, _ tab: Tab, _ view: WKWebView, _ args: [String: Any], _ quick: Bool, _ done: @escaping (String) -> Void) {
+ @MainActor func uploadFiles(_ who: String, _ tab: Tab, _ view: WKWebView, _ args: [String: Any], _ quick: Bool) async throws -> String {
   var paths: [String] = []
   if let list = args["paths"] as? [Any] { paths = list.map { $0 as? String ?? "" } } else if let one = args["paths"] as? String { paths = [one] }
   var files: [URL] = []
@@ -568,48 +932,37 @@ extension Browser {
    let file = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath).standardizedFileURL
    if !files.contains(file) && files.count < 12 { files.append(file) }
   }
-  if files.isEmpty { done(agentFail("Pass paths: the full paths of the files to attach.")); return }
-  if let missing = files.first(where: { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile != true }) { done(agentFail("There's no file at " + missing.path)); return }
-  let names = files.map { $0.lastPathComponent }.joined(separator: ", "), ask = "upload " + clipped(names, 120) + " to " + hostName(tab.url)
-  let query: [String: Any] = ["id": argId(args), "selector": argText(args, "selector")]
-  let byId = !argId(args).isEmpty || !argText(args, "selector").isEmpty
-  let allowed: () -> Void = {
-   self.askUser(who, ask, now: quick) { answer in
-    switch answer {
-    case .some(true): self.attachFiles(tab, view, files, query, byId, names, done)
-    case .some(false): done(agentFail("The user didn't allow this upload. Don't try again unless they ask."))
-    default: done(self.needsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again."))
-    }
-   }
-  }
+  if files.isEmpty { return agentFail("Pass paths: the full paths of the files to attach.") }
+  if let missing = files.first(where: { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile != true }) { return agentFail("There's no file at " + missing.path) }
+  let notInput = "That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id."
+  let noPicker = "No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input."
+  let query: [String: Any] = ["id": argId(args), "selector": argText(args, "selector")], byId = !argId(args).isEmpty || !argText(args, "selector").isEmpty
+  let pick = "const pick = (() => {\n" + (agentScripts["FileInput"] ?? "") + "\n})();\n" + agentPickTail
   if byId {
    var check = query; check["click"] = false
-   js(view, "const pick = (() => {\n" + (agentScripts["FileInput"] ?? "") + "\n})();\n" + agentPickTail, check, done) { found in
-    if found as? Bool == true { allowed() } else { done(agentFail("That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id.")) }
-   }
-  } else if tab.agentUpload != nil { allowed() }
-  else { done(agentFail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.")) }
- }
-
- func attachFiles(_ tab: Tab, _ view: WKWebView, _ files: [URL], _ query: [String: Any], _ byId: Bool, _ names: String, _ done: @escaping (String) -> Void) {
-  let finish: () -> Void = { self.did("Attached " + names); done(agentOk(["done": "Attached " + names])) }
+   guard try await agentJs(view, pick, check) as? Bool == true else { return agentFail(notInput) }
+  } else if tab.agentUpload == nil { return agentFail(noPicker) }
+  let names = files.map { $0.lastPathComponent }.joined(separator: ", "), ask = "upload " + clipped(names, 120) + " to " + hostName(tab.url)
+  switch await askUser(who, ask, now: quick) {
+  case .some(false): return agentFail("The user didn't allow this upload. Don't try again unless they ask.")
+  case nil: return needsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.")
+  default: break
+  }
   if !byId {
-   guard let picker = tab.agentUpload else { done(agentFail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.")); return }
+   guard let picker = tab.agentUpload else { return agentFail(noPicker) }
    tab.agentUpload = nil
    picker.complete(picker.multiple ? files : Array(files.prefix(1)))
-   finish(); return
+  } else {
+   // Click the file input: WebKit asks for files (runOpenPanel), and agentPicker answers with these.
+   if let picker = tab.agentUpload { tab.agentUpload = nil; picker.complete(nil) }
+   tab.uploadFiles = files; tab.agentActedAt = Date()
+   var click = query; click["click"] = true
+   _ = try await agentJs(view, pick, click)
+   let until = Date().addingTimeInterval(3)
+   while tab.uploadFiles != nil && Date() < until { try? await Task.sleep(nanoseconds: 100_000_000) }
+   if tab.uploadFiles != nil { tab.uploadFiles = nil; return agentFail(notInput) }
   }
-  // Click the file input: WebKit asks for files (runOpenPanel), and agentPicker answers with these.
-  if let picker = tab.agentUpload { tab.agentUpload = nil; picker.complete(nil) }
-  tab.uploadFiles = files; tab.agentActedAt = Date()
-  var pick = query; pick["click"] = true
-  js(view, "const pick = (() => {\n" + (agentScripts["FileInput"] ?? "") + "\n})();\n" + agentPickTail, pick, done) { _ in self.awaitPicker(tab, Date().addingTimeInterval(3), finish, done) }
- }
-
- func awaitPicker(_ tab: Tab, _ until: Date, _ finish: @escaping () -> Void, _ done: @escaping (String) -> Void) {
-  if tab.uploadFiles == nil { finish(); return }
-  if Date() >= until { tab.uploadFiles = nil; done(agentFail("That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id.")); return }
-  DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { self.awaitPicker(tab, until, finish, done) }
+  did(who, "Attached " + names); return agentOk(["done": "Attached " + names])
  }
 
  /// The page wants files. An agent's upload_file answers it, or, when an agent's click opened it, upload_file will:
@@ -672,13 +1025,65 @@ extension Browser {
    if let message = result as? String, message != "opened", message != "closed" { self.toast(message) }
   }
  }
+
+ // MARK: The interface's side
+
+ /// The interface's agent ops (agentTakeOver, agentStop, permAnswer, permSet, permSensitive, permReset); false = not one of them.
+ func handleAgentOps(_ op: String, _ data: [String: Any]) -> Bool {
+  switch op {
+  case "agentTakeOver": takeOver(argFlag(data, "on"), argText(data, "key"))
+  case "agentStop": stopAgent(argText(data, "key"))
+  case "permAnswer": // a card's answer; no id: Approve all
+   let id = argText(data, "id"), answer = argText(data, "answer")
+   guard let asking = runs[argText(data, "run").isEmpty ? shownChat?.id ?? "" : argText(data, "run")] else { break }
+   for card in asking.approvals where id.isEmpty ? card.until == nil : card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now"].contains(answer) ? answer : "deny") }
+  case "permSet":
+   guard permissionActions.contains(argText(data, "action")) else { break }
+   setPermission(siteOf(argText(data, "site")), argText(data, "action"), argText(data, "companion"), argText(data, "mode")); publishAiEverywhere()
+  case "permSensitive":
+   let marked = siteOf(argText(data, "site"))
+   guard !marked.isEmpty else { break }
+   prefs["SensitiveSites"] = pref("SensitiveSites", [String]()).filter { $0 != marked } + (argFlag(data, "on") ? [marked] : [])
+   saveLater(); publishAiEverywhere()
+  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); saveLater(); publishAiEverywhere()
+  default: return false
+  }
+  return true
+ }
+ /// Agent fields of the `state` message: the tabs AIs are at work in (the `agent` bar itself is main.swift's agentData()).
+ func agentStateFields() -> [String: Any] { ["working": atWork().compactMap { agentTabs[$0.key] }] }
+ /// Agent fields of the `ai` message for the chat on screen (approvals, audit, permissions, sensitiveSites).
+ func agentAiFields(_ shown: AiChat?) -> [String: Any] {
+  let rules = pref("Permissions", [[String: Any]]())
+  let everyone = permissionActions.map { action -> [String: Any] in
+   let rule = rules.first { ruleText($0, "Action") == action && ruleText($0, "Site").isEmpty && ruleText($0, "Companion").isEmpty }
+   return ["site": "", "action": action, "companion": "", "mode": rule.map { ruleText($0, "Mode") } ?? defaultPermission(action)]
+  }
+  let specific = rules.filter { !ruleText($0, "Site").isEmpty || !ruleText($0, "Companion").isEmpty }
+   .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
+  let run = shown.flatMap { runs[$0.id] }
+  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()),
+          "approvals": run.map { r in r.approvals.map { ["id": $0.id, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] } } as Any? ?? NSNull(),
+          "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
+ }
 }
 
-/// The Unix socket the running Still listens on for agent calls. Only this user can open it.
+/// The Unix socket each running profile listens on for agent calls, in its folder. Only this user can open it.
 enum AgentSocket {
- static var path: String { support.appendingPathComponent("agent.sock").path }
+ /// In the profile's folder, or, when that path is too long for a socket, in this user's own temporary folder, named after it.
+ static func path(_ folder: URL = support) -> String {
+  let inside = folder.appendingPathComponent("agent.sock").path
+  if inside.utf8.count < 104 { return inside }
+  var hash: UInt64 = 0xcbf29ce484222325 // FNV-1a
+  for byte in folder.standardizedFileURL.path.utf8 { hash = (hash ^ UInt64(byte)) &* 0x100000001b3 }
+  return userTemp + "still-" + String(hash, radix: 16) + ".sock"
+ }
+ static let userTemp: String = {
+  var buffer = [CChar](repeating: 0, count: 1024)
+  return confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, buffer.count) > 0 ? String(cString: buffer) : NSTemporaryDirectory()
+ }()
 
- static func address() -> sockaddr_un? {
+ static func address(_ path: String) -> sockaddr_un? {
   var addr = sockaddr_un()
   let bytes = Array(path.utf8)
   guard bytes.count < MemoryLayout.size(ofValue: addr.sun_path) else { return nil }
@@ -688,12 +1093,14 @@ enum AgentSocket {
   return addr
  }
 
- static func dial() -> Int32? {
-  guard var addr = address() else { return nil }
+ /// Connects to the Still running on this profile folder, if it's this user's.
+ static func dial(_ folder: URL = support) -> Int32? {
+  guard var addr = address(path(folder)) else { return nil }
   let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
   if fd < 0 { return nil }
   let result = withUnsafePointer(to: &addr) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.connect(fd, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) } }
-  if result != 0 { _ = Darwin.close(fd); return nil }
+  var uid = uid_t(0), gid = gid_t(0)
+  if result != 0 || Darwin.getpeereid(fd, &uid, &gid) != 0 || uid != getuid() { _ = Darwin.close(fd); return nil }
   var on: Int32 = 1
   _ = Darwin.setsockopt(fd, SOL_SOCKET, SO_NOSIGPIPE, &on, socklen_t(MemoryLayout<Int32>.size))
   return fd
@@ -702,8 +1109,9 @@ enum AgentSocket {
  /// Any number of agents at once: each connection gets its own thread, and calls run side by side on the main thread.
  static func serve(_ handle: @escaping (String, @escaping (String) -> Void) -> Void) {
   if let other = dial() { _ = Darwin.close(other); NSLog("Still: another copy is already serving AI agents"); return }
+  let path = path()
   _ = Darwin.unlink(path) // left behind by a Still that quit or crashed
-  guard var addr = address() else { return }
+  guard var addr = address(path) else { return }
   let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
   if fd < 0 { return }
   let mask = Darwin.umask(0o077) // never open to others, not even for a moment
@@ -767,6 +1175,8 @@ enum AgentSocket {
 
 /// `Still --mcp`: a Model Context Protocol server over stdio (JSON-RPC, one message per line). AI apps launch it, and it
 /// forwards tool calls to the running Still. `Still --cli <tool> as=<name> [key=value ...]`: one tool call from a terminal.
+/// Flags: --as <name> (who it is, as the user sees it), --run <chat id> (Still's own chat), --this-profile (locked to its
+/// profile, with the chat's own tools), --no-tools, --profile and --profiles-root (main.swift reads those), --qa.
 enum Mcp {
  struct Tool { let name: String, description: String, props: [(String, [String: Any])], required: [String] }
  static func tool(_ name: String, _ description: String, _ props: [(String, [String: Any])], _ required: [String]) -> Tool { Tool(name: name, description: description, props: props, required: required) }
@@ -774,9 +1184,14 @@ enum Mcp {
  static func bool(_ name: String, _ description: String) -> (String, [String: Any]) { (name, ["type": "boolean", "description": description]) }
  static func num(_ name: String, _ description: String) -> (String, [String: Any]) { (name, ["type": "number", "description": description]) }
  static let tabId = str("tabId", "Tab id (optional)")
- static let tools: [Tool] = [
+ static let browserTools: [Tool] = [
   tool("list_tabs", "List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.", [], []),
-  tool("open_tab", "Open a URL or search terms in a new background tab and work there from now on. The user keeps their own tab and can keep browsing. Start most tasks here.", [str("url", "URL or search terms")], ["url"]),
+  tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.",
+       [str("query", "What to search for"), num("count", "How many results, up to 10 (default 8)")], ["query"]),
+  tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.",
+       [str("url", "The page's URL"), num("offset", "Text position to continue from, for long pages")], ["url"]),
+  tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.",
+       [str("url", "URL or search terms"), bool("background", "true (the default in Still's chat): your own tab, kept out of the user's tab strip. false: open it among the user's tabs, only when they asked for it there")], ["url"]),
   tool("navigate", "Load a URL or search terms in your current tab (or tabId).", [str("url", "URL or search terms"), tabId], ["url"]),
   tool("switch_tab", "Work in another tab from now on. It stays in the background unless show is true.", [str("tabId", "Tab id from list_tabs"), bool("show", "Bring it to the front (only when the user asked to see it)")], ["tabId"]),
   tool("close_tab", "Close your current tab (or tabId).", [tabId], []),
@@ -790,6 +1205,8 @@ enum Mcp {
        [str("id", "Element id from read_page or find"), str("text", "Or: visible text of the button or link"), str("selector", "Or: CSS selector"), tabId], []),
   tool("type", "Type into a field, replacing what's in it (append=true adds instead). Without an id, types into the focused field. On a dropdown, picks the option with that text. submit=true presses Enter afterwards.",
        [str("text", "Text to type, or the option to pick"), str("id", "Element id from read_page or find"), str("selector", "Or: CSS selector"), bool("submit", "Press Enter afterwards"), bool("append", "Add to the field's text instead of replacing it"), tabId], ["text"]),
+  tool("save_file", "Save a file for the user: a table as CSV, notes as Markdown, data as JSON, or plain text. It goes in their Library and shows in the chat as a card they can open, so don't paste its contents into your reply. Saving again with the same name replaces the one you saved. Up to 5 MB.",
+       [str("name", "File name with its ending, like laptops-under-800.csv"), str("content", "The whole file")], ["name", "content"]),
   tool("press_key", "Press a key in the page: Enter, Escape, Tab, ArrowDown, PageDown, Backspace, a letter, or a combination like Control+A or Shift+Tab.", [str("key", "Key or combination"), tabId], ["key"]),
   tool("scroll", "Scroll down or up (the page, or the scrolling panel in the middle of the view), or bring element id into view.",
        [("direction", ["type": "string", "enum": ["down", "up"]] as [String: Any]), num("amount", "Pixels (default: most of a screen)"), str("id", "Element id: scroll it into view, or with direction, scroll the panel it's in"), tabId], []),
@@ -802,8 +1219,28 @@ enum Mcp {
   tool("user_confirmed", "Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.", [str("code", "The code Still gave you"), bool("allow", "true if the user said yes")], ["code"]),
   tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", [tabId], [])
  ]
+ // Still's own companions keep a memory of the user, on this computer, one per companion; and Still's own chat can show
+ // the user a question with options and wait for the answer.
+ static let chatTools: [Tool] = [
+  tool("remember", "Keep one short, lasting fact about the user in your memory, like \"Prefers aisle seats\" or \"Sister Maya lives in Lisbon\". It's saved with today's date and this chat. A fact that repeats one you have updates it. Never pass passwords, codes, card or account numbers, form data or anything from private tabs: Still refuses them.",
+       [str("fact", "The fact, in one short sentence"), str("kind", "fact, preference, habit, person or project")], ["fact"]),
+  tool("recall", "Look up what you remember about the user: the facts that best match the words given, with their ids and dates. Leave query empty for the most important ones.", [str("query", "A few words about what you're looking for")], []),
+  tool("forget", "Forget a fact: pass its id from recall, or a few words that every fact to forget contains. Use it when the user asks you to forget something.", [str("id", "The fact's id"), str("about", "Or: words in the facts to forget")], []),
+  tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
+       [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
+        str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"])
+ ]
+ static let listProfilesTool = tool("list_profiles", "List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or \"temp\" for a clean temporary window.", [], [])
+ static let profileProp = str("profile", "Still profile name from list_profiles (optional; defaults to the launch profile). A closed profile is opened. \"temp\" opens a separate temporary window with no cookies, logins or history, deleted after it closes.")
+ // Every tool can target another Still profile by name, or "temp": a fresh window with no cookies, logins or history.
+ // Each profile is its own Still process with its own socket. The AI sidebar's agent is locked to its own profile.
+ static func toolList(_ lockProfile: Bool) -> [Tool] {
+  if noTools { return [] }
+  if lockProfile { return browserTools + chatTools }
+  return [listProfilesTool] + browserTools.map { Tool(name: $0.name, description: $0.description, props: $0.props + [profileProp], required: $0.required) }
+ }
  static let instructions: String = "You're driving the user's own Still browser, signed in as them. "
-  + "Work in background tabs: open_tab for new work, so the user can keep browsing. "
+  + "Look things up with web_search and read_url: they need no tab. For hands-on work, open_tab, so the user can keep browsing. "
   + "Use read_page to see a page (text=false when you only need its controls) and find to locate something on a big page; then click, type and press_key with the element ids. "
   + "Actions report where you ended up and any new tab, dialog or file picker, so read the page again only when you need to see what changed. "
   + "If Still says it's waiting for the user, tell the user what to click and stop until they reply. "
@@ -819,10 +1256,12 @@ enum Mcp {
  /// The name the user sees for an agent: "Claude", not "claude-code".
  static func agentName(_ client: String) -> String {
   let lowered = client.lowercased()
-  for (key, name) in [("claude", "Claude"), ("codex", "Codex"), ("openai", "Codex"), ("grok", "Grok"), ("gemini", "Gemini"), ("cursor", "Cursor"), ("copilot", "Copilot"), ("windsurf", "Windsurf")] where lowered.contains(key) { return name }
+  for (key, name) in [("claude", "Claude"), ("codex", "ChatGPT"), ("openai", "ChatGPT"), ("chatgpt", "ChatGPT"), ("grok", "Grok"), ("gemini", "Gemini"), ("cursor", "Cursor"), ("copilot", "Copilot"), ("windsurf", "Windsurf")] where lowered.contains(key) { return name }
   return client
  }
 
+ static var runId = "" // Still's own chat: which chat this server works for (--run)
+ static var noTools = false // --no-tools: a talk with no browser at all (setup's interview)
  static let outLock = NSLock(), stateLock = NSLock()
  static var cancelledIds = Set<String>()
  // Questions this server asks the user through their AI app (MCP elicitation), by request id.
@@ -837,7 +1276,11 @@ enum Mcp {
 
  static func run() {
   _ = signal(SIGPIPE, SIG_IGN)
-  var client = "An AI agent", canElicit = false
+  let forced = argAfter("--as"), lockProfile = CommandLine.arguments.contains("--this-profile")
+  runId = argAfter("--run") ?? ""
+  noTools = CommandLine.arguments.contains("--no-tools")
+  var client = forced ?? "An AI agent", canElicit = false
+  let tools = toolList(lockProfile).map { schema($0) }
   let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"
   while let line = Swift.readLine() {
    guard let message = jsonObject(line) else { continue }
@@ -854,20 +1297,20 @@ enum Mcp {
    let params = message["params"] as? [String: Any] ?? [:]
    switch method {
    case "initialize":
-    client = agentName((params["clientInfo"] as? [String: Any])?["name"] as? String ?? client)
+    if forced == nil { client = agentName((params["clientInfo"] as? [String: Any])?["name"] as? String ?? client) }
     canElicit = (params["capabilities"] as? [String: Any])?["elicitation"] != nil
-    let result: [String: Any] = ["protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18", "capabilities": ["tools": [String: Any]()],
-                                 "serverInfo": ["name": "still", "version": version], "instructions": instructions]
+    let result: [String: Any] = ["protocolVersion": params["protocolVersion"] as? String ?? "2025-06-18", "capabilities": ["tools": [String: Any]()], "serverInfo": ["name": "still", "version": version],
+                                 "instructions": instructions + (lockProfile ? "" : " Still can have several profiles (separate logins); list_profiles shows them and every tool takes an optional profile name, or \"temp\" for a clean temporary window.")]
     send(["jsonrpc": "2.0", "id": id, "result": result])
    case "ping": send(["jsonrpc": "2.0", "id": id, "result": [String: Any]()])
-   case "tools/list":
-    let list = tools.map { schema($0) }
-    send(["jsonrpc": "2.0", "id": id, "result": ["tools": list]])
+   case "tools/list": send(["jsonrpc": "2.0", "id": id, "result": ["tools": tools]])
    case "tools/call":
     // Calls run side by side, so one slow page never holds up the next request, and the app can cancel any of them.
-    let name = params["name"] as? String ?? "", args = params["arguments"] as? [String: Any] ?? [:]
+    let name = params["name"] as? String ?? ""
+    var args = params["arguments"] as? [String: Any] ?? [:]
+    if lockProfile { args["profile"] = nil }
     let who = client, ask = canElicit, key = idKey(id)
-    DispatchQueue.global().async { Mcp.callTool(id, key, who, name, args, ask) }
+    DispatchQueue.global().async { Mcp.callTool(id, key, who, name, args, ask, lockProfile) }
    default:
     let error: [String: Any] = ["code": -32601, "message": "Method not found: " + method]
     send(["jsonrpc": "2.0", "id": id, "error": error])
@@ -875,9 +1318,9 @@ enum Mcp {
   }
  }
 
- static func callTool(_ id: Any, _ key: String, _ who: String, _ name: String, _ args: [String: Any], _ canElicit: Bool) {
+ static func callTool(_ id: Any, _ key: String, _ who: String, _ name: String, _ args: [String: Any], _ canElicit: Bool, _ lockProfile: Bool) {
   let cancelled: () -> Bool = { Mcp.locked { Mcp.cancelledIds.contains(key) } }
-  var reply = call(who, name, args, elicit: canElicit, cancelled: cancelled)
+  var reply = lockProfile && name == "list_profiles" ? agentFail("Unknown tool: list_profiles") : call(who, name, args, elicit: canElicit, cancelled: cancelled)
   // The user isn't at Still: their AI app asks them (the AI never sees the question), then the call carries on.
   var tries = 0
   while tries < 2, canElicit, let confirm = jsonObject(reply)?["confirm"] as? [String: Any], let question = confirm["question"] as? String,
@@ -908,20 +1351,87 @@ enum Mcp {
   return action
  }
 
- /// Sends one tool call to the running Still and returns its JSON reply. One connection per call: calls never queue
- /// behind each other, and a cancelled call just hangs up.
- static func call(_ client: String, _ tool: String, _ args: [String: Any], elicit: Bool = false, cancelled: @escaping () -> Bool = { false }) -> String {
-  let notRunning = "Still isn't running. Open it and turn on Settings → Let AI agents control Still, then try again."
-  guard let fd = AgentSocket.dial() else { return agentFail(notRunning) }
+ /// A profile is open while its Still holds the running lock in its folder.
+ static func isOpen(_ folder: URL) -> Bool {
+  let fd = Darwin.open(folder.appendingPathComponent("running.lock").path, O_RDONLY)
+  if fd < 0 { return false }
   defer { _ = Darwin.close(fd) }
-  var timeout = timeval(tv_sec: 1, tv_usec: 0) // wake up every second to check for a cancel
-  _ = Darwin.setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
-  guard AgentSocket.writeLine(fd, jsonText(["client": client, "tool": tool, "args": args, "elicit": elicit])) else { return agentFail(notRunning) }
-  // Still answers every call within its own time limit; this only covers a Still that froze.
-  let deadline = Date().addingTimeInterval(120)
-  var buffer = Data()
-  if let line = AgentSocket.receiveLine(fd, &buffer, keepWaiting: { !cancelled() && Date() < deadline }) { return line }
-  return Date() >= deadline ? agentFail("Still didn't answer in time. It may be busy; try again, or ask the user to check Still.") : agentFail(notRunning)
+  return flock(fd, LOCK_SH | LOCK_NB) != 0 && errno == EWOULDBLOCK
+ }
+ static func listProfiles() -> String {
+  agentOk(Profiles.read().map { profile -> [String: Any] in
+   let folder = Profiles.folder(profile.id)
+   return ["name": profile.name, "id": profile.id, "open": isOpen(folder), "launch": profile.id == Profiles.launchId, "defaultForAgent": folder.standardizedFileURL.path == support.standardizedFileURL.path]
+  })
+ }
+ /// Starts Still on another profile, as its own process that doesn't share this server's stdio.
+ static func launch(_ arguments: [String]) {
+  let all = arguments + (isQa ? ["--qa"] : [])
+  if Bundle.main.bundleURL.pathExtension == "app" {
+   let config = NSWorkspace.OpenConfiguration()
+   config.createsNewApplicationInstance = true
+   config.activates = !isQa
+   config.arguments = all
+   NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: config)
+  } else {
+   let process = Process()
+   process.executableURL = URL(fileURLWithPath: stillExecutable)
+   process.arguments = all
+   process.standardInput = FileHandle.nullDevice; process.standardOutput = FileHandle.nullDevice; process.standardError = FileHandle.nullDevice
+   try? process.run()
+  }
+ }
+
+ static var tempFolder: URL?, tempStarted = Date.distantPast
+ static let tempLock = NSLock()
+ /// Opens (once per agent session) a Still window on a brand-new throwaway profile, with this agent already allowed in.
+ static func openTemp(_ client: String) -> URL {
+  tempLock.lock(); defer { tempLock.unlock() }
+  if let tempFolder, isOpen(tempFolder) || Date().timeIntervalSince(tempStarted) < 30 { return tempFolder } // open, or still starting
+  let root = FileManager.default.temporaryDirectory.appendingPathComponent("Still-temp")
+  for old in (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)) ?? [] where !isOpen(old) { try? FileManager.default.removeItem(at: old) } // earlier ones, closed
+  let folder = root.appendingPathComponent(newId())
+  try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  let state: [String: Any] = ["UiVersion": 4, "Welcome": false, "Preferences": ["AgentsEnabled": true, "ApprovedAgents": [client]] as [String: Any]]
+  try? Data(jsonText(state).utf8).write(to: folder.appendingPathComponent("state.json"))
+  tempFolder = folder; tempStarted = Date()
+  launch(["--profile", folder.path, "--profiles-root", folder.path, "--temp"])
+  return folder
+ }
+
+ /// Sends one tool call to the Still running on the requested profile (opening it if it's closed) and returns its JSON reply.
+ /// One connection per call: calls never queue behind each other, and a cancelled call just hangs up.
+ static func call(_ client: String, _ tool: String, _ args: [String: Any], elicit: Bool = false, cancelled: @escaping () -> Bool = { false }) -> String {
+  if tool == "list_profiles" { return listProfiles() }
+  var args = args, folder = support
+  let name = args["profile"] as? String ?? "", temp = name.lowercased() == "temp"
+  args["profile"] = nil
+  if temp { folder = openTemp(client) }
+  else if !name.isEmpty {
+   guard let profile = Profiles.read().first(where: { $0.name.lowercased() == name.lowercased() || $0.id == name }) else { return agentFail("No Still profile is named \"\(name)\". Use list_profiles.") }
+   folder = Profiles.folder(profile.id)
+   if !isOpen(folder) { launch(["--profile", folder.path, "--profiles-root", profileHome.path]) }
+  }
+  let until = Date().addingTimeInterval(name.isEmpty ? 0 : 25)
+  while !cancelled() {
+   if let fd = AgentSocket.dial(folder) {
+    defer { _ = Darwin.close(fd) }
+    var timeout = timeval(tv_sec: 1, tv_usec: 0) // wake up every second to check for a cancel
+    _ = Darwin.setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, socklen_t(MemoryLayout<timeval>.size))
+    if AgentSocket.writeLine(fd, jsonText(["client": client, "tool": tool, "args": args, "elicit": elicit, "run": runId])) {
+     // Still answers every call within its own time limit; this only covers a Still that froze.
+     let deadline = Date().addingTimeInterval(tool == "list_tabs" || tool == "save_file" ? 120 : 720) // ask_user and permission cards wait up to 11 minutes
+     var buffer = Data()
+     if let line = AgentSocket.receiveLine(fd, &buffer, keepWaiting: { !cancelled() && Date() < deadline }) { return line }
+     if Date() >= deadline { return agentFail("Still didn't answer in time. It may be busy; try again, or ask the user to check Still.") }
+    }
+   }
+   if Date() >= until {
+    return agentFail(temp ? "The temporary window didn't start. Try again." : (name.isEmpty ? "Still isn't running. " : "Still profile \"\(name)\" isn't reachable. ") + "Open it and turn on Settings → Let AI agents control Still (each profile has its own switch), then try again.")
+   }
+   Thread.sleep(forTimeInterval: 0.5)
+  }
+  return agentFail("Cancelled.")
  }
 
  /// A page read comes back as plain text (no JSON escaping, fewer tokens); other results as compact JSON.
@@ -942,7 +1452,7 @@ enum Mcp {
  static func cli(_ argv: [String]) -> Int32 {
   if argv.isEmpty || ["help", "--help", "-h"].contains(argv[0]) {
    print("Usage: Still --cli <tool> as=<your name> [key=value ...]\n\nTools:")
-   for tool in tools { print("  \(tool.name) " + tool.props.map { $0.0 + "=" }.joined(separator: " ") + "\n      " + tool.description) }
+   for tool in toolList(false) { print("  \(tool.name) " + tool.props.map { $0.0 + "=" }.joined(separator: " ") + "\n      " + tool.description) }
    return 0
   }
   var args: [String: Any] = [:]
@@ -954,8 +1464,8 @@ enum Mcp {
    else if key == "paths" { args[key] = value.split(separator: ";").map(String.init) }
    else { args[key] = value }
   }
-  // Agents must say who they are, so the user sees "Codex is using Still", not a generic name.
-  guard let who = args["as"] as? String, !who.isEmpty else { print("Error: say who you are with as=<your name>, for example as=Claude or as=Codex."); return 2 }
+  // Agents must say who they are, so the user sees "ChatGPT is using Still", not a generic name.
+  guard let who = args["as"] as? String, !who.isEmpty else { print("Error: say who you are with as=<your name>, for example as=Claude or as=ChatGPT."); return 2 }
   args["as"] = nil
   let reply = jsonObject(call(agentName(who), argv[0], args)) ?? [:]
   guard reply["ok"] as? Bool == true else { print("Error: " + (reply["error"] as? String ?? "Failed.")); return 1 }

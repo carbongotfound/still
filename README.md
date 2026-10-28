@@ -4,13 +4,13 @@
 
 **The open-source browser with an AI helper built in.** It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps: no API keys, no credits, no extra subscription. Switch AI any time, even halfway through a task. Other AI apps can use it too, once you say yes. Everything stays on your computer.
 
-[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.zip) · [**What it does**](#what-you-can-hand-off) · [**Connect your AI**](#connect-your-ai) · [**Install**](#install) · [**Build from source**](#build-from-source)
+[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**What it does**](#what-you-can-hand-off) · [**Connect your AI**](#connect-your-ai) · [**Install**](#install) · [**Build from source**](#build-from-source)
 
 [![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
 [![Downloads](https://img.shields.io/github/downloads/carbongotfound/still/total)](https://github.com/carbongotfound/still/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
-![macOS 12.3+](https://img.shields.io/badge/macOS-12.3%2B-111111)
+![macOS 12+](https://img.shields.io/badge/macOS-12%2B-111111)
 
 </div>
 
@@ -112,11 +112,11 @@ Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://dev
 
 ### Mac
 
-1. Download **`Still-mac.zip`** from the [latest release](https://github.com/carbongotfound/still/releases/latest), unzip it and drag **Still** into Applications. It runs natively on Apple silicon and Intel Macs with macOS 12.3 or later.
+1. Download **`Still-mac.dmg`** from the [latest release](https://github.com/carbongotfound/still/releases/latest), open it and drag **Still** onto **Applications**. It runs natively on Apple silicon and Intel Macs with macOS 12 or later. (Prefer a zip? `Still-mac.zip` holds the same app.)
 2. Still isn't notarized yet, so the first time, right-click Still and choose **Open** (on macOS 15, open it once, then choose **Open Anyway** in System Settings → Privacy & Security).
 3. To make Still your default browser, choose **Settings → Make default**.
 
-Still for Mac runs the same interface on Apple's WebKit, with tabs, private tabs, history, bookmarks, downloads, themes, full screen and the same blocking. Importing, the password vault, extensions, profiles, AI agents and in-app updates are Windows-only for now. Shortcuts use <kbd>⌘</kbd> in place of <kbd>Ctrl</kbd>.
+Still for Mac runs the same interface on Apple's WebKit: your companions and AI chats, split view, background tabs, MCP and the command line with the same tools and approval prompts, plus tabs, groups, private windows, profiles, passwords in your Keychain, importing, history, bookmarks, downloads, themes and the same blocking. Extensions and in-app updates are Windows-only for now; on Mac, Still tells you when a new release is out. Shortcuts use <kbd>⌘</kbd> in place of <kbd>Ctrl</kbd>. More in [mac/README.md](mac/README.md).
 
 ## Shortcuts
 
@@ -149,7 +149,7 @@ cd still
 ./build.ps1          # builds the UI, then publishes a single Still.exe to artifacts/Still
 ```
 
-On a Mac with Xcode 15 or newer, `sh mac/build.sh` builds `mac/build/Still.app` from the same interface.
+On a Mac with Xcode 15 or newer, `sh mac/build.sh` builds `mac/build/Still.app`, `Still-<version>.dmg` and `Still-mac.zip` from the same interface.
 
 ## Security
 

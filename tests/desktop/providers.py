@@ -4,7 +4,6 @@ out, Stop ending the whole process tree within a second, and no "Codex" anywhere
 Run: python tests/desktop/providers.py artifacts/Still-QA/Still.exe
 The fakes are manifest agents (Still's agents folder) backed by a small Python script; see docs/agentic/agents.md.
 """
-import ctypes
 import json
 import os
 from pathlib import Path
@@ -15,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW  # noqa: E402
+from qa import CREW, alive, launcher, rpc  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("providers-" + uuid.uuid4().hex)
 EXE = Path(sys.argv[1]).resolve()
@@ -28,22 +27,6 @@ def check(ok, name):
     RESULT["checks"].append({"name": name, "passed": bool(ok)})
     print(("PASS " if ok else "FAIL ") + name, flush=True)
 
-def rpc(process, op="state", **args):
-    pipe = r"\\.\pipe\StillQa-" + str(process.pid)
-    end = time.monotonic() + 15
-    while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
-        if time.monotonic() > end or process.poll() is not None:
-            raise RuntimeError("QA pipe unavailable")
-        time.sleep(.05)
-    with open(pipe, "r+b", buffering=0) as stream:
-        stream.write((json.dumps({"op": op, **args}) + "\n").encode())
-        response = b""
-        while not response.endswith(b"\n"):
-            part = stream.read(65536)
-            if not part:
-                raise RuntimeError("QA pipe closed")
-            response += part
-    return json.loads(response)
 
 def send(process, op, **args):
     rpc(process, "shellEval", script="window.chrome.webview.postMessage(" + json.dumps({"op": op, **args}) + ")")
@@ -60,14 +43,6 @@ def until(predicate, seconds=20, step=.1):
         time.sleep(step)
     return None
 
-def alive(pid):
-    handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
-    if not handle:
-        return False
-    code = ctypes.c_ulong()
-    ctypes.windll.kernel32.GetExitCodeProcess(handle, ctypes.byref(code))
-    ctypes.windll.kernel32.CloseHandle(handle)
-    return code.value == 259  # STILL_ACTIVE
 
 FAKE = textwrap.dedent(r'''
     import json, os, subprocess, sys, time
@@ -100,7 +75,7 @@ try:
     BIN.mkdir(parents=True)
     (PROFILE / "agents").mkdir(parents=True)
     (BIN / "fake_agent.py").write_text(FAKE)
-    (BIN / "fakeagent.cmd").write_text(f'@"{sys.executable}" -I "{BIN / "fake_agent.py"}" %*\r\n')
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     fake = str(BIN / "fakeagent")
     manifest("fake", name="Fake agent", command=fake, detect=["status"], expect="signed in", run=["run"], resume=["--resume", "{session}"], output="stream-json")
     manifest("fake-out", name="Fake signed out", command=fake, detect=["status-out"], expect="^signed in", run=["run"], output="stream-json")

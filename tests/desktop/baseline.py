@@ -1,6 +1,7 @@
 """Performance baseline for docs/agentic/PERF.md: cold start, idle RAM with 1 and 10 tabs, tab-switch latency.
 
 Run: python tests/desktop/baseline.py artifacts/Still-QA/Still.exe [runs]
+ Mac: python3 tests/desktop/baseline.py mac/build/qa/Still.app/Contents/MacOS/Still [runs]
 Each run uses a fresh profile and loopback pages. Prints one JSON object with medians.
 """
 import ctypes
@@ -18,6 +19,7 @@ import uuid
 ROOT = Path(__file__).resolve().parents[2]
 EXE = Path(sys.argv[1]).resolve()
 RUNS = int(sys.argv[2]) if len(sys.argv) > 2 else 3
+MAC = sys.platform == "darwin"
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -35,6 +37,8 @@ threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 URL = "http://127.0.0.1:" + str(SERVER.server_port)
 
 def rpc(process, op="state", **args):
+    if MAC:
+        return mac_rpc(process, {"op": op, **args})
     pipe = r"\\.\pipe\StillQa-" + str(process.pid)
     end = time.monotonic() + 15
     while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
@@ -69,38 +73,57 @@ class MemoryCounters(ctypes.Structure):
     _fields_ = [("size", wintypes.DWORD), ("faults", wintypes.DWORD)] + [(n, ctypes.c_size_t) for n in
                 ("peak", "working", "pagedPeak", "paged", "nonpagedPeak", "nonpaged", "pagefile", "pagefilePeak", "private")]
 
-kernel = ctypes.WinDLL("kernel32", use_last_error=True)
-kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
-kernel.OpenProcess.restype = wintypes.HANDLE
-kernel.CloseHandle.argtypes = [wintypes.HANDLE]
-kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
-kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
-ctypes.windll.psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(MemoryCounters), wintypes.DWORD]
+if MAC:
+    sys.path.insert(0, str(Path(__file__).parent))
+    from qa import mac_rpc
+    responsible = ctypes.CDLL(None).responsibility_get_pid_responsible_for_pid
+    responsible.argtypes = [ctypes.c_int]
+    libproc = ctypes.CDLL("/usr/lib/libproc.dylib")
 
-def working_mb(pid):
-    """Resident memory of Still and every process under it (WebView2 browser, renderers, GPU)."""
-    snap = kernel.CreateToolhelp32Snapshot(2, 0)
-    entry = ProcessEntry(); entry.dwSize = ctypes.sizeof(entry)
-    parents = {}
-    try:
-        more = kernel.Process32FirstW(snap, ctypes.byref(entry))
-        while more:
-            parents[entry.pid] = entry.parent
-            more = kernel.Process32NextW(snap, ctypes.byref(entry))
-    finally:
-        kernel.CloseHandle(snap)
-    owned = {pid}
-    while (children := {p for p, parent in parents.items() if parent in owned}) - owned:
-        owned |= children
-    total = 0
-    for child in owned:
-        handle = kernel.OpenProcess(0x410, False, child)
-        if handle:
-            counters = MemoryCounters(); counters.size = ctypes.sizeof(counters)
-            if ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.size):
-                total += counters.working
-            kernel.CloseHandle(handle)
-    return round(total / 1048576, 1)
+    def working_mb(pid):
+        """Physical footprint (Activity Monitor's Memory column) of Still and its WebKit helpers (WebContent, Networking, GPU).
+        launchd starts those, so they aren't Still's children; macOS holds the same process responsible for them as for Still:
+        Still itself when it's opened normally, or whatever started it (this script)."""
+        owner, total = responsible(pid), 0
+        for line in subprocess.run(["ps", "-axo", "pid=,comm="], capture_output=True, text=True).stdout.splitlines():
+            other, command = line.split(None, 1)
+            usage = ctypes.create_string_buffer(512)
+            if (int(other) == pid or "com.apple.WebKit." in command and responsible(int(other)) == owner)                     and libproc.proc_pid_rusage(int(other), 0, usage) == 0:  # RUSAGE_INFO_V0
+                total += int.from_bytes(usage.raw[72:80], "little")  # ri_phys_footprint
+        return round(total / 1048576, 1)
+else:
+    kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel.CreateToolhelp32Snapshot.restype = wintypes.HANDLE
+    kernel.OpenProcess.restype = wintypes.HANDLE
+    kernel.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel.Process32FirstW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+    kernel.Process32NextW.argtypes = [wintypes.HANDLE, ctypes.POINTER(ProcessEntry)]
+    ctypes.windll.psapi.GetProcessMemoryInfo.argtypes = [wintypes.HANDLE, ctypes.POINTER(MemoryCounters), wintypes.DWORD]
+
+    def working_mb(pid):
+        """Resident memory of Still and every process under it (WebView2 browser, renderers, GPU)."""
+        snap = kernel.CreateToolhelp32Snapshot(2, 0)
+        entry = ProcessEntry(); entry.dwSize = ctypes.sizeof(entry)
+        parents = {}
+        try:
+            more = kernel.Process32FirstW(snap, ctypes.byref(entry))
+            while more:
+                parents[entry.pid] = entry.parent
+                more = kernel.Process32NextW(snap, ctypes.byref(entry))
+        finally:
+            kernel.CloseHandle(snap)
+        owned = {pid}
+        while (children := {p for p, parent in parents.items() if parent in owned}) - owned:
+            owned |= children
+        total = 0
+        for child in owned:
+            handle = kernel.OpenProcess(0x410, False, child)
+            if handle:
+                counters = MemoryCounters(); counters.size = ctypes.sizeof(counters)
+                if ctypes.windll.psapi.GetProcessMemoryInfo(handle, ctypes.byref(counters), counters.size):
+                    total += counters.working
+                kernel.CloseHandle(handle)
+        return round(total / 1048576, 1)
 
 def ready(process, tab):
     return any(t["Id"] == tab and t["ready"] and not t["Loading"] for t in rpc(process)["tabs"])
