@@ -602,6 +602,17 @@ HAIR = {
                            shell(p, BASE, 0.022, 0.06), 0.03),
     "wisp": lambda p: smin(shell(p, BASE, 0.01, 0.2), cone(p, on_head(0.1, 0.4, 0.0), on_head(0.1, 0.4, 0.0) + np.array([-0.04, -0.09, 0.1]), 0.03, 0.008), 0.03),
 }
+# A crown: a hollow band with five sharp points (one in front), a bead on each
+CROWN_TIPS = [np.array([math.cos(t), math.sin(t), 0]) / ((abs(math.cos(t)) / 0.121) ** 6 + (abs(math.sin(t)) / 0.111) ** 6) ** (1 / 6) + np.array([0, 0, TOP + 0.098])
+              for t in -math.pi / 2 + np.arange(5) * 2 * math.pi / 5]
+
+def crown(p):
+    turn = (np.arctan2(p[:, 1], p[:, 0]) + math.pi / 2) * 5 / (2 * math.pi)
+    point = 2 * np.abs(turn % 1 - 0.5)  # 1 at each point, 0 halfway between
+    band = smax(superellipsoid(p, (0, 0, TOP + 0.03), (0.13, 0.12, 0.07), 6), -superellipsoid(p, (0, 0, TOP + 0.03), (0.112, 0.102, 0.3), 6), 0.004)
+    band = smax(band, p[:, 2] - (TOP + 0.035 + 0.055 * point ** 2), 0.004)
+    return smin(band, lobes(p, [(t, (0.016,) * 3) for t in CROWN_TIPS], 0.016, 0.004), 0.008)
+
 # Parts of a hat in its second color (mask returns 0..1 per point)
 HATS = {
     "beanie": (lambda p: smin(shell(p, BASE, 0.04, 0.06), ellipsoid(p, (0, 0, TOP + 0.08), (0.06, 0.06, 0.06)), 0.03),
@@ -616,9 +627,7 @@ HATS = {
               lambda p: (p[:, 2] > TOP + 0.04).astype(float)),
     "bucket": (lambda p: smin(superellipsoid(p, (0, 0, TOP - 0.01), (0.25, 0.23, 0.09), 3), ellipsoid(p, (0, 0, TOP - 0.07), (0.36, 0.33, 0.02)), 0.03),
                lambda p: (np.abs(p[:, 2] - (TOP - 0.03)) < 0.015).astype(float)),
-    "crown": (lambda p: smax(superellipsoid(p, (0, 0, TOP + 0.03), (0.13, 0.12, 0.06), 6),
-                             p[:, 2] - (TOP + 0.02 + 0.05 * np.abs(np.sin(np.arctan2(p[:, 1], p[:, 0]) * 2.5))), 0.006),
-              lambda p: (p[:, 2] < TOP + 0.006).astype(float)),
+    "crown": (lambda p: crown(p), lambda p: ((p[:, 2] < TOP + 0.006) | (np.min([np.linalg.norm(p - t, axis=1) for t in CROWN_TIPS], 0) < 0.022)).astype(float)),
     "headphones": (lambda p: smin(smax(smax(np.abs(ellipsoid(p, HC, HR + 0.05)) - 0.014, np.abs(p[:, 1]) - 0.03, 0.01), -(p[:, 2] - HC[2]), 0.01),
                                   lobes(p, [((0.335, 0, HC[2] + 0.02), (0.045, 0.085, 0.09)), ((-0.335, 0, HC[2] + 0.02), (0.045, 0.085, 0.09))], 0.08), 0.02),
                    lambda p: (np.abs(p[:, 0]) > 0.3).astype(float)),

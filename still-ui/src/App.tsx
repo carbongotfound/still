@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, MousePointer2, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft } from "lucide-react"
+import { Bot, Info, Settings, FileText, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -222,6 +222,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
     <ContextMenuItem onSelect={() => send("mute", { id: tab.id })}><VolumeX />{tab.muted ? "Unmute" : "Mute"}</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("sleep", { id: tab.id })}><MoonStar />Put to sleep</ContextMenuItem>
     {splittable(tab) && !selected && splittable(state.tabs.find(t => t.id === state.activeId)) && <ContextMenuItem onSelect={() => send("split", { id: tab.id })}><Columns2 />Open in split view</ContextMenuItem>}
+    {ai && !state.noAi && splittable(tab) && !tab.isPrivate && <ContextMenuItem onSelect={() => send("tabHand", { id: tab.id, chat: state.tabs.find(t => t.id === state.activeId)?.chatId ?? (ai.open ? ai.chatId : undefined), companion: companionOf(ai)?.id })}><Hand />Hand to {companionOf(ai)?.name ?? "your helper"}</ContextMenuItem>}
     {!tab.pinned && !tab.inChat && <>
      <ContextMenuSeparator />
      <ContextMenuItem onSelect={() => send("groupNew", { id: tab.id })}><FolderPlus />Add to new group</ContextMenuItem>
@@ -283,6 +284,9 @@ export default function App() {
  const resize = useRef<{ x: number; width: number; current: number } | null>(null)
  useEffect(() => { document.documentElement.style.setProperty("--sidebar-width", (state.preferences.sidebarWidth ?? 248) + "px") }, [state.preferences.sidebarWidth])
  const chatPages = state.tabs.filter(t => (t.inChat ?? t.runChat) && (t.inChat ?? t.runChat) === active?.chatId)
+ // Beside its page, the chat takes a share of the width the user can drag (kept between runs).
+ const [chatShare, setChatShare] = useState(() => { try { return Number(localStorage.getItem("still.chatShare")) || .4 } catch { return .4 } })
+ const shareChat = (v: number, keep = true) => { const s = Math.min(.7, Math.max(.24, v)); setChatShare(s); if (keep) try { localStorage.setItem("still.chatShare", String(s)) } catch { /* storage unavailable */ } }
  const [info, setInfoState] = useState(() => { try { return localStorage.getItem("still.chatInfo") !== "closed" } catch { return true } })
  const [splitInfo, setSplitInfo] = useState(false) // beside a page, details stay closed until asked for
  const setInfo = (v: boolean) => { setInfoState(v); try { localStorage.setItem("still.chatInfo", v ? "open" : "closed") } catch { /* storage unavailable */ } }
@@ -513,7 +517,7 @@ export default function App() {
      <ContextMenuItem onSelect={() => openAddress(document.querySelector(".address-bar"))}><Pencil />Edit address</ContextMenuItem>
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
-     {!state.noAi && ai && <><RunningTasks ai={ai} send={send} onOpen={setTasksOpen} /><RunAnnouncer ai={ai} /></>}
+     {!state.noAi && ai && <><RunningTasks ai={ai} send={send} onOpen={setTasksOpen} tabs={state.tabs} /><RunAnnouncer ai={ai} /></>}
      {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={18} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
      {!chatTab && <><IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
@@ -618,8 +622,15 @@ export default function App() {
       <Button size="sm" disabled={!state.loginOffer} onClick={() => state.loginOffer && send("loginAccept", { id: state.loginOffer.id, username: state.loginOffer.username })}>{shownLogin?.update ? "Update" : "Save"}</Button>
      </div></div>
      <div className="page-row">
-     {chatTab && ai && <section className={cn("chat-pane", (split ? splitInfo : info) && "has-info")}>
+     {chatTab && ai && <section className={cn("chat-pane", (split ? splitInfo : info) && "has-info")} style={split ? { width: `${Math.round(chatShare * 100)}%` } : undefined}>
+      {split && <div className="chat-divider" role="separator" aria-label="Resize the chat" aria-orientation="vertical" aria-valuenow={Math.round(chatShare * 100)} tabIndex={0}
+       onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); shareChat(chatShare + (e.key === "ArrowRight" ? .04 : -.04)) } }}
+       onDoubleClick={() => shareChat(.4)}
+       onPointerDown={e => e.currentTarget.setPointerCapture(e.pointerId)}
+       onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; const r = e.currentTarget.parentElement!.parentElement!.getBoundingClientRect(); shareChat((e.clientX - r.left) / r.width, false) }}
+       onPointerUp={() => shareChat(chatShare)} />}
       <div className="chat-tools">
+       {split && !state.noAi && <RunningTasks ai={ai} send={send} onOpen={setTasksOpen} tabs={state.tabs} />}
        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Chat options" title="Chat options"><MoreHorizontal /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
          <DropdownMenuItem onSelect={() => send("new")}><SquarePen />New chat</DropdownMenuItem>
@@ -632,13 +643,14 @@ export default function App() {
       {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={setEditing} onSettings={openAiSettings} onFile={openFile} />}
      </section>}
      <div className="page-pane">
+     {split && chatPages.length > 1 && <div className="page-tabs" role="tablist" aria-label={`${companion?.name ?? "Your helper"}'s tabs`}>{chatPages.map(p => <button key={p.id} role="tab" aria-selected={p.url === state.chatPage?.url} title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<span>{p.title || host(p.url)}</span>{p.agent && <i aria-label="Working" />}</button>)}</div>}
      {split && state.chatPage && <div className="page-nav">
       <Button variant="ghost" size="icon-sm" aria-label="Back" disabled={!state.canBack} onClick={() => send("back")}><ArrowLeft /></Button>
       <Button variant="ghost" size="icon-sm" aria-label="Forward" disabled={!state.canForward} onClick={() => send("forward")}><ArrowRight /></Button>
       <Button variant="ghost" size="icon-sm" aria-label={state.chatPage.loading ? "Stop loading" : "Reload"} onClick={() => send("reload")}>{state.chatPage.loading ? <X /> : <RotateCw />}</Button>
       <span className="page-nav-url" title={state.chatPage.url}>{state.chatPage.loading ? <Loader2 className="spin" /> : state.chatPage.favicon ? <img src={state.chatPage.favicon} alt="" /> : <Globe2 />}<b>{host(state.chatPage.url)}</b>{state.chatPage.title && <span>&nbsp;/ {state.chatPage.title}</span>}</span>
       <Button variant="ghost" size="icon-sm" aria-label="Bookmark this page" title="Bookmark this page" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === state.chatPage?.url) ? "bookmarked" : ""} /></Button>
-      <Button variant="ghost" size="icon-sm" aria-label="Move to its own tab" title="Move to its own tab" onClick={() => send("chatPopOut")}><ExternalLink /></Button>
+      <Button variant="ghost" size="sm" className="page-mine" title="Move this page into your tabs" onClick={() => send("chatPopOut")}><ExternalLink />Move to my tabs</Button>
       <Button variant="ghost" size="icon-sm" aria-label="Hide the page" title="Hide the page" onClick={() => send("chatPage", { on: false })}><X /></Button>
      </div>}
      <div className="page-slot" ref={pageRef}>
@@ -911,7 +923,7 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
  useLayoutEffect(() => {
   const pill = ref.current, slot = pill?.parentElement
   if (!pill || !slot) return
-  const sync = () => { const s = slot.getBoundingClientRect(), r = pill.getBoundingClientRect(); send("pageHoles", { tab: tab.id, frame: 3, spots: [{ x: r.x - s.x, y: r.y - s.y, width: r.width, height: r.height, radius: 16 }], viewportWidth: innerWidth }) }
+  const sync = () => { const s = slot.getBoundingClientRect(), r = pill.getBoundingClientRect(); send("pageHoles", { tab: tab.id, frame: 3, spots: [{ x: r.x - s.x, y: r.y - s.y, width: r.width, height: r.height, radius: r.height / 2 }], viewportWidth: innerWidth }) }
   const observer = new ResizeObserver(sync); observer.observe(pill); observer.observe(slot); sync()
   return () => { observer.disconnect(); send("pageHoles", { tab: tab.id, frame: 0, spots: [] }) }
  }, [tab.id])
@@ -919,15 +931,12 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
  const hue = who.id ? { "--drive": hueOf(who) } as CSSProperties : undefined // a companion wears its hue; another AI app its maker's color
  return <>
   <div className="page-glow" data-kind={kind} style={hue} aria-hidden />
-  <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label="AI at work">
-   <div className="page-control-head"><MousePointer2 />{agent.paused ? "You're in control" : "Controlled by " + who.name}</div>
-   <div className="page-control-row">
-    <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
-    <span>{agent.paused ? who.name + " waits for you" : agent.action || "Working on task"}</span>
-    <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}>{agent.paused ? "Hand back" : "Take over"}</button>
-    {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Go to chat</button>}
-    <button className="page-stop" onClick={() => send("agentStop", { key: agent.key })}>Stop</button>
-   </div>
+  <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label={agent.paused ? who.name + " is waiting for you" : who.name + " is working"}>
+   <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
+   <span className="page-control-text"><b>{agent.paused ? "You're in control" : who.name + " is working…"}</b>{!agent.paused && agent.action && <small>{agent.action}</small>}</span>
+   <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand />{agent.paused ? "Hand back" : "Take over"}</button>
+   {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Go to chat</button>}
+   <button className="page-stop" aria-label="Stop" title="Stop" onClick={() => send("agentStop", { key: agent.key })}><Square /></button>
   </div>
  </>
 }

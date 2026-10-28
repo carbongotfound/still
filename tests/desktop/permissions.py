@@ -250,7 +250,7 @@ def live(process):
     page = lambda: next((t for t in rpc(process)["tabs"] if t.get("Url", "").endswith("/mug")), None)
     on_page = lambda script: rpc(process, "evalTab", id=page()["Id"], script=script)
     control = lambda: js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""
-    check(until(lambda: page() and "Controlled by" in control(), 180, .3), "Live: Claude opens the shop in front, and the pill says it's in control")
+    check(until(lambda: page() and "is working" in control(), 180, .3), "Live: Claude opens the shop in front, and the pill says it's in control")
 
     js(process, "document.querySelector('.page-take').click()")
     check(until(lambda: "You're in control" in control(), 5), "Live: Take over mid-run hands you the page")
@@ -259,7 +259,7 @@ def live(process):
     capture(process, "live-takeover-v01")
     time.sleep(3)
     js(process, "document.querySelector('.page-take').click()")
-    check(until(lambda: "Controlled by" in control() or not control(), 5), "Live: Hand back gives Claude the page again")
+    check(until(lambda: "is working" in control() or not control(), 5), "Live: Hand back gives Claude the page again")
 
     helped = until(lambda: "Help with this page" in (js(process, "document.querySelector('.ask-help')?.innerText ?? ''") or ""), 240, .5)
     check(helped, "Live: the code only you have shows a Help with this page card")

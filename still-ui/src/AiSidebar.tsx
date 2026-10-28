@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, BookOpen, Camera, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Save, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowUp, BookOpen, Camera, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Save, Search, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -322,7 +322,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   if (m.role === "tool") { if (prev && "steps" in prev) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text] }) }
   else items.push(m)
  }
- const fromAi = (i: number) => ["assistant", "steps", "file"].includes(items[i]?.role)
+ const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
  // The companion's face starts each of its turns.
  const face = (i: number) => fromAi(i - 1) ? null : <Face className="ai-turn-face" companion={companion} size={24} mood={i >= items.length - 1 ? mood : "idle"} />
  const setup = Setup({ ai, send, onSettings })
@@ -352,12 +352,13 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
       <ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => { const Icon = stepIcon(s); return <li key={j}><Icon />{s}</li> })}</ol></details></div>
     }
     if (m.role === "file") return <div key={i} className="ai-turn">{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
+    if (m.role === "search" || m.role === "read") return <div key={i} className="ai-turn">{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
     const last = i === items.length - 1 && !busy
     return <div key={i} className="ai-turn">{face(i)}
-     <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} /></div>
+     <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {next.length > 0 && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
      {last && <>{!!ai.worked && <p className="ai-timer">Worked for {clock(ai.worked)}</p>}
       <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
@@ -429,14 +430,25 @@ export function RunAnnouncer({ ai }: { ai: AiState }) {
  return <div className="sr-only run-announcer" role="status" aria-live="polite">{say}</div>
 }
 
-export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; onOpen: (open: boolean) => void }) {
+// web_search and read_url: one compact row each ("Searched 'x' · 8 results", "Read example.com") that opens to the results.
+function LookedUp({ m, onLink }: { m: { role: string; text: string }; onLink: (url: string) => void }) {
+ let data: { q?: string; url?: string; title?: string; results?: { title: string; url: string; snippet: string }[] } = {}
+ try { data = JSON.parse(m.text) } catch { return null }
+ const link = (url: string, label: ReactNode) => <a href={url} title={url} onClick={e => { e.preventDefault(); onLink(url) }}>{label}</a>
+ if (m.role === "read") return <div className="ai-look"><div className="ai-look-row"><Globe />{link(data.url ?? "", <b>Read {host(data.url ?? "")}</b>)}{data.title && <small>· {data.title}</small>}</div></div>
+ const results = data.results ?? []
+ return <details className="ai-look"><summary><Search /><b>Searched “{data.q}”</b><small>· {results.length} result{results.length === 1 ? "" : "s"}</small><ChevronDown className="ai-steps-chevron" /></summary>
+  <ol>{results.map(r => <li key={r.url}>{link(r.url, r.title || host(r.url))}<small>{host(r.url)}</small>{r.snippet && <p>{r.snippet}</p>}</li>)}</ol></details>
+}
+
+export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Send; onOpen: (open: boolean) => void; tabs: (TabRef & { favicon?: string; agent?: string })[] }) {
  const [open, setOpenState] = useState(false)
  const setOpen = (o: boolean) => { setOpenState(o); onOpen(o) }
  useEffect(() => () => onOpen(false), []) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { const flip = () => setOpen(!open); window.addEventListener("still-tasks", flip); return () => window.removeEventListener("still-tasks", flip) }) // Ctrl+Shift+K
  const [, setNow] = useState(0)
  useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [open])
- const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), empty = !runs.length && !unread.length
+ const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), apps = tabs.filter(t => t.inChat?.startsWith("app:")), empty = !runs.length && !unread.length && !apps.length
  useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
  if (empty) return null
  const waiting = runs.filter(waits).length
@@ -452,10 +464,13 @@ export function RunningTasks({ ai, send, onOpen }: { ai: AiState; send: Send; on
     <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={waits(r) ? "needs" : "working"} />
      <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working for " + clock(since(r.started))}</small></span>
      {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
+    {tabs.filter(t => t.inChat === r.id).map(t => <div key={t.id} className="tasks-page">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.title || host(t.url)}</span><button onClick={() => send("aiHelpPage", { id: t.id })}>Watch</button><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}
     {r.asks?.map(a => <div key={a.id} className="tasks-ask"><p>{a.what} <small>on {a.site}</small></p>
      <button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow once</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Deny</button></div>)}
    </div> })}
+   {apps.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Other AI apps' tabs</DropdownMenuLabel>
+    {apps.map(t => <div key={t.id} className="tasks-page is-app">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.agent ? t.agent + ": " : ""}{t.title || host(t.url)}</span><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}</>}
    {unread.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>New replies</DropdownMenuLabel>
     {unread.map(c => <DropdownMenuItem key={c.id} onSelect={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={22} /><span className="tasks-title">{c.title}</span><i className="is-unread" aria-hidden /></DropdownMenuItem>)}</>}
   </DropdownMenuContent>

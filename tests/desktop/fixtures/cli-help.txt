@@ -5,8 +5,12 @@ Tools:
       List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or "temp" for a clean temporary window.
   list_tabs profile=
       List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.
-  open_tab url= profile=
-      Open a URL or search terms in a new background tab and work there from now on. The user keeps their own tab and can keep browsing. Start most tasks here.
+  web_search query= count= profile=
+      Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.
+  read_url url= offset= profile=
+      Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.
+  open_tab url= background= profile=
+      Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.
   navigate url= tabId= profile=
       Load a URL or search terms in your current tab (or tabId).
   switch_tab tabId= show= profile=

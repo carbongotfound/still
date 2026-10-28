@@ -100,20 +100,24 @@ def main():
         home(process)
         shown = text(process)
         check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
-              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width === 96") and "Ideas for you" in shown
-              and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, 96px face, chips and ideas")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Pip anything, or give it a job…", "The message box asks the active companion")
+              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Ideas for you" in shown
+              and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion, chips and ideas")
+        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Pip anything, or hand over a task…", "The message box asks the active companion")
 
         # Create a companion.
         click(process, ".mate-switch-more[aria-label='New companion']")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         type_into(process, ".companion-dialog input[required]", "Wren")
         type_into(process, ".companion-dialog textarea", "A careful researcher who cites sources.")
-        click(process, ".companion-colors [aria-label=berry]")
+        click_text(process, ".companion-look button", "Customize")  # the look editor: Raspberry
+        until(lambda: js(process, "!!document.querySelector('.look-dialog .look-colors')"), 8)
+        click(process, ".look-colors [aria-label=Raspberry]")
+        click(process, ".look-save")
+        until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
         click_text(process, ".companion-modes button", "Expert")
         click(process, ".companion-save")
         wren = until(lambda: mates().get("Wren"), 10)
-        check(wren and wren["Color"] == "berry" and wren["Mode"] == "expert" and "researcher" in wren["Job"], "Create a companion: name, job, color and mode are saved")
+        check(wren and '"color":"#d77a8f"' in wren["Look"].replace(" ", "") and wren["Mode"] == "expert" and "researcher" in wren["Job"], "Create a companion: name, job, look and mode are saved")
         check(until(lambda: js(process, "!!document.querySelector('.mate-switch-face[aria-label=Wren]')"), 5), "The new companion is in the switcher")
 
         # Switching companions changes the accent right away.
@@ -121,8 +125,8 @@ def main():
         type_into(process, ".home-compose textarea", "hello")  # an empty box greys out the send button
         before = hue()
         click(process, f".mate-switch-face[aria-label=Wren]")
-        check(until(lambda: hue() == "rgb(237, 90, 49)", 5) and before != "rgb(237, 90, 49)", "Switching to Wren turns the send button berry")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Wren anything, or give it a job…", "The message box now asks Wren")
+        check(until(lambda: hue() == "rgb(215, 122, 143)", 5) and before != "rgb(215, 122, 143)", f"Switching to Wren turns the send button raspberry ({hue()})")
+        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Wren anything, or hand over a task…", "The message box now asks Wren")
         type_into(process, ".home-compose textarea", "")
 
         # The mode menu: companions, the three modes, Advanced.

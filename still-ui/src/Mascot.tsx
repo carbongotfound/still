@@ -76,7 +76,7 @@ export function pictureOf(look: Look, state: MascotState, px: number, frame: Fra
  if (shipped) return shipped
  let url = memo.get(key)
  if (!url) try { url = localStorage.getItem(STORE + key) ?? undefined; if (url) memo.set(key, url) } catch { /* no storage */ }
- if (url || !render || !webgl) return url ?? bundled["./assets/companion/default-full-idle.webp"]
+ if (url || !render || !webgl) return url ?? bundled[`./assets/companion/default-${frame}-idle.webp`] // no WebGL: the default look, drawn ahead
  if (!wanted.has(key)) { wanted.set(key, { look, state, px, frame }); if (engine) queueMicrotask(drain); else void loadEngine() }
  return undefined
 }

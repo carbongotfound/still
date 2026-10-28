@@ -505,7 +505,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .page-row { flex:1; min-height:0; display:flex; }
 .page-pane { flex:1; min-width:0; display:flex; flex-direction:column; }
 .page-column.is-chat:not(.is-split) .page-pane { display:none; }
-.page-column.is-split .page-row { display:grid; grid-template-columns:minmax(360px,40%) minmax(0,1fr); }
+.page-column.is-split .page-row { display:flex; } .page-column.is-split .chat-pane { flex:none; min-width:340px; } .page-column.is-split .page-pane { flex:1; min-width:0; }
 .chat-pane { position:relative; flex:1; min-width:0; min-height:0; display:flex; container-type:inline-size; }
 .is-split .chat-pane { border-right:1px solid var(--border); }
 .chat-tools { position:absolute; z-index:2; top:10px; right:12px; display:flex; gap:2px; }
@@ -590,8 +590,6 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .companion-faces { display:grid; grid-template-columns:repeat(9,minmax(0,1fr)); gap:6px; }
 .companion-faces button { display:grid; place-items:center; padding:2px; border-radius:50%; opacity:.7; transition:opacity .15s,box-shadow .15s,transform .2s var(--ease-spring); }
 .companion-faces button:hover { opacity:1; transform:translateY(-2px); } .companion-faces button.is-picked { opacity:1; box-shadow:0 0 0 2px var(--foreground); }
-.companion-colors { display:flex; gap:9px; }
-.companion-colors button { width:26px; height:26px; border-radius:50%; background:var(--hue); transition:box-shadow .15s; } .companion-colors button.is-picked { box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--foreground); }
 .companion-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:4px; }
 
 /* Bring your own AI: one row per agent app, with its next step on the right. */
@@ -636,19 +634,20 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 [data-kind=claude] { --drive:#de7d58; } [data-kind=chatgpt] { --drive:#3fb79a; } [data-kind=grok] { --drive:#a6d930; }
 .page-glow { position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 3px var(--drive),inset 0 0 26px 4px color-mix(in oklab,var(--drive) 50%,transparent);animation:page-glow 2.4s ease-in-out infinite; }
 @keyframes page-glow { 50% { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--drive) 70%,transparent),inset 0 0 18px 2px color-mix(in oklab,var(--drive) 35%,transparent); } }
-.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);padding:0 4px 4px;border-radius:16px;background:#22343a;color:#f4f7f6;box-shadow:0 18px 40px -16px #000b,0 0 0 1px #ffffff14;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
-.page-control.is-paused { background:#4a3a1c; }
-.page-control-head { display:flex;align-items:center;justify-content:center;gap:6px;height:28px;font-size:12px;font-weight:600; }
-.page-control-head svg { width:13px;height:13px; }
-.page-control-row { display:flex;align-items:center;gap:8px;padding:6px 6px 6px 8px;border-radius:12px;background:#151f22; }
-.page-control-row > span:not(.mascot) { min-width:0;max-width:300px;padding-right:8px;font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.page-control button { display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 13px;border-radius:9px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
+/* The pill: the companion at work, then Take over and Stop. It breathes in the companion's hue. */
+.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:5px 5px 5px 8px;border-radius:999px;background:#1d2124;color:#f6f5f2;box-shadow:0 14px 34px -14px #000c,0 0 0 1px #ffffff16;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1),page-pill 2.6s ease-in-out 260ms infinite; }
+.page-control.is-paused { background:#4a3a1c; animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
+@keyframes page-pill { 50% { box-shadow:0 14px 34px -14px #000c,0 0 0 1px #ffffff16,0 0 0 5px color-mix(in oklab,var(--drive,#888) 28%,transparent); } }
+.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;padding:0 6px 0 2px;line-height:1.25; }
+.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap; } .page-control-text small { font-size:11.5px;color:#f6f5f2a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.page-control button { display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
 .page-control button svg { width:14px;height:14px; }
-.page-take { background:#fff;color:#151f22; } .page-take:hover { background:#e9efed; }
-.page-chat { background:#ffffff14;color:#f4f7f6; } .page-chat:hover { background:#ffffff24; }
-.page-stop { background:#e5484d;color:#fff; } .page-stop:hover { background:#ee5d62; }
+.page-take { background:#fff;color:#1d2124; } .page-take:hover { background:#ecebe7; }
+.page-chat { background:#ffffff14;color:#f6f5f2; } .page-chat:hover { background:#ffffff24; }
+.page-stop { width:30px;padding:0 !important;background:#ffffff14;color:#ff6b6f; } .page-stop:hover { background:#e5484d33; }
+.page-stop svg { width:12px !important;height:12px !important;fill:currentColor;stroke:none; }
 @keyframes page-control-in { from { opacity:0; } }
-@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-control.is-paused, .page-tabs i { animation:none; } }
 
 /* The home (new tab): a slim rail, the companion switcher, the face, the message box, chips and ideas. Pages swap in on the right. */
 .home-rail { width:56px; flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 0 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 45%,var(--background)); }
@@ -1017,7 +1016,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .ob-stage { min-height:0; display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1.15fr); align-items:center; gap:clamp(16px,4vw,64px); width:min(1120px,100%); margin:0 auto; padding:0 clamp(16px,4vw,48px); overflow:hidden; }
 .ob-companion { justify-self:end; display:flex; flex-direction:column; align-items:center; gap:6px; }
 .ob-name { font:500 24px/1.2 var(--font-serif,serif); }
-.ob-talk { align-self:center; display:flex; flex-direction:column; gap:14px; max-width:560px; max-height:100%; overflow-y:auto; padding:8px 4px 8px 0; scrollbar-width:thin; }
+.ob-talk { align-self:center; display:flex; flex-direction:column; gap:14px; max-width:560px; max-height:100%; overflow-y:auto; padding:8px 4px 12px 0; scrollbar-width:thin; } /* the bottom padding holds answers sliding up 10px, so no scrollbar flashes */
 .ob-bubbles { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
 .ob-bubble { position:relative; margin:0; padding:11px 15px; border-radius:18px; border-top-left-radius:6px; background:var(--ob-card); border:1px solid var(--ob-line); box-shadow:0 1px 0 rgba(60,45,20,.04),0 6px 18px -10px rgba(60,45,20,.18); font-size:15px; line-height:1.45; max-width:460px; }
 .ob-answer { display:flex; flex-direction:column; gap:10px; }
@@ -1081,3 +1080,36 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .tour-card { position:fixed; width:320px; display:flex; flex-direction:column; gap:6px; padding:14px 16px 12px; border-radius:16px; background:var(--popover); color:var(--popover-foreground); border:1px solid var(--border); box-shadow:0 18px 50px -18px rgba(0,0,0,.45); }
 .tour-card small { font-size:11.5px; color:var(--muted-foreground); } .tour-card strong { font-size:15px; } .tour-card p { margin:0 0 4px; font-size:13.5px; line-height:1.45; color:var(--muted-foreground); }
 .tour-card > div { display:flex; align-items:center; gap:6px; }
+
+/* Split view: drag the chat's edge; the agent's tabs sit above its page. Searching and reading show as rows. */
+.chat-divider { position:absolute; z-index:6; top:0; bottom:0; right:-1px; width:7px; cursor:col-resize; touch-action:none; }
+.chat-divider::after { content:""; position:absolute; top:0; bottom:0; right:0; width:2px; background:transparent; transition:background .15s; }
+.chat-divider:hover::after, .chat-divider:focus-visible::after { background:var(--ring); }
+.page-tabs { display:flex; gap:4px; flex:none; padding:6px 8px 0; background:var(--chrome); overflow-x:auto; scrollbar-width:none; }
+.page-tabs button { display:flex; align-items:center; gap:6px; max-width:200px; height:30px; padding:0 10px; border-radius:9px 9px 0 0; font-size:12.5px; color:var(--muted-foreground); }
+.page-tabs button[aria-selected=true] { background:var(--muted); color:var(--foreground); }
+.page-tabs button:hover { color:var(--foreground); }
+.page-tabs img, .page-tabs svg { width:14px; height:14px; flex:none; } .page-tabs span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.page-tabs i { width:6px; height:6px; border-radius:50%; background:#3fb79a; flex:none; }
+.page-mine { font-size:12.5px; }
+.ai-look { margin:2px 0; }
+.ai-look summary, .ai-look-row { display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:10px; list-style:none; cursor:pointer; font-size:13.5px; color:var(--muted-foreground); }
+.ai-look summary::-webkit-details-marker { display:none; }
+.ai-look summary:hover { background:var(--muted); }
+.ai-look summary > svg:first-child, .ai-look-row > svg:first-child { width:24px; height:24px; flex:none; padding:5px; border-radius:50%; border:1px solid var(--input); }
+.ai-look summary b, .ai-look-row b { font-weight:500; color:var(--foreground); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.ai-look summary small, .ai-look-row small { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; } .ai-look summary small { flex:none; font-size:inherit; }
+.ai-look summary .ai-steps-chevron { margin-left:auto; width:15px; height:15px; flex:none; transition:rotate .2s; } .ai-look[open] .ai-steps-chevron { rotate:180deg; }
+.ai-look ol { list-style:none; margin:2px 0 6px 41px; padding:0; display:flex; flex-direction:column; gap:10px; }
+.ai-look-row a { text-decoration:none; color:inherit; min-width:0; overflow:hidden; } .ai-look li a { display:block; font-size:13.5px; font-weight:500; color:var(--foreground); text-decoration:none; } .ai-look li a:hover { text-decoration:underline; }
+.ai-look li small { display:block; font-size:12px; color:var(--muted-foreground); } .ai-look li p { margin:2px 0 0; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
+.md-draft { position:relative; margin:4px 0; padding:12px 14px; border-radius:12px; background:var(--muted); border:1px solid var(--border); }
+.md-draft > span { display:block; margin-bottom:6px; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
+.md-draft > p { margin:0; white-space:pre-wrap; font-size:14px; line-height:1.55; }
+.md-draft > button { position:absolute; top:7px; right:7px; display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 9px; border-radius:8px; font-size:12px; color:var(--muted-foreground); }
+.md-draft > button:hover { background:var(--background); color:var(--foreground); } .md-draft > button svg { width:13px; height:13px; }
+.md-table table { border-collapse:collapse; width:100%; font-size:13.5px; } .md-table th { text-align:left; font-weight:600; background:var(--muted); }
+.md-table th, .md-table td { padding:7px 10px; border-bottom:1px solid var(--border); } .md-table tr:last-child td { border-bottom:0; }
+.tasks-page { display:flex; align-items:center; gap:7px; margin:0 6px 4px 38px; padding:4px 6px; border-radius:8px; font-size:12px; color:var(--muted-foreground); }
+.tasks-page img, .tasks-page svg { width:13px; height:13px; flex:none; } .tasks-page span { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
+.tasks-page button { flex:none; padding:2px 7px; border-radius:6px; font-size:11.5px; color:var(--foreground); } .tasks-page button:hover { background:var(--muted); }

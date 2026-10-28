@@ -115,7 +115,7 @@ try:
     shown = js(process, f"[...document.querySelectorAll('.tab-row')].some(r => r.dataset.tabId === {json.dumps(tab)})")
     check(ok and shown, "The agent's tab is an ordinary tab in the main strip")
     send(process, "select", id=tab)
-    check(until(lambda: "Controlled by" in control(process), 10), "The pill shows over the agent's page")
+    check(until(lambda: "is working" in control(process), 10), "The pill shows over the agent's page")
     check(js(process, "!!document.querySelector('.tab-row.is-driven .tab-agent .mascot')"), "The tab shows the companion's mascot")
 
     pill, slot = rect(process, ".page-control"), rect(process, ".page-slot")
@@ -166,7 +166,7 @@ try:
     check(not control(process) and js(process, "!!document.querySelector('.tab-row.is-driven .mascot')"), "A background agent tab keeps its mascot marker")
     shot(process, "4-background")
     send(process, "select", id=tab)
-    check(until(lambda: "Controlled by" in control(process), 5), "Switching to the agent's tab shows the pill again")
+    check(until(lambda: "is working" in control(process), 5), "Switching to the agent's tab shows the pill again")
 
     js(process, "document.querySelector('.page-stop').click()")
     check(until(lambda: not control(process) and not js(process, "!!document.querySelector('.tab-row.is-driven')"), 5), "Stop removes the pill and the marker")
@@ -185,7 +185,7 @@ try:
         send(process, "aiToggle")
         send(process, "aiSend", text=f"Open {URL} in a new tab. Type Ada in the Name box and press Add. Then type Linus and press Add. Then type Grace and press Add. Then tell me how many names are listed.")
         live_tab = until(lambda: next((t for t in rpc(process)["tabs"] if "sheet" in t.get("Url", "") and t["Id"] != tab), None), 120, 1)
-        seen = until(lambda: "Controlled by" in control(process), 60)
+        seen = until(lambda: "is working" in control(process), 60)
         check(bool(live_tab and seen), "Live: the chat's page opens in front with the pill")
         shot(process, "5-live-agent")
         until(lambda: "Ada" in (rpc(process, "eval", script="names.innerText") or ""), 90, .5)

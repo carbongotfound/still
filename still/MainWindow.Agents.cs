@@ -471,16 +471,19 @@ public partial class MainWindow
  /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
  static MainWindow? ChatRunner(string who) => runs.TryGetValue(who, out var run)
   ? Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
- // Still's own chat opens its pages as the user's own tabs, beside the chat: in front while the user watches that chat.
- // Other AI apps' tabs open in the background, next to the other AI tabs, so the user can keep browsing.
+ // Background (the default for Still's own chat): the page belongs to the chat and shows only beside it, never in the
+ // user's tab strip. Otherwise Still's chat opens it as the user's own tab, beside the chat, and other AI apps open it
+ // next to the other AI tabs. An AI app's background tabs belong to it ("app:" + who) and show in the running tasks.
  const int AgentTabCap = 6; // tabs one chat (or one outside AI) may have open at once
- async Task<BrowserTab> OpenAgentTab(string who, string url)
+ internal const string AppPages = "app:";
+ async Task<BrowserTab> OpenAgentTab(string who, string url, bool background)
  {
   string? chat = runs.TryGetValue(who, out var run) ? who : null;
-  if (Windows.SelectMany(w => w.tabs).Count(t => !t.Closed && (chat != null ? (t.RunChat ?? t.InChat) == chat : t.AgentGroup && t.AgentKey == who)) >= AgentTabCap)
+  if (Windows.SelectMany(w => w.tabs).Count(t => !t.Closed && (chat != null ? (t.RunChat ?? t.InChat) == chat : t.AgentGroup && t.AgentKey == who || t.InChat == AppPages + who)) >= AgentTabCap)
    throw new InvalidOperationException($"You already have {AgentTabCap} tabs open. Reuse one with navigate, or close one with close_tab first.");
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null, RunChat = chat };
-  if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null };
+  if (background) tabs.Add(tab);
+  else if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
    int last = tabs.FindLastIndex(t => t.AgentGroup);
    tabs.Insert(last >= 0 ? last + 1 : tabs.Count, tab);
@@ -488,7 +491,8 @@ public partial class MainWindow
   }
   Claim(who, this, tab); ShellPublish(); SaveLater();
   await EnsureView(tab);
-  if (chat != null && (Showing(run!.Chat) || active?.RunChat == chat)) { if (active?.ChatId == chat) aiOpen = true; await SelectTab(tab); }
+  if (background) { if (chat != null && active?.ChatId == chat) await SelectTab(tab); } // the chat in view splits to show it
+  else if (chat != null && (Showing(run!.Chat) || active?.RunChat == chat)) { if (active?.ChatId == chat) aiOpen = true; await SelectTab(tab); }
   return tab;
  }
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
@@ -537,7 +541,7 @@ public partial class MainWindow
  async Task<string?> Gate(string who, string tool, JsonElement args, bool quick)
  {
   string action = tool switch {
-   "read_page" or "find" or "screenshot" or "wait_for" => "read",
+   "read_page" or "find" or "screenshot" or "wait_for" or "web_search" or "read_url" => "read",
    "open_tab" or "navigate" or "go_back" or "go_forward" or "reload" or "switch_tab" or "close_tab" => "navigate",
    "click" or "type" or "press_key" or "scroll" or "handle_dialog" => "interact",
    _ => "" }; // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
@@ -545,6 +549,8 @@ public partial class MainWindow
   string site, what, why = "";
   try {
    if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Open " + site; }
+   else if (tool == "read_url") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Read " + site; }
+   else if (tool == "web_search") { site = Host(SearchUrl("x")); what = "Search for “" + Clip(S(args, "query"), 60) + "”"; }
    else {
     site = Host(AgentTab(who, args).tab.Url);
     what = tool switch { "scroll" => "Scroll the page", "press_key" => "Press " + S(args, "key"), "handle_dialog" => "Answer the page's dialog", "go_back" => "Go back",
@@ -715,8 +721,11 @@ public partial class MainWindow
    }
    case "list_tabs":
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
+   case "web_search": return await WebSearch(who, args);
+   case "read_url": return await ReadUrl(who, args);
    case "open_tab": {
-    var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(tab);
+    bool background = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False ? bg.GetBoolean() : runs.ContainsKey(who);
+    var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine), background); await WaitLoaded(tab);
     Did(who, "Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {

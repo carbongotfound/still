@@ -12,7 +12,9 @@ internal static class McpServer
 {
  internal static readonly object[] BrowserTools = [
   Tool("list_tabs", "List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.", new { }),
-  Tool("open_tab", "Open a URL or search terms in a new background tab and work there from now on. The user keeps their own tab and can keep browsing. Start most tasks here.", new { url = Str("URL or search terms") }, "url"),
+  Tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.", new { query = Str("What to search for"), count = Num("How many results, up to 10 (default 8)") }, "query"),
+  Tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.", new { url = Str("The page's URL"), offset = Num("Text position to continue from, for long pages") }, "url"),
+  Tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.", new { url = Str("URL or search terms"), background = Bool("true (the default in Still's chat): your own tab, kept out of the user's tab strip. false: open it among the user's tabs, only when they asked for it there") }, "url"),
   Tool("navigate", "Load a URL or search terms in your current tab (or tabId).", new { url = Str("URL or search terms"), tabId = Str("Tab id (optional)") }, "url"),
   Tool("switch_tab", "Work in another tab from now on. It stays in the background unless show is true.", new { tabId = Str("Tab id from list_tabs"), show = Bool("Bring it to the front (only when the user asked to see it)") }, "tabId"),
   Tool("close_tab", "Close your current tab (or tabId).", new { tabId = Str("Tab id (optional)") }),
@@ -33,7 +35,7 @@ internal static class McpServer
   Tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", new { tabId = Str("Tab id (optional)") }),
  ];
  internal const string Instructions = "You're driving the user's own Still browser, signed in as them. "
-  + "Work in background tabs: open_tab for new work, so the user can keep browsing. "
+  + "Look things up with web_search and read_url: they need no tab. For hands-on work, open_tab, so the user can keep browsing. "
   + "Use read_page to see a page (text=false when you only need its controls) and find to locate something on a big page; then click, type and press_key with the element ids. "
   + "Actions report where you ended up and any new tab, dialog or file picker, so read the page again only when you need to see what changed. "
   + "If Still says it's waiting for the user, tell the user what to click and stop until they reply. "
