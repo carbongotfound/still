@@ -15,11 +15,14 @@ public sealed class AiChat
  public string? Session { get; set; } // the CLI's conversation, resumed by the next message
  public bool Started { get; set; }
  public string Companion { get; set; } = ""; // who the user is working with in this chat
+ public bool Unread { get; set; } // a reply landed while the user was elsewhere
+ public bool Archived { get; set; }
  public DateTime Updated { get; set; } = DateTime.UtcNow;
  public List<AiMessage> Messages { get; set; } = [];
 }
 
-/// A companion: the persona the user works with. Its face is one of the shell's faces, its job goes into the AI's instructions.
+/// A companion: the persona the user works with. Its face is one of the shell's mascots, its job goes into the AI's
+/// instructions. Its memory is a Markdown file the user edits (companions\<id>\memory.md).
 public sealed class Companion
 {
  public string Id { get; set; } = "";
@@ -27,6 +30,52 @@ public sealed class Companion
  public string Face { get; set; } = "";
  public string Color { get; set; } = "";
  public string Job { get; set; } = "";
+ public string Ai { get; set; } = ""; // the AI it runs on, "" = the one picked for chats
+ public string Mode { get; set; } = "default"; // efficient, default or expert
+ public List<string> Skills { get; set; } = []; // skills it reads at the start of every chat
+}
+
+/// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
+/// invokes it as /id in a message, or gives it to a companion; its body goes into the AI's prompt.
+public sealed partial record Skill(string Id, string Name, string Description, string When, string Body)
+{
+ internal static string Folder => Path.Combine(App.DataRoot, "skills");
+ static List<Skill>? all;
+ internal static List<Skill> All => all ??= Load();
+ static List<Skill> Load()
+ {
+  List<Skill> list = [];
+  try {
+   if (Directory.Exists(Folder)) foreach (var file in Directory.EnumerateFiles(Folder, "*.md").Order().Take(200)) {
+    string text = File.ReadAllText(file).ReplaceLineEndings("\n"), body = text;
+    Dictionary<string, string> head = [];
+    if (text.StartsWith("---\n") && text.IndexOf("\n---", 4) is var end and > 0) {
+     foreach (var line in text[4..end].Split('\n')) if (line.IndexOf(':') is var at and > 0) head[line[..at].Trim().ToLowerInvariant()] = line[(at + 1)..].Trim();
+     body = text[(end + 4)..].TrimStart('-').Trim();
+    }
+    string id = Path.GetFileNameWithoutExtension(file);
+    list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body));
+   }
+  } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+  return list;
+ }
+ /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line.
+ internal static string Save(string id, string name, string description, string when, string body)
+ {
+  static string Line(string v, int max) => v.ReplaceLineEndings(" ").Trim() is var t && t.Length > max ? t[..max] : t;
+  if (!All.Any(s => s.Id == id)) {
+   string slug = Slug().Replace(name.ToLowerInvariant(), "-").Trim('-') is { Length: > 0 } sl ? (sl.Length > 40 ? sl[..40].Trim('-') : sl) : "skill";
+   id = slug; for (int n = 2; All.Any(s => s.Id == id); n++) id = slug + "-" + n;
+  }
+  Directory.CreateDirectory(Folder);
+  File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
+  all = null; return id;
+ }
+ internal static void Delete(string id) { if (All.Any(s => s.Id == id)) { File.Delete(Path.Combine(Folder, id + ".md")); all = null; } }
+ /// The skills a message invokes: "/id" at the start or after a space.
+ internal static List<Skill> Invoked(string text) => All.Where(s => Regex.IsMatch(text, @"(^|\s)/" + Regex.Escape(s.Id) + @"(?=\s|$)")).ToList();
+ internal string Prompt => $"[Skill \"{Name}\"{(When.Length > 0 ? ", for: " + When : "")}]\n{Body}";
+ [GeneratedRegex("[^a-z0-9]+")] private static partial Regex Slug();
 }
 
 // The AI sidebar runs the user's own agent CLI (Claude Code, Codex, Grok Build) headless, signed in however the user
@@ -90,12 +139,35 @@ public partial class MainWindow
  }
 
  static List<Companion> DefaultCompanions() => [
-  new() { Id = "pip", Name = "Pip", Face = "robot", Color = "sky", Job = "An all-round helper: researches, compares options and gets things done on the web." },
-  new() { Id = "hazel", Name = "Hazel", Face = "owl", Color = "sand", Job = "A careful researcher: reads several sources, checks the facts and cites them." },
-  new() { Id = "rio", Name = "Rio", Face = "fox", Color = "peach", Job = "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking." },
-  new() { Id = "juno", Name = "Juno", Face = "octopus", Color = "rose", Job = "An organizer: handles email, calendars, documents and online busywork." },
+  new() { Id = "pip", Name = "Pip", Face = "", Color = "ocean", Job = "An all-round helper: researches, compares options and gets things done on the web." },
+  new() { Id = "hazel", Name = "Hazel", Face = "", Color = "sage", Job = "A careful researcher: reads several sources, checks the facts and cites them." },
+  new() { Id = "rio", Name = "Rio", Face = "", Color = "apricot", Job = "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking." },
+  new() { Id = "juno", Name = "Juno", Face = "", Color = "blush", Job = "An organizer: handles email, calendars, documents and online busywork." },
  ];
  List<Companion> Companions => Prefs.Companions.Count > 0 ? Prefs.Companions : DefaultCompanions();
+ // Memory: what every companion knows about the user (companions\memory.md), and what one companion knows (companions\<id>\memory.md).
+ static readonly Dictionary<string, string> memories = [];
+ static string MemoryFile(string id) => Path.Combine(App.DataRoot, "companions", id, "memory.md");
+ static string Memory(string id = "")
+ {
+  if (memories.TryGetValue(id, out var text)) return text;
+  try { text = File.Exists(MemoryFile(id)) ? File.ReadAllText(MemoryFile(id)) : ""; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { text = ""; }
+  return memories[id] = text;
+ }
+ static void SaveMemory(string id, string text)
+ {
+  text = text.Length > 20000 ? text[..20000] : text;
+  try { Directory.CreateDirectory(Path.GetDirectoryName(MemoryFile(id))!); File.WriteAllText(MemoryFile(id), text); memories[id] = text; }
+  catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+ }
+ /// The three modes on the message box. Expert: the strongest model, thinking hard. Efficient: the quickest, thinking
+ /// little. Default: the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
+ static (string Model, string Effort) ForMode(string ai, string? mode) => mode switch {
+  "expert" => (ai == "claude" ? "opus" : "", "high"),
+  "efficient" => (ai == "claude" ? "haiku" : "", "low"),
+  _ => ("", "") };
+ /// Is this chat on screen in this window: its tab, or the open sidebar beside an ordinary tab.
+ bool Showing(AiChat chat) => active?.ChatId == chat.Id || (active?.ChatId == null && aiOpen && aiChat?.Id == chat.Id);
  // A question the AI asked with ask_user, waiting for the user's answer in the chat.
  sealed record AiQuestion(string Text, string[] Options, TaskCompletionSource<string> Answer);
  AiQuestion? aiQuestion;
@@ -120,9 +192,11 @@ public partial class MainWindow
   return null;
  }
 
- void PublishAi() { var shown = ShownChat; ShellSend(new { kind = "ai", data = new {
+ void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = aiBusy, running = aiBusy ? aiChat?.Id : null, error = aiError, profile = ProfileCatalog.CurrentName(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
+  advanced = Prefs.AiAdvanced, memory = Memory(),
+  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary }),
@@ -130,8 +204,8 @@ public partial class MainWindow
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
   question = aiQuestion is { } q ? new { text = q.Text, options = q.Options } : null,
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job }),
-  chats = AiChats.Take(100).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion }) } }); }
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, memory = Memory(c.Id) }),
+  chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived }) } }); }
 
  async Task HandleAi(string op, JsonElement data)
  {
@@ -198,10 +272,34 @@ public partial class MainWindow
     if (c == null) list.Add(c = new() { Id = Guid.NewGuid().ToString("N")[..10] });
     c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
     c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
+    if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
+    if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
+    if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
+    if (data.TryGetProperty("memory", out _)) SaveMemory(c.Id, S("memory"));
     Prefs.Companions = list; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break; }
-   case "companionDelete" when Companions.Count > 1:
-    Prefs.Companions = Companions.Where(x => x.Id != S("id")).ToList(); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
+   case "companionDelete" when Companions.Count > 1 && Companions.FirstOrDefault(x => x.Id == S("id")) is { } gone:
+    Prefs.Companions = Companions.Where(x => x != gone).ToList(); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
+    try { if (Path.GetDirectoryName(MemoryFile(gone.Id)) is { } dir && Directory.Exists(dir)) Directory.Delete(dir, true); memories.Remove(gone.Id); }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+    break;
+   case "companionMode" when S("mode") is "efficient" or "default" or "expert":
+    if (Prefs.Companions.Count == 0) Prefs.Companions = DefaultCompanions(); // the default crew is rebuilt on every read until saved
+    if (Prefs.Companions.FirstOrDefault(x => x.Id == S("id")) is { } moded) { moded.Mode = S("mode"); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); }
+    break;
+   case "aiAdvanced": Prefs.AiAdvanced = B("on"); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); break;
+   case "memorySave": SaveMemory("", S("text")); foreach (var w in Windows) if (w != this) w.PublishAi(); break;
+   case "skillSave" when S("name").Trim() is { Length: > 0 } skillName:
+    try { Skill.Save(S("id"), skillName, S("description"), S("when"), S("body")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't save that skill."); App.Log(ex); }
+    foreach (var w in Windows) if (w != this) w.PublishAi();
+    break;
+   case "skillDelete":
+    try { Skill.Delete(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+    if (Prefs.Companions.Count(c => c.Skills.Remove(S("id"))) > 0) SaveLater();
+    foreach (var w in Windows) if (w != this) w.PublishAi();
+    break;
+   case "chatArchive" when AiChats.FirstOrDefault(c => c.Id == S("id")) is { } archived:
+    archived.Archived = B("on"); SaveAiChats(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
   }
   PublishAi();
@@ -252,8 +350,8 @@ public partial class MainWindow
  {
   var chat = aiChat;
   if (chat == null) {
-   chat = aiChat = new AiChat { Harness = Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t,
-    Companion = Companions.Any(c => c.Id == companion) ? companion : Companions[0].Id };
+   var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions[0];
+   chat = aiChat = new AiChat { Harness = with.Ai.Length > 0 ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with.Id };
    AiChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
   }
@@ -268,15 +366,21 @@ public partial class MainWindow
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
   aiBusy = true; aiError = ""; chat.Messages.Add(new() { Role = "user", Text = shown }); chat.Updated = DateTime.UtcNow;
+  var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
+  var skills = Skill.Invoked(shown);
+  if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
+  foreach (var k in skills) Step(chat, "Read skill " + k.Name);
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAi();
 
-  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), Companions.FirstOrDefault(c => c.Id == chat.Companion)) + "\n\n") + AiContext() + "\n\n" + text;
+  string memory = string.Join("\n\n", new[] { Memory().Trim(), who == null ? "" : Memory(who.Id).Trim() }.Where(m => m.Length > 0));
+  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who) + "\n\n" + (memory.Length > 0 ? "What the user asked you to remember:\n" + memory + "\n\n" : ""))
+   + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext() + "\n\n" + text;
   string folder = AiFolder, promptFile = "";
   Directory.CreateDirectory(folder);
   List<string> mcp = ["--mcp", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   bool said = false, stopped = false;
-  string model = Prefs.AiModels.GetValueOrDefault(cli.Id, ""), effort = Prefs.AiEfforts.GetValueOrDefault(cli.Id, "");
+  var (model, effort) = Prefs.AiAdvanced ? (Prefs.AiModels.GetValueOrDefault(cli.Id, ""), Prefs.AiEfforts.GetValueOrDefault(cli.Id, "")) : ForMode(cli.Id, who?.Mode);
   // Only the adapter's own catalog values reach the command line (cmd.exe and TOML quoting).
   if (!aiModels.GetValueOrDefault(cli.Id, []).Any(m => m.Id == model && (effort == "" || m.Efforts.Contains(effort)))) model = effort = "";
   AgentRun? run = null;
@@ -306,7 +410,7 @@ public partial class MainWindow
    run?.Dispose();
    if (aiBusy) { aiBusy = false; aiRun = null; agentAction = ""; ReleaseAgentTabs(cli.Name); }
    aiQuestion?.Answer.TrySetResult("The chat ended."); aiQuestion = null;
-   chat.Updated = DateTime.UtcNow; SaveAiChats();
+   chat.Updated = DateTime.UtcNow; chat.Unread = !Windows.Any(w => w.Showing(chat)); SaveAiChats();
    try { if (promptFile.Length > 0) File.Delete(promptFile); } catch (IOException) { }
   }
   if (!said && SignedOutError().IsMatch(aiError)) {
