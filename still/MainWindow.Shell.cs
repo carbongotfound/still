@@ -25,6 +25,30 @@ public partial class MainWindow
  [DllImport("user32.dll")] static extern bool ReleaseCapture();
  [DllImport("user32.dll")] static extern IntPtr SendMessage(IntPtr h,int msg,IntPtr wp,IntPtr lp);
  [DllImport("user32.dll")] static extern bool SetWindowPos(IntPtr hwnd,IntPtr after,int x,int y,int cx,int cy,uint flags);
+ [DllImport("user32.dll")] static extern int SetWindowRgn(IntPtr hwnd,IntPtr region,bool redraw);
+ [DllImport("gdi32.dll")] static extern IntPtr CreateRectRgn(int left,int top,int right,int bottom);
+ [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int left,int top,int right,int bottom,int width,int height);
+ [DllImport("gdi32.dll")] static extern int CombineRgn(IntPtr dest,IntPtr a,IntPtr b,int mode);
+ [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr gdiObject);
+ // While an AI drives the page in view, the interface draws a glow around it and its controls over it. The page's
+ // window leaves those spots open, so the interface beneath shows through and takes the clicks there.
+ (string Tab,double Frame,(double X,double Y,double W,double H,double R)[] Spots) holes=("",0,[]);
+ IntPtr holedPage;
+ void CutHoles()
+ {
+  IntPtr page=Shown?.View is {IsVisible:true} view?view.Handle:IntPtr.Zero;
+  if(holedPage!=IntPtr.Zero&&holedPage!=page)SetWindowRgn(holedPage,IntPtr.Zero,true);
+  holedPage=IntPtr.Zero;
+  if(page==IntPtr.Zero)return;
+  if(holes.Tab!=Shown!.Id||holes.Frame<=0&&holes.Spots.Length==0||overlay||contentFullScreen){SetWindowRgn(page,IntPtr.Zero,true);return;}
+  var dpi=VisualTreeHelper.GetDpi(this);
+  int X(double v)=>(int)Math.Round(v*dpi.DpiScaleX);
+  int Y(double v)=>(int)Math.Round(v*dpi.DpiScaleY);
+  int frame=X(holes.Frame);
+  var region=CreateRectRgn(frame,frame,X(pageWidth)-frame,Y(pageHeight)-frame);
+  foreach(var s in holes.Spots){var spot=CreateRoundRectRgn(X(s.X),Y(s.Y),X(s.X+s.W)+1,Y(s.Y+s.H)+1,X(s.R*2),Y(s.R*2));CombineRgn(region,region,spot,4/*RGN_DIFF*/);DeleteObject(spot);}
+  if(SetWindowRgn(page,region,true)==0)DeleteObject(region);else holedPage=page; // the window owns the region now
+ }
  // A fullscreen video fills the window at once, without waiting for the interface to re-render and report new bounds.
  void PlacePage()
  {
@@ -43,6 +67,7 @@ public partial class MainWindow
   WebHost.UpdateLayout();
   view.UpdateWindowPos();
   if(view.Handle!=IntPtr.Zero)SetWindowPos(view.Handle,IntPtr.Zero,0,0,0,0,0x0001|0x0002|0x0010);
+  CutHoles();
  }
  async Task InitializeShell()
  {
@@ -93,6 +118,11 @@ public partial class MainWindow
       pageHeight=Math.Clamp(data.GetProperty("height").GetDouble()*ratio,1,ActualHeight);
       PlacePage();return;
      case "overlay": await ShellOverlay(data.GetProperty("value").GetBoolean());return;
+     case "pageHoles":{
+      double scale=data.TryGetProperty("viewportWidth",out var hv)&&hv.GetDouble()>0?shellView.ActualWidth/hv.GetDouble():1;
+      var spots=data.GetProperty("spots").EnumerateArray().Take(4).Select(s=>(s.GetProperty("x").GetDouble()*scale,s.GetProperty("y").GetDouble()*scale,s.GetProperty("width").GetDouble()*scale,s.GetProperty("height").GetDouble()*scale,s.GetProperty("radius").GetDouble()*scale)).ToArray();
+      holes=(data.GetProperty("tab").GetString()??"",Math.Clamp(data.GetProperty("frame").GetDouble()*scale,0,12),spots);
+      CutHoles();return;}
      case "openPanel": ShellOpen(S("name"),S("value"));break;
      case "navigate": await Navigate(S("url"));break;
      case "new": await NewTab(S("url"),data.TryGetProperty("private",out var pr)&&pr.GetBoolean(),S("url").Length==0);break;
@@ -180,7 +210,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "companionSave" or "companionDelete":await HandleAi(op,data);break;
+     case "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "agentChat" or "companionSave" or "companionDelete":await HandleAi(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();
@@ -204,7 +234,7 @@ public partial class MainWindow
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
     welcome=state.Welcome&&!secondary&&!incognito,
     preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,startupDisabled=StartupRegistration.DisabledByWindows},
-    tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
+    tabs=tabs.Select(t=>new{id=t.Id,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),
     downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),

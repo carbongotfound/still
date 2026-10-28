@@ -210,7 +210,7 @@ public partial class MainWindow : Window
   SaveLater(); return tab;
  }
  /// The tab whose page is on screen: the active tab, or for a chat tab whose page is open, the page its AI works in (beside the chat).
- BrowserTab? Shown => active?.ChatId is { } chat ? active.PageOpen ? tabs.Where(t => t.InChat == chat && !t.Closed).MaxBy(t => t.LastActive) : null : active;
+ BrowserTab? Shown => active?.ChatId is { } chat ? active.PageOpen ? tabs.Where(t => (t.InChat ?? t.RunChat) == chat && !t.Closed).MaxBy(t => t.LastActive) : null : active;
  /// Puts the shown page on screen and hides the rest.
  void ShowPage()
  {
