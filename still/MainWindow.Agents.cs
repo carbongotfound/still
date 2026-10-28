@@ -83,7 +83,7 @@ public partial class MainWindow
    // The user took over: wait for them to hand it back, like a person would.
    for (var paused = DateTime.UtcNow.AddSeconds(40); agentPaused && DateTime.UtcNow < paused;) { await Task.Delay(250); agentSeen = DateTime.UtcNow; }
    if (stoppedAgents.TryGetValue(client, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
-   if (agentPaused) return Fail("The user took over the browser for now. Wait a little, then call the tool again.");
+   if (agentPaused) return Fail(TookOver);
    var interrupt = agentInterrupts[client] = new(TaskCreationOptions.RunContinuationsAsynchronously);
    var run = RunTool(client, tool, args, quick);
    int limit = tool switch { "ask_user" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
@@ -159,11 +159,12 @@ public partial class MainWindow
 
  static void PublishAll() { foreach (var w in Windows) w.ShellPublish(); }
  object? AgentData() => agentApproval != null ? new { client = askClient, pending = true, action = "", ask = askText, paused = false }
-  : approvedAgents.Contains(agentName) && (agentPaused || DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2)) ? new { client = agentName, pending = false, action = agentAction, ask = "", paused = agentPaused } : null;
- // Take over: the agent waits while the user drives, and the tab it works in comes to the front.
+  : approvedAgents.Contains(agentName) && (agentPaused || DateTime.UtcNow - agentSeen < TimeSpan.FromMinutes(2)) ? new { client = agentName, pending = false, action = agentAction, ask = "", paused = agentPaused, tab = agentTabs.GetValueOrDefault(agentName) } : null;
+ // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
  async Task TakeOver(bool on)
  {
   agentPaused = on;
+  if (on && agentInterrupts.Remove(agentName, out var running)) running.TrySetResult(Fail(TookOver));
   if (on && agentTabs.GetValueOrDefault(agentName) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
   PublishAll();
  }
@@ -177,6 +178,7 @@ public partial class MainWindow
   agentAction = ""; agentSeen = DateTime.MinValue; agentPaused = false; PublishAll(); Toast("Stopped " + (agentName.Length > 0 ? agentName : "the AI agent") + ".");
  }
  static readonly Dictionary<string, DateTime> stoppedAgents = new(StringComparer.OrdinalIgnoreCase);
+ const string TookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  static void InterruptAgent(BrowserTab t, object reply)
  {
@@ -403,13 +405,13 @@ public partial class MainWindow
  }
  /// The window whose own chat is running this AI right now.
  static MainWindow? ChatRunner(string who) => Windows.FirstOrDefault(w => !w.closing && w.aiBusy && w.aiChat != null && AiClis.FirstOrDefault(c => c.Id == w.aiChat.Harness)?.Name == who);
- // Still's own chat keeps the pages it opens inside the chat, beside the conversation. Other AI apps' tabs open in the
- // background, next to the other AI tabs, so the user can keep browsing.
+ // Still's own chat opens its pages as the user's own tabs, in front, with the chat in the sidebar beside them.
+ // Other AI apps' tabs open in the background, next to the other AI tabs, so the user can keep browsing.
  async Task<BrowserTab> OpenAgentTab(string who, string url)
  {
   string? chat = ChatRunner(who) == this ? aiChat!.Id : null;
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = who, AgentGroup = chat == null, InChat = chat };
-  if (chat != null) tabs.Add(tab);
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = who, AgentGroup = chat == null, RunChat = chat };
+  if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
    int last = tabs.FindLastIndex(t => t.AgentGroup);
    tabs.Insert(last >= 0 ? last + 1 : tabs.Count, tab);
@@ -417,7 +419,7 @@ public partial class MainWindow
   }
   Claim(who, this, tab); ShellPublish(); SaveLater();
   await EnsureView(tab);
-  if (chat != null) ShowPage();
+  if (chat != null) { if (active?.ChatId == chat) aiOpen = true; await SelectTab(tab); }
   return tab;
  }
  static async Task<CoreWebView2> Core(MainWindow w, BrowserTab t)
@@ -460,6 +462,7 @@ public partial class MainWindow
  {
   foreach (var r in text.ReplaceLineEndings("\n").EnumerateRunes()) {
    string s = r.ToString();
+   if (agentPaused) return; // the user took over mid-word
    if (s == "\n") { if (multiline) await PressKey(core, "Enter"); continue; }
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyDown", key = s, text = s, unmodifiedText = s }));
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", key = s }));

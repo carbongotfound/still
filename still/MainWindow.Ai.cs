@@ -184,11 +184,14 @@ public partial class MainWindow
     break;
    case "chatOpen" when S("id") is { Length: > 0 } open && AiChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
    case "chatPage" when active?.ChatId is { } pageChat: // show or hide the AI's page beside the chat
-    if (tabs.FirstOrDefault(t => t.Id == S("id") && t.InChat == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;
+    if (tabs.FirstOrDefault(t => t.Id == S("id") && (t.InChat ?? t.RunChat) == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;
     active.PageOpen = B("on");
     if (Shown is { Url.Length: > 0 } shownPage) await EnsureView(shownPage);
     ShowPage(); ShellPublish(); break;
-   case "chatPopOut" when Shown is { InChat: not null } page: page.InChat = null; await SelectTab(page); break; // the AI's page becomes an ordinary tab
+   case "chatPopOut" when active?.ChatId != null && Shown is { } page: page.InChat = null; await SelectTab(page); break; // the AI's page becomes an ordinary tab
+   case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Go to chat"
+    if (!aiBusy || aiChat?.Id == run) aiChat = runChat;
+    aiOpen = true; break;
    case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
     var list = Companions.ToList();
     var c = list.FirstOrDefault(x => x.Id == S("id"));

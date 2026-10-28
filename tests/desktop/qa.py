@@ -62,6 +62,7 @@ def launch(exe, profile, env=None):
     process = subprocess.Popen([str(Path(exe).resolve()), "--qa", "--profile", str(profile), "--profiles-root", str(profile)], env=env)
     until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None, 30)
     until(lambda: rpc(process).get("tabs"), 30)
+    until(lambda: rpc(process, "shellEval", script="document.body.innerText.length"), 30)  # the interface has rendered
     return process
 
 
