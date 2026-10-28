@@ -1,0 +1,211 @@
+"""Regression checks for the controls other AI apps use: --cli, --mcp, approval, block, the switch, private tabs, temp.
+
+Run: python tests/desktop/agents.py artifacts/Still-QA/Still.exe [--update-snapshot]
+`--cli` always talks to the default profile, so only its offline behavior (help, as= required) runs here;
+the rest goes through `--mcp --profile`, which shares the same call path (McpServer.Call) with a fresh profile.
+"""
+import ctypes
+import http.server
+import json
+import os
+from pathlib import Path
+import queue
+import subprocess
+import sys
+import threading
+import time
+import uuid
+
+ROOT = Path(__file__).resolve().parents[2]
+RUN = ROOT / "artifacts" / ("agents-" + uuid.uuid4().hex)
+RUN.mkdir(parents=True)
+EXE = Path(sys.argv[1]).resolve()
+SNAPSHOT = Path(__file__).with_name("fixtures") / "cli-help.txt"
+RESULT = {"exe": str(EXE), "checks": []}
+
+def check(ok, name):
+    RESULT["checks"].append({"name": name, "passed": bool(ok)})
+    print(("PASS " if ok else "FAIL ") + name, flush=True)
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = ("<!doctype html><title>Agent fixture " + self.path + "</title><p>" + self.path).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def log_message(self, *_):
+        pass
+
+SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=SERVER.serve_forever, daemon=True).start()
+URL = "http://127.0.0.1:" + str(SERVER.server_port)
+
+def rpc(process, op="state", **args):
+    pipe = r"\\.\pipe\StillQa-" + str(process.pid)
+    end = time.monotonic() + 15
+    while not ctypes.windll.kernel32.WaitNamedPipeW(pipe, 500):
+        if time.monotonic() > end or process.poll() is not None:
+            raise RuntimeError("QA pipe unavailable")
+        time.sleep(.05)
+    with open(pipe, "r+b", buffering=0) as stream:
+        stream.write((json.dumps({"op": op, **args}) + "\n").encode())
+        response = b""
+        while not response.endswith(b"\n"):
+            part = stream.read(65536)
+            if not part:
+                raise RuntimeError("QA pipe closed")
+            response += part
+    return json.loads(response)
+
+def send(process, op, **args):
+    rpc(process, "shellEval", script="window.chrome.webview.postMessage(" + json.dumps({"op": op, **args}) + ")")
+
+def shell_text(process):
+    return rpc(process, "shellEval", script="document.body.innerText")
+
+def until(predicate, seconds=20):
+    end = time.monotonic() + seconds
+    while time.monotonic() < end:
+        value = predicate()
+        if value:
+            return value
+        time.sleep(.2)
+    return None
+
+class Mcp:
+    """A minimal MCP client over stdio, like an AI app would run it."""
+    def __init__(self, name, profile):
+        self.proc = subprocess.Popen([str(EXE), "--qa", "--mcp", "--as", name, "--profile", str(profile), "--profiles-root", str(profile)],
+                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        self.replies, self.next = {}, 1
+        self.lock = threading.Condition()
+        threading.Thread(target=self._read, daemon=True).start()
+        self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": name, "version": "1"}})
+        self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})
+    def _read(self):
+        for line in self.proc.stdout:
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            with self.lock:
+                self.replies[message.get("id")] = message
+                self.lock.notify_all()
+    def _write(self, message):
+        self.proc.stdin.write((json.dumps(message) + "\n").encode())
+        self.proc.stdin.flush()
+    def request(self, method, params, seconds=60):
+        with self.lock:
+            rid = self.next; self.next += 1
+        self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
+        with self.lock:
+            if not self.lock.wait_for(lambda: rid in self.replies, seconds):
+                raise TimeoutError(method + " got no reply")
+            return self.replies.pop(rid)
+    def call(self, tool, seconds=60, **args):
+        """Returns (ok, text) for one tool call."""
+        result = self.request("tools/call", {"name": tool, "arguments": args}, seconds)["result"]
+        text = "\n".join(c.get("text", "") for c in result.get("content", []))
+        return not result.get("isError"), text
+    def close(self):
+        try:
+            self.proc.stdin.close()
+            self.proc.wait(timeout=10)
+        except Exception:
+            self.proc.kill()
+
+def call_async(client, tool, **args):
+    out = queue.Queue()
+    threading.Thread(target=lambda: out.put(client.call(tool, **args)), daemon=True).start()
+    return out
+
+def kill_qa_windows():
+    """Temp windows are started by Still itself; close every process of this QA executable."""
+    path = str(EXE).replace("'", "''")
+    subprocess.run(["powershell", "-NoProfile", "-Command",
+                    f"Get-CimInstance Win32_Process -Filter \"Name='Still.exe'\" | Where-Object {{ $_.ExecutablePath -eq '{path}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"],
+                   capture_output=True)
+
+process = None
+clients = []
+try:
+    # --cli: offline behavior only (it always targets the default profile).
+    helped = subprocess.run([str(EXE), "--cli", "help"], capture_output=True, timeout=60)
+    text = helped.stdout.decode("utf-8").replace("\r\n", "\n")
+    if "--update-snapshot" in sys.argv or not SNAPSHOT.exists():
+        SNAPSHOT.parent.mkdir(exist_ok=True)
+        SNAPSHOT.write_text(text, encoding="utf-8", newline="\n")
+        print("Wrote " + str(SNAPSHOT))
+    check(helped.returncode == 0 and text == SNAPSHOT.read_text(encoding="utf-8"), "--cli help output is unchanged")
+    anonymous = subprocess.run([str(EXE), "--cli", "list_tabs"], capture_output=True, timeout=60)
+    check(anonymous.returncode == 2 and "say who you are with as=" in anonymous.stdout.decode("utf-8"), "--cli without as= is refused")
+
+    profile = RUN / "profile"
+    profile.mkdir()
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 4, "Welcome": False, "Preferences": {"AgentsEnabled": True},
+        "Tabs": [{"Id": "home", "Title": "Home", "Url": URL + "/home"}], "ActiveId": "home"}))
+    process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile)])
+    until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None, 30)
+    until(lambda: any(t["ready"] for t in rpc(process)["tabs"]), 30)
+
+    # A new caller is asked about; Allow lets it in.
+    first = Mcp("Probe One", profile); clients.append(first)
+    pending = call_async(first, "list_tabs")
+    check(until(lambda: "Probe One" in shell_text(process)), "Approval bar appears for a new caller")
+    send(process, "agentAnswer", allow=True)
+    ok, text = pending.get(timeout=60)
+    if not ok and "Allow" in text:  # the user counted as away: the agent was told to call again
+        ok, text = first.call("list_tabs")
+    check(ok and "/home" in text, "Allowed caller can list tabs")
+
+    # Private tabs never reach agents.
+    send(process, "new", url=URL + "/private-tab", private=True)
+    until(lambda: any(t["Private"] for t in rpc(process)["tabs"]))
+    ok, text = first.call("list_tabs")
+    check(ok and "/home" in text and "private-tab" not in text, "Private tabs are hidden from list_tabs")
+
+    # "temp" opens a throwaway window the caller is already allowed in.
+    ok, text = first.call("open_tab", seconds=90, url=URL + "/temp-tab", profile="temp")
+    listed_ok, listed = first.call("list_tabs", seconds=60, profile="temp")
+    check(ok and listed_ok and "temp-tab" in listed, "profile=temp opens a temporary window")
+    ok, text = first.call("list_tabs")
+    check(ok and "temp-tab" not in text, "The temporary window is separate from the profile")
+
+    # Block holds for the rest of the session.
+    second = Mcp("Probe Two", profile); clients.append(second)
+    pending = call_async(second, "list_tabs")
+    until(lambda: "Probe Two" in shell_text(process))
+    send(process, "agentAnswer", allow=False)
+    ok, text = pending.get(timeout=60)
+    if not ok and "Allow" in text:  # the user counted as away: the answer applies to the next call
+        ok, text = second.call("list_tabs", seconds=20)
+    check(not ok and "blocked this agent" in text, "Block refuses the caller")
+    started = time.monotonic()
+    ok, text = second.call("list_tabs", seconds=20)
+    check(not ok and "blocked this agent" in text and time.monotonic() - started < 5 and "Probe Two" not in shell_text(process),
+          "Block persists for the session without asking again")
+
+    # The per-profile switch refuses everyone with the existing message.
+    send(process, "preference", key="agents", value="false")
+    time.sleep(1)
+    ok, text = first.call("list_tabs")
+    check(not ok and text.startswith("AI control is turned off."), "Switch off refuses agents with the existing message")
+    check(not rpc(process)["shellErrors"], "No interface JavaScript errors")
+    rpc(process, "quit")
+    process.wait(timeout=15)
+except Exception as error:
+    RESULT["error"] = repr(error)
+    print("ERROR " + repr(error), flush=True)
+finally:
+    for client in clients:
+        client.close()
+    if process and process.poll() is None:
+        process.kill()
+    kill_qa_windows()
+    SERVER.shutdown()
+    RESULT["passed"] = "error" not in RESULT and all(c["passed"] for c in RESULT["checks"])
+    (RUN / "result.json").write_text(json.dumps(RESULT, indent=2))
+    print(("PASSED " if RESULT["passed"] else "FAILED ") + str(sum(c["passed"] for c in RESULT["checks"])) + "/" + str(len(RESULT["checks"])), flush=True)
+    sys.exit(0 if RESULT["passed"] else 1)
