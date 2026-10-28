@@ -2,7 +2,7 @@ Still 1.3 — Copyright 2026 Carbon. Original application code: MIT (see LICENSE
 
 Interface: React, shadcn/ui (MIT), Radix, Motion, Sonner, cmdk and related packages.
 Fonts: Geist and Fraunces (SIL Open Font License). Icons: Lucide (ISC).
-Companion faces: Microsoft Fluent Emoji (MIT, Copyright Microsoft Corporation).
+Companion mascots: built in code with three.js, React Three Fiber and drei (MIT).
 AI app logos: LobeHub Icons (MIT, Copyright 2023 LobeHub). The Claude, OpenAI and Grok marks
 belong to Anthropic, OpenAI and xAI and only identify their apps.
 Article extraction: Mozilla Readability (Apache 2.0).

@@ -40,7 +40,7 @@ export function Welcome({ isDefault, agents, mcpCommand, ai, noAi, send, onImpor
   <div className="welcome-card" onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !(e.target as HTMLElement).closest("button,textarea")) { e.preventDefault(); next() } }}>
    <div className="welcome-top"><div className="welcome-progress"><i style={{ width: (step + 1) / flow.length * 100 + "%" }} /></div><button className="welcome-skip" onClick={finish}>Skip all</button></div>
    <div className="welcome-body">
-    <Face companion={c} size={210} mood={at === "hello" ? "happy" : "idle"} className="welcome-face" key={c.face + c.color} />
+    <Face companion={c} size={210} mood={at === "hello" ? "needs" : "idle"} look className="welcome-face" key={c.face + c.color} />
     <AnimatePresence mode="wait" initial={false}>
      <motion.div key={at + look} className="welcome-talk" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} transition={{ duration: .22, ease: [.3, .7, .2, 1] }}>
       {at === "hello" && <>

@@ -74,52 +74,10 @@ def until(predicate, seconds=20):
         time.sleep(.2)
     return None
 
-class Mcp:
-    """A minimal MCP client over stdio, like an AI app would run it."""
-    def __init__(self, name, profile):
-        self.proc = subprocess.Popen([str(EXE), "--qa", "--mcp", "--as", name, "--profile", str(profile), "--profiles-root", str(profile)],
-                                     stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
-        self.replies, self.next = {}, 1
-        self.lock = threading.Condition()
-        threading.Thread(target=self._read, daemon=True).start()
-        self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": name, "version": "1"}})
-        self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})
-    def _read(self):
-        for line in self.proc.stdout:
-            try:
-                message = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            with self.lock:
-                self.replies[message.get("id")] = message
-                self.lock.notify_all()
-    def _write(self, message):
-        self.proc.stdin.write((json.dumps(message) + "\n").encode())
-        self.proc.stdin.flush()
-    def request(self, method, params, seconds=60):
-        with self.lock:
-            rid = self.next; self.next += 1
-        self._write({"jsonrpc": "2.0", "id": rid, "method": method, "params": params})
-        with self.lock:
-            if not self.lock.wait_for(lambda: rid in self.replies, seconds):
-                raise TimeoutError(method + " got no reply")
-            return self.replies.pop(rid)
-    def call(self, tool, seconds=60, **args):
-        """Returns (ok, text) for one tool call."""
-        result = self.request("tools/call", {"name": tool, "arguments": args}, seconds)["result"]
-        text = "\n".join(c.get("text", "") for c in result.get("content", []))
-        return not result.get("isError"), text
-    def close(self):
-        try:
-            self.proc.stdin.close()
-            self.proc.wait(timeout=10)
-        except Exception:
-            self.proc.kill()
+from mcp_client import Mcp as McpClient, call_async  # noqa: E402
 
-def call_async(client, tool, **args):
-    out = queue.Queue()
-    threading.Thread(target=lambda: out.put(client.call(tool, **args)), daemon=True).start()
-    return out
+def Mcp(name, profile):
+    return McpClient(EXE, name, profile)
 
 def kill_qa_windows():
     """Temp windows are started by Still itself; close every process of this QA executable."""
