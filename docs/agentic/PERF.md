@@ -24,6 +24,7 @@ Script: `python tests/desktop/baseline.py <Still.exe> 3` (3 runs; medians below)
 | 4 | 6.625 s | 684.1 / 869.5 MB | 53.3 ms | RAM and switch flat (+0.7% / +2.2%, +4%). Cold start swings with machine load: an earlier run of the same build gave 16.45 s while a compile ran |
 | 5 | 14.641 s | 673.8 / 804.2 MB | 74.4 ms | Same day, Phase 4 rebuilt and run alternately with Phase 5: switch 65 and 91 ms (Phase 4) vs 91 and 90 ms (Phase 5), 1-tab RAM 662 and 666 vs 671 and 665 MB, cold start 7 to 16 s for both. No change traceable to Phase 5; the machine was noisier than for Phase 4's row. Split view and group collapse frames: p95 8.5 ms |
 | 6 | 13.43 s | 624.4 / 768.9 MB | 64.8 ms | Measured back to back against 41ee795, below. Within 5% on every metric |
+| 6 + mascot fix | | 600.1 MB (1 tab) | | +0.4% against 41ee795 in the same run (597.8 MB). Below |
 
 
 ## Phase 6: this build against 41ee795, back to back
@@ -44,6 +45,28 @@ Single cold starts run from 5.6 to 18.4 s for both builds. Still's own stages pu
 swing, in `shell-ready`: the interface's first paint in a new WebView2 profile, 8 to 16 s for both. Everything before
 it is usually under 5 s (one baseline launch took 7.8 s to create its controllers). 1-tab idle RAM is the closest to the limit, at +4.9%. It has crept up a little in each phase (the
 chat, companions, mascots and permissions all live in the shell), so it's the number to watch.
+
+### 1-tab idle RAM, split by process (after Phase 6)
+
+The same 1-tab launch as `baseline.py`, 75 s idle, working set of each process in Still's tree, 3 alternating rounds,
+medians in MB.
+
+| Process | 41ee795 | Phase 6 | Fixed |
+|---|---|---|---|
+| Still.exe | 155.9 | 159.8 | 161.4 |
+| Shell renderer | 88.1 | 101.6 | 86.1 |
+| GPU process | 85.1 | 93.6 | 82.9 |
+| Everything else (browser, page renderer, network, storage, crashpad) | 270.0 | 267.3 | 268.4 |
+| Total | 601.7 | 627.6 (+4.3%) | 600.1 (+0.4% against 597.8 in the same run) |
+
+Almost all of it was one thing: the toolbar's Chat button shows an 18 px mascot (Phase 1), and any mascot on screen
+loaded three.js (907 KB) and a 512 px WebGL canvas, so every window paid about 22 MB for it (shell heap 6 to 13 MB, plus
+the GPU process). The home page also flashes its 96 px mascot during startup, before the session's tabs arrive, which
+loaded it even on windows that never show one. Now a small idle mascot keeps its still picture (rendered from the same
+model) until three.js is loaded for something else, and three.js loads once a mascot has stayed on screen for a second.
+Opening the chat, the home page or any run brings it back, and then every mascot animates as before
+(`mascots.py` checks both). What's left is Still.exe itself, about 4 MB for the agent, permission and chat code, and
+a bigger shell bundle (index 724 to 860 KB, CSS 149 to 181 KB) that doesn't show in the renderer's working set.
 
 `performance.py` without `--baseline` fails "Resident memory drops by at least 20 percent" on Phases 2 and 3, and on the
 untouched baseline build too (loaded 906.6 MB, idle 889.1 MB working set). It's an older check, not a regression from

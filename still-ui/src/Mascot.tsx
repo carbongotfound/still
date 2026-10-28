@@ -1,10 +1,13 @@
-import { Suspense, lazy, useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
+import { Suspense, lazy, useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react"
 import { cn } from "@/lib/utils"
 
 // Still's mascots: one original 3D character per AI provider, built from code in mascot3d.tsx.
 // Every <Mascot> is a small 2D canvas. One hidden WebGL canvas renders each visible mascot in turn and copies it in,
 // so mascots layer, clip and scroll like any other element. Until that loads, or with WebGL off or reduced motion on,
 // a still picture rendered from the same model shows instead.
+// A small idle mascot (the toolbar's Chat button) keeps its picture until three.js is loaded for something else, and
+// three.js waits until a mascot has stayed a second (not the home page flashing by at startup), so a plain window
+// doesn't pay ~20 MB for it.
 export const KINDS = ["claude", "chatgpt", "grok"] as const
 export type Kind = (typeof KINDS)[number]
 export const STATES = ["idle", "listening", "thinking", "working", "needs", "done", "error"] as const
@@ -26,6 +29,7 @@ const listeners = new Set<() => void>()
 const changed = () => { version++; listeners.forEach(l => l()) }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
 export const useSlots = () => { useSyncExternalStore(subscribe, () => version); return [...slots.values()] }
+let used = false
 
 const seen = new IntersectionObserver(entries => { for (const e of entries) for (const s of slots.values()) if (s.canvas === e.target) s.visible = e.isIntersecting })
 addEventListener("pointermove", e => { pointer.x = e.clientX; pointer.y = e.clientY }, { passive: true })
@@ -40,7 +44,8 @@ function useLive() {
 export function Mascot({ kind, state = "idle", size, look = false, className, style }: { kind: Kind; state?: MascotState; size: number; look?: boolean; className?: string; style?: CSSProperties }) {
  const id = useId()
  const ref = useRef<HTMLCanvasElement>(null)
- const live = useLive()
+ const loaded = useSyncExternalStore(subscribe, () => used)
+ const live = useLive() && (loaded || size >= 32 || state !== "idle")
  const px = Math.min(512, Math.round(size * Math.min(devicePixelRatio || 1, 2)))
  useEffect(() => {
   const canvas = ref.current
@@ -67,9 +72,12 @@ const Stage = lazy(() => import("./mascot3d"))
 /// Mounted once at the root. Loads three.js the first time a mascot can render live, and keeps it after.
 export function MascotStage() {
  const live = useLive()
- const [used, setUsed] = useState(false)
  const count = useSlots().length
- useEffect(() => { if (count) setUsed(true) }, [count])
+ useEffect(() => {
+  if (!count || used) return
+  const wait = setTimeout(() => { used = true; changed() }, 1000)
+  return () => clearTimeout(wait)
+ }, [count])
  return live && used ? <Suspense fallback={null}><Stage /></Suspense> : null
 }
 
