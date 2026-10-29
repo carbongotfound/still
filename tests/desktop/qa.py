@@ -115,10 +115,10 @@ def launch(exe, profile, env=None):
 
 
 # The companions Still used to start with. Tests that talk to them bring them along (setup makes your own now).
-CREW = [{"Id": "nadia", "Name": "Nadia", "Job": "An all-round coworker: researches, compares options and gets things done on the web."},
-        {"Id": "kenji", "Name": "Kenji", "Job": "A careful researcher: reads several sources, checks the facts and cites them."},
-        {"Id": "marcus", "Name": "Marcus", "Job": "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking."},
-        {"Id": "lena", "Name": "Lena", "Job": "An organizer: handles email, calendars, documents and online busywork."}]
+CREW = [{"Id": "glint", "Name": "Glint", "Job": "An all-round coworker: researches, compares options and gets things done on the web."},
+        {"Id": "noon", "Name": "Noon", "Job": "A careful researcher: reads several sources, checks the facts and cites them."},
+        {"Id": "zest", "Name": "Zest", "Job": "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking."},
+        {"Id": "mallow", "Name": "Mallow", "Job": "An organizer: handles email, calendars, documents and online busywork."}]
 
 ROOT = Path(__file__).resolve().parents[2]
 SIZES = ((1720, 1080), (1280, 800))

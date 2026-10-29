@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
 import { lookOf, type Companion } from "./Buddy"
-import { CrewCards, INTERESTS, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
+import { CrewCards, INTERESTS, OWN_PITCH, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
 import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
 import { LookEditor, LookThumb } from "./LookEditor"
@@ -220,7 +220,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   const on = !picks.includes(key), next = on ? [...picks, key] : picks.filter(k => k !== key)
   setPicks(next); setNeedOne(false); setLook(lookOfKey(on ? key : next.at(-1)))
   if (!on && main === key) setMain("")
-  if (on) react("pop")
+  if (on) react("hired")
  }
  // "Make your own" ends with "Add <name>", back on the crew with it picked.
  const addOwn = () => {
@@ -240,7 +240,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   const ids = chosen.length ? chosen.map(x => x.id) : first ? [first.id] : []
   for (const id of ids) {
    if (at === "you" && you.trim()) send("memoryAdd", { companion: id, text: `Likes to be called ${you.trim()}.`, kind: "fact", key: "name" })
-   if (at === "interests" && likes.length) send("memoryAdd", { companion: id, text: `Into ${likes.join(", ").toLowerCase()}.`, kind: "preference", key: "interests" })
+   if (at === "interests" && likes.length) send("memoryAdd", { companion: id, text: `Works on ${likes.join(", ").toLowerCase()}.`, kind: "preference", key: "interests" })
   }
   if (at === "interests" && likes.length) send("interests", { list: likes })
  }
@@ -304,33 +304,36 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Reveal after={3}><AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} /></Reveal>
      </>}
      {at === "crew" && !making && <>
-      <Bubbles lines={first ? ["Want to keep me, or add someone new?", "Pick one or a few. Each has a job they're great at. Or make your own."]
-       : ["Who do you want to work with?", "Pick one or a few. Each has a job they're great at, and you can change anything about them later. Or make your own."]} />
+      <Bubbles lines={first ? ["Want to keep me, or grow the team?", "Each of these owns a part of your work. Hire one or a few, or make your own."]
+       : ["Who do you want on your team?", "Each of these owns a part of your work. Hire one or a few, or make your own. You can change anything about them later."]} />
       <Reveal after={2}>
        {first && <button className="ob-option ob-keep" onClick={() => { setPicks([]); setMain(""); setLook(lookOf(first)); go(step + 1) }}><Check /><span><strong>Keep {first.name}</strong><small>Carry on with the companion you have.</small></span></button>}
-       {needOne && <p className="ob-note is-warn" role="alert">Pick at least one companion first. Then you can skip the rest.</p>}
+       {needOne && <p className="ob-note is-warn" role="alert">Hire at least one companion first. Then you can skip the rest.</p>}
        <CrewCards picked={picks} made={made} onPick={(p: Premade) => toggle(p.id)} onMade={toggle} onOwn={startOwn} />
       </Reveal>
      </>}
      {at === "crew" && making && <>
-      <Bubbles lines={["Let's make your own companion.", "Pick a color first, then a face and a name."]} />
+      <Bubbles lines={[OWN_PITCH, "Pick a color and a shape, give me a name, and tell me what I'm here to do."]} />
       <Reveal after={2}><div className="ob-build">
        <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([hex, label]) => <button key={hex} role="radio" aria-checked={look.color === hex} aria-label={label} title={label} style={{ "--swatch": hex } as CSSProperties} onClick={() => pickColor(hex)} />)}</div></div>
        {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Shape</span><div className="ob-faces" role="radiogroup" aria-label="Shape">{SHAPES.map(([k, label]) => <button key={k} role="radio" aria-checked={look.shape === k} aria-label={label} title={label} onClick={() => pickShape(k)}><LookThumb look={{ ...look, shape: k }} /></button>)}</div></motion.div>}
        {grown >= 2 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Name</span>
         <div className="ob-name-box"><input aria-label="Name your companion" placeholder="Their name" maxLength={24} value={draft.name} onChange={e => { setDraft({ ...draft, name: e.target.value }); setGrown(3) }} /></div>
        </motion.div>}
+       {grown >= 3 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Job</span>
+        <div className="ob-name-box"><textarea aria-label="What should I do for you?" placeholder="What should I do for you? You can skip this." rows={2} maxLength={400} value={draft.job} onChange={e => setDraft({ ...draft, job: e.target.value })} /></div>
+       </motion.div>}
        <div className="ob-build-actions">
         <Button variant="outline" size="sm" onClick={() => { setLook(surprise()); setGrown(3); react("pop") }}><Dices />Surprise me</Button>
         <Button variant="ghost" size="sm" onClick={() => setStyling(true)}><Palette />Customize</Button>
-        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => { setMaking(false); setLook(lookOfKey(picks.at(-1))) }}>Back to the crew</Button>
+        <Button variant="ghost" size="sm" className="ml-auto" onClick={() => { setMaking(false); setLook(lookOfKey(picks.at(-1))) }}>Back to the team</Button>
        </div>
       </div></Reveal>
       {styling && <LookEditor companion={{ ...draft, look: lookKey(look) }} onClose={() => setStyling(false)} onSave={k => { const l = lookOf({ ...draft, look: k }); setLook(l); setGrown(g => Math.max(g, 2)); setStyling(false); react("happy") }} />}
      </>}
      {at === "main" && <>
-      <Bubbles lines={["Great team! Who should be your main companion?", "They'll finish setting up with you, take your first task and start your new chats. The others are a click away in any chat."]} />
-      <Reveal after={2}><div className="ob-layouts ob-mains" role="radiogroup" aria-label="Main companion">{chosen.map(x => <button key={x.id} role="radio" aria-checked={main === x.id} style={{ "--hue": lookOf(x).color } as CSSProperties} onClick={() => { setMain(x.id); setLook(lookOf(x)); react("happy") }}>
+      <Bubbles lines={["Great team! Who should lead?", "Your lead finishes setting up with you, takes your first task and starts your new chats. The rest of the team is a click away in any chat."]} />
+      <Reveal after={2}><div className="ob-layouts ob-mains" role="radiogroup" aria-label="Who leads">{chosen.map(x => <button key={x.id} role="radio" aria-checked={main === x.id} style={{ "--hue": lookOf(x).color } as CSSProperties} onClick={() => { setMain(x.id); setLook(lookOf(x)); react("happy") }}>
        <span className="ob-mains-face"><Mascot look={lookOf(x)} size={56} /></span><strong>{x.name}</strong><small>{premadeOf(x)?.role ?? "Made by you"}</small><span className="ob-check" aria-hidden><Check /></span></button>)}</div></Reveal>
      </>}
      {at === "how" && <>
@@ -349,8 +352,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
        <p className="ob-note">{chosen.length > 1 ? "We keep this in our memories on this computer, so nobody asks twice." : "I keep this in my memory on this computer, so I don't ask twice."}</p></Reveal>
      </>}
      {at === "interests" && <>
-      <Bubbles lines={[you.trim() ? `Thanks, ${you.trim()}. What are you into?` : "What are you into?", "Pick a few. I'll remember them, so my ideas fit you better."]} />
-      <Reveal after={2}><div className="ob-chips is-big" role="group" aria-label="Interests">{INTERESTS.map(k => { const on = likes.includes(k); return <button key={k} aria-pressed={on} onClick={() => setLikes(l => l.includes(k) ? l.filter(x => x !== k) : [...l, k])}>{on && <Check />}{k}</button> })}</div></Reveal>
+      <Bubbles lines={[you.trim() ? `Thanks, ${you.trim()}. What does your work involve?` : "What does your work involve?", "Pick a few. I'll remember them, so what I suggest fits your work."]} />
+      <Reveal after={2}><div className="ob-chips is-big" role="group" aria-label="Your work">{INTERESTS.map(k => { const on = likes.includes(k); return <button key={k} aria-pressed={on} onClick={() => setLikes(l => l.includes(k) ? l.filter(x => x !== k) : [...l, k])}>{on && <Check />}{k}</button> })}</div></Reveal>
      </>}
      {at === "layout" && <>
       <Bubbles lines={["Where do you like your tabs?", "You can change this later in Settings."]} />

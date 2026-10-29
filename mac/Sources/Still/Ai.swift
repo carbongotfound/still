@@ -71,7 +71,11 @@ func tidy<S: StringProtocol>(_ text: S) -> String { text.trimmingCharacters(in: 
 /// don't live on in the source. A companion with one may have been named by Still rather than the user.
 let oldNames: Set<UInt32> = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x422bb03e, 0x4c12a741, 0x4dae4233, 0x5540dda6, 0x6ab98305, 0x6b68e403, 0x6cf7bb37, 0x71d1513f, 0x78472df1,
   0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444]
-func oldName(_ name: String) -> Bool { oldNames.contains(tidy(name).lowercased().utf8.reduce(2166136261) { ($0 ^ UInt32($1)) &* 16777619 }) }
+func fnv(_ s: String) -> UInt32 { tidy(s).lowercased().utf8.reduce(2166136261) { ($0 ^ UInt32($1)) &* 16777619 } }
+func oldName(_ name: String) -> Bool { oldNames.contains(fnv(name)) }
+/// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
+let movedCrew: [UInt32: (role: String, name: String)] = [327684010: ("sleuth", "Glint"), 235257612: ("closer", "Zest"), 3817335319: ("scout", "Bloom"),
+  2393765392: ("chief", "Noon"), 389508247: ("chief", "Noon"), 2625268281: ("hype", "Fizz"), 56376696: ("builder", "Rivet")]
 /// The first match of pattern in text, or its group.
 func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
  guard let rx = try? NSRegularExpression(pattern: pattern), let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let r = Range(m.range(at: group), in: text) else { return nil }
@@ -336,6 +340,9 @@ extension Browser {
    do { aiChats = try fromPascalJSON([AiChat].self, data) } catch { NSLog("Still: couldn't read chats: \(error)") }
   }
   companions = pref("Companions", [[String: Any]]()).map(Companion.init)
+  for c in companions where !c.crew.isEmpty { // hired from an old role: move to the role that took over, with its name unless the user renamed it
+   if let to = movedCrew[fnv(c.crew)] { if fnv(c.name) == fnv(c.crew) { c.name = to.name }; c.crew = to.role }
+  }
   if !pref("NamesChecked", false) { // once: a companion with an old stock name, not picked from the crew, asks whether to keep it
    for c in companions where c.crew.isEmpty && oldName(c.name) { c.askName = true }
    prefs["NamesChecked"] = true; storeCompanions()

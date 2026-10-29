@@ -116,8 +116,8 @@ export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiS
     </div>
    </article> })}
   </div>
-  <h2 className="home-page-sub">Meet the crew</h2>
-  <p className="home-page-lead">Ready to go, each with their own job and way of talking. Pick one, then change anything you like.</p>
+  <h2 className="home-page-sub">Hire for a role</h2>
+  <p className="home-page-lead">Each one owns a part of your work and gets sharper as it learns about you. Hire one, then change anything you like.</p>
   <CrewCards have={ai.companions} onChat={onChat} onOwn={() => onEdit(randomCompanion())} onPick={p => send("companionSave", fromPremade(p))} />
  </section>
 }

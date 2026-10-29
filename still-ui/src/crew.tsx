@@ -1,5 +1,5 @@
-import { useState, type CSSProperties } from "react"
-import { Check } from "lucide-react"
+import { useEffect, useState, type CSSProperties } from "react"
+import { Check, Sparkles } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -7,143 +7,210 @@ import { BLANK, ROLE_LOOKS, lookKey, type Look } from "./look"
 import { Mascot } from "./Mascot"
 import { lookOf, type Companion } from "./Buddy"
 
-// Still's own companions, ready to pick: coworkers with a job for the AI and a way of talking. Picking one makes a
-// companion like any other, which the user can then change.
-// Each role wears its own blob (look.ts ROLE_LOOKS).
-export type Premade = { id: string; name: string; role: string; pitch: string; job: string; tone: string; good: string[]; starters: string[]; look: Look }
+// Still's own companions, ready to hire: each one owns a part of your work and pitches itself for the job, in first
+// person. Hiring one makes a companion like any other, which the user can then change. The id is the role, so a name
+// can change without breaking saved companions.
+export type Premade = {
+ id: string; name: string; role: string; area: string
+ pitch: string // the one-line promise on the card
+ bubble: string // what it says when you hover it
+ will: string[] // three "I'll" lines, about outcomes
+ learns: string // how it gets sharper from memory
+ job: string; tone: string
+ asks: [string, string][] // "What I'm good at": [label, a prompt that works in Still today]
+ look: Look
+}
 
 export const PREMADES: Premade[] = [
- { id: "nadia", name: "Nadia", role: "Research",
-  pitch: "Digs into any question, reads the sources so you don't have to, and hands you a short brief with links.",
-  job: "A researcher. Finds solid sources on any topic, compares what they say, and writes a short brief with the key facts and a link for each. Says plainly when something is uncertain.",
-  tone: "Clear and direct. Leads with the answer, then the evidence, and flags weak sources instead of glossing over them.",
-  good: ["One-page briefs on any topic", "Comparing tools, products or vendors", "Checking whether a claim holds up"],
-  starters: ["Give me a one-page brief on how passkeys work", "Compare the top three project management tools for a team of ten", "Is this claim true? Check the sources"],
-  look: ROLE_LOOKS.sleuth },
- { id: "kenji", name: "Kenji", role: "Inbox",
-  pitch: "Sorts your inbox, drafts replies in your voice and keeps track of what's waiting on you. Never sends a thing without asking.",
-  job: "An inbox manager. Goes through the user's mail when asked, sorts out what needs a reply, drafts answers in the user's voice, and keeps a short list of follow-ups. Always asks before sending anything.",
-  tone: "Brisk and friendly. Keeps drafts short, and always shows them before anything goes out.",
-  good: ["Inbox triage in five minutes", "Replies that sound like you", "Follow-ups you'd otherwise forget"],
-  starters: ["Go through my inbox and tell me what needs a reply", "Draft a polite reply turning down this meeting", "What am I still waiting to hear back on?"],
-  look: ROLE_LOOKS.chief },
- { id: "marcus", name: "Marcus", role: "Pipeline",
-  pitch: "Builds lead lists from public info, researches each company before your call and keeps your pipeline tidy.",
-  job: "A sales researcher. Finds companies and people who fit what the user sells, using public information only, researches them before a call, and keeps a clean table of leads and next steps.",
-  tone: "Upbeat and to the point. Talks in next steps, and never makes up a number.",
-  good: ["Lead lists from public sources", "A company brief before a call", "A tidy table of who's next"],
-  starters: ["Find 20 companies that might need what I sell", "Research this company before my call tomorrow", "Write a short, friendly first email to a lead"],
-  look: ROLE_LOOKS.closer },
- { id: "amara", name: "Amara", role: "Hiring",
-  pitch: "Writes job posts, screens resumes against a fair scorecard and preps your interview questions.",
-  job: "A recruiter. Writes clear job posts, builds a fair scorecard for each role, compares candidates against it using only what they shared, and drafts interview questions. Leaves every decision to the user.",
-  tone: "Warm and fair-minded. Sticks to the scorecard, and points out bias when it creeps in.",
-  good: ["Job posts people actually read", "A fair scorecard for each role", "Interview questions that get real answers"],
-  starters: ["Write a job post for a junior designer", "Make a scorecard for this role", "Give me five interview questions for a product manager"],
-  look: ROLE_LOOKS.scout },
- { id: "jonah", name: "Jonah", role: "Words",
-  pitch: "Drafts posts, emails and pages in your voice, then cuts every word that doesn't pull its weight.",
-  job: "A writer and editor. Drafts emails, posts, landing pages and newsletters in the user's voice, offers a couple of options, and trims every sentence that doesn't earn its place.",
-  tone: "Friendly and honest. Says what isn't working, and always offers a better line.",
-  good: ["Posts and newsletters", "Landing page copy", "Editing for clarity"],
-  starters: ["Write a launch post for my new feature", "Make this paragraph shorter and clearer", "Give me five subject lines for this email"],
-  look: ROLE_LOOKS.hype },
- { id: "priya", name: "Priya", role: "Code & docs",
-  pitch: "Reads the docs, explains code, writes the README you keep putting off and checks a fix before you ship it.",
-  job: "A developer. Reads documentation and code, explains how things work, writes and reviews small pieces of code, and writes clear docs. Shows the code, and says what couldn't be tested.",
-  tone: "Precise and patient. Explains with a short example, and says plainly when unsure.",
-  good: ["Explaining code or an API", "READMEs and docs", "Reviewing a small change"],
-  starters: ["Explain what this code does", "Write a README for my project", "How do I use this API? Show me an example"],
-  look: ROLE_LOOKS.builder },
- { id: "lena", name: "Lena", role: "Ops",
-  pitch: "Turns projects, busy weeks and events into clear plans with owners, dates and a checklist.",
-  job: "An operations lead. Breaks projects into steps with owners and dates, compares options in one table, writes checklists and processes, and keeps track of what's next.",
-  tone: "Organized and warm. Likes tables, timelines and a clear next step.",
-  good: ["Project plans with dates", "Checklists and processes", "Comparing options in one table"],
-  starters: ["Plan a team offsite for 12 people", "Turn this project into a checklist with dates", "Compare these three tools in a table"],
-  look: ROLE_LOOKS.fixer },
+ { id: "closer", name: "Zest", role: "Deal closer", area: "Sales",
+  pitch: "I'll keep your pipeline full so you can spend your time closing.",
+  bubble: "Give me your toughest lead. I like a challenge.",
+  will: ["Learn how you sell, then prep every call with a one-page brief", "Find leads that fit and write first emails that get replies", "Keep every deal moving with a next step and a date"],
+  learns: "I remember what you sell, who buys it and what closes, so every brief gets sharper.",
+  job: "A deal closer for the user's sales. Learns what the user sells and to whom, researches leads and companies from public information, preps a one-page brief before each call, drafts outreach and follow-ups in the user's voice, and keeps a simple pipeline table with a next step and a date for every deal. Never sends, books or posts anything without asking first, and never makes up a number.",
+  tone: "Bold and upbeat. Talks in next steps and dates, and gets straight to what moves the deal.",
+  asks: [
+   ["Prep me for a call", "I have a sales call coming up. Ask me with which company, then research them from public sources and give me a one-page brief: what they do, recent news, who I'm likely talking to and three smart questions to ask."],
+   ["Build a lead list", "Ask me what I sell and who it's for, then find 20 companies that fit, using public information only. Save them as a CSV with the company, website, why they fit and who to contact."],
+   ["Write a first email", "Ask me who I'm writing to and what I sell, then write three short first emails in my voice, each under 90 words with one clear ask."],
+   ["Tidy my pipeline", "Ask me to paste or describe my open deals, then turn them into a table with the stage, the next step and a date for each, and flag the ones going cold."],
+  ], look: ROLE_LOOKS.closer },
+ { id: "scout", name: "Bloom", role: "Scout", area: "Hiring",
+  pitch: "I'll find the people worth meeting and keep a shortlist ready for you.",
+  bubble: "Tell me who you need. I'll find who fits.",
+  will: ["Find and rank candidates against what the role really needs", "Write outreach that sounds like you, not a template", "Keep a short, fair shortlist you can check every week"],
+  learns: "I remember your roles, your team and what a great hire looks like to you, so each shortlist fits better.",
+  job: "A scout for the user's hiring. Turns a role into a clear job post and a fair scorecard, finds candidates from public profiles and portfolios, ranks them against the scorecard using only what they shared publicly, drafts personal outreach, and keeps a shortlist up to date. Leaves every decision to the user, points out bias when it creeps in, and never sends anything without asking.",
+  tone: "Warm and perceptive. Says in one line why someone fits, and is honest about the gaps.",
+  asks: [
+   ["Write a job post", "Ask me about the role and the team, then write a clear job post people will actually finish reading, under 300 words."],
+   ["Make a scorecard", "Ask me which role I'm hiring for, then make a fair scorecard: five things that matter, what great looks like for each, and how to check it in an interview."],
+   ["Find candidates", "Ask me about the role and where I'm hiring, then find ten people with public profiles or portfolios who fit. Save them as a CSV with a link and one line on why each fits."],
+   ["Write outreach", "Ask me who I want to reach and why, then write a short, personal message to them in my voice. No buzzwords."],
+  ], look: ROLE_LOOKS.scout },
+ { id: "chief", name: "Noon", role: "Chief of staff", area: "Your day",
+  pitch: "I'll run the busywork of your day so you can do the work that matters.",
+  bubble: "Hand me the chaos. I'll hand you back a plan.",
+  will: ["Plan tomorrow tonight, with the important things first", "Brief you before each meeting in two minutes or less", "Clear what's waiting on you, one reply at a time"],
+  learns: "I remember your priorities, your people and how you like your day, so the plans keep getting better.",
+  job: "A chief of staff for the user's day. Plans tomorrow with the important things first, briefs the user before meetings, keeps a short list of what's waiting on them and drafts the replies, and turns projects into checklists with owners and dates. Works in the user's own calendar and mail in Still's tabs when asked. Asks before sending, accepting, declining or changing anything.",
+  tone: "Composed and organized. Short lists, clear priorities and one next step at a time.",
+  asks: [
+   ["Plan tomorrow", "Open my calendar and plan tomorrow for me: what matters most, when to do it, and what I could move or skip. Keep it to one short list."],
+   ["Brief my next meeting", "Open my calendar, find my next meeting and brief me: who's coming, what they do and what I should get out of it."],
+   ["What's waiting on me?", "Open my inbox and list what's waiting on a reply from me, most urgent first, with a one-line draft for each. Don't send anything."],
+   ["Turn a project into a checklist", "Ask me about a project, then turn it into a checklist with owners and dates, and save it as Markdown."],
+  ], look: ROLE_LOOKS.chief },
+ { id: "hype", name: "Fizz", role: "Hype", area: "Marketing",
+  pitch: "I'll turn one idea into a week of posts that sound exactly like you.",
+  bubble: "One idea in, a whole week of posts out. Let's go!",
+  will: ["Learn your brand's voice and keep every post on it", "Turn one idea into posts for every platform you use", "Keep a posting rhythm so you never go quiet"],
+  learns: "I remember your voice, your audience and what landed last time, so every post hits a little harder.",
+  job: "Hype for the user's marketing. Learns the brand's voice from examples, turns one idea into posts sized for each platform, writes launch posts, emails and landing page copy, and keeps a simple posting plan. Shows every draft first and never posts or sends anything without asking.",
+  tone: "Energetic and punchy. Big on hooks, short sentences and a clear call to action.",
+  asks: [
+   ["Learn my voice", "Ask me for two or three links to things I've written, read them, then sum up my voice in five short rules and remember them."],
+   ["One idea, every platform", "Ask me for one idea or announcement, then write a post for X, one for LinkedIn, one for Instagram and a two-line email teaser, each in my voice."],
+   ["Plan a week of posts", "Ask me what I'm promoting this week, then plan five days of posts in a table with the day, the platform, the hook and the draft."],
+   ["Write a launch post", "Ask me what I'm launching and who it's for, then write a launch post with three hooks to choose from."],
+  ], look: ROLE_LOOKS.hype },
+ { id: "fixer", name: "Mallow", role: "Fixer", area: "Support",
+  pitch: "I'll keep your customers happy and turn their problems into fixes.",
+  bubble: "Send me the tricky ones. I'll take it from here.",
+  will: ["Sort incoming tickets into urgent, quick and needs a fix", "Draft replies in your tone that actually solve the problem", "Spot repeat issues and write them up as fixes"],
+  learns: "I remember your product, your tone and the answers that worked, so replies get faster and better.",
+  job: "A fixer for the user's customer support. Triages tickets and messages by urgency, drafts clear, kind replies in the user's tone, writes a short help article when the same question keeps coming, and writes repeat issues up as bug reports. Shows every reply first and never sends anything without asking.",
+  tone: "Calm and kind. Clear steps, no jargon, and always a real answer.",
+  asks: [
+   ["Reply to a tough message", "Ask me to paste a customer message, then draft a calm, kind reply that solves their problem, plus a shorter version."],
+   ["Sort my tickets", "Ask me to paste or open my support queue, then sort it into urgent, quick wins and needs a fix, with one line on each."],
+   ["Write a help article", "Ask me which question customers keep asking, then write a short help article with clear steps."],
+   ["Turn complaints into a fix", "Ask me to paste a few complaints about the same thing, then write them up as one clear bug report with steps to reproduce and what to fix."],
+  ], look: ROLE_LOOKS.fixer },
+ { id: "builder", name: "Rivet", role: "Builder", area: "Dev and product",
+  pitch: "I'll test what you ship, file the bugs and turn feedback into specs.",
+  bubble: "Point me at the build. I'll find what breaks.",
+  will: ["Test each release in the browser and file clear bugs", "Turn messy feedback into specs you can build from", "Read the docs and the code so you don't have to"],
+  learns: "I remember your product, your stack and how you like bugs written up, so each report needs less back and forth.",
+  job: "A builder for the user's dev and product work. Tests web releases in the browser like a careful user, files clear bug reports with steps to reproduce, turns feedback into short specs with acceptance checks, and reads docs and code to explain how things work. Says plainly what it couldn't test, and never submits or deploys anything without asking.",
+  tone: "Practical and dry. Steps, evidence and no fluff.",
+  asks: [
+   ["Test my site", "Ask me for my site's link and what to check, then go through it like a new user and list anything broken or confusing, with steps to reproduce each."],
+   ["Write a bug report", "Ask me what went wrong, then write a clear bug report: what happened, what should happen, steps to reproduce and how bad it is."],
+   ["Turn feedback into a spec", "Ask me to paste user feedback, then group it into themes and write a short spec for the top one, with acceptance checks."],
+   ["Explain an API", "Ask me which API or library, then read its docs and show me how to use it with one short example."],
+  ], look: ROLE_LOOKS.builder },
+ { id: "sleuth", name: "Glint", role: "Sleuth", area: "Research",
+  pitch: "I'll answer the hard questions, with a source behind every claim.",
+  bubble: "Ask me anything. Every answer comes with a source.",
+  will: ["Answer hard questions with a link for every claim", "Compare your options in one honest table", "Check your market and tell you what changed"],
+  learns: "I remember your market, your competitors and the sources you trust, so every brief starts further ahead.",
+  job: "A sleuth for the user's research. Answers hard questions from solid sources with a link for every claim, compares tools, vendors and options in one table, checks whether claims hold up, and looks into the user's market and competitors when asked. Says plainly when something is uncertain or the sources disagree.",
+  tone: "Precise and direct. Leads with the answer, then the evidence, and flags weak sources.",
+  asks: [
+   ["Brief me on a topic", "Ask me for a topic, then give me a one-page brief with the key facts and a source link for every claim."],
+   ["Compare my options", "Ask me what I'm choosing between, then compare the options in one table: price, strengths, weaknesses and who each is best for, with sources."],
+   ["Check a claim", "Ask me for a claim I've seen, then check it against solid sources and tell me whether it holds up, with links."],
+   ["What changed in my market?", "Ask me about my market and competitors, then find what changed in the last month: launches, pricing and news, each with a link. Remember the competitors for next time."],
+  ], look: ROLE_LOOKS.sleuth },
 ]
-/// The crew member a companion was picked from, if any (its `crew`). Renaming or changing it keeps the link.
+/// The role a companion was hired for, if any (its `crew`). Renaming or changing it keeps the link.
 export const premadeOf = (c?: { crew?: string }) => c?.crew ? PREMADES.find(p => p.id === c.crew) : undefined
+export const OWN_PITCH = "Tell me what you need and I'll become it."
 
-export const INTERESTS = ["Cooking", "Travel", "Deals and shopping", "News", "Sports", "Music", "Movies and shows", "Games", "Coding", "Design", "Health and fitness", "Money", "Learning", "Home and garden"]
-// Things to start with, the ones that match what the user is into first: [interest, label, prompt].
+// What the user's work is about: setup asks, and starters and ideas follow it.
+export const INTERESTS = ["Research", "Email and inbox", "Writing", "Planning", "Meetings", "Sales", "Hiring", "Marketing", "Customer support", "Code", "Design", "Spreadsheets and data"]
+// Things to start with, the ones that match what the user's work is about first: [interest, label, prompt].
 export const TASKS: [string, string, string][] = [
- ["Cooking", "Find a dinner I can make tonight", "Find me three easy, well-reviewed dinner recipes I can make tonight with normal pantry stuff. Show them as a short table."],
- ["Travel", "Plan a weekend away", "Help me plan a weekend away. Ask me where I'm starting from and my budget, then suggest three places with a rough plan for each."],
- ["Deals and shopping", "Find the best price for something", "Help me find the best price for something. Ask me what I'm shopping for, then compare a few stores in a table."],
- ["News", "Catch me up on today's news", "Catch me up on today's top news in a few short bullet points, each with a link."],
- ["Sports", "Catch me up on my team", "Ask me which team I follow, then tell me how their last game went and when they play next."],
- ["Music", "Find new music I'd like", "Ask me for two artists I love, then find five newer artists I might like, with a song to start with for each."],
- ["Movies and shows", "Pick something to watch tonight", "Help me pick something to watch tonight. Ask what I'm in the mood for, then suggest three options with where to stream them."],
- ["Games", "Find a game to play next", "Ask me what games I've enjoyed lately, then suggest three I might like, with prices."],
- ["Coding", "Explain a tech topic simply", "Ask me which tech topic I've been meaning to understand, then explain it simply with one good link to read next."],
- ["Design", "Find inspiration for a project", "Ask me what I'm designing, then find five great examples for inspiration, with links."],
- ["Health and fitness", "Make a simple workout plan", "Ask me how much time I have and what equipment I've got, then make a simple one-week workout plan."],
- ["Money", "Compare a few savings accounts", "Compare a few well-known savings accounts available where I live. Ask me my country first, then show rates in a table."],
- ["Learning", "Find a free course to start", "Ask me what I want to learn, then find three good free courses or guides to start with."],
- ["Home and garden", "Fix something around the house", "Ask me what needs fixing at home, then find a clear step-by-step guide and the tools I need."],
- ["", "Sum up a page for me", "Ask me for a link, then open it and sum it up in five bullet points."],
+ ["Research", "Brief me on a topic", "Ask me for a topic, then give me a one-page brief with the key facts and a source link for every claim."],
+ ["Email and inbox", "What needs a reply?", "Open my inbox and list what's waiting on a reply from me, most urgent first, with a one-line draft for each. Don't send anything."],
+ ["Writing", "Make my writing sharper", "Ask me to paste something I wrote, then make it shorter and clearer and tell me the three biggest changes."],
+ ["Planning", "Plan my week", "Ask me what's on my plate this week, then turn it into a day-by-day plan with the important things first."],
+ ["Meetings", "Brief my next meeting", "Open my calendar, find my next meeting and brief me: who's coming, what they do and what I should get out of it."],
+ ["Sales", "Prep me for a call", "Ask me which company I'm meeting, then research them from public sources and give me a one-page brief with three smart questions to ask."],
+ ["Hiring", "Write a job post", "Ask me about the role and the team, then write a clear job post under 300 words."],
+ ["Marketing", "Turn an idea into posts", "Ask me for one idea, then write a post for X, one for LinkedIn and a short email teaser, each in my voice."],
+ ["Customer support", "Reply to a tough message", "Ask me to paste a customer message, then draft a calm, kind reply that solves their problem."],
+ ["Code", "Explain an API", "Ask me which API or library, then read its docs and show me how to use it with one short example."],
+ ["Design", "Find design inspiration", "Ask me what I'm designing, then find five great examples with links and one line on what works in each."],
+ ["Spreadsheets and data", "Turn a page into a table", "Ask me for a link, then pull the useful data from that page into a table and save it as a CSV."],
+ ["", "Sum up a page", "Ask me for a link, then open it and sum it up in five bullet points."],
 ]
-/// Starters for an empty chat or a first task: what the user said they're into first (set up by setup's
-/// interview or picked by hand, matched loosely), then the companion's own, then the rest.
+/// Starters for an empty chat or a first task: what the user's work is about first (set up by setup's interview or
+/// picked by hand, matched loosely), then the companion's own, then the rest.
 export function starters(interests: string[] = [], companion?: { crew?: string }, count = 4): [string, string][] {
  const into = interests.map(i => i.toLowerCase())
  const mine = TASKS.filter(t => t[0] && into.some(i => t[0].toLowerCase().includes(i) || i.includes(t[0].toLowerCase().split(" ")[0])))
- const own = premadeOf(companion)?.starters.map(s => [s, s] as [string, string]) ?? []
+ const own = premadeOf(companion)?.asks ?? []
  const all: [string, string][] = [...mine.map(t => [t[1], t[2]] as [string, string]), ...own, ...TASKS.filter(t => !mine.includes(t)).map(t => [t[1], t[2]] as [string, string])]
  return all.filter((t, i) => all.findIndex(x => x[0] === t[0]) === i).slice(0, count)
 }
 
-/// A new companion made from a crew member: same name, job, way of talking and look, then it's the user's to change.
+/// A new companion hired from a role: same name, job, way of talking and look, then it's the user's to change.
 export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.name, face: "", color: "", job: p.job, tone: p.tone, mode: "default", look: lookKey(p.look), crew: p.id })
-const SILHOUETTE: Look = { ...BLANK, color: "#c4c4ca" }
 
-/// The crew as profile cards, round portrait first, then "Make your own". Ones the user already has say hi instead.
-/// In setup (`picked` given) every card toggles, and the ones you made show beside the crew.
+/// One card: the blob pitching itself for the job. Hover or focus and it leans in with its line in a bubble; hire it and
+/// it bounces. `nudge` makes it pitch again now and then while others are already hired.
+function Card({ hue, look, name, role, pitch, bubble, will, learns, own, hired, nudge, children }: {
+ hue: string; look: Look; name: string; role: string; pitch: string; bubble: string; will?: string[]; learns?: string; own?: boolean; hired?: boolean; nudge?: number; children: React.ReactNode
+}) {
+ const [move, setMove] = useState<[string, number]>(["", 0])
+ const [was, setWas] = useState(hired)
+ if (was !== hired) { setWas(hired); if (hired) setMove(["hired", Date.now()]) }
+ if (nudge && nudge > move[1]) setMove(["pitch", nudge])
+ const pitchMe = () => { if (move[0] !== "pitch" || Date.now() - move[1] > 1500) setMove(["pitch", Date.now()]) }
+ return <article className={cn("crew-card", hired && "is-picked", own && "is-own")} style={{ "--hue": hue } as CSSProperties} onMouseEnter={pitchMe} onFocus={pitchMe}>
+  <div className="crew-portrait"><Mascot look={look} size={118} follow gesture={move[0]} gestureAt={move[1]} /></div>
+  <span className="crew-bubble" aria-hidden>{bubble}</span>
+  <div className="crew-info">
+   <h3>{name}</h3><span className="crew-role">{role}</span>
+   <p className="crew-pitch">{pitch}</p>
+   {will && <ul className="crew-will">{will.map(w => <li key={w}>{w}</li>)}</ul>}
+   {learns && <p className="crew-learns"><Sparkles />{learns}</p>}
+   <div className="crew-actions">{children}</div>
+  </div>
+ </article>
+}
+
+/// The roles as cards that pitch themselves, then "Make your own". Ones the user already has say hi instead. In setup
+/// (`picked` given) every card toggles Hire and Hired, and the ones you made show beside the roles.
 export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn, onChat }: {
  have?: Companion[]; picked?: string[]; made?: Companion[]; onPick: (p: Premade) => void; onMade?: (id: string) => void; onOwn: () => void; onChat?: (id: string) => void
 }) {
  const [more, setMore] = useState<Premade | null>(null)
+ const [nudge, setNudge] = useState<[string, number]>(["", 0])
  const mine = (p: Premade) => onChat && have.find(c => premadeOf(c) === p)
  const act = (p: Premade) => { const c = mine(p); setMore(null); if (c) onChat!(c.id); else onPick(p) }
  const on = (key: string) => !!picked?.includes(key)
- const pick = (key: string, name: string, toggle: () => void) => <button className="crew-pick" aria-pressed={picked ? on(key) : undefined} onClick={toggle}>{on(key) ? <><Check />Picked</> : `Pick ${name}`}</button>
+ // Once someone's hired, the rest keep pitching now and then, one at a time.
+ const waiting = picked?.length ? PREMADES.filter(p => !picked.includes(p.id)).map(p => p.id).join() : ""
+ useEffect(() => {
+  if (!waiting || matchMedia("(prefers-reduced-motion: reduce)").matches) return
+  const ids = waiting.split(","), t = setInterval(() => setNudge([ids[Math.floor(Math.random() * ids.length)], Date.now()]), 6500)
+  return () => clearInterval(t)
+ }, [waiting])
+ const hire = (key: string, name: string, toggle: () => void) => <button className="crew-pick" aria-pressed={picked ? on(key) : undefined} aria-label={picked ? `${on(key) ? "Hired" : "Hire"} ${name}` : undefined} onClick={toggle}>{on(key) ? <>Hired<Check /></> : "Hire"}</button>
  return <div className="crew-grid">
-  {PREMADES.map(p => <article key={p.id} className={cn("crew-card", on(p.id) && "is-picked")} style={{ "--hue": p.look.color } as CSSProperties}>
-   <div className="crew-portrait"><Mascot look={p.look} size={118} follow /></div>
-   <div className="crew-info">
-    <h3>{p.name}</h3><span className="crew-role">{p.role}</span>
-    <p>{p.pitch}</p>
-    <div className="crew-actions">{mine(p) ? <button className="crew-pick" onClick={() => act(p)}>Say hi</button> : pick(p.id, p.name, () => act(p))}<button className="crew-more" onClick={() => setMore(p)}>About {p.name}</button></div>
-   </div>
-  </article>)}
-  {made.map(c => <article key={c.id} className={cn("crew-card", on(c.id) && "is-picked")} style={{ "--hue": lookOf(c).color } as CSSProperties}>
-   <div className="crew-portrait"><Mascot look={lookOf(c)} size={118} follow /></div>
-   <div className="crew-info">
-    <h3>{c.name}</h3><span className="crew-role">Made by you</span>
-    <p>All yours. Give them a job any time on the Companions page.</p>
-    <div className="crew-actions">{pick(c.id, c.name, () => onMade?.(c.id))}</div>
-   </div>
-  </article>)}
-  <article className="crew-card is-own">
-   <div className="crew-portrait"><Mascot look={SILHOUETTE} size={118} /></div>
-   <div className="crew-info">
-    <h3>Make your own</h3>
-    <p>Pick a body, a face, a name and a job, and make them all yours.</p>
-    <div className="crew-actions"><button className="crew-pick" onClick={onOwn}>Start from scratch</button></div>
-   </div>
-  </article>
+  {PREMADES.map(p => <Card key={p.id} hue={p.look.color} look={p.look} name={p.name} role={p.role} pitch={p.pitch} bubble={p.bubble} will={p.will} learns={p.learns} hired={on(p.id) || !!mine(p)} nudge={nudge[0] === p.id ? nudge[1] : 0}>
+   {mine(p) ? <><span className="crew-hired"><Check />Hired</span><button className="crew-pick" onClick={() => act(p)}>Say hi</button></> : hire(p.id, p.name, () => act(p))}
+   <button className="crew-more" onClick={() => setMore(p)}>What I'm good at</button>
+  </Card>)}
+  {made.map(c => <Card key={c.id} hue={lookOf(c).color} look={lookOf(c)} name={c.name} role="Made by you" pitch={c.job || "All yours. Give me a job any time on the Companions page."} bubble="I'm all yours." hired={on(c.id)}>
+   {hire(c.id, c.name, () => onMade?.(c.id))}
+  </Card>)}
+  <Card hue="var(--muted-foreground)" look={BLANK} name="Make your own" role="Any job" pitch={OWN_PITCH} bubble={OWN_PITCH} own>
+   <button className="crew-pick" onClick={onOwn}>Make your own</button>
+  </Card>
   {more && <Dialog open onOpenChange={o => { if (!o) setMore(null) }}>
    <DialogContent className="app-dialog crew-dialog" style={{ "--hue": more.look.color } as CSSProperties}>
-    <div className="crew-dialog-hero"><Mascot look={more.look} size={150} follow gesture="signature" gestureAt={1} /></div>
+    <div className="crew-dialog-hero"><Mascot look={more.look} size={150} follow gesture="pitch" gestureAt={1} /></div>
     <DialogHeader><DialogTitle>{more.name}<span className="crew-role">{more.role}</span></DialogTitle><DialogDescription>{more.pitch}</DialogDescription></DialogHeader>
     <div className="crew-dialog-body">
-     <section><h4>Good at</h4><ul>{more.good.map(g => <li key={g}>{g}</li>)}</ul></section>
-     <section><h4>How {more.name} talks</h4><p>{more.tone}</p></section>
-     <section><h4>Try asking</h4><ul className="crew-asks">{more.starters.map(s => <li key={s}>{s}</li>)}</ul></section>
+     <section><h4>What I'm good at</h4><ul>{more.will.map(g => <li key={g}>{g}</li>)}</ul></section>
+     <section><h4>Try asking me</h4><ul className="crew-asks">{more.asks.map(([label, prompt]) => <li key={label}><b>{label}</b>{prompt}</li>)}</ul></section>
+     <section><h4>How I work</h4><p>{more.tone} {more.learns}</p></section>
     </div>
-    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : on(more.id) ? `Unpick ${more.name}` : `Pick ${more.name}`}</Button>
+    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : on(more.id) ? `Hired. Let ${more.name} go` : `Hire ${more.name}`}</Button>
    </DialogContent>
   </Dialog>}
  </div>

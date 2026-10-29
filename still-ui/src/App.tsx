@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Plane, Tag, Newspaper, CookingPot, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Info, Settings, FileText, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Mail, CalendarDays, PenLine, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -71,10 +71,10 @@ const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverCha
 const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
 // One click on the new tab page hands one of these to the AI.
 const IDEAS: [LucideIcon, string, string, string, string][] = [
- [Plane, "sky", "Plan a weekend away", "Find a few options and ask me what I like", "Help me plan a weekend away. Ask me where I'm starting from and what I like, then find a few options."],
- [Tag, "green", "Find the best price", "Compare stores and deals for something", "Help me find the best price for something. Ask me what I'm shopping for first."],
- [Newspaper, "amber", "Catch me up on the news", "Today's top stories in a few bullets", "Catch me up on today's top news in a few bullet points, with links."],
- [CookingPot, "rose", "What's for dinner?", "An easy, well-reviewed recipe for tonight", "Find me an easy, well-reviewed dinner recipe for tonight."],
+ [Search, "sky", "Brief me on a topic", "The key facts, with a source for each", "Ask me for a topic, then give me a one-page brief with the key facts and a source link for every claim."],
+ [Mail, "green", "What needs a reply?", "Your inbox, most urgent first", "Open my inbox and list what's waiting on a reply from me, most urgent first, with a one-line draft for each. Don't send anything."],
+ [CalendarDays, "amber", "Plan my week", "The important things first", "Ask me what's on my plate this week, then turn it into a day-by-day plan with the important things first."],
+ [PenLine, "rose", "Make my writing sharper", "Shorter and clearer, in your voice", "Ask me to paste something I wrote, then make it shorter and clearer and tell me the three biggest changes."],
 ]
 const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
@@ -313,7 +313,7 @@ export default function App() {
  useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
  const idea = state.tabs.find(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && t.id !== active?.id)
  const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []),
-  ...(state.preferences.interests?.length ? starters(state.preferences.interests, companion, 3).map(([label, prompt], i) => [Sparkles, ["green", "amber", "rose"][i], label, "Picked for what you're into", prompt] as (typeof IDEAS)[number]) : IDEAS)].slice(0, 3)
+  ...(state.preferences.interests?.length ? starters(state.preferences.interests, companion, 3).map(([label, prompt], i) => [Sparkles, ["green", "amber", "rose"][i], label, "Picked for your work", prompt] as (typeof IDEAS)[number]) : IDEAS)].slice(0, 3)
  const [typing, setTyping] = useState(false) // to the companion on the new tab: it listens
  const openAiSettings = () => { setAiView("settings"); if (!ai?.open) send("aiToggle") }
  // In a chat tab the viewer takes the page's place beside the chat; anywhere else it opens over the page.
@@ -784,7 +784,7 @@ export default function App() {
       <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>{MAC ? "Start with your launch profile when you log in to your Mac." : "Start with your launch profile when you sign in to Windows."}</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
       {state.preferences.startupDisabled && <p className="tool-caption">{MAC ? "Still is switched off in Login Items. " : "Windows has disabled this startup entry. "}<Button variant="link" onClick={() => send("startupSettings")}>{MAC ? "Open Login Items" : "Open Windows startup settings"}</Button></p>}
       <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
-      <Separator /><div className="setting-row"><div><strong>Sounds</strong><p>{soundsBlocked ? soundsBlocked + "." : "Little sounds during setup, the intro and when you change a companion's look. Browsing never makes a sound."}</p></div><Switch aria-label="Sounds" disabled={!!soundsBlocked} checked={sounds} onCheckedChange={v => preference("sounds", String(v))} /></div>
+      <Separator /><div className="setting-row"><div><strong>Sounds</strong><p>{soundsBlocked ? soundsBlocked + "." : "The intro, and a short jingle when setup is done. Browsing never makes a sound."}</p></div><Switch aria-label="Sounds" disabled={!!soundsBlocked} checked={sounds} onCheckedChange={v => preference("sounds", String(v))} /></div>
       <Separator /><div className="download-setting"><strong>Download folder</strong><p>{state.preferences.downloads}</p><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change folder</Button></div>
       <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
      </TabsContent>
