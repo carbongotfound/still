@@ -438,6 +438,7 @@ export default function App() {
  }, [])
  useEffect(() => { document.documentElement.classList.toggle("dark", state.dark) }, [state.dark])
  useEffect(()=>{if(!notice)return;const timer=setTimeout(()=>setNotice(""),6500);return()=>clearTimeout(timer)},[notice])
+ useEffect(()=>setNotice(""),[state.activeId,active?.url]) // a notice is for the page it came on: another page or tab shows its own address
  useEffect(() => {
   if (modal) { send("overlay", { value: true }); return }
   const timer = setTimeout(() => send("overlay", { value: false }), reduced ? 0 : 210)

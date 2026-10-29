@@ -342,6 +342,36 @@ def main():
         themed(process, "save-prompt", lambda: None)
         js(process, "document.querySelector('.save-login button[type=submit]').click()")
         until(lambda: not bar(process), 5)
+        # The notice in the address bar is for the page it came on: going to another page, opening a new tab or switching
+        # tabs shows that tab's address at once.
+        def address():
+            return js(process, "document.querySelector('.address-bar:not(.is-editing) .address-input')?.value ?? null")
+
+        def notice_ends(move, want):
+            shown = until(lambda: "Password saved" in (address() or ""), 3)
+            move()
+            return bool(shown) and until(lambda: address() == want, 1.5) is not None
+        here = f"127.0.0.1:{PORT}/welcome?next=1"
+        moved = notice_ends(lambda: go(process, SITE + "/welcome?next=1"), here)
+        home = rpc(process)["activeId"]
+
+        def resave():
+            send(process, "vaultSave", origin="https://notice.example", username="notice", password="Notice-Only-1")
+        resave()
+        count = len(rpc(process)["tabs"])
+
+        def new_tab():
+            send(process, "new")
+            until(lambda: len(rpc(process)["tabs"]) == count + 1, 5)
+            js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        opened = notice_ends(new_tab, "")
+        fresh = rpc(process)["activeId"]
+        resave()
+        switched = notice_ends(lambda: send(process, "select", id=home), here)
+        send(process, "closeTab", id=fresh)
+        send(process, "vaultDelete", id=entry(process, "https://notice.example", "notice")["id"])
+        check(moved and opened and switched, "A notice in the address bar ends when you go to another page, open a new tab or switch tabs"
+              + ("" if moved and opened and switched else f" (page {moved}, new tab {opened}, switch {switched})"))
         ada = entry(process, SITE, "ada@example.com")
         check(ada and reveal(process, ada) == "Lighthouse-Keeper-42", "Save keeps the login")
         if not MAC:
