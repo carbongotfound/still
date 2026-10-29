@@ -355,7 +355,7 @@ def setup(process):
             check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "true", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is False, 5),
                   "The sound switch mutes setup, and Still remembers it")
             heard = len(sounds(process))
-            next_step(process)  # hello -> import, with no whoosh
+            next_step(process)  # hello -> import
             check(len(sounds(process)) == heard, "Muted, nothing plays")
             click(process, ".ob-sound")
             check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "false", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is True, 5),
@@ -451,6 +451,8 @@ def setup(process):
         check(rpc(process).get("aiCalls") == 0, "Quick setup ran no AI at all")
         click(process, ".ob-next")
         check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Setup closes")
+        played = sorted(set(sounds(process)))
+        check(set(played) <= {"intro", "jingle"}, "Setup plays only the intro and the end jingle: no step, click or pick sounds" + ("" if set(played) <= {"intro", "jingle"} else f" ({played})"))
         split = until(lambda: js(process, "!!document.querySelector('.page-column.is-split .page-pane') && !!document.querySelector('.page-control')"), 20)
         check(split, "The first task runs: the chat on the left, its page on the right, the pill at work")
         time.sleep(7)

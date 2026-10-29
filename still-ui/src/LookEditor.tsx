@@ -7,7 +7,6 @@ import { lookOf, type Companion } from "./Buddy"
 import { drawFace, REST } from "./face"
 import { BODIES, BODY_COLORS, BROWS, EYES, GLASSES, HAIR_COLORS, HAIRS, HATS, MOUTHS, SHAPES, lookKey, surprise, type Look } from "./look"
 import { Mascot, pictureOf, useMascotVersion } from "./Mascot"
-import { play } from "./sound"
 
 // Customize: a big live preview that reacts to each change, and every part of the look in tabs.
 const TABS = [["color", "Color"], ["eyes", "Eyes"], ["brows", "Brows"], ["mouth", "Mouth"], ["head", "Body"], ["hair", "Hair"], ["hat", "Hat"]] as const
@@ -36,7 +35,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
  const [tab, setTab] = useState<Tab>("color")
  const [nudge, setNudge] = useState(0)
  useMascotVersion()
- const set = (patch: Partial<Look>, react = true, sound = "swap") => { setLook(l => ({ ...l, ...patch })); if (react) setNudge(n => n + 1); if (!Object.values(patch).every(v => typeof v === "number")) play(sound, { gain: .8 }) } // sliders stay silent
+ const set = (patch: Partial<Look>, react = true) => { setLook(l => ({ ...l, ...patch })); if (react) setNudge(n => n + 1) }
  // the 3D thumbnails wear the current shape and colors, with a plain face, so they stay few and cached
  const thumb = (patch: Partial<Look>) => pictureOf({ ...look, eyes: "dot", eyeGap: 0, eyeY: 0, eyeSize: 0, pupil: 0, brows: "none", mouth: "smile", mouthY: 0, mouthSize: 0, ...patch }, "idle", 96, "bust")
  const option = (picked: boolean, label: string, onClick: () => void, body: React.ReactNode, key: string) =>
@@ -48,7 +47,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
    <div className="look-stage">
     <Mascot look={look} size={280} follow gesture={nudge ? "admire" : ""} gestureAt={nudge} />
     <b>{companion.name || "Your companion"}</b>
-    <Button type="button" variant="outline" size="sm" onClick={() => set({ ...surprise(), body: look.body, glasses: look.glasses }, true, "surprise")}><Dices />Surprise me</Button>
+    <Button type="button" variant="outline" size="sm" onClick={() => set({ ...surprise(), body: look.body, glasses: look.glasses })}><Dices />Surprise me</Button>
    </div>
    <div className="look-panel">
     <div className="look-tabs" role="tablist">{TABS.map(([k, label]) => <button type="button" key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}</div>
