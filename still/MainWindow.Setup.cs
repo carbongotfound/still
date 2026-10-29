@@ -11,6 +11,7 @@ public partial class MainWindow
  sealed class SetupTalk(string companion)
  {
   public readonly string Companion = companion;
+  public List<string> Also = []; // the other companions picked in setup: they learn the same things
   public string? Session;
   public bool Started, Busy, Done;
   public string Error = "";
@@ -37,7 +38,7 @@ public partial class MainWindow
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
   switch (op) {
    case "setupStart":
-    setupTalk = new SetupTalk(S("companion")); welcomeTalk = false;
+    setupTalk = new SetupTalk(S("companion")) { Also = data.TryGetProperty("also", out var also) && also.ValueKind == JsonValueKind.Array ? [.. also.EnumerateArray().Select(x => x.ToString())] : [] }; welcomeTalk = false;
     await SetupAsk("Start now: say hello in one line and ask your first question.", "");
     break;
    case "setupAnswer" when setupTalk is { Busy: false } && S("text").Trim() is { Length: > 0 and <= 2000 } answer:
@@ -197,9 +198,11 @@ public partial class MainWindow
    List<string> facts = [.. Texts("memories", 8, 200)];
    if (Str("name", 40) is { Length: > 0 } name) facts.Insert(0, "Likes to be called " + name + ".");
    if (interests.Count > 0) facts.Add("Into " + string.Join(", ", interests).ToLowerInvariant() + ".");
-   var kept = facts.Select((f, i) => CompanionMemory.Remember(who.Id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Into ") ? "interests" : "")).OfType<Fact>().ToList();
-   if (kept.Count > 0) changes.Add(new("memory", $"{who.Name} remembers", string.Join(" ", kept.Select(f => f.Text)),
-    () => { foreach (var f in kept) CompanionMemory.Forget(who.Id, f.Id); }));
+   var ids = new[] { who.Id }.Concat(setupTalk?.Also ?? []).Distinct().Where(id => Companions.Any(c => c.Id == id)).ToList();
+   var kept = ids.SelectMany(id => facts.Select((f, i) => (id, fact: CompanionMemory.Remember(id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Into ") ? "interests" : ""))))
+    .Where(k => k.fact != null).ToList();
+   if (kept.Any(k => k.id == who.Id)) changes.Add(new("memory", $"{who.Name} remembers", string.Join(" ", kept.Where(k => k.id == who.Id).Select(k => k.fact!.Text)),
+    () => { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f!.Id); }));
   }
  }
 }

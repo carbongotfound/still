@@ -97,7 +97,7 @@ final class PageView: WKWebView {
   holes = value
   guard let value else { layer?.mask = nil; return }
   wantsLayer = true
-  let flipped = layer?.isGeometryFlipped ?? false
+  let flipped = isFlipped // the mask draws in the view's own coordinates (the flip comes from a parent layer, not this one's isGeometryFlipped)
   let path = CGMutablePath()
   path.addRect(bounds.insetBy(dx: value.frame, dy: value.frame))
   for spot in value.spots { path.addRoundedRect(in: local(spot.rect, flipped: flipped), cornerWidth: spot.radius, cornerHeight: spot.radius) }
@@ -214,12 +214,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
   let config = WKWebViewConfiguration()
   config.setURLSchemeHandler(ShellScheme(root: resources.appendingPathComponent("Shell")), forURLScheme: "still")
+  config.mediaTypesRequiringUserActionForPlayback = [] // the intro's sound starts before the first click
   config.userContentController.add(self, name: "still")
   config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
   config.userContentController.addUserScript(WKUserScript(source: macStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
   shell = WKWebView(frame: root.bounds, configuration: config)
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
+  shell.setValue(false, forKey: "drawsBackground") // until the interface paints, the window's own color shows, not WebKit's white
   root.addSubview(shell)
   shell.load(URLRequest(url: URL(string: "still://app/index.html")!))
 
@@ -285,6 +287,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "theme": pref("Theme", "System"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
    "tracking": pref("Tracking", "Balanced"), "memory": pref("MemorySaver", true), "autofill": pref("Autofill", true),
+   "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
    "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "isDefaultBrowser": isDefaultBrowser,
    "tabLayout": pref("TabLayout", "Classic"), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
@@ -359,6 +362,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   switch op {
   case "ready":
    ready = true
+   publish() // the interface draws nothing until its first state
    shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
    publishAi()
   case "bounds":
@@ -420,7 +424,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     applyBlocking(view); view.reload()
    }
   case "preference": setPreference(text("key"), text("value"))
-  case "welcomeDone": welcome = false; saveLater()
+  case "welcomeDone": welcome = false; saveLater(); applyTheme()
   case "defaultBrowser": makeDefault()
   case "chooseDownloads":
    let picker = NSOpenPanel()
@@ -464,6 +468,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "tracking": if ["Basic", "Balanced", "Strict"].contains(value) { prefs["Tracking"] = value } // WebKit's own tracking prevention is always on
   case "memory": prefs["MemorySaver"] = value == "true"
   case "autofill": prefs["Autofill"] = value == "true"
+  case "sounds": prefs["Sounds"] = value == "true"
   case "tearOff": prefs["TabTearOff"] = value == "true"
   case "newTab": if ["companion", "sites"].contains(value) { prefs["NewTab"] = value }
   case "tabLayout": if ["Classic", "Modern"].contains(value) { prefs["TabLayout"] = value; for browser in browsers { browser.placeTrafficLights(); browser.schedulePublish() } }
@@ -484,7 +489,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let name: NSAppearance.Name? = theme == "Light" ? .aqua : theme == "Dark" ? .darkAqua : qaSystemTheme.map { $0 == "Light" ? .aqua : .darkAqua }
   for browser in browsers {
    browser.window.appearance = name.flatMap { NSAppearance(named: $0) }
-   browser.window.backgroundColor = browser.dark ? .black : .white
+   browser.window.backgroundColor = browser.dark || browser.welcome && !browser.secondary && !browser.incognito ? .black : .white // the first run opens dark, into the intro
    browser.schedulePublish()
   }
  }
