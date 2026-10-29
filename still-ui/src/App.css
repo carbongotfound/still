@@ -801,6 +801,11 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mascot.is-avatar:is([data-state=working],[data-state=thinking]) > img { animation:avatar-bob 1.4s ease-in-out infinite; }
 @keyframes avatar-bob { 50% { translate:0 -6%; } }
 @media (prefers-reduced-motion: reduce) { .mascot.is-avatar > img { animation:none !important; } }
+/* A rigged companion's strip: one frame shown, stepped through by the animation (the last frame holds for a nod or a shrug). */
+.mascot-sprite { display:block; width:var(--s); height:var(--s); background-repeat:no-repeat; background-size:calc(var(--n) * var(--s)) var(--s); animation:sprite var(--d) steps(var(--n), jump-none) infinite; }
+.mascot-sprite.is-once { animation-iteration-count:1; animation-fill-mode:forwards; }
+@keyframes sprite { to { background-position-x:calc((var(--n) - 1) * var(--s) * -1); } }
+@media (prefers-reduced-motion: reduce) { .mascot-sprite { animation:none !important; } }
 .ai-queued [data-slot=button] { height:24px; padding:0 9px; font-size:12px; }
 .file-card { display:flex; align-items:center; gap:10px; max-width:460px; padding:8px 10px 8px 8px; border-radius:14px; border:1px solid var(--border); background:var(--card); box-shadow:0 1px 3px rgb(0 0 0/.05); animation:ai-in .25s ease-out; }
 .file-card-open { flex:1; min-width:0; display:flex; align-items:center; gap:12px; text-align:left; border-radius:10px; }
