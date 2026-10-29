@@ -183,12 +183,12 @@ def shadow(process, **want):
     return None
 
 
-def menu_item(process, field, index, **want):
-    """A row of the menu under a field: found exactly on Windows, from the menu's fixed layout on the Mac."""
+def menu_item(process, field, index, warned=False, **want):
+    """A row of the menu under a field: found exactly on Windows, from the menu's fixed layout on the Mac (an insecure page's warning sits above the rows)."""
     if not MAC:
         return shadow(process, **want)
     r = rect(process, field)
-    return (r["x"] + 40, r["bottom"] + 6 + 1 + 6 + 49 * index + 24) if page(process, "!!document.querySelector('still-passwords')") else None
+    return (r["x"] + 40, r["bottom"] + 6 + 1 + 6 + (59 if warned else 0) + 49 * index + 24) if page(process, "!!document.querySelector('still-passwords')") else None
 
 
 def has_key(process):
@@ -197,11 +197,11 @@ def has_key(process):
     return shadow(process, **{"aria-label": "Saved passwords"}) is not None
 
 
-def pick(process, field, index, login):
+def pick(process, field, index, login, warned=False):
     """Opens the menu under a field and clicks one of its logins."""
     page(process, "document.activeElement?.blur()")
     click(process, field)
-    at = until(lambda: menu_item(process, field, index, **{"data-id": login["id"]}), 5)
+    at = until(lambda: menu_item(process, field, index, warned, **{"data-id": login["id"]}), 5)
     if at:
         click_at(process, *at)
     return at
@@ -408,10 +408,10 @@ def main():
         plain = entry(process, INSECURE, "open@example.com")
         go(process, INSECURE + "/login")
         check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in never fills on an insecure page")
-        first = pick(process, "#user", 0, plain)
+        first = pick(process, "#user", 0, plain, warned=True)
         time.sleep(.5)
         armed = values(process, "#user", "#pw") == ["", ""]
-        at = until(lambda: shadow(process, **{"data-id": plain["id"]}), 5)
+        at = until(lambda: menu_item(process, "#user", 0, True, **{"data-id": plain["id"]}), 5)
         if at:
             click_at(process, *at)
         check(first and armed and until(lambda: values(process, "#user", "#pw") == ["open@example.com", "Plain-Http-Page-9"], 5),
