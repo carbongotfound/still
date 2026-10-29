@@ -179,13 +179,10 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const answered = at === "import" ? tried : at === "ai" ? aiReady : at === "talk" ? talked : at === "you" ? !!you.trim() : at === "interests" ? likes.length > 0 : at === "start" ? !!(task || typed.trim()) : true
  useEffect(() => { if (introOn) return; setTalking(true); const t = setTimeout(() => setTalking(false), 1700); return () => clearTimeout(t) }, [at, introOn])
  useEffect(() => {
-  warm("whoosh", "click", "pop", "jingle")
+  warm("jingle")
   if (hadIntro) return
   const t = setTimeout(() => setGesture(["wave", Date.now()]), again || reduce ? 0 : 650); return () => clearTimeout(t)
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
- // Steps whoosh as they slide; not the first one.
- const moved = useRef(false)
- useEffect(() => { if (moved.current) play("whoosh", { gain: .9 }); moved.current = true }, [at, making])
  // While the intro plays, the companion stands in the middle of the window, then glides to its place.
  useLayoutEffect(() => {
   const r = hadIntro && mascotRef.current?.getBoundingClientRect()
@@ -272,14 +269,9 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const startOwn = () => { setMaking(true); setDraft(blank()); setLook(BLANK); setGrown(0) }
  const shown = peek ?? layout ?? "Classic"
  const slide = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : { initial: { opacity: 0, x: 24 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -18 } }
- // A click on a button clicks; picking something pops.
- const tap = (e: React.MouseEvent) => {
-  const b = (e.target as HTMLElement).closest("button")
-  if (b && !b.disabled && !b.closest(".intro, .ob-sound")) play(b.matches("[role=radio],[aria-pressed],.crew-pick,.ob-option") ? "pop" : "click", { gain: .9 })
- }
  const soundOn = sounds && !soundsBlocked
 
- return <div className={cn("welcome ob", hidden && "is-hidden", leaving && "is-leaving", introOn && "is-intro")} role="dialog" aria-modal="true" aria-label="Set up Still" onClickCapture={tap}>
+ return <div className={cn("welcome ob", hidden && "is-hidden", leaving && "is-leaving", introOn && "is-intro")} role="dialog" aria-modal="true" aria-label="Set up Still">
   <header className="ob-top">
    <span className="still-mark is-small" aria-hidden><i /><i /></span>
    <div className="ob-dots" role="progressbar" aria-valuemin={1} aria-valuemax={flow.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${flow.length}`}>{flow.map((s, i) => <i key={s} className={cn(i === step && "is-on", i < step && "is-done")} />)}</div>
