@@ -33,7 +33,7 @@ extract() {
 awk '/BlockedDomains = \[/ {on=1; next} on && /^ *\];/ {exit} on' "$repo/still/MainWindow.Actions.cs" | grep -o '"[^"]*"' | tr -d '"' > "$resources/blocked.txt"
 test -s "$resources/blocked.txt"
 extract MainWindow.Actions.cs YouTubeAdScript youtube.js
-for name in Page Snapshot Find Click Focus Scroll Wait Sensitive FileInput Cursor; do extract MainWindow.Agents.cs "${name}Js" "agent-$name.js"; done
+for name in Page Snapshot Find Click Focus Scroll Wait Sensitive FileInput Cursor Mask; do extract MainWindow.Agents.cs "${name}Js" "agent-$name.js"; done
 for name in Results Readable; do extract MainWindow.Lookup.cs "${name}Js" "lookup-$name.js"; done
 extract MainWindow.Drafts.cs DraftScript draft.js
 

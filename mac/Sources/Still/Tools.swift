@@ -78,48 +78,7 @@ extension Browser {
   case "importConfirm": completeImport(text("id"), replace: flag("replace"))
   case "importCancel": importBatch = nil; publishBrowserTools("import")
   case "exportData": exportBrowserData()
-  case "loginAccept": acceptLoginOffer(text("id"), text("username"))
-  case "loginDismiss": loginOffer = nil; publishBrowserTools("passwords")
-  case "passwordPermission":
-   switch text("feature") {
-   case "save": prefs["OfferPasswordSave"] = flag("enabled")
-   case "fill": prefs["AutoFillPasswords"] = flag("enabled")
-   case "update": prefs["OfferPasswordUpdate"] = flag("enabled")
-   default: return true
-   }
-   if !offerSave && !offerUpdate { loginOffer = nil }
-   reinstallPageScripts()
-   for tab in tabs where !tab.isPrivate { tab.view?.evaluateJavaScript(loginScript(tab).isEmpty ? "window.__stillLoginCleanup?.()" : loginScript(tab), in: nil, in: stillWorld) { _ in } }
-   if let tab = active { inspectLogin(tab) }
-   saveLater(); publishBrowserTools("passwords")
   case "vaultGenerate": send(["kind": "vaultGenerated", "password": Vault.generate()])
-  case "vaultSave":
-   guard let origin = URL(string: text("origin").trimmingCharacters(in: .whitespaces)), isLoginOrigin(origin), let normalized = authority(origin) else { toast("Enter a complete website address."); break }
-   guard (1...8192).contains(text("password").count), text("username").count <= 1024 else { toast("Enter a password."); break }
-   var entries = Vault.read()
-   if let index = entries.firstIndex(where: { $0.origin == normalized && $0.username == text("username") }) { entries[index].password = text("password") }
-   else { entries.append(Login(origin: normalized, username: text("username"), password: text("password"))) }
-   Vault.write(entries)
-   publishBrowserTools("passwords"); send(["kind": "vaultSaved"]); toast("Login saved. It stays in your Mac's Keychain.")
-  case "vaultDelete": Vault.write(Vault.read().filter { $0.id != text("id") }); publishBrowserTools("passwords")
-  case "vaultCopy":
-   guard let entry = Vault.read().first(where: { $0.id == text("id") }) else { break }
-   if !isQa { // tests never touch the clipboard
-    let board = NSPasteboard.general
-    board.clearContents()
-    board.setString(entry.password, forType: .string)
-    board.setData(Data(), forType: NSPasteboard.PasteboardType("org.nspasteboard.ConcealedType")) // clipboard managers skip it
-    let copied = board.changeCount
-    DispatchQueue.main.asyncAfter(deadline: .now() + 30) { if board.changeCount == copied { board.clearContents() } }
-   }
-   toast("Password copied. Clipboard clears in 30 seconds.")
-  case "vaultFill":
-   guard let entry = Vault.read().first(where: { $0.id == text("id") }), let tab = active, let url = tab.view?.url, isLoginOrigin(url), authority(url) == entry.origin else {
-    toast("Open this login's exact secure website before filling it."); break
-   }
-   fillSavedLogin(entry, tab) { filled in
-    if filled { self.closeSheet(); self.toast("Login filled. Review it, then sign in.") } else { self.toast("No matching visible login form was found.") }
-   }
   case "cookieDelete":
    if let item = cookieInventory[text("id")] { item.store.delete(item.cookie) { self.publishBrowserTools("cookies") } }
   case "cookieDeleteDomain":
@@ -132,7 +91,7 @@ extension Browser {
    saved[text("origin")]?[text("kind")] = nil
    if saved[text("origin")]?.isEmpty == true { saved[text("origin")] = nil }
    prefs["SitePermissions"] = saved; saveLater(); publishBrowserTools("security")
-  default: return false
+  default: return handlePasswordTool(op, data)
   }
   return true
  }
@@ -142,8 +101,7 @@ extension Browser {
   func reply(_ data: [String: Any]) { send(["kind": "tools", "name": name, "data": data]) }
   switch name {
   case "passwords":
-   reply(["vault": Vault.read().map { ["id": $0.id, "origin": $0.origin, "username": $0.username] }, "offer": loginOfferData() ?? NSNull(),
-          "passwordOptions": ["save": offerSave, "fill": autoFill, "update": offerUpdate]])
+   reply(passwordsData())
   case "profiles": reply(profileData())
   case "import": reply(importData())
   case "extensions": reply(["extensions": [Any](), "downloading": false])

@@ -8,6 +8,7 @@ Run: python tests/desktop/passwords.py <Still.exe or Still.app/Contents/MacOS/St
 Out: artifacts/passwords-*/ (result.json, shots/*.png: save prompt, fill menu and Passwords, light and dark)
 """
 import csv
+import hashlib
 import http.server
 import json
 import os
@@ -31,6 +32,7 @@ RUN = ROOT / "artifacts" / ("passwords-" + uuid.uuid4().hex[:8])
 PROFILE, BIN, SHOTS = RUN / "profile", RUN / "bin", RUN / "shots"
 RESULT = {"checks": []}
 FIXTURES = Path(__file__).parent / "fixtures"
+SAFE_STORAGE = "qa-safe-storage"  # on the Mac, the key Chrome keeps in the Keychain (test builds take it from the environment)
 
 
 def check(ok, name):
@@ -80,7 +82,9 @@ threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 PORT = SERVER.server_port
 SITE = f"http://127.0.0.1:{PORT}"          # this computer: treated as secure
 OTHER = f"http://localhost:{PORT}"         # another site, also on this computer
-INSECURE = f"http://insecure.test:{PORT}"  # mapped to 127.0.0.1 for the browser: an ordinary http site
+# An ordinary http site: on Windows a name mapped to 127.0.0.1 for the browser; on the Mac "localhost." with its
+# dot, which reaches this computer but isn't one of the names Still trusts as it.
+INSECURE = f"http://localhost.:{PORT}" if MAC else f"http://insecure.test:{PORT}"
 
 # A companion that only remembers (see memory.py): its MCP call shows whether Still keeps a saved password.
 FAKE = textwrap.dedent(r'''
@@ -144,9 +148,14 @@ def values(process, *selectors):
     return [page(process, f"document.querySelector({json.dumps(s)})?.value ?? null") for s in selectors]
 
 
+def helper(process):
+    """Still's login helper in the page: in the page itself on Windows, in Still's own script world on the Mac."""
+    return rpc(process, "eval", script="typeof window.__stillLoginCleanup", world="still")
+
+
 def settle(process):
     """The page has loaded, reported its form, and Still has answered with this site's logins."""
-    until(lambda: page(process, "document.readyState") == "complete" and page(process, "typeof window.__stillLoginCleanup") == "function", 10)
+    until(lambda: page(process, "document.readyState") == "complete" and helper(process) == "function", 10)
     time.sleep(.6)
 
 
@@ -281,6 +290,19 @@ def chrome_profile(folder):
     db.close()
 
 
+def mac_chrome_profile(folder):
+    """A Chrome profile on the Mac with one login, sealed with the key Chrome keeps in the Keychain (AES-128-CBC, v10)."""
+    key = hashlib.pbkdf2_hmac("sha1", SAFE_STORAGE.encode(), b"saltysalt", 1003, 16)
+    sealed = subprocess.run(["openssl", "enc", "-aes-128-cbc", "-K", key.hex(), "-iv", "20" * 16], input=b"Chrome-keychain-77", capture_output=True, check=True).stdout
+    folder.mkdir(parents=True)
+    (folder / "Bookmarks").write_text(json.dumps({"roots": {"bookmark_bar": {"children": [{"type": "url", "name": "Chrome page", "url": "https://chrome.example/"}]}}}))
+    db = sqlite3.connect(folder / "Login Data")
+    db.execute("CREATE TABLE logins (origin_url TEXT, username_value TEXT, password_value BLOB, blacklisted_by_user INTEGER)")
+    db.execute("INSERT INTO logins VALUES ('https://chrome.example/login', 'chromie', ?, 0)", (b"v10" + sealed,))
+    db.commit()
+    db.close()
+
+
 def stage_profile(process, path, name):
     js(process, "window.__tools.import = null")
     rpc(process, "stageExternalProfile", path=str(path), name=name)
@@ -301,7 +323,7 @@ def main():
         "Companions": CREW, "AiHarness": "fake", "AgentsEnabled": True, "ApprovedAgents": ["Claude"],
         "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}]},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
-    env = dict(os.environ, STILL_QA_BROWSER_ARGS='--host-resolver-rules="MAP insecure.test 127.0.0.1"')
+    env = dict(os.environ, STILL_QA_BROWSER_ARGS='--host-resolver-rules="MAP insecure.test 127.0.0.1"', STILL_QA_SAFE_STORAGE=SAFE_STORAGE)
     process = launch(EXE, PROFILE, env)
     agent = None
     try:
@@ -381,20 +403,19 @@ def main():
               "A sign-in form in a frame from another site gets no key and no fill")
 
         # Insecure pages: auto sign-in stays off, and the first click only warns; the second fills.
-        if not MAC:  # needs Chromium's host resolver rules to reach an http site that isn't this computer
-            send(process, "vaultSave", origin=INSECURE, username="open@example.com", password="Plain-Http-Page-9")
-            time.sleep(.5)
-            plain = entry(process, INSECURE, "open@example.com")
-            go(process, INSECURE + "/login")
-            check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in never fills on an insecure page")
-            first = pick(process, "#user", 0, plain)
-            time.sleep(.5)
-            armed = values(process, "#user", "#pw") == ["", ""]
-            at = until(lambda: shadow(process, **{"data-id": plain["id"]}), 5)
-            if at:
-                click_at(process, *at)
-            check(first and armed and until(lambda: values(process, "#user", "#pw") == ["open@example.com", "Plain-Http-Page-9"], 5),
-                  "On an http page the first click only warns; the second fills")
+        send(process, "vaultSave", origin=INSECURE, username="open@example.com", password="Plain-Http-Page-9")
+        time.sleep(.5)
+        plain = entry(process, INSECURE, "open@example.com")
+        go(process, INSECURE + "/login")
+        check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in never fills on an insecure page")
+        first = pick(process, "#user", 0, plain)
+        time.sleep(.5)
+        armed = values(process, "#user", "#pw") == ["", ""]
+        at = until(lambda: shadow(process, **{"data-id": plain["id"]}), 5)
+        if at:
+            click_at(process, *at)
+        check(first and armed and until(lambda: values(process, "#user", "#pw") == ["open@example.com", "Plain-Http-Page-9"], 5),
+              "On an http page the first click only warns; the second fills")
         send(process, "passwordPermission", feature="fill", enabled=False)
 
         # Two-step sign-in: the username from the first page goes with the password from the second.
@@ -447,12 +468,12 @@ def main():
         until(lambda: any(t.get("Private") for t in rpc(process)["tabs"]), 10)
         until(lambda: page(process, "location.pathname") == "/login" and page(process, "document.readyState") == "complete", 10)
         time.sleep(.6)
-        helper = page(process, "typeof window.__stillLoginCleanup")
+        script = helper(process)
         type_into(process, "#user", "private@example.com")
         type_into(process, "#pw", "Private-Tab-Pass-5")
         click(process, "#go")
         time.sleep(2.5)
-        check(helper == "undefined" and not bar(process) and entry(process, SITE, "private@example.com") is None, "A private tab never saves a password")
+        check(script == "undefined" and not bar(process) and entry(process, SITE, "private@example.com") is None, "A private tab never saves a password")
         send(process, "select", id="home")
 
         # Passwords: showing one asks Windows Hello / Touch ID first (answered here by the QA hook).
@@ -525,8 +546,18 @@ def main():
               "A Firefox primary password is explained, with the way through (export a CSV)")
         send(process, "externalCancel")
 
-        # Import from Chrome: what Windows can decrypt comes in; app-bound passwords are explained.
-        if not MAC:
+        # Import from Chrome: what Windows can decrypt comes in; app-bound passwords are explained. On the Mac, Chrome's
+        # key comes from the Keychain (macOS asks you first).
+        if MAC:
+            chrome = RUN / "Google" / "Chrome" / "Default"
+            mac_chrome_profile(chrome)
+            external = stage_profile(process, chrome, "Chrome") or {}
+            check(external.get("passwords") == 1 and external.get("bookmarks") == 1, "Chrome passwords import with the key from the Keychain")
+            send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
+            time.sleep(1)
+            c = entry(process, "https://chrome.example", "chromie")
+            check(c and reveal(process, c) == "Chrome-keychain-77", "The Chrome login arrives with its password")
+        else:
             chrome = RUN / "chrome"
             chrome_profile(chrome)
             external = stage_profile(process, chrome, "Chrome") or {}

@@ -197,6 +197,7 @@ enum CompanionMemory {
 /// Why something can't go into memory, or nil if it can: secrets, what the AI typed into a form, anything from a private tab.
 func memoryRefuses(_ run: ChatRun?, _ text: String) -> String? {
  if CompanionMemory.secret(text) { return "That looks like a password, a code or an account number. Still never keeps those." }
+ if Vault.read().contains(where: { $0.password.count >= 4 && text.contains($0.password) }) { return "That's one of your saved passwords. Still never keeps those." }
  if run?.typed.contains(where: { text.range(of: $0, options: .caseInsensitive) != nil }) == true { return "That's something typed into a form on a page. Still doesn't keep form data." }
  for t in browsers.flatMap(\.tabs) where t.isPrivate {
   let host = hostName(t.url)
