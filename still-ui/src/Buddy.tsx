@@ -5,10 +5,11 @@ import { AGENT_LOOKS, DEFAULT_LOOK, parseLook, type Look } from "./look"
 // The old companion hues: a companion saved before looks existed keeps its color.
 export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be0", apricot: "#f4c2a8", mint: "#9ed8c6", blush: "#f3b7c1", periwinkle: "#b8c4f0", berry: "#e58fa8", ocean: "#8fb8e8" }
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
-export const NAMES = ["Pip", "Hazel", "Rio", "Juno", "Milo", "Wren", "Otis", "Nova", "Bea", "Kit", "Moss", "Sol", "Fern", "Ivo", "Lumi", "Tate", "Ada", "Bo", "Pico", "Tula", "Momo", "Ziggy", "Olli", "Puck"]
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string }
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string
+ crew?: string // the crew member it was picked from (crew.tsx)
+ askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
 /// One thing a companion remembers about the user. A "chat" is a past chat it learned from.
 export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null }
 export type Mood = MascotState | "sleep"

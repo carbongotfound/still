@@ -25,8 +25,8 @@ Advanced swaps the chip for the model and effort pickers (`Prefs.AiAdvanced`).
 
 ## Companions
 
-Kept in `Prefs.Companions` (state.json): name, job, face, color, AI app, mode, skills. The starter crew is Pip,
-Hazel, Rio and Juno; they wear the mascot of the AI they run on. Eight hues: sage, lavender, apricot, mint, blush,
+Kept in `Prefs.Companions` (state.json): name, job, face, color, AI app, mode, skills. The crew to pick from is in
+`crew.tsx` (Nadia, Kenji, Marcus, Amara, Jonah, Priya and Lena); others wear the mascot of the AI they run on. Eight hues: sage, lavender, apricot, mint, blush,
 periwinkle, berry, ocean. The editor sets the look, name, job, the AI app ("Not installed" and "Sign in first"
 show in the list), the mode, the skills they always use and what they remember.
 

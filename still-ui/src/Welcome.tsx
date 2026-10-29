@@ -2,22 +2,23 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperti
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type TargetAndTransition, type Transition } from "motion/react"
 import { ArrowLeft, ArrowUp, Bot, Check, CornerDownLeft, Dices, Download, Globe2, MessageCircle, Monitor, Moon, Palette, Sun, Undo2, Volume2, VolumeX, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { cn, MAC } from "@/lib/utils"
+import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
-import { NAMES, lookOf, type Companion } from "./Buddy"
+import { lookOf, type Companion } from "./Buddy"
 import { CrewCards, INTERESTS, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
 import { BLANK, BODY_COLORS, DEFAULT_LOOK, FACES, lookKey, surprise, type Look } from "./look"
 import { FaceSwatch, LookEditor } from "./LookEditor"
 import { Mascot, type MascotState } from "./Mascot"
-import { babble, play, setSounds, warm } from "./sound"
+import { play, setSounds, warm } from "./sound"
 
 // First run, full window: a short intro (Intro.tsx), then your companion walks you through setup. Pick any of the crew,
 // make your own, or both (setup can't finish with none; with several, you pick the main one), then set Still up yourself
 // (Quick setup, no AI) or let the companion ask a few questions and do it for you. The other steps can be skipped, and
-// skipping never starts a task.
+// skipping never starts a task. A step that asks for something keeps Continue off until it has an answer, with "Not now"
+// to move on without one, so no two buttons ever do the same thing.
 type Send = (op: string, data?: Record<string, unknown>) => void
-type Step = "hello" | "import" | "ai" | "helper" | "main" | "how" | "talk" | "you" | "interests" | "layout" | "charge" | "start"
+type Step = "hello" | "import" | "ai" | "crew" | "main" | "how" | "talk" | "you" | "interests" | "layout" | "charge" | "start"
 const QUICK: Step[] = ["you", "interests", "layout", "charge"]
 const EASE = [.22, 1, .36, 1] as const
 // The companion pops in: squashes as it lands, stretches up, settles.
@@ -26,7 +27,6 @@ const POP: Record<"from" | "to" | "rest", TargetAndTransition> & { timing: Trans
 
 const COLORS = ["#f4c2a8", "#e5876a", "#f3b7c1", "#f2c66b", "#bcd98c", "#7fb39b", "#8ed3c7", "#8fb8e8", "#6f8fd0", "#b9a5e6", "#c9a58a", "#5b6170"].map(hex => BODY_COLORS.find(c => c[0] === hex) ?? [hex, hex])
 const THEMES = [["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const
-const rand = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
 const newId = () => "c" + Math.random().toString(36).slice(2, 11)
 const blank = (): Companion => ({ id: newId(), name: "", face: "", color: "", job: "", mode: "default" })
 const seenIntro = () => { try { return !!localStorage.getItem("still.intro") } catch { return false } }
@@ -34,15 +34,17 @@ const seenIntro = () => { try { return !!localStorage.getItem("still.intro") } c
 const NO = /^(?:no|nope|nah|nothing|none|not yet|not really|not (?:right )?now|later|maybe later|skip(?: it)?|pass|all good|i'?m (?:good|fine|ok(?:ay)?)|n ?a)(?: (?:thanks?|thank you|for now|right now|now|yet))*$/
 export const isNo = (text: string) => NO.test(text.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim())
 
-// Bubbles come in one after another, each with a chirp, and the companion babbles as the first one lands; `from` holds
-// them back while the companion pops in.
+// A new line below the fold scrolls up into view, like a chat.
+const reveal = (line?: Element | null) => {
+ const talk = line?.closest(".ob-talk"), below = line && talk ? line.getBoundingClientRect().bottom + 12 - talk.getBoundingClientRect().bottom : 0
+ if (below > 0) talk!.scrollBy({ top: below, behavior: "smooth" })
+}
+// Bubbles come in one after another; `from` holds them back while the companion pops in.
 function Bubbles({ lines, from = 0 }: { lines: ReactNode[]; from?: number }) {
  const reduce = useReducedMotion()
- useEffect(() => {
-  const sounds = [...lines.map((_, i) => play("chirp", { delay: from + .12 + i * .38, gain: .8 })), ...babble(Math.min(6, 2 + lines.length), from + .18)]
-  return () => sounds.forEach(s => s.stop(.05))
- }, []) // eslint-disable-line react-hooks/exhaustive-deps
- return <div className="ob-bubbles">{lines.map((l, i) => <motion.p key={i} className="ob-bubble" initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }} transition={{ delay: reduce ? 0 : from + .12 + i * .38, duration: reduce ? .01 : .28, ease: EASE }}>{l}</motion.p>)}</div>
+ const box = useRef<HTMLDivElement>(null)
+ return <div className="ob-bubbles" ref={box}>{lines.map((l, i) => <motion.p key={i} className="ob-bubble" initial={reduce ? { opacity: 0 } : { opacity: 0, y: 8, scale: .98 }} animate={{ opacity: 1, y: 0, scale: 1 }}
+  transition={{ delay: reduce ? 0 : from + .12 + i * .38, duration: reduce ? .01 : .28, ease: EASE }} onAnimationComplete={() => reveal(box.current?.children[i])}>{l}</motion.p>)}</div>
 }
 function Reveal({ after = 0, from = 0, children }: { after?: number; from?: number; children: ReactNode }) {
  const reduce = useReducedMotion()
@@ -74,7 +76,7 @@ function LayoutPreview({ modern }: { modern: boolean }) {
 type Setup = { busy: boolean; error: string; done: boolean; turns: { role: string; text: string; options?: string[] }[]; changes: { key: string; label: string; value: string; undone: boolean }[] } | null
 /// "Set it up with <name>": the companion's questions and the user's answers, then what it changed, each with an undo.
 /// The other companions picked in setup (`also`) remember the same things.
-function Interview({ who, also, send, onQuick }: { who: Companion; also: string[]; send: Send; onQuick: () => void }) {
+function Interview({ who, also, send, onQuick, onDone }: { who: Companion; also: string[]; send: Send; onQuick: () => void; onDone: (done: boolean) => void }) {
  const [s, setS] = useState<Setup>(null)
  const [text, setText] = useState("")
  const log = useRef<HTMLDivElement>(null)
@@ -85,6 +87,7 @@ function Interview({ who, also, send, onQuick }: { who: Companion; also: string[
   return () => window.chrome?.webview?.removeEventListener("message", got)
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [s?.turns.length, s?.busy, s?.done])
+ useEffect(() => onDone(!!s?.done), [s?.done]) // eslint-disable-line react-hooks/exhaustive-deps
  const waiting = !s || s.busy
  const last = s?.turns.at(-1)
  const answer = (t: string) => { if (!t.trim() || waiting) return; send("setupAnswer", { text: t.trim() }); setText("") }
@@ -93,9 +96,8 @@ function Interview({ who, also, send, onQuick }: { who: Companion; also: string[
   <Button type="submit" size="icon-sm" aria-label="Send" disabled={!text.trim() || waiting}><ArrowUp /></Button>
  </form>
  return <div className="ob-interview">
-  <div className="ob-chat" ref={log} aria-live="polite">
-   {s?.turns.map((t, i) => <motion.p key={i} className={cn("ob-bubble", t.role === "user" && "is-you")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease: EASE }}
-    onAnimationStart={() => { if (t.role !== "user") { play("chirp", { gain: .8 }); babble(3, .06) } }}>{t.text}</motion.p>)}
+  <div className="ob-chat" ref={log} aria-live="polite" onScroll={fadeTop}>
+   {s?.turns.map((t, i) => <motion.p key={i} className={cn("ob-bubble", t.role === "user" && "is-you")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease: EASE }}>{t.text}</motion.p>)}
    {waiting && !s?.error && <p className="ob-bubble is-typing" aria-label={`${who.name} is typing`}><i /><i /><i /></p>}
   </div>
   {s?.error ? <div className="ob-fallback"><p>{s.error} No problem, the quick setup takes a minute.</p><Button size="sm" onClick={onQuick}><Zap />Do the quick setup</Button></div>
@@ -135,7 +137,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   return own ? [own] : p ? [fromPremade(p, crewIds.current[k] ??= newId())] : []
  }), [picks, made])
  const flow: Step[] = again ? (how === "talk" ? ["talk"] : QUICK) : noAi || !ai ? ["hello", "import", "layout", "charge"]
-  : ["hello", "import", "ai", "helper", ...(chosen.length > 1 ? ["main"] as Step[] : []), "how", ...(how === "talk" ? ["talk"] as Step[] : QUICK), "start"]
+  : ["hello", "import", "ai", "crew", ...(chosen.length > 1 ? ["main"] as Step[] : []), "how", ...(how === "talk" ? ["talk"] as Step[] : QUICK), "start"]
  const [step, setStep] = useState(0)
  const [draft, setDraft] = useState<Companion>(blank) // "Make your own" while it's being made
  const [look, setLook] = useState<Look>(() => first ? lookOf(first) : DEFAULT_LOOK) // what the big companion wears: a friendly face until one is picked; BLANK is for making your own
@@ -148,6 +150,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const [task, setTask] = useState("")
  const [typed, setTyped] = useState("")
  const [allowed, setAllowed] = useState<"" | "yes" | "no">("")
+ const [tried, setTried] = useState(false) // brought their stuff over, or made Still open their links
+ const [talked, setTalked] = useState(false) // the interview is done
  const [hadIntro] = useState(() => !again && !seenIntro()) // once, on the first run; About can replay it
  const [introOn, setIntroOn] = useState(hadIntro)
  const [introAt, setIntroAt] = useState<{ x: number; y: number }>()
@@ -164,18 +168,19 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const c = making ? draft : lead ?? first ?? draft
  const picked = !!(lead ?? first)
  const intro = !again && step === 0 && !reduce ? hadIntro ? .45 : .75 : 0 // the hello waits for the companion to pop in, or to glide in after the intro
- const name = c.name.trim() || "your helper"
+ const name = c.name.trim() || "your companion"
  const hasFace = look.eyes !== "none"
- const wide = at === "helper" && !making
+ const wide = at === "crew" && !making
  const size = Math.round(Math.min(520, Math.max(200, Math.min(height / 2.3, width / 4))) * (wide ? .6 : 1))
- const names = useMemo(() => [...NAMES].sort(() => Math.random() - .5).slice(0, 4), [])
  const tasks = useMemo(() => starters(likes, picked ? c : undefined, 3), [likes, picked, c])
  const harness = ai?.harnesses.find(h => h.id === (c.ai || ai.harness))
  const aiReady = !!harness?.installed && !["missing", "signedOut"].includes(harness.status)
- const blocked = at === "helper" && !making && !chosen.length && !first || at === "main" && !lead
+ const blocked = at === "crew" && (making ? !draft.name.trim() : !chosen.length && !first) || at === "main" && !lead || at === "how" // "how" goes on from its two options
+ // Steps that ask for something: Continue waits for an answer, and until then "Not now" moves on without one.
+ const answered = at === "import" ? tried : at === "ai" ? aiReady : at === "talk" ? talked : at === "you" ? !!you.trim() : at === "interests" ? likes.length > 0 : at === "start" ? !!(task || typed.trim()) : true
  useEffect(() => { if (introOn) return; setTalking(true); const t = setTimeout(() => setTalking(false), 1700); return () => clearTimeout(t) }, [at, introOn])
  useEffect(() => {
-  warm("whoosh", "click", "pop", "chirp", "blip-1", "blip-2", "blip-3", "blip-4", "jingle")
+  warm("whoosh", "click", "pop", "jingle")
   if (hadIntro) return
   const t = setTimeout(() => setGesture(["wave", Date.now()]), again || reduce ? 0 : 650); return () => clearTimeout(t)
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -223,8 +228,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  }
  // "Make your own" ends with "Add <name>", back on the crew with it picked.
  const addOwn = () => {
-  const named = draft.name.trim() || rand(NAMES), final = hasFace ? look : { ...surprise(), ...(look.color !== BLANK.color && { color: look.color }) }
-  const own = { ...draft, name: named, look: lookKey(final) }
+  const final = hasFace ? look : { ...surprise(), ...(look.color !== BLANK.color && { color: look.color }) }
+  const own = { ...draft, name: draft.name.trim(), look: lookKey(final) }
   setMade(m => [...m, own]); setPicks(p => [...p, own.id]); setLook(final); setMaking(false); setNeedOne(false); react("happy")
  }
  // Leaving the companion step: the picks are saved, any picked earlier and dropped since are deleted (after, so there's
@@ -245,9 +250,9 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  }
  const go = (to: number) => { setStep(to); if (flow[to] === "ai") send("aiCheck") }
  const next = () => {
-  if (blocked) return
-  if (at === "helper" && making) { addOwn(); return }
-  if (at === "helper") commit()
+  if (blocked || !answered) return
+  if (at === "crew" && making) { addOwn(); return }
+  if (at === "crew") commit()
   if (at === "main") send("companionMain", { id: lead!.id })
   if (at === "you" || at === "interests") remember()
   if (at === "start") { const text = typed.trim() || task; finish(text && !isNo(text) ? text : undefined); return }
@@ -258,8 +263,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  // Skip setup: fine once there's a companion (or no AI to have one with); before that, it goes to the crew.
  const skipAll = () => {
   if (noAi || !ai || first || saved.current.size) { finish(); return }
-  if (at === "helper" && !making && chosen.length) { commit(); finish(); return }
-  setNeedOne(true); setMaking(false); go(flow.indexOf("helper"))
+  if (at === "crew" && !making && chosen.length) { commit(); finish(); return }
+  setNeedOne(true); setMaking(false); go(flow.indexOf("crew"))
  }
 
  const mood: MascotState = introOn ? "idle" : at === "charge" && !allowed ? "needs" : talking ? "talking" : "idle"
@@ -281,7 +286,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
    <div className="ob-dots" role="progressbar" aria-valuemin={1} aria-valuemax={flow.length} aria-valuenow={step + 1} aria-label={`Step ${step + 1} of ${flow.length}`}>{flow.map((s, i) => <i key={s} className={cn(i === step && "is-on", i < step && "is-done")} />)}</div>
    <button className="ob-sound" aria-pressed={!soundOn} aria-label="Mute" title={soundsBlocked || (soundOn ? "Mute" : "Unmute")} disabled={!!soundsBlocked} onClick={() => sound(!sounds)}>{soundOn ? <Volume2 /> : <VolumeX />}</button>
    <div className="ob-theme" role="radiogroup" aria-label="Theme">{THEMES.map(([k, Icon]) => <button key={k} role="radio" aria-checked={(theme ?? "System") === k} aria-label={k} title={k === "System" ? (MAC ? "Match your Mac" : "Match Windows") : k} onClick={() => send("preference", { key: "theme", value: k })}><Icon /></button>)}</div>
-   <button className="ob-skip-all" onClick={skipAll}>Skip setup</button>
+   {step < flow.length - 1 ? <button className="ob-skip-all" onClick={skipAll}>Skip setup</button> : <button className="ob-skip-all" style={{ visibility: "hidden" }} tabIndex={-1} aria-hidden>Skip setup</button>}
   </header>
   <main className={cn("ob-stage", wide && "is-wide")} onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey && !(e.target as HTMLElement).closest("button,textarea,form")) { e.preventDefault(); next() } }}>
    <motion.div ref={mascotRef} className="ob-companion" style={{ "--hue": look.color } as CSSProperties} animate={leaving ?? (introOn && introAt ? { ...introAt, scale: 1, opacity: 1 } : { x: 0, y: 0, scale: 1, opacity: 1 })}
@@ -289,44 +294,43 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
     <motion.div className="ob-pop" initial={intro && !hadIntro ? POP.from : false} animate={intro && !hadIntro ? POP.to : POP.rest} transition={POP.timing}>
      <Mascot look={look} size={size} state={mood} follow={!introOn} gesture={gesture[0]} gestureAt={gesture[1]} className={cn(introOn && "intro-body", woke && "is-on")} />
     </motion.div>
-    {(making || picked) && (at === "helper" || at === "how") && c.name.trim() && <motion.b className="ob-name" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>{c.name.trim()}</motion.b>}
+    {(making || picked) && (at === "crew" || at === "how") && c.name.trim() && <motion.b className="ob-name" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}>{c.name.trim()}</motion.b>}
    </motion.div>
    <AnimatePresence mode="wait" initial={false}>
-    <motion.section key={at + (making ? "-own" : "") + (introOn ? "-held" : "")} className="ob-talk" {...slide} transition={{ duration: reduce ? .01 : .26, ease: EASE }}>
+    <motion.section key={at + (making ? "-own" : "") + (introOn ? "-held" : "")} className="ob-talk" onScroll={fadeTop} {...slide} transition={{ duration: reduce ? .01 : .26, ease: EASE }}>
      {introOn ? null : <>
      {at === "hello" && <Bubbles from={intro} lines={noAi || !ai ? ["Hi! Welcome to Still.", "Still is an open-source browser that AI apps on this computer can work in, right next to your own tabs.", "Let's set a few things up. You can skip any step."]
-      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}, your helper.` : "I don't have a name yet. You'll pick who I am in a minute.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra plan.", "Everything stays on your computer. Let's set things up. You can skip most steps."]} />}
+      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}. I'll get you set up.` : "I'll get you set up. In a minute you'll pick who you work with.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra plan.", "Everything stays on your computer. It takes a couple of minutes, and you can skip most steps."]} />}
      {at === "import" && <>
       <Bubbles lines={["Coming from Chrome, Edge or another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
       <Reveal after={2}><div className="ob-options">
-       <button className="ob-option" onClick={onImport}><Download /><span><strong>Bring my stuff over</strong><small>Chrome, Edge, Brave, Opera GX or a saved export. You check it before anything is copied.</small></span></button>
-       <button className="ob-option" disabled={isDefault} onClick={() => send("defaultBrowser")}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : `${MAC ? "macOS" : "Windows"} asks you to confirm`}</small></span>{isDefault && <Check />}</button>
+       <button className="ob-option" onClick={() => { setTried(true); onImport() }}><Download /><span><strong>Bring my stuff over</strong><small>Chrome, Edge, Brave, Opera GX or a saved export. You check it before anything is copied.</small></span></button>
+       <button className="ob-option" disabled={isDefault} onClick={() => { setTried(true); send("defaultBrowser") }}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : `${MAC ? "macOS" : "Windows"} asks you to confirm`}</small></span>{isDefault && <Check />}</button>
       </div></Reveal>
      </>}
      {at === "ai" && ai && <>
       <Bubbles lines={["Which AI should I think with?", "Pick the one you already use. I go through its own app on this computer, so the plan you have covers everything.", "You can switch any time, even halfway through a task."]} />
       <Reveal after={3}><AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} /></Reveal>
      </>}
-     {at === "helper" && !making && <>
+     {at === "crew" && !making && <>
       <Bubbles lines={first ? ["Want to keep me, or add someone new?", "Pick one or a few. Each has a job they're great at. Or make your own."]
        : ["Who do you want to work with?", "Pick one or a few. Each has a job they're great at, and you can change anything about them later. Or make your own."]} />
       <Reveal after={2}>
-       {first && <button className="ob-option ob-keep" onClick={() => { setPicks([]); setMain(""); setLook(lookOf(first)); go(step + 1) }}><Check /><span><strong>Keep {first.name}</strong><small>Carry on with the helper you have.</small></span></button>}
+       {first && <button className="ob-option ob-keep" onClick={() => { setPicks([]); setMain(""); setLook(lookOf(first)); go(step + 1) }}><Check /><span><strong>Keep {first.name}</strong><small>Carry on with the companion you have.</small></span></button>}
        {needOne && <p className="ob-note is-warn" role="alert">Pick at least one companion first. Then you can skip the rest.</p>}
        <CrewCards picked={picks} made={made} onPick={(p: Premade) => toggle(p.id)} onMade={toggle} onOwn={startOwn} />
       </Reveal>
      </>}
-     {at === "helper" && making && <>
-      <Bubbles lines={["This is me before we've met. Just a shape for now.", "Let's fix that. Pick a color first."]} />
+     {at === "crew" && making && <>
+      <Bubbles lines={["Let's make your own companion.", "Pick a color first, then a face and a name."]} />
       <Reveal after={2}><div className="ob-build">
        <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([hex, label]) => <button key={hex} role="radio" aria-checked={look.color === hex} aria-label={label} title={label} style={{ "--swatch": hex } as CSSProperties} onClick={() => pickColor(hex)} />)}</div></div>
        {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Face</span><div className="ob-faces" role="radiogroup" aria-label="Face">{FACES.map((f, i) => <button key={i} role="radio" aria-checked={look.eyes === f.eyes && look.mouth === f.mouth} aria-label={"Face " + (i + 1)} onClick={() => pickFace(f)}><FaceSwatch look={{ ...look, ...BLANK, color: look.color, ...f }} size={40} /></button>)}</div></motion.div>}
        {grown >= 2 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Name</span>
-        <div className="ob-name-box"><input aria-label="Name your helper" placeholder="Give me a name" maxLength={24} value={draft.name} onChange={e => { setDraft({ ...draft, name: e.target.value }); setGrown(3) }} />
-         <div className="ob-chips">{names.map(n => <button key={n} onClick={() => { setDraft({ ...draft, name: n }); setGrown(3); react("happy") }}>{n}</button>)}<button aria-label="Another name" title="Another name" onClick={() => { setDraft({ ...draft, name: rand(NAMES) }); setGrown(3) }}><Dices /></button></div></div>
+        <div className="ob-name-box"><input aria-label="Name your companion" placeholder="Their name" maxLength={24} value={draft.name} onChange={e => { setDraft({ ...draft, name: e.target.value }); setGrown(3) }} /></div>
        </motion.div>}
        <div className="ob-build-actions">
-        <Button variant="outline" size="sm" onClick={() => { const s = surprise(); setLook(s); setDraft(x => ({ ...x, name: x.name.trim() || rand(NAMES) })); setGrown(3); react("pop") }}><Dices />Surprise me</Button>
+        <Button variant="outline" size="sm" onClick={() => { setLook(surprise()); setGrown(3); react("pop") }}><Dices />Surprise me</Button>
         <Button variant="ghost" size="sm" onClick={() => setStyling(true)}><Palette />Customize</Button>
         <Button variant="ghost" size="sm" className="ml-auto" onClick={() => { setMaking(false); setLook(lookOfKey(picks.at(-1))) }}>Back to the crew</Button>
        </div>
@@ -339,15 +343,15 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
        <span className="ob-mains-face"><Mascot look={lookOf(x)} size={56} /></span><strong>{x.name}</strong><small>{premadeOf(x)?.role ?? "Made by you"}</small><span className="ob-check" aria-hidden><Check /></span></button>)}</div></Reveal>
      </>}
      {at === "how" && <>
-      <Bubbles lines={[`Nice to meet you! I'm ${name}.`, "How should we set things up?"]} />
+      <Bubbles lines={[`Hi, I'm ${name}.`, "How do you want to set things up?"]} />
       <Reveal after={2}><div className="ob-options">
        <button className="ob-option is-big" disabled={!aiReady} onClick={() => { setHow("talk"); go(step + 1) }}><MessageCircle /><span><strong>Set it up with {name}</strong>
-        <small>{name} asks you a few questions, then sets up your tabs, theme, start sites, search, how hands-on to be and how to talk to you. You check every change.</small>
+        <small>I ask you a few questions, then set up your tabs, theme, start sites, search, how hands-on to be and how to talk to you. You check every change.</small>
         <small className="ob-usage">Uses a little of your {harness?.name ?? "AI"} plan, about as much as one short chat (5 to 8 quick messages).</small></span></button>
        <button className="ob-option is-big" onClick={() => { setHow("quick"); go(step + 1) }}><Zap /><span><strong>Quick setup</strong><small>Tap through a few choices yourself. Uses no AI at all.</small></span></button>
       </div>{!aiReady && <p className="ob-note">Connect your AI on the earlier step to set things up with {name}.</p>}</Reveal>
      </>}
-     {at === "talk" && <Interview who={c} also={chosen.map(x => x.id).filter(id => id !== c.id)} send={send} onQuick={() => { setHow("quick"); if (again) setStep(0) }} />}
+     {at === "talk" && <Interview who={c} also={chosen.map(x => x.id).filter(id => id !== c.id)} send={send} onQuick={() => { setHow("quick"); if (again) setStep(0) }} onDone={setTalked} />}
      {at === "you" && <>
       <Bubbles lines={["First, a little about you.", "What should I call you?"]} />
       <Reveal after={2}><div className="ob-name-box"><input autoFocus aria-label="Your name" placeholder="Your first name" maxLength={40} value={you} onChange={e => setYou(e.target.value)} /></div>
@@ -384,7 +388,6 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Reveal after={2}>
        <div className="ob-tasks" role="radiogroup" aria-label="First task">{tasks.map(([label, prompt]) => <button key={label} role="radio" aria-checked={task === prompt} onClick={() => { setTask(task === prompt ? "" : prompt); setTyped("") }}><i />{label}</button>)}</div>
        <div className="ob-name-box"><textarea aria-label="Your own task" rows={2} placeholder="Or type your own" value={typed} onChange={e => { setTyped(e.target.value); setTask("") }} /></div>
-       <Button variant="outline" className="ob-later" onClick={() => finish()}>Skip for now</Button>
       </Reveal>
      </>}
      </>}
@@ -394,9 +397,9 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   <motion.footer className="ob-foot" initial={intro ? { opacity: 0, y: 18 } : false} animate={introOn ? { opacity: 0, y: 18 } : { opacity: 1, y: 0 }} transition={{ delay: introOn ? 0 : intro ? intro + 1.7 : 0, duration: .35, ease: EASE }}>
    {step > 0 ? <Button variant="ghost" onClick={() => go(step - 1)}><ArrowLeft />Back</Button> : <span />}
    <span className="flex-1" />
-   {!["start", "helper", "main"].includes(at) && <Button variant="ghost" onClick={skip}>Skip</Button>}
-   <Button className="ob-next" disabled={blocked} onClick={next}>{at === "start" ? (task || (typed.trim() && !isNo(typed)) ? "Let's go" : "Finish") : at === "hello" ? "Let's start" : at === "talk" ? (again ? "Done" : "Looks good")
-    : at === "helper" && making ? (draft.name.trim() ? `Add ${draft.name.trim()}` : "Add them") : "Continue"}<CornerDownLeft /></Button>
+   {!answered && <button className="ob-not-now" onClick={skip}>Not now</button>}
+   {at !== "how" && <Button className="ob-next" disabled={blocked || !answered} onClick={next}>{at === "start" ? (!task && isNo(typed) ? "Finish" : "Let's go") : at === "hello" ? "Let's start" : at === "talk" ? (again ? "Done" : "Looks good")
+    : at === "crew" && making ? (draft.name.trim() ? `Add ${draft.name.trim()}` : "Add them") : "Continue"}<CornerDownLeft /></Button>}
   </motion.footer>
   {introOn && <IntroLayer at={{ x: innerWidth / 2, y: innerHeight / 2 - 30, r: size / 2 }} hue={look.color} reduced={!!reduce} sound={soundOn} onSound={sound}
    live={() => !!mascotRef.current?.querySelector("canvas[data-live]")} onStart={() => setWoke(true)} onEnd={endIntro} />}

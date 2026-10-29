@@ -111,8 +111,15 @@ public partial class MainWindow
   try { return JsonNode.Parse(text[a..(b + 1)]) as JsonObject; } catch (JsonException) { return null; }
  }
 
+ /// One clean sentence: single spaces, a capital first letter and a full stop.
+ static string Sentence(string s)
+ {
+  s = Regex.Replace(s, @"\s+", " ").Trim().TrimEnd(',', ';', ':', ' ');
+  return s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..] + (".!?".Contains(s[^1]) ? "" : ".");
+ }
  string SetupPrompt(Companion? who, AgentAdapter cli) => $$"""
   You are {{who?.Name ?? "the user's companion"}}, the companion in Still, a web browser with AI built in. {{(who is { Job.Length: > 0 } ? "The user picked you as: " + who.Job : "")}}
+  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
   what they mostly use the browser for, the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
 
@@ -131,8 +138,8 @@ public partial class MainWindow
    "sites": [{"title": "Site", "url": "https://..."}] (up to 8 sites for their new tab page),
    "newTab": "companion" (you and ideas on the new tab page) or "sites" (search and their sites) or "",
    "agent": "careful" (ask before every click), "balanced" (ask once per site in a chat) or "hands-off" (just do it) or "",
-   "tone": "how you should talk and act, one or two sentences, written to you",
-   "memories": ["short facts worth remembering about them"]} }
+   "tone": "how they want you to talk, one or two short sentences addressed to you, like 'Keep answers short and skip the small talk.'",
+   "memories": ["facts worth remembering about them, each one short sentence"]} }
   Use "" or [] for anything they didn't say: Still leaves those as they are. Buying, sending and deleting always ask, whatever they pick.
 
   Still right now: tabs {{(Prefs.TabLayout == "Modern" ? "down the side" : "across the top")}}, theme {{Prefs.Theme}}, search {{Prefs.SearchEngine}}. They're using {{cli.Name}}.
@@ -186,7 +193,7 @@ public partial class MainWindow
   }
   if (who != null && Str("tone", 600) is { Length: > 3 } tone && tone != who.Tone) {
    var old = who.Tone; who.Tone = tone;
-   changes.Add(new("tone", $"How {who.Name} talks", tone, () => who.Tone = old));
+   changes.Add(new("tone", "How I talk", tone, () => who.Tone = old));
   }
   var interests = Texts("interests", 6, 40);
   if (interests.Count > 0) {
@@ -195,13 +202,14 @@ public partial class MainWindow
   }
   if (who != null) {
    // What it learned goes into the companion's memory, like anything else it remembers.
-   List<string> facts = [.. Texts("memories", 8, 200)];
+   // Each one its own short sentence: an answer with two sentences becomes two memories.
+   List<string> facts = [.. Texts("memories", 8, 200).SelectMany(t => Regex.Split(t, @"(?<=[.!?])\s+(?=\p{Lu})")).Select(Sentence).Where(t => t.Length > 2).Take(8)];
    if (Str("name", 40) is { Length: > 0 } name) facts.Insert(0, "Likes to be called " + name + ".");
    if (interests.Count > 0) facts.Add("Into " + string.Join(", ", interests).ToLowerInvariant() + ".");
    var ids = new[] { who.Id }.Concat(setupTalk?.Also ?? []).Distinct().Where(id => Companions.Any(c => c.Id == id)).ToList();
    var kept = ids.SelectMany(id => facts.Select((f, i) => (id, fact: CompanionMemory.Remember(id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Into ") ? "interests" : ""))))
     .Where(k => k.fact != null).ToList();
-   if (kept.Any(k => k.id == who.Id)) changes.Add(new("memory", $"{who.Name} remembers", string.Join(" ", kept.Where(k => k.id == who.Id).Select(k => k.fact!.Text)),
+   if (kept.Any(k => k.id == who.Id)) changes.Add(new("memory", "I'll remember", string.Join("\n", kept.Where(k => k.id == who.Id).Select(k => k.fact!.Text)),
     () => { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f!.Id); }));
   }
  }

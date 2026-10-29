@@ -49,7 +49,7 @@ Method: code reading only. Nothing was built or run. Every `file:line` below was
 
 | Group | Ops |
 |---|---|
-| Tabs and pages | ready, bounds, overlay, openPanel, navigate, new, select, closeTab, pin, duplicate, sleep, mute, tearOff, moveTab, reorder, back, forward, reload, zoom, bookmark, reader, hide, unhide, pip, find, reopen, focus, panel, drag |
+| Tabs and pages | ready, bounds, overlay, openPanel, navigate, new, select, closeTab, pin, duplicate, sleep, mute, tearOff, moveTab, reorder, back, forward, reload, zoom, bookmark, reader, hide, unhide, pictureInPicture, find, reopen, focus, panel, drag |
 | Answers | uploadAnswer, permissionAnswer, dialogAnswer |
 | Agents | agentAnswer (110), agentStop (111), agentTakeOver (112) |
 | Settings | siteBlocking (128-129), preference (130-142), startup, startupSettings, defaultBrowser, welcomeDone |
@@ -195,7 +195,7 @@ It uses `BuildTools(false)`: list_profiles first, then the 19 browser tools, eac
 
 **Chats.** `DataRoot\ai\chats.json`, newest 200 kept, written through `.tmp` (`:52-60`). Fields: Id, Title, Harness, Session, Started, Companion, Updated, Messages of Role and Text (`:8-20`).
 
-**Companions.** Fields Id, Name, Face, Color, Job (`:23-30`). Stored in `state.json` as `Preferences.Companions`; when empty the defaults are Pip, Hazel, Rio and Juno (`:96-102`, `still/Models.cs:73`). Name up to 24 characters, job up to 1000 (`:196-203`). The last one can't be deleted (`:204`). Faces are Fluent Emoji 3D images on 8 colors (`still-ui/src/Buddy.tsx:4-9`). The job goes into the instructions (`:223`).
+**Companions.** Fields Id, Name, Face, Color, Job (`:23-30`). Stored in `state.json` as `Preferences.Companions`; when empty the defaults were four starter companions (an all-round one, a researcher, a shopper and an organizer) (`:96-102`, `still/Models.cs:73`). Name up to 24 characters, job up to 1000 (`:196-203`). The last one can't be deleted (`:204`). Faces are Fluent Emoji 3D images on 8 colors (`still-ui/src/Buddy.tsx:4-9`). The job goes into the instructions (`:223`).
 
 **Event parsing.**
 
@@ -286,7 +286,7 @@ dotnet run --project tests/Still.ReleaseChecks -c Release -- still/bin/Release/n
 - Layout: section 0 says no vertical layout; Phase 5 asks for Modern and Classic.
 - Grok run: sections 1 and 4.1 say `grok -p ... --output-format streaming-json`; section 0 and the code use `--prompt-file` and `streaming-messages-json`.
 - Section 1 says there is no unit-test project. True for .NET, but `still-ui/tests/suggestions.test.ts` runs in every build (`build.ps1:9`).
-- Section 4.2 suggests "Juno" as a starter name. Juno is already a default companion, the organizer (`still/MainWindow.Ai.cs:100`).
+- Section 4.2 suggests a starter name that one of the default companions already has, the organizer's (`still/MainWindow.Ai.cs:100`).
 - The switch has two names in code: "Let other AI apps use Still" (`still-ui/src/App.tsx:589`, `still/MainWindow.Agents.cs:71`) and "Let AI agents control Still" (`still/McpServer.cs:186`).
 
 **Risks: changes that would alter external MCP or CLI behavior.**

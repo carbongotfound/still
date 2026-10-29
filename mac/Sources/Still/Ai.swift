@@ -7,15 +7,17 @@ import AppKit
 /// instructions. Kept in prefs["Companions"] with the Windows app's field names.
 final class Companion {
  var id = "", name = "", face = "", color = "", look = "", job = "", ai = "", folder = "", tone = ""
+ var crew = "" // the crew member it was picked from (crew.tsx), "" = made by the user
+ var askName = false // it still has a name Still used to hand out: the user is asked once whether to keep it
  var mode = "default" // efficient, default or expert
  var skills: [String] = [] // skills it reads at the start of every chat
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
-  id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone")
-  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []
+  id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
+  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName] }
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -65,6 +67,11 @@ struct Skill {
 }
 
 func tidy<S: StringProtocol>(_ text: S) -> String { text.trimmingCharacters(in: .whitespacesAndNewlines) }
+/// The names Still used to hand out (its old crew and stock names), as FNV-1a hashes of the lowercase name so they
+/// don't live on in the source. A companion with one may have been named by Still rather than the user.
+let oldNames: Set<UInt32> = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x422bb03e, 0x4c12a741, 0x4dae4233, 0x5540dda6, 0x6ab98305, 0x6b68e403, 0x6cf7bb37, 0x71d1513f, 0x78472df1,
+  0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444]
+func oldName(_ name: String) -> Bool { oldNames.contains(tidy(name).lowercased().utf8.reduce(2166136261) { ($0 ^ UInt32($1)) &* 16777619 }) }
 /// The first match of pattern in text, or its group.
 func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
  guard let rx = try? NSRegularExpression(pattern: pattern), let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let r = Range(m.range(at: group), in: text) else { return nil }
@@ -250,6 +257,7 @@ func askInChat(_ who: String, _ args: [String: Any], _ done: @escaping (String) 
 func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _ folder: String) -> String {
  (who.map { "Your name is \($0.name). The user set you up as: \($0.job)\n" + ($0.tone.isEmpty ? "" : "Your personality and how you talk: \($0.tone)\n") + "\n" } ?? "") + """
  You are the AI assistant built into Still, the user's web browser, running on \(cli.app). You work with the user in a chat.
+ Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
  \(folder.isEmpty ? "You are not in a terminal: you have no files or shell here" : "You may read and write files in the user's working folder \(folder), and nowhere else. There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
 
  How to work:
@@ -328,6 +336,10 @@ extension Browser {
    do { aiChats = try fromPascalJSON([AiChat].self, data) } catch { NSLog("Still: couldn't read chats: \(error)") }
   }
   companions = pref("Companions", [[String: Any]]()).map(Companion.init)
+  if !pref("NamesChecked", false) { // once: a companion with an old stock name, not picked from the crew, asks whether to keep it
+   for c in companions where c.crew.isEmpty && oldName(c.name) { c.askName = true }
+   prefs["NamesChecked"] = true; storeCompanions()
+  }
  }
 
  /// The interface's AI ops; false = not one of them.
@@ -477,6 +489,8 @@ extension Browser {
    if data["folder"] != nil { var folder: ObjCBool = false; c.folder = s("folder").hasPrefix("/") && FileManager.default.fileExists(atPath: s("folder"), isDirectory: &folder) && folder.boolValue ? s("folder") : "" }
    if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
    if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
+   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
+   c.askName = false // saved, renamed or kept: it's the user's name now
    storeCompanions(); publishOthers()
   case "companionDelete":
    guard companions.count > 1, let gone = companions.first(where: { $0.id == s("id") }) else { break }
@@ -763,7 +777,7 @@ extension Browser {
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
-   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder,
+   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName,
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
    "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }

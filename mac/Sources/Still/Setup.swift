@@ -109,9 +109,16 @@ extension Browser {
   publishSetup()
  }
 
+ /// One clean sentence: single spaces, a capital first letter and a full stop.
+ func sentence<S: StringProtocol>(_ s: S) -> String {
+  let t = tidy(s.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression)).trimmingCharacters(in: CharacterSet(charactersIn: ",;: "))
+  guard let first = t.first else { return t }
+  return first.uppercased() + String(t.dropFirst()) + (".!?".contains(t.last!) ? "" : ".")
+ }
  func setupPrompt(_ who: Companion?, _ cli: AgentAdapter) -> String {
   """
   You are \(who?.name ?? "the user's companion"), the companion in Still, a web browser with AI built in. \(who.map { $0.job.isEmpty ? "" : "The user picked you as: " + $0.job } ?? "")
+  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
   what they mostly use the browser for, the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
 
@@ -130,8 +137,8 @@ extension Browser {
    "sites": [{"title": "Site", "url": "https://..."}] (up to 8 sites for their new tab page),
    "newTab": "companion" (you and ideas on the new tab page) or "sites" (search and their sites) or "",
    "agent": "careful" (ask before every click), "balanced" (ask once per site in a chat) or "hands-off" (just do it) or "",
-   "tone": "how you should talk and act, one or two sentences, written to you",
-   "memories": ["short facts worth remembering about them"]} }
+   "tone": "how they want you to talk, one or two short sentences addressed to you, like 'Keep answers short and skip the small talk.'",
+   "memories": ["facts worth remembering about them, each one short sentence"]} }
   Use "" or [] for anything they didn't say: Still leaves those as they are. Buying, sending and deleting always ask, whatever they pick.
 
   Still right now: tabs \(pref("TabLayout", "Classic") == "Modern" ? "down the side" : "across the top"), theme \(pref("Theme", "System")), search \(pref("SearchEngine", "Google")). They're using \(cli.name).
@@ -200,7 +207,7 @@ extension Browser {
   }
   if let who, str("tone", 600).count > 3, str("tone", 600) != who.tone {
    let old = who.tone; who.tone = str("tone", 600); storeCompanions()
-   change("tone", "How \(who.name) talks", who.tone) { [self] in who.tone = old; storeCompanions() }
+   change("tone", "How I talk", who.tone) { [self] in who.tone = old; storeCompanions() }
   }
   let interests = texts("interests", 6, 40)
   if !interests.isEmpty {
@@ -209,7 +216,8 @@ extension Browser {
   }
   if let who {
    // What it learned goes into the companion's memory, like anything else it remembers.
-   var facts = texts("memories", 8, 200)
+   // Each one its own short sentence: an answer with two sentences becomes two memories.
+   var facts = Array(texts("memories", 8, 200).flatMap { $0.replacingOccurrences(of: #"(?<=[.!?])\s+(?=\p{Lu})"#, with: "\n", options: .regularExpression).split(separator: "\n").map { sentence($0) } }.filter { $0.count > 2 }.prefix(8))
    let name = str("name", 40)
    if !name.isEmpty { facts.insert("Likes to be called " + name + ".", at: 0) }
    if !interests.isEmpty { facts.append("Into " + interests.joined(separator: ", ").lowercased() + ".") }
@@ -217,7 +225,7 @@ extension Browser {
    for id in setupTalk?.also ?? [] where !ids.contains(id) && companions.contains(where: { $0.id == id }) { ids.append(id) }
    let kept = ids.flatMap { id in facts.enumerated().compactMap { i, f in CompanionMemory.remember(id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Into ") ? "interests" : "").map { (id, $0) } } }
    let mine = kept.filter { $0.0 == who.id }.map(\.1)
-   if !mine.isEmpty { change("memory", "\(who.name) remembers", mine.map(\.text).joined(separator: " ")) { for (id, f) in kept { CompanionMemory.forget(id, f.id) } } }
+   if !mine.isEmpty { change("memory", "I'll remember", mine.map(\.text).joined(separator: "\n")) { for (id, f) in kept { CompanionMemory.forget(id, f.id) } } }
   }
  }
 }

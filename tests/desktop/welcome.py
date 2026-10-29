@@ -1,7 +1,7 @@
 """Setup on a fresh profile, the tour, Run setup again, "Set me up with <name>", and the look editor.
 
 A fresh profile starts with the intro (skipped with Space) and no companions. The steps of the Quick setup are walked
-like a person would: pick an AI, pick Hazel from the crew and make your own helper too (a color, a face, a name), pick
+like a person would: pick an AI, pick Nadia from the crew and make your own companion too (a color, a face, a name), pick
 the main one, say who you are, pick interests, keep the Classic layout, try the permission card, and start the first
 task. Setup can't finish with no companion, and the last one can't be deleted. Quick setup runs no AI at all. The task runs on a fake AI app (a manifest in Still's agents folder): it
 searches, opens a page beside the chat and reads it for a while. The whole run is recorded with ffmpeg, frames taken
@@ -102,7 +102,7 @@ FAKE = textwrap.dedent(r'''
             os.remove(asked)
             reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Cooking", "Gardening"], "layout": "", "theme": "Dark",
                 "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
-                "tone": "Keep it short and cheerful.", "memories": ["Cooks most weeknights."]}}))
+                "tone": "Keep it short and cheerful.", "memories": ["Cooks most weeknights.", "grows tomatoes on the balcony. Has  two cats"]}}))
         sys.exit(0)
     server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
     still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -240,7 +240,13 @@ def next_step(process, pause=1.6):
     at = step_now(process)
     click(process, ".ob-next")
     until(lambda: step_now(process) == at + 1, 5)
-    time.sleep(pause)  # the helper's lines come in one by one
+    time.sleep(pause)  # the companion's lines come in one by one
+
+
+def not_now(process, pause=1.6):
+    """A step that asks for something: Continue waits for an answer, and "Not now" moves on without one."""
+    click(process, ".ob-not-now")
+    time.sleep(pause)
 
 
 def state():
@@ -307,17 +313,17 @@ def companions(prefs=None):
     return [c["Name"] for c in (prefs or state().get("Preferences", {})).get("Companions") or []]
 
 
-def to_helper(process):
+def to_crew(process):
     """hello -> import -> ai, picking the fake AI app -> the crew."""
     next_step(process)
-    next_step(process)
+    not_now(process)
     if not until(lambda: click_text(process, ".byo-main", "Fake agent"), 4):
         click(process, ".byo-more")  # agents you added sit under More agents
         until(lambda: click_text(process, ".byo-main", "Fake agent"), 6)
     ok = until(lambda: js(process, "!!document.querySelector('.byo-row[data-chosen] .byo-ok')"), 10)
     time.sleep(1)
     next_step(process)
-    until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 7, 4)
+    until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 8, 4)
     return ok
 
 
@@ -349,7 +355,7 @@ def setup(process):
             check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "true", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is False, 5),
                   "The sound switch mutes setup, and Still remembers it")
             heard = len(sounds(process))
-            next_step(process)  # hello -> import, with no whoosh or chirps
+            next_step(process)  # hello -> import, with no whoosh
             check(len(sounds(process)) == heard, "Muted, nothing plays")
             click(process, ".ob-sound")
             check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "false", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is True, 5),
@@ -359,24 +365,26 @@ def setup(process):
             time.sleep(1)
         next_step(process)  # hello -> import
         check(js(process, "document.querySelectorAll('.ob-option').length") == 2, "Step 2 offers to bring your stuff over and to open your links in Still")
-        next_step(process)  # -> ai
+        foot = js(process, "[...document.querySelectorAll('.ob-foot button')].map(b => b.innerText.trim() + (b.disabled ? ' (off)' : ''))") or []
+        check(foot == ["Back", "Not now", "Continue (off)"], f"Continue waits for a choice, and a single Not now link moves on ({foot})")
+        not_now(process)  # -> ai
         if not until(lambda: click_text(process, ".byo-main", "Fake agent"), 4):
             click(process, ".byo-more")  # agents you added sit under More agents
             until(lambda: click_text(process, ".byo-main", "Fake agent"), 6)
         check(until(lambda: js(process, "!!document.querySelector('.byo-row[data-chosen] .byo-ok')"), 10), "Step 3: picking an AI app that's signed in")
         time.sleep(1)
-        next_step(process)  # -> helper
-        until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 7, 4)
+        next_step(process)  # -> crew
+        until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 8, 4)
         rpc(process, "capture", name="pick-none.png")
         crew = js(process, "[...document.querySelectorAll('.crew-card h3')].map(h => h.innerText.trim())") or []
-        check(crew == ["Hazel", "Rio", "Juno", "Bram", "Wren", "Pip", "Make your own"], f"Step 4: six companions to pick, then Make your own ({', '.join(crew)})")
-        check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.crew-card.is-picked')") and not click_text(process, ".ob-foot button", "Skip"),
+        check(crew == ["Nadia", "Kenji", "Marcus", "Amara", "Jonah", "Priya", "Lena", "Make your own"], f"Step 4: seven coworkers to pick, then Make your own ({', '.join(crew)})")
+        check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.crew-card.is-picked')") and not js(process, "!!document.querySelector('.ob-not-now')") and not click_text(process, ".ob-foot button", "Skip"),
               "Nothing is picked, and Continue waits for a pick; this step can't be skipped")
         click(process, ".ob-skip-all")
         check(until(lambda: "Pick at least one companion first" in talk_text(process), 3) and js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), "Skip setup asks for a companion first")
         time.sleep(.8)
-        click_text(process, ".crew-pick", "Pick Hazel")
-        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked h3')?.innerText.trim() == 'Hazel'"), 3), "Picking Hazel lets you continue")
+        click_text(process, ".crew-pick", "Pick Nadia")
+        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked h3')?.innerText.trim() == 'Nadia'"), 3), "Picking Nadia lets you continue")
         time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Start from scratch")
         check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
@@ -386,23 +394,24 @@ def setup(process):
         click(process, ".ob-faces button[aria-label='Face 2']")
         until(lambda: js(process, "!!document.querySelector('.ob-name-box input')"), 3)
         time.sleep(1.2)
+        check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.ob-chips')"), "Your own needs a name you type: Still doesn't hand one out")
         type_into(process, ".ob-name-box input", "Miso")
         time.sleep(1.4)
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
         click(process, ".ob-next")
-        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked h3')].map(h => h.innerText.trim()).join()") == "Hazel,Miso", 3)
-        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "11", "Miso joins the crew, picked with Hazel, and setup adds a step to pick the main one")
+        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked h3')].map(h => h.innerText.trim()).join()") == "Nadia,Miso", 3)
+        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "11", "Miso joins the crew, picked with Nadia, and setup adds a step to pick the main one")
         time.sleep(1.2)
         next_step(process)  # -> main
         mains = js(process, "[...document.querySelectorAll('.ob-mains [role=radio] strong')].map(s => s.innerText.trim())") or []
-        check(mains == ["Hazel", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick your main companion ({mains})")
+        check(mains == ["Nadia", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick your main companion ({mains})")
         click_text(process, ".ob-mains [role=radio]", "Miso")
         time.sleep(1)
         next_step(process)  # -> how
-        check(until(lambda: companions() == ["Miso", "Hazel"], 5), f"Both are added, Miso first as the main one ({companions()})")
+        check(until(lambda: companions() == ["Miso", "Nadia"], 5), f"Both are added, Miso first as the main one ({companions()})")
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
-        check(look.get("color") == "#8fb8e8" and look.get("eyes") == "sparkle", "Step 4 saves the helper's name, color and face")
+        check(look.get("color") == "#8fb8e8" and look.get("eyes") == "sparkle", "Step 4 saves your companion's name, color and face")
         options = js(process, "[...document.querySelectorAll('.ob-option')].map(b => b.innerText)") or []
         check(len(options) == 2 and "Set it up with Miso" in options[0] and "Uses a little of your" in options[0] and "Uses no AI at all" in options[1], "Step 5: set up with Miso (with what it uses) or Quick setup")
         time.sleep(1)
@@ -420,8 +429,10 @@ def setup(process):
         next_step(process)  # -> layout
         facts = until(lambda: [f["Text"] for f in memory("Miso")] if len(memory("Miso")) >= 2 else None, 5) or []
         check("Likes to be called Sam." in facts and "Into cooking, travel, music." in facts, f"Your name and interests are Miso's first memories ({facts})")
-        hers = [f["Text"] for f in memory("Hazel")]
-        check("Likes to be called Sam." in hers and "Into cooking, travel, music." in hers, f"Hazel remembers them too ({hers})")
+        theirs = [f["Text"] for f in memory("Nadia")]
+        check("Likes to be called Sam." in theirs and "Into cooking, travel, music." in theirs, f"Nadia remembers them too ({theirs})")
+        nadia = next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Nadia"), {})
+        check(nadia.get("Crew") == "nadia" and not nadia.get("AskName"), "A companion picked from the crew remembers which one it is")
         check(js(process, "document.querySelector('.ob-layouts [aria-checked=true]')?.innerText ?? ''").startswith("Classic"), "Step 7: Classic tabs are the default")
         time.sleep(.8)
         next_step(process)  # -> charge
@@ -431,11 +442,12 @@ def setup(process):
         check(until(lambda: "only go ahead when you say so" in (js(process, "document.querySelector('.ob-ask')?.innerText ?? ''") or ""), 3), "Answering it explains what happened")
         time.sleep(1.4)
         next_step(process)  # -> start
+        check(js(process, "document.querySelector('.ob-next').disabled && document.querySelector('.ob-not-now')?.innerText.trim() == 'Not now'"), "The first task waits for a pick, with Not now to finish without one")
         tasks = js(process, "[...document.querySelectorAll('.ob-tasks button')].map(b => b.innerText.trim())") or []
         check(tasks[:1] == ["Find a dinner I can make tonight"], "Step 9 suggests first tasks that match your interests")
         click(process, ".ob-tasks button")
         time.sleep(1)
-        check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Let's go", "Picking one turns Finish into Let's go")
+        check(js(process, "document.querySelector('.ob-next')?.innerText.trim() == \"Let's go\" && !document.querySelector('.ob-next').disabled && !document.querySelector('.ob-not-now')"), "Picking one turns on Let's go, and Not now goes")
         check(rpc(process).get("aiCalls") == 0, "Quick setup ran no AI at all")
         click(process, ".ob-next")
         check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Setup closes")
@@ -464,31 +476,69 @@ def new_tab(process):
             break
 
 
-def tour(process):
-    new_tab(process)
-    check(until(lambda: js(process, "!!document.querySelector('.tour-card')"), 10), "Back on the new tab page, the tour starts")
-    seen = []
+RING = """(() => {
+ const ring = document.querySelector('.tour-ring'), el = ring && document.querySelector(ring.dataset.target)
+ if (!el) return 0
+ const a = ring.getBoundingClientRect(), b = el.getBoundingClientRect(), clip = el.closest('.home-main')?.getBoundingClientRect()
+ const w = Math.min(a.right, b.right) - Math.max(a.left, b.left), h = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top)
+ const seen = b.top >= -1 && b.left >= -1 && b.bottom <= innerHeight + 1 && b.right <= innerWidth + 1 && (!clip || b.top >= clip.top - 1 && b.bottom <= clip.bottom + 1)
+ return seen && w > 0 && h > 0 ? w * h / (b.width * b.height) : 0
+})()"""
+
+
+def ringed(process):
+    """True when the coach mark's ring holds its target, on screen; else what it rings and how much of it."""
+    if until(lambda: (js(process, RING) or 0) > .95, 3):
+        return True
+    return f"{js(process, 'document.querySelector(`.tour-ring`)?.dataset.target')}: {js(process, RING)}"
+
+
+def walk_tour(process, moves, on_card=lambda seen, card: None):
+    """Walks the tour to the end, checking each ring is on its target, and again after each move on step 2.
+    Returns the steps' titles and the rings that were off."""
+    seen, off = [], []
     for _ in range(8):
         card = js(process, "document.querySelector('.tour-card')?.innerText ?? ''") or ""
         if not card:
             break
         seen.append(card.split("\n")[1] if "\n" in card else card)
-        if len(seen) == 1:
-            check("Miso works in background tabs" in card, "Its first card names your helper")
-            rpc(process, "capture", name="tour.png")
+        on_card(seen, card)
+        off.append(ringed(process))
+        if len(seen) == 2:
+            for move in moves:
+                move()
+                time.sleep(.8)
+                off.append(ringed(process))
         click_text(process, ".tour-card button", "Next") or click_text(process, ".tour-card button", "Done")
         time.sleep(.6)
+    return seen, [r for r in off if r is not True]
+
+
+def tour(process):
+    new_tab(process)
+    check(until(lambda: js(process, "!!document.querySelector('.tour-card')"), 10), "Back on the new tab page, the tour starts")
+
+    def on_card(seen, card):
+        if len(seen) == 1:
+            check("Miso works in background tabs" in card, "Its first card names your companion")
+            rpc(process, "capture", name="tour.png")
+        if len(seen) == 2:
+            check([line for line in card.split("\n") if line][1:3] == ["Your companions", "Switch companions or make a new one. Each has its own look, job and memory."], f"Its second card says companions ({card})")
+    chat = lambda: send(process, "aiToggle")
+    seen, off = walk_tour(process, [chat, chat], on_card)
     check(len(seen) == 5 and not js(process, "!!document.querySelector('.tour')"), f"Five coach marks, then it's done ({', '.join(seen)})")
+    check(not off, f"Classic: every ring sits on its target, with the side chat open and closed ({off})")
     check(js(process, "localStorage.getItem('still.tour')") is None, "It doesn't come back")
 
 
 def again(process):
     send(process, "welcomeAgain")
-    check(until(lambda: "I'm Miso, your helper." in talk_text(process), 10), "Run setup again opens setup with your helper")
+    check(until(lambda: "I'm Miso. I'll get you set up." in talk_text(process), 10), "Run setup again opens setup with your companion")
     calls, started = rpc(process).get("aiCalls"), len(chats())
     time.sleep(3)
-    for _ in range(3):  # hello -> import -> ai -> helper
-        next_step(process, .8)
+    next_step(process, .8)  # hello -> import
+    not_now(process, .8)  # -> ai
+    next_step(process, .8)  # -> crew
     check(click_text(process, ".ob-keep", "Keep Miso"), "It offers to keep Miso")
     until(lambda: "How should we set things up" in talk_text(process), 4)
     time.sleep(1.2)
@@ -496,7 +546,7 @@ def again(process):
     time.sleep(1.2)
     while step_now(process) < 10 and not js(process, "!!document.querySelector('.ob-tasks')"):
         at = step_now(process)
-        click_text(process, ".ob-foot button", "Skip")  # skipping a step
+        click_text(process, ".ob-foot button", "Not now") or click(process, ".ob-next")  # skipping what can be skipped
         if not until(lambda: step_now(process) == at + 1, 4):
             break
         time.sleep(.6)
@@ -508,13 +558,22 @@ def again(process):
     time.sleep(2)
     check(rpc(process).get("aiCalls") == calls and len(chats()) == started, "\"Nothing right now\" starts no task and runs no AI")
     send(process, "welcomeAgain")
-    until(lambda: "I'm Miso, your helper." in talk_text(process), 10)
+    until(lambda: "I'm Miso. I'll get you set up." in talk_text(process), 10)
     click(process, ".ob-skip-all")
     check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5) and until(lambda: state().get("Welcome") is False, 5), "Skip setup closes it")
     new_tab(process)
     check(until(lambda: js(process, "!!document.querySelector('.tour-card')"), 10), "The tour offers itself again")
     click_text(process, ".tour-card button", "Skip tour")
     check(until(lambda: not js(process, "!!document.querySelector('.tour')"), 3) and js(process, "localStorage.getItem('still.tour')") is None, "Skip tour ends it")
+    # Modern, from the start: the rings stay on their targets, also when the layout switches mid-tour.
+    send(process, "preference", key="tabLayout", value="Modern")
+    js(process, "localStorage.setItem('still.tour', '1'); location.reload()")
+    until(lambda: js(process, "!!document.querySelector('.tour-card')"), 15)
+    rpc(process, "capture", name="tour-modern.png")
+    layout = lambda value: lambda: send(process, "preference", key="tabLayout", value=value)
+    seen, off = walk_tour(process, [layout("Classic"), layout("Modern")])
+    check(len(seen) >= 4 and not off, f"Modern: every ring sits on its target, also after switching layouts mid-tour ({', '.join(seen)}; {off})")
+    send(process, "preference", key="tabLayout", value="Classic")
 
 
 def interview(process):
@@ -528,14 +587,16 @@ def interview(process):
     click_text(process, ".ob-interview .ob-chips button", "Cooking and recipes")
     check(until(lambda: js(process, "document.querySelectorAll('.ob-summary li').length") == 6, 20), "Then it shows the six things it changed")
     rows = js(process, "[...document.querySelectorAll('.ob-summary li b')].map(b => b.innerText.trim())") or []
-    check(rows == ["Theme", "Pinned", "When I work in tabs", "How Miso talks", "Ideas about", "Miso remembers"], f"The summary names each change ({rows})")
+    check(rows == ["Theme", "Pinned", "When I work in tabs", "How I talk", "Ideas about", "I'll remember"], f"The summary names each change, in the companion's own words ({rows})")
+    told = (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith(\"I'll remember\"))?.querySelector('small')?.innerText") or "").split("\n")
+    check(len(told) >= 2 and all(t[:1].isupper() and t.endswith(".") and t.count(". ") == 0 for t in told), f"Each memory is its own short sentence, on its own line ({told})")
     rpc(process, "capture", name="interview-summary.png")
     prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Cooking", "Gardening"] and p, 5) or {}  # saved a moment later
     check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
     check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
     mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
     facts = [f["Text"] for f in memory("Miso")]
-    check(mate.get("Tone") == "Keep it short and cheerful." and "Cooks most weeknights." in facts and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts,
+    check(mate.get("Tone") == "Keep it short and cheerful." and "Cooks most weeknights." in facts and "Grows tomatoes on the balcony." in facts and "Has two cats." in facts and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts,
           f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
     js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
     check(until(lambda: rpc(process).get("theme") == "System" and js(process, "document.querySelector('.ob-summary li')?.innerText.includes('Undone')"), 5), "Undo puts the theme back")
@@ -559,12 +620,12 @@ def looks(process):
     until(lambda: js(process, "!!document.querySelector('.home-rail')"), 10)
     click(process, ".home-rail-item[aria-label=Companions]")
     until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 2, 10)
-    for name in ("Hazel", "Miso"):
+    for name in ("Nadia", "Miso"):
         click(process, f".mate-portrait[aria-label='Edit {name}']")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         click_text(process, ".companion-actions button", "Delete")
-        if name == "Hazel":
-            check(until(lambda: companions() == ["Miso"], 5), "Deleting Hazel works while Miso is there")
+        if name == "Nadia":
+            check(until(lambda: companions() == ["Miso"], 5), "Deleting Nadia works while Miso is there")
             continue
         note = until(lambda: js(process, "document.querySelector('.companion-dialog [role=alert]')?.innerText"), 3) or ""
         time.sleep(1)
@@ -621,7 +682,7 @@ def shots():
         time.sleep(4)
         rpc(process, "capture", name="intro-mark.png")  # Still's name below the companion
         check(until(lambda: not js(process, "!!document.querySelector('.intro')"), 8) and until(lambda: "Hi! Welcome to Still." in talk_text(process), 3), "Left alone, the intro ends and setup begins")
-        to_helper(process)
+        to_crew(process)
 
         def shoot(name):
             for theme in ("Light", "Dark"):
@@ -631,14 +692,14 @@ def shots():
                 shutil.copy(profile / f"{name}-{theme.lower()}.png", out / f"{name}-{theme.lower()}.png")
         time.sleep(1.5)
         shoot("pick-0")
-        click_text(process, ".crew-pick", "Pick Hazel")
+        click_text(process, ".crew-pick", "Pick Nadia")
         shoot("pick-1")
-        for name in ("Rio", "Wren"):
+        for name in ("Marcus", "Jonah"):
             click_text(process, ".crew-pick", f"Pick {name}")
             time.sleep(.3)
         shoot("pick-3")
         next_step(process)
-        click_text(process, ".ob-mains [role=radio]", "Rio")
+        click_text(process, ".ob-mains [role=radio]", "Marcus")
         shoot("pick-main")
         shutil.copy(profile / "intro-mark.png", out / "intro-mark.png")
         check(len(list(out.glob("pick-*.png"))) == 8, "Screenshots of the crew with 0, 1 and 3 picked and the main pick, light and dark")
