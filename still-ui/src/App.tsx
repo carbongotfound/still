@@ -482,7 +482,9 @@ export default function App() {
      <AnimatedButton variant="ghost" size="icon" className="window-control window-close" aria-label="Close Still" onClick={()=>send("closeWindow")} whileHover={{scale:1.06}} whileTap={{scale:.9}} transition={FLOW}><X /></AnimatedButton>
     </div>
  )
- if (state === initial) return null // nothing until Still sends its state: the stand-in would flash a browser before the welcome
+ // Hidden until Still sends its state, or the stand-in would flash a browser before the welcome. It still renders, so the
+ // page's bounds and every other measurement are in place when it shows.
+ useLayoutEffect(() => { document.documentElement.classList.toggle("is-waiting", state === initial) }, [state])
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
