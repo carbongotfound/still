@@ -214,20 +214,20 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const typed = /(^|\s)\/([\w-]*)$/.exec(text)?.[2].toLowerCase()
  const matches = typed === undefined ? [] : skills.filter(k => k.id.startsWith(typed) || k.name.toLowerCase().includes(typed)).slice(0, 6)
  const used = skills.filter(k => skillToken(k.id).test(text))
- const useSkill = (k: Skill) => { setText(typed === undefined ? `/${k.id} ${text}` : text.replace(/(^|\s)\/[\w-]*$/, `$1/${k.id} `)); box.current?.focus() }
+ const pickSkill = (k: Skill) => { setText(typed === undefined ? `/${k.id} ${text}` : text.replace(/(^|\s)\/[\w-]*$/, `$1/${k.id} `)); box.current?.focus() }
  const pages = (tabs ?? []).filter(t => t.url && !t.isPrivate && !t.chatId && !t.inChat).slice(0, 6)
  return <InputGroup className="composer" style={{ "--hue": hueOf(companion) } as CSSProperties}>
-  {matches.length > 0 && <div className="skill-menu" role="listbox" aria-label="Skills">{matches.map((k, i) => <button type="button" key={k.id} role="option" aria-selected={i === pick % matches.length} onMouseDown={e => { e.preventDefault(); useSkill(k) }}><BookOpen /><b>/{k.id}</b><span>{k.description || k.name}</span></button>)}</div>}
+  {matches.length > 0 && <div className="skill-menu" role="listbox" aria-label="Skills">{matches.map((k, i) => <button type="button" key={k.id} role="option" aria-selected={i === pick % matches.length} onMouseDown={e => { e.preventDefault(); pickSkill(k) }}><BookOpen /><b>/{k.id}</b><span>{k.description || k.name}</span></button>)}</div>}
   {used.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">{used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}</InputGroupAddon>}
   <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => {
    if (matches.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : matches.length - 1)); return }
-   if (matches.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); useSkill(matches[pick % matches.length]); return }
+   if (matches.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); pickSkill(matches[pick % matches.length]); return }
    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
   <InputGroupAddon align="block-end">
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
     <DropdownMenuContent {...add.props} className="w-72">
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
-     {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => useSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
+     {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
      {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
      {pages.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Add a tab</DropdownMenuLabel>
       {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => { setText(`${text}${text && !text.endsWith(" ") ? " " : ""}[${t.title || host(t.url)}](${t.url}) `); box.current?.focus() }}><Globe /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
