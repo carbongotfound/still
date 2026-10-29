@@ -33,6 +33,9 @@ export const ROLE_LOOKS: Record<string, Look> = {
 }
 /// Make your own: the neutral blob you start from.
 export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }
+/// The eight Blender companions (crew/): each one's model, avatar and sprites go by this name.
+export const RIGS: [Look, string][] = [[ROLE_LOOKS.closer, "zest"], [ROLE_LOOKS.scout, "bloom"], [ROLE_LOOKS.chief, "noon"], [ROLE_LOOKS.marketer, "fizz"],
+ [ROLE_LOOKS.fixer, "mallow"], [ROLE_LOOKS.builder, "rivet"], [ROLE_LOOKS.researcher, "glint"], [BLANK, "custom"]]
 /// A friendly companion for places that don't have one yet.
 export const DEFAULT_LOOK: Look = { color: "#8cc3ee", shape: "bean", prop: "", accessory: "" }
 // Other AI apps working in Still wear these.

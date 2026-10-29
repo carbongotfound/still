@@ -52,6 +52,7 @@ public sealed class Companion
  public string Crew { get; set; } = ""; // the crew member it was picked from (crew.tsx), "" = made by the user
  public bool AskName { get; set; } // it still has a name Still used to hand out: the user is asked once whether to keep it
  public List<string> PluginsOff { get; set; } = []; // connected plugins (Composio toolkit slugs) the user turned off for it
+ public List<Routine> Routines { get; set; } = []; // what it does on a schedule (MainWindow.Routines.cs)
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -263,7 +264,7 @@ public partial class MainWindow
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
   plugins = PluginsPayload(),
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff,
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
 
@@ -373,6 +374,7 @@ public partial class MainWindow
     if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
     if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
     if (data.TryGetProperty("tone", out _)) c.Tone = S("tone").Trim() is var tone && tone.Length > 600 ? tone[..600] : tone;
+    if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
     if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
     c.AskName = false; // saved, renamed or kept: it's the user's name now
     Prefs.Companions = list; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();

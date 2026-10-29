@@ -12,6 +12,8 @@ import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade } from "./crew"
+import { SHARE_KIND } from "./ProfilePanel"
+import { toast } from "sonner"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
 export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
@@ -101,9 +103,21 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
 const aiOf = (ai: AiState, c: Companion) => ai.harnesses.find(h => h.id === (c.ai || ai.harness))
 
 export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onChat: (id: string) => void; onMemory: (id: string) => void }) {
+ useEffect(() => { // a companion someone shared (ProfilePanel's Share), pasted anywhere on the page
+  const paste = (e: ClipboardEvent) => {
+   if ((e.target as HTMLElement).closest?.("input, textarea")) return
+   try {
+    const got = JSON.parse(e.clipboardData?.getData("text") ?? "")
+    if (got?.kind !== SHARE_KIND || typeof got.name !== "string" || !got.name.trim()) return
+    send("companionSave", { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? "") })
+    toast(`Added ${got.name.trim()}. They start fresh: they don't know anything about you yet.`)
+   } catch { /* not a companion */ }
+  }
+  addEventListener("paste", paste); return () => removeEventListener("paste", paste)
+ }, [send])
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />New companion</Button></header>
-  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan.</p>
+  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
     <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={118} follow /><Pencil className="mate-edit" /></button>

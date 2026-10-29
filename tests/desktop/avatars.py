@@ -87,6 +87,8 @@ def frames(process, profile, size, live):
         if live:
             seconds = clips.get(gesture, 4)  # a gesture plays once; the loops are four seconds
             times = [round(seconds * i / 12, 3) for i in range(13)]
+            if gesture == "drop":  # it falls in from above the frame on purpose (companion3d.ts); every companion lands by .55 s
+                times = [t for t in times if t >= .6]
         else:
             times = [None] if state not in ("working", "thinking") else [i / 8 for i in range(8)]  # the small avatars' bob
         bad = set()

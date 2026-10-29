@@ -1,6 +1,6 @@
 import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react"
 import { cn } from "@/lib/utils"
-import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, ROLE_LOOKS, lookKey, type Look } from "./look"
+import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, RIGS, ROLE_LOOKS, lookKey, type Look } from "./look"
 
 // The companion, as a soft 3D blob (companion3d.ts). Every <Mascot> is a small 2D canvas: one hidden WebGL canvas
 // renders each visible companion in turn and copies it in, so they layer, clip and scroll like any other element.
@@ -40,7 +40,7 @@ export const engineReady = () => !!engine
 /// Gestures a companion plays by name (the gesture prop), besides the states. pitch is "pick me", hired a happy bounce.
 export const GESTURES = ["idle", "happy", "thinking", "working", "pointing", "needs-you", "done", "sad", "talking", "wave", "admire", "pop", "wake", "drop", "pitch", "hired"] as const
 export function loadEngine() {
- return loading ??= import("./companion3d").then(async m => { await m.load(); m.start(); engine = m; changed(); drain(); return m })
+ return loading ??= import("./companion3d").then(async m => { await m.load(); m.start(); engine = m; m.onRigReady(() => { changed(); drain() }); changed(); drain(); return m })
   .catch(e => { console.error("The companion couldn't load", e); return null })
 }
 
@@ -60,14 +60,15 @@ function drain() {
  for (const [key, w] of wanted) {
   try {
    const url = engine.picture(w.look, w.state, w.px, w.frame)
-   memo.set(key, url)
+   if (!url) continue // its model is still loading: drawn when it's in
+   wanted.delete(key); memo.set(key, url)
    try {
     if (localStorage.length > 400) for (const k of Object.keys(localStorage)) if (k.startsWith(STORE)) localStorage.removeItem(k)
     localStorage.setItem(STORE + key, url)
    } catch { /* storage full or off: the picture lives until the window closes */ }
-  } catch (e) { console.error(e) }
+  } catch (e) { wanted.delete(key); console.error(e) }
  }
- wanted.clear(); changed()
+ changed()
 }
 
 /// A still picture of a look in a state: rendered once (loading the engine if it must), then kept.
@@ -88,9 +89,7 @@ export function pictureOf(look: Look, state: MascotState, px: number, frame: Fra
 // little toward the text, with room on every side. Each role's look and Make your own's are rendered in Blender at 96
 // and 144px (crew/blob.py, view "avatar"); any other look gets a full-body picture from the 3D model.
 const avatarFiles = import.meta.glob("./assets/avatar/*.png", { eager: true, import: "default" }) as Record<string, string>
-const AVATAR = new Map(([[ROLE_LOOKS.closer, "zest"], [ROLE_LOOKS.scout, "bloom"], [ROLE_LOOKS.chief, "noon"], [ROLE_LOOKS.marketer, "fizz"],
- [ROLE_LOOKS.fixer, "mallow"], [ROLE_LOOKS.builder, "rivet"], [ROLE_LOOKS.researcher, "glint"], [BLANK, "custom"]] as [Look, string][])
- .map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/avatar/${f}-96.png`], avatarFiles[`./assets/avatar/${f}-144.png`]]]))
+const AVATAR = new Map(RIGS.map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/avatar/${f}-96.png`], avatarFiles[`./assets/avatar/${f}-144.png`]]]))
 
 // ---------------------------------------------------------------- the component
 

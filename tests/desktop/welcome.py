@@ -663,17 +663,24 @@ def looks(process):
     until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 2, 10)
     for name in ("Glint", "Miso"):
         click(process, f".mate-portrait[aria-label='Edit {name}']")
-        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        click_text(process, ".companion-actions button", "Delete")
+        until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
+        js(process, "document.querySelector('.profile-head [aria-label=More]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))")
+        until(lambda: js(process, "!!document.querySelector('[role=menuitem][data-variant=destructive]')"), 3)
+        click(process, "[role=menuitem][data-variant=destructive]")
+        until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-content]')"), 3)
         if name == "Glint":
+            click(process, "[data-slot=alert-dialog-action]")
             check(until(lambda: companions() == ["Miso"], 5), "Deleting Glint works while Miso is there")
+            until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
             continue
-        note = until(lambda: js(process, "document.querySelector('.companion-dialog [role=alert]')?.innerText"), 3) or ""
+        note = js(process, "document.querySelector('[data-slot=alert-dialog-content]')?.innerText") or ""
         time.sleep(1)
         check("Still needs at least one" in note and companions() == ["Miso"], f"Miso, the last one, can't be deleted ({note})")
         rpc(process, "capture", name="last-one.png")
-        click_text(process, ".companion-actions button", "Cancel")
-        until(lambda: not js(process, "!!document.querySelector('.companion-dialog')"), 3)
+        click(process, "[data-slot=alert-dialog-cancel]")
+        until(lambda: not js(process, "!!document.querySelector('[data-slot=alert-dialog-content]')"), 3)
+        js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
     for i, (name, color, look) in enumerate(CREW):
         send(process, "companionSave", id=f"crew{i}", name=name, job="", look=json.dumps({**BASE, "color": color, **look}))
     new_tab(process)
@@ -685,8 +692,8 @@ def looks(process):
     shot = 0
     for name in ["Miso"] + [c[0] for c in CREW]:
         click(process, f".mate-portrait[aria-label='Edit {name}']")
-        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        click_text(process, ".companion-dialog .companion-look button", "Customize")
+        until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
+        click_text(process, ".profile-stage-actions button", "Edit look")
         if until(lambda: js(process, "!!document.querySelector('.look-dialog canvas, .look-dialog .look-stage img')"), 8):
             time.sleep(1.8)  # the model loads and settles
             rpc(process, "capture", name=f"look-{name.lower()}.png")
@@ -694,10 +701,10 @@ def looks(process):
             shot += 1
         click_text(process, ".look-dialog .look-foot button", "Cancel")
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
-        js(process, "document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-        if not until(lambda: not js(process, "!!document.querySelector('.companion-dialog')"), 2):
-            click(process, ".companion-dialog [data-slot=dialog-close]")
-            until(lambda: not js(process, "!!document.querySelector('.companion-dialog')"), 3)
+        js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        if not until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 2):
+            click(process, ".profile-head [aria-label=Close]")
+            until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
     check(shot == 6, f"The look editor opens for all six ({shot} screenshots)")
 
 
