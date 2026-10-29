@@ -10,7 +10,7 @@ import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, ROLE_LOOKS, lookKey, type Look } from
 // every companion is a still picture.
 export const STATES = ["idle", "listening", "thinking", "working", "needs", "done", "error", "talking", "pointing"] as const
 export type MascotState = (typeof STATES)[number]
-export type Frame = "full" | "bust" | "head"
+export type Frame = "full" | "bust"
 
 export type Slot = { id: string; look: Look; state: MascotState; follow: boolean; gesture: string; gestureAt: number; frame: Frame; canvas: HTMLCanvasElement; visible: boolean }
 export const slots = new Map<string, Slot>()
@@ -52,7 +52,8 @@ const pictureState = (s: MascotState): MascotState => s === "listening" || s ===
 const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0; return h.toString(36) }
 const memo = new Map<string, string>()
 const wanted = new Map<string, { look: Look; state: MascotState; px: number; frame: Frame }>()
-const STORE = "still.picture."
+const STORE = "still.picture2." // 2: every companion framed whole from its own bounds
+try { for (const k of Object.keys(localStorage)) if (k.startsWith("still.picture.")) localStorage.removeItem(k) } catch { /* no storage */ }
 
 function drain() {
  if (!engine || !wanted.size) return
@@ -83,6 +84,14 @@ export function pictureOf(look: Look, state: MascotState, px: number, frame: Fra
  return undefined
 }
 
+// Small companions (under 40px: chat turns, headers, tabs, the working pill) are avatars: the whole body, turned a
+// little toward the text, with room on every side. Each role's look and Make your own's are rendered in Blender at 96
+// and 144px (crew/blob.py, view "avatar"); any other look gets a full-body picture from the 3D model.
+const avatarFiles = import.meta.glob("./assets/avatar/*.png", { eager: true, import: "default" }) as Record<string, string>
+const AVATAR = new Map(([[ROLE_LOOKS.closer, "zest"], [ROLE_LOOKS.scout, "bloom"], [ROLE_LOOKS.chief, "noon"], [ROLE_LOOKS.marketer, "fizz"],
+ [ROLE_LOOKS.fixer, "mallow"], [ROLE_LOOKS.builder, "rivet"], [ROLE_LOOKS.researcher, "glint"], [BLANK, "custom"]] as [Look, string][])
+ .map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/avatar/${f}-96.png`], avatarFiles[`./assets/avatar/${f}-144.png`]]]))
+
 // ---------------------------------------------------------------- the component
 
 export function Mascot({ look, state = "idle", size, follow = false, gesture = "", gestureAt = 0, className, style }: {
@@ -93,10 +102,11 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  useVersion()
  const reduced = useReduced()
  const small = size < 40
- const live = webgl && !reduced && (!small || state !== "idle" || !!gesture)
- const frame: Frame = small ? "head" : size < 64 ? "bust" : "full" // tiny ones show the face, not the body
+ const avatar = small ? AVATAR.get(lookKey(look)) : undefined
+ const live = webgl && !reduced && (!small || !!gesture) && !avatar
+ const frame: Frame = "full" // the whole body at every size, never a crop
  const px = Math.min(768, Math.round(size * Math.min(devicePixelRatio || 1, 2)))
- const picture = pictureOf(look, state, small ? 96 : 384, frame, !live)
+ const picture = avatar ? undefined : pictureOf(look, state, small ? 96 : 384, frame, !live)
  useEffect(() => {
   const canvas = ref.current
   if (!live || !canvas) return
@@ -106,7 +116,8 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
   return () => { seen.unobserve(canvas); slots.delete(id); delete canvas.dataset.live; changed() }
  }, [live, id]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { const s = slots.get(id); if (s) Object.assign(s, { look, state, follow, gesture, gestureAt, frame }) }, [id, look, state, follow, gesture, gestureAt, frame])
- return <span className={cn("mascot", className)} data-state={state} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
+ return <span className={cn("mascot", avatar && "is-avatar", className)} data-state={state} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
+  {avatar && <img src={avatar[0]} srcSet={`${avatar[0]} 96w, ${avatar[1]} 144w`} sizes={`${size}px`} alt="" draggable={false} />}
   {picture && <img src={picture} alt="" draggable={false} />}
   {live && <canvas ref={ref} width={px} height={px} />}
  </span>

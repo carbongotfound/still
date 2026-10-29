@@ -26,10 +26,10 @@ export const ROLE_LOOKS: Record<string, Look> = {
  closer: { color: "#f7a26a", shape: "tall", prop: "chart", accessory: "" },
  scout: { color: "#f2a5c4", shape: "gumdrop", prop: "badge", accessory: "" },
  chief: { color: "#a6cf9c", shape: "block", prop: "clipboard", accessory: "" },
- hype: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
+ marketer: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
  fixer: { color: "#86d0c8", shape: "squat", prop: "headset", accessory: "" },
  builder: { color: "#8cc3ee", shape: "bump", prop: "laptop", accessory: "" },
- sleuth: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
+ researcher: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
 }
 /// Make your own: the neutral blob you start from.
 export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }

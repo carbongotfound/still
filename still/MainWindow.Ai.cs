@@ -166,8 +166,8 @@ public partial class MainWindow
  static uint Fnv(string s) { uint h = 2166136261; foreach (char ch in s.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return h; }
  internal static bool OldName(string name) => OldNames.Contains(Fnv(name));
  /// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
- static readonly Dictionary<uint, (string Role, string Name)> MovedCrew = new() { [327684010u] = ("sleuth", "Glint"), [235257612u] = ("closer", "Zest"),
-  [3817335319u] = ("scout", "Bloom"), [2393765392u] = ("chief", "Noon"), [389508247u] = ("chief", "Noon"), [2625268281u] = ("hype", "Fizz"), [56376696u] = ("builder", "Rivet") };
+ static readonly Dictionary<uint, (string Role, string Name)> MovedCrew = new() { [327684010u] = ("researcher", "Glint"), [235257612u] = ("closer", "Zest"),
+  [3817335319u] = ("scout", "Bloom"), [2393765392u] = ("chief", "Noon"), [389508247u] = ("chief", "Noon"), [2625268281u] = ("marketer", "Fizz"), [56376696u] = ("builder", "Rivet") };
  /// A companion hired from an old role moves to the role that took over, and takes its new name unless the user renamed it.
  internal static void MoveOldCrew(Preferences prefs)
  {

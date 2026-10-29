@@ -955,7 +955,7 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
  return <>
   <div className="page-glow" data-kind={kind} style={hue} aria-hidden />
   <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label={agent.paused ? who.name + " is waiting for you" : who.name + " is working"}>
-   <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
+   <Face companion={who} size={28} mood={agent.paused ? "listening" : "working"} />
    <span className="page-control-text"><b>{agent.paused ? agent.signIn ? "Sign in, then hand it back" : "You're in control" : who.name + " is working…"}</b>{agent.paused && agent.signIn ? <small>{who.name} never sees your password</small> : !agent.paused && agent.action && <small>{agent.action}</small>}</span>
    <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand />{agent.paused ? "Hand back" : "Take over"}</button>
    {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Open chat</button>}

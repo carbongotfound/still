@@ -469,7 +469,7 @@ def setup(process):
         theirs = [f["Text"] for f in memory("Glint")]
         check("Likes to be called Sam." in theirs and "Works on research, sales, hiring." in theirs, f"Glint remembers them too ({theirs})")
         glint = next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Glint"), {})
-        check(glint.get("Crew") == "sleuth" and not glint.get("AskName"), "A companion hired for a role remembers which one it is")
+        check(glint.get("Crew") == "researcher" and not glint.get("AskName"), "A companion hired for a role remembers which one it is")
         check(js(process, "document.querySelector('.ob-layouts [aria-checked=true]')?.innerText ?? ''").startswith("Classic"), "Step 7: Classic tabs are the default")
         time.sleep(.8)
         next_step(process)  # -> charge

@@ -61,6 +61,11 @@ export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() 
 const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Loaded skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
  [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
+// A step reads as its verb in bold and what it acted on, muted. An address shows as its site; the full one is on hover.
+function Step({ step }: { step: string }) {
+ const [verb, ...rest] = step.split(" "), what = rest.join(" "), url = what.match(/https?:\/\/\S+/)?.[0]
+ return <span className="ai-step-line" title={url}><b>{verb}</b>{what && <span> {url ? what.replace(url, host(url)) : what}</span>}</span>
+}
 // Next steps the AI offers end its answer, one per line starting with ">> ".
 const nextSteps = (text: string) => { const next: string[] = []; const body = text.replace(/^>>\s*(.+)$/gm, (_, s: string) => { next.push(s.trim()); return "" }).trim(); return { body, next } }
 // Before setup makes one there's no companion: Still itself talks, with the default look.
@@ -350,8 +355,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   else items.push(m)
  }
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
- // The companion's face starts each of its turns.
- const face = (i: number) => fromAi(i - 1) ? null : <Face className="ai-turn-face" companion={companion} size={24} mood={i >= items.length - 1 ? mood : "idle"} />
+ // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
+ // the turn lines up right of it, and what follows in the same turn sits closer (is-more).
+ const face = (i: number) => fromAi(i - 1) ? null : <span className="ai-turn-face" title={name}><Face companion={companion} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></span>
+ const turn = (i: number) => fromAi(i - 1) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
  const openLink = (url: string) => send("new", { url })
@@ -372,27 +379,28 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    </div>)}
    {items.map((m, i) => {
     if ("steps" in m) {
-     const live = busy && i === items.length - 1, kinds = [...new Set(m.steps.map(stepIcon))].slice(-3)
-     return <div key={i} className="ai-turn">{face(i)}<details className="ai-steps-group"><summary>
-      <span className="ai-steps-icons">{kinds.map((Icon, j) => <span key={j} className="ai-steps-icon"><Icon /></span>)}</span>
-      <span className="ai-steps-text"><b>{m.steps[m.steps.length - 1]}</b>{m.steps.length > 1 && <small> (and {m.steps.length - 1} more action{m.steps.length === 2 ? "" : "s"})</small>}</span>
-      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : <Check className="ai-steps-state is-done" aria-label="Done" />}
-      <ChevronDown className="ai-steps-chevron" /></summary><ol>{m.steps.map((s, j) => { const Icon = stepIcon(s); return <li key={j}><Icon />{s}</li> })}</ol></details></div>
+     // One row: the latest step and how many came before it. More than one step opens into the full list.
+     const live = busy && i === items.length - 1, latest = m.steps[m.steps.length - 1], Icon = stepIcon(latest), more = m.steps.length - 1
+     const row = <><span className="ai-step-icon"><Icon /></span><span className="ai-step-text"><Step step={latest} />{more > 0 && <small>+ {more} more</small>}</span>
+      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : <Check className="ai-steps-state is-done" aria-label="Done" />}</>
+     return <div key={i} className={turn(i)}>{face(i)}{more ? <details className="ai-steps-group"><summary>{row}<ChevronDown className="ai-steps-chevron" /></summary>
+      <ol>{m.steps.map((s, j) => { const StepIcon = stepIcon(s); return <li key={j}><span className="ai-step-icon"><StepIcon /></span><Step step={s} /></li> })}</ol></details>
+      : <div className="ai-steps-group is-single"><div className="ai-steps-row">{row}</div></div>}</div>
     }
-    if (m.role === "file") return <div key={i} className="ai-turn">{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
-    if (m.role === "search" || m.role === "read") return <div key={i} className="ai-turn">{face(i)}<LookedUp m={m} onLink={openLink} /></div>
+    if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
+    if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
     const last = i === items.length - 1 && !busy
-    return <div key={i} className="ai-turn">{face(i)}
+    return <div key={i} className={turn(i)}>{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {next.length > 0 && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
      {last && <>{!!ai.worked && <p className="ai-timer">Took {clock(ai.worked)}</p>}
       <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
     </div>
    })}
-   {busy && !ai.question && <div className="ai-turn">{face(items.length)}<p className="ai-timer">Working · {clock(tick)}</p></div>}
+   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">Working · {clock(tick)}</p></div>}
   </div></div>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
