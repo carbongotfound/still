@@ -411,7 +411,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     bookmarks[i]["Title"] = title.isEmpty ? address : title; bookmarks[i]["Url"] = address; saveLater()
    }
   case "exportBookmarks": exportBookmarks()
-  case "pip": closeSheet(); pictureInPicture()
+  case "pictureInPicture": closeSheet(); pictureInPicture()
   case "dialogAnswer": if let target { answerDialog(target, data["accept"] as? Bool ?? false, data["text"] as? String) }
   case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()

@@ -88,6 +88,7 @@ public sealed class Preferences
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public List<Companion> Companions { get; set; } = []; // empty until setup, which always leaves at least one; the first is the main one
+ public bool NamesChecked { get; set; } // companions with an old stock name were flagged to ask about it (FlagOldNames)
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode
  public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", a manifest id, or "" until chosen
  public bool Autofill { get; set; } = true;

@@ -201,7 +201,7 @@ def start(name, width, height):
     (profile / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(RUN / "bin" / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run"], "model": ["--model", "{model}"], "models": ["fast-1", "big-2"],
         "effort": ["--effort", "{effort}"], "output": "stream-json"}))
-    crew = CREW + [{"Id": "bram", "Name": "Bram", "Job": "A builder."}, {"Id": "wren", "Name": "Wren", "Job": "A writer."}]
+    crew = CREW + [{"Id": "tomas", "Name": "Tomas", "Job": "A builder."}, {"Id": "ines", "Name": "Ines", "Job": "A writer."}]
     (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False,
         "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake", "Width": width, "Height": height},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))

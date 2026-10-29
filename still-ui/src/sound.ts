@@ -1,5 +1,5 @@
-// Still's own little sounds (tools/sound makes them, MIT like the rest): the intro, setup's whooshes, clicks, pops and
-// chirps, the companion's blips when it talks, the look editor, and a jingle at the end. Browsing never makes a sound.
+// Still's own little sounds (tools/sound makes them, MIT like the rest): the intro, setup's whooshes, clicks and pops,
+// the look editor, and a jingle at the end. Companions don't make noises when they talk. Browsing never makes a sound.
 // They stay off with the Sounds setting off, the system's "no sounds", or reduced motion.
 const reduce = matchMedia("(prefers-reduced-motion: reduce)")
 let allowed = true, ctx: AudioContext | undefined, out: GainNode | undefined
@@ -38,7 +38,3 @@ export function play(name: string, { rate = 1, gain = 1, delay = 0 } = {}): Play
  })
  return { stop(fade = .25) { stopped = true; level.gain.setTargetAtTime(0, c.currentTime, fade / 4); src?.stop(c.currentTime + fade) } }
 }
-
-/// The companion talking: a few blips, no words.
-export const babble = (n = 4, delay = 0) => Array.from({ length: n }, (_, i) =>
- play(`blip-${1 + Math.floor(Math.random() * 4)}`, { delay: delay + i * .11 + Math.random() * .03, rate: .94 + Math.random() * .12, gain: .8 }))

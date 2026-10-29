@@ -86,7 +86,7 @@ FAKE = textwrap.dedent(r'''
 
 def facts():
     try:
-        return json.loads((PROFILE / "companions" / "pip" / "memory.json").read_text(encoding="utf-8"))
+        return json.loads((PROFILE / "companions" / "nadia" / "memory.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return []
 
@@ -104,12 +104,12 @@ def lines(name):
 
 
 def ask(process, text, **extra):
-    """A new chat with Pip from a new tab; returns the chat and what the tool said."""
+    """A new chat with Nadia from a new tab; returns the chat and what the tool said."""
     done = len(lines("results.jsonl"))
     send(process, "new")
     until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 10)
     js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
-    send(process, "aiSend", text=text, home=True, companion="pip", **extra)
+    send(process, "aiSend", text=text, home=True, companion="nadia", **extra)
     chat = until(lambda: next((c for c in chats() if c["Title"] == text and not c.get("Running") and any(m["Role"] == "assistant" for m in c["Messages"])), None), 30)
     until(lambda: len(lines("results.jsonl")) > done, 5)
     time.sleep(.3)
@@ -172,10 +172,10 @@ def main():
         check(all(SECRET not in "\n".join(p["prompt"].strip().splitlines()[:-1]) for p in lines("prompts.jsonl")), "No prompt carries the private tab, beyond what the user typed")
 
         # Settings > Memory shows it, and forgetting there works too.
-        send(process, "memoryAdd", companion="pip", text="My sister Maya lives in Porto.", kind="person")
+        send(process, "memoryAdd", companion="nadia", text="My sister Maya lives in Porto.", kind="person")
         send(process, "openPanel", name="settings", value="memory")
         rows = lambda: js(process, "[...document.querySelectorAll('.memory-row')].map(r => r.innerText)") or []
-        check(until(lambda: any("Maya lives in Porto" in r for r in rows()), 10), "Settings > Memory lists what Pip remembers")
+        check(until(lambda: any("Maya lives in Porto" in r for r in rows()), 10), "Settings > Memory lists what Nadia remembers")
         check("Past chats" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), "and the past chats")
         time.sleep(.6)
         rpc(process, "capture", name="memory-page.png")
