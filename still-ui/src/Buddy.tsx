@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo } from "react"
 import { Mascot, type MascotState } from "./Mascot"
-import { AGENT_LOOKS, DEFAULT_LOOK, parseLook, type Look } from "./look"
+import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, isOld, parseLook, type Look } from "./look"
 
 // The old companion hues: a companion saved before looks existed keeps its color.
 export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be0", apricot: "#f4c2a8", mint: "#9ed8c6", blush: "#f3b7c1", periwinkle: "#b8c4f0", berry: "#e58fa8", ocean: "#8fb8e8" }
@@ -21,7 +21,12 @@ export const CompanionContext = createContext<Companion | undefined>(undefined)
 export const agentFace = (name = "") => /claude/i.test(name) ? "claude" : /gpt|openai|codex/i.test(name) ? "chatgpt" : /grok/i.test(name) ? "grok" : ""
 export function lookOf(c?: Companion): Look {
  if (!c) return DEFAULT_LOOK
- if (c.look) return parseLook(c.look)
+ if (c.look) { // a role's companion saved before the blobs gets the role's own look
+  const role = c.crew && ROLE_LOOKS[c.crew]
+  if (role) try { if (isOld(JSON.parse(c.look))) return role } catch { /* not JSON: parseLook falls back */ }
+  return parseLook(c.look)
+ }
+ if (c.crew && ROLE_LOOKS[c.crew]) return ROLE_LOOKS[c.crew]
  if (!c.id && AGENT_LOOKS[c.face]) return AGENT_LOOKS[c.face]
  const hue = HUES[c.color] ?? HUES[BEFORE[c.color]]
  return hue ? { ...DEFAULT_LOOK, color: hue } : DEFAULT_LOOK

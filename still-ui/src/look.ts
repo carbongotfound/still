@@ -1,93 +1,75 @@
-// A companion's look: body color, head shape, face and what it wears. Saved per companion as JSON (Companion.look),
-// drawn by the 3D model (companion3d.ts) and its face texture (face.ts).
+// A companion's look: a soft blob with its own color, silhouette, one job prop and a small accessory. Saved per
+// companion as JSON (Companion.look) and drawn by companion3d.ts. Every id below is what's saved; validate against these.
 export type Look = {
- color: string; shape: string; head: number; ears: number
- eyes: string; eyeGap: number; eyeY: number; eyeSize: number; pupil: number
- brows: string; browGap: number; browY: number; browSize: number; browTilt: number
- mouth: string; mouthY: number; mouthSize: number
- blush: boolean; hair: string; hairColor: string; hat: string
- body: string; glasses: string // body: "" is the classic one, whose head takes the shapes; the others are the official companions' own
+ color: string // body color, hex
+ shape: string // silhouette: SHAPES
+ prop: string // what it holds or wears for its job: PROPS ("" for none)
+ accessory: string // a small extra: ACCESSORIES ("" for none)
 }
-// Sliders run -1..1 with 0 in the middle, except head size (0.88..1.12).
 
+export const SHAPES: [string, string][] = [
+ ["bean", "Bean"], ["tall", "Tall"], ["gumdrop", "Gumdrop"], ["block", "Block"], ["round", "Round"], ["squat", "Squat"], ["bump", "Bump"], ["lean", "Lean"],
+]
+export const PROPS: [string, string][] = [
+ ["", "None"], ["chart", "Chart"], ["badge", "Badge"], ["clipboard", "Clipboard"], ["megaphone", "Megaphone"], ["headset", "Headset"],
+ ["laptop", "Laptop"], ["magnifier", "Magnifier"], ["pencil", "Pencil"], ["envelope", "Envelope"],
+]
+export const ACCESSORIES: [string, string][] = [["", "None"], ["glasses", "Glasses"], ["bow", "Bow"], ["sprout", "Sprout"], ["flower", "Flower"]]
 export const BODY_COLORS: [string, string][] = [
- ["#f2ede4", "Cream"], ["#e9dfd0", "Oat"], ["#f6d7c3", "Peach"], ["#f4c2a8", "Apricot"], ["#f0a989", "Coral"], ["#e5876a", "Terracotta"],
- ["#f3b7c1", "Blush"], ["#eea0b4", "Rose"], ["#e58fa8", "Berry pink"], ["#d77a8f", "Raspberry"], ["#f7d58b", "Butter"], ["#f2c66b", "Honey"],
- ["#e9b04f", "Mustard"], ["#f6e3a1", "Lemon"], ["#d9e7a6", "Pear"], ["#bcd98f", "Lime"], ["#a6cf98", "Leaf"], ["#8fbf8a", "Sage"],
- ["#7fb39b", "Jade"], ["#9ed8c6", "Mint"], ["#83cbc4", "Sea glass"], ["#6fb9c0", "Teal"], ["#9fd3ea", "Sky"], ["#8fb8e8", "Cornflower"],
- ["#7aa3dc", "Denim"], ["#6c8fd0", "Blue"], ["#b8c4f0", "Periwinkle"], ["#a99be0", "Lavender"], ["#c4a8e6", "Lilac"], ["#9a86c9", "Violet"],
- ["#d6b4d8", "Orchid"], ["#c9a48d", "Latte"], ["#a98068", "Cocoa"], ["#8a6a58", "Chestnut"], ["#c9c6c0", "Pebble"], ["#a9adb3", "Stone"],
- ["#80868f", "Slate"], ["#5b6170", "Graphite"], ["#3f4450", "Ink"], ["#fbfaf7", "Snow"],
+ ["#f7a26a", "Tangerine"], ["#f39079", "Coral"], ["#f2a5c4", "Peony"], ["#f6c3b0", "Peach"], ["#f6d56a", "Lemon"], ["#f3e2a6", "Butter"],
+ ["#a6cf9c", "Leaf"], ["#93d6bd", "Mint"], ["#86d0c8", "Sea glass"], ["#8cc3ee", "Sky"], ["#a7b5f0", "Periwinkle"], ["#c0a3ec", "Lilac"],
+ ["#d9b2e6", "Orchid"], ["#ddd4c6", "Oat"], ["#cfc9c0", "Pebble"], ["#9aa3b2", "Slate"],
 ]
-export const HAIR_COLORS: [string, string][] = [
- ["#3b2f2a", "Espresso"], ["#6b4a35", "Brown"], ["#a8714a", "Caramel"], ["#e2b866", "Golden"], ["#d4683f", "Ginger"],
- ["#2c2f3a", "Black"], ["#ece6dc", "White"], ["#f3a3b9", "Pink"], ["#8fb8e8", "Blue"], ["#9ccf9a", "Green"],
-]
-export const SHAPES: [string, string][] = [["round", "Round"], ["mochi", "Mochi"], ["bean", "Bean"], ["kitty", "Ears"], ["fox", "Pointy"], ["pebble", "Pebble"], ["droopy", "Floppy"], ["drop", "Drop"]]
-export const EYES: [string, string][] = [
- ["dot", "Dots"], ["button", "Buttons"], ["bean", "Beans"], ["sparkle", "Sparkly"], ["iris", "Bright"], ["ring", "Rings"], ["tiny", "Tiny"],
- ["wide", "Wide"], ["sleepy", "Sleepy"], ["happy", "Happy"], ["line", "Chill"], ["star", "Stars"], ["heart", "Hearts"], ["cat", "Slit"],
- ["lashes", "Lashes"], ["glow", "Glow"], ["square", "Pixel"], ["droop", "Droopy"], ["almond", "Almond"], ["shine", "Glossy"],
-]
-export const BROWS: [string, string][] = [["none", "None"], ["soft", "Soft"], ["straight", "Straight"], ["thick", "Bold"], ["thin", "Thin"], ["dots", "Dots"], ["fluffy", "Fluffy"], ["tapered", "Tapered"], ["arch", "Arched"]]
-export const MOUTHS: [string, string][] = [["smile", "Smile"], ["grin", "Grin"], ["cat", "Wavy"], ["open", "Oh"], ["tooth", "Tooth"], ["tongue", "Tongue"], ["flat", "Flat"], ["smirk", "Smirk"]]
-export const HAIRS: [string, string][] = [["", "None"], ["tuft", "Tuft"], ["sprout", "Sprout"], ["swoop", "Swoop"], ["curls", "Curls"], ["bob", "Bob"], ["spiky", "Spiky"],
- ["bun", "Bun"], ["ponytail", "Ponytail"], ["pigtails", "Pigtails"], ["cloud", "Cloud"]]
-const OLD_HAIRS: Record<string, string> = { bowl: "bob", buns: "bun", mohawk: "spiky", part: "swoop", wisp: "tuft" } // styles that were folded into others
-export const HATS: [string, string][] = [["", "None"], ["beanie", "Beanie"], ["cap", "Cap"], ["newsboy", "Newsboy cap"], ["tophat", "Top hat"], ["party", "Party hat"], ["beret", "Beret"],
- ["bucket", "Bucket hat"], ["crown", "Crown"], ["headphones", "Headphones"], ["flower", "Flower"], ["bow", "Bow"]]
-export const BODIES: [string, string][] = [["", "Classic"], ["hazel", "Tall"], ["rio", "Chubby"], ["juno", "Boxy"], ["bram", "Big head"], ["wren", "Lop ears"], ["pip", "Little"]]
-export const GLASSES: [string, string][] = [["", "None"], ["round", "Round"], ["square", "Square"]]
 
-const base: Look = {
- color: "#8fb8e8", shape: "round", head: 1, ears: 0,
- eyes: "dot", eyeGap: 0, eyeY: 0, eyeSize: 0, pupil: 0,
- brows: "none", browGap: 0, browY: 0, browSize: 0, browTilt: 0,
- mouth: "smile", mouthY: 0, mouthSize: 0, blush: true, hair: "", hairColor: "#6b4a35", hat: "", body: "", glasses: "",
+// The seven roles' own looks, keyed by role id (crew.tsx).
+export const ROLE_LOOKS: Record<string, Look> = {
+ closer: { color: "#f7a26a", shape: "tall", prop: "chart", accessory: "" },
+ scout: { color: "#f2a5c4", shape: "gumdrop", prop: "badge", accessory: "" },
+ chief: { color: "#a6cf9c", shape: "block", prop: "clipboard", accessory: "" },
+ hype: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
+ fixer: { color: "#86d0c8", shape: "squat", prop: "headset", accessory: "" },
+ builder: { color: "#8cc3ee", shape: "bump", prop: "laptop", accessory: "" },
+ sleuth: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
 }
-/// The plain shape a new companion starts as, before it has a color or a face.
-export const BLANK: Look = { ...base, color: "#ece8e1", eyes: "none", mouth: "none", blush: false }
-export const DEFAULT_LOOK = base
-// Ready-made faces to start from (eyes, brows, mouth).
-export const FACES: Partial<Look>[] = [
- { eyes: "dot", brows: "none", mouth: "smile" }, { eyes: "sparkle", brows: "soft", mouth: "grin" }, { eyes: "happy", brows: "none", mouth: "cat" },
- { eyes: "iris", brows: "thin", mouth: "smile", pupil: .3 }, { eyes: "bean", brows: "dots", mouth: "open" }, { eyes: "almond", brows: "straight", mouth: "smirk" },
- { eyes: "button", brows: "fluffy", mouth: "tooth" }, { eyes: "lashes", brows: "arch", mouth: "tongue" },
-]
+/// Make your own: the neutral blob you start from.
+export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }
+/// A friendly companion for places that don't have one yet.
+export const DEFAULT_LOOK: Look = { color: "#8cc3ee", shape: "bean", prop: "", accessory: "" }
 // Other AI apps working in Still wear these.
 export const AGENT_LOOKS: Record<string, Look> = {
- claude: { ...base, color: "#e5876a", eyes: "dot", mouth: "smile", hair: "tuft", hairColor: "#c4623f" },
- chatgpt: { ...base, color: "#7fb39b", shape: "mochi", eyes: "bean", mouth: "smile", hair: "sprout", hairColor: "#3f7a5a" },
- grok: { ...base, color: "#5b6170", shape: "fox", eyes: "glow", mouth: "flat", brows: "straight", blush: false },
+ claude: { color: "#f39079", shape: "bean", prop: "", accessory: "" },
+ chatgpt: { color: "#93d6bd", shape: "round", prop: "", accessory: "" },
+ grok: { color: "#9aa3b2", shape: "block", prop: "", accessory: "" },
 }
 
 const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
-const jitter = (amount: number) => Math.round((Math.random() * 2 - 1) * amount * 100) / 100
-export function surprise(): Look {
- const face = pick(FACES)
- return {
-  ...base, ...face, color: pick(BODY_COLORS)[0], shape: pick(SHAPES)[0], head: 1 + jitter(.06), ears: jitter(.6),
-  eyeGap: jitter(.4), eyeY: jitter(.3), eyeSize: jitter(.4), browTilt: jitter(.5), mouthSize: jitter(.3),
-  hair: Math.random() < .55 ? pick(HAIRS.slice(1))[0] : "", hairColor: pick(HAIR_COLORS)[0], hat: Math.random() < .35 ? pick(HATS.slice(1))[0] : "",
- }
-}
+export const surprise = (): Look => ({
+ color: pick(BODY_COLORS)[0], shape: pick(SHAPES)[0], prop: pick(PROPS.slice(1))[0], accessory: Math.random() < .4 ? pick(ACCESSORIES.slice(1))[0] : "",
+})
 
 const known = (list: [string, string][], v: unknown, fallback: string) => list.some(([k]) => k === v) ? v as string : fallback
-const num = (v: unknown, lo: number, hi: number, fallback: number) => typeof v === "number" && isFinite(v) ? Math.min(hi, Math.max(lo, v)) : fallback
-const hex = (v: unknown, fallback: string) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v : fallback
-/// A saved look, checked field by field: anything missing or unknown falls back to the default.
-export function parseLook(raw: unknown, fallback: Look = base): Look {
+const hex = (v: unknown, fallback: string) => typeof v === "string" && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : fallback
+const rgb = (h: string) => [1, 3, 5].map(i => parseInt(h.slice(i, i + 2), 16))
+const far = (a: string, b: string) => rgb(a).reduce((s, v, i) => s + (v - rgb(b)[i]) ** 2, 0)
+// Looks from before the blobs: the head shapes they had, and what they wore that a blob can wear too.
+const OLD_SHAPES: Record<string, string> = { round: "round", mochi: "squat", bean: "bean", kitty: "bump", fox: "gumdrop", pebble: "block", droopy: "lean", drop: "gumdrop" }
+/// A look saved before the blobs, on the nearest blob: same color, the nearest silhouette (an official companion's own
+/// body becomes the shape of the role whose color is closest), and glasses, a bow, a flower or a sprout kept.
+function fromOld(o: Record<string, unknown>, f: Look): Look {
+ const color = hex(o.color, f.color)
+ const nearest = Object.values(ROLE_LOOKS).reduce((a, b) => far(a.color, color) <= far(b.color, color) ? a : b)
+ const shape = typeof o.body === "string" && o.body ? nearest.shape : OLD_SHAPES[o.shape as string] ?? f.shape
+ const accessory = o.glasses ? "glasses" : o.hat === "flower" || o.hat === "bow" ? o.hat : o.hair === "sprout" ? "sprout" : ""
+ return { color, shape, prop: "", accessory }
+}
+/// A saved look, checked field by field: anything missing or unknown falls back. Older looks move onto the nearest blob.
+export function parseLook(raw: unknown, fallback: Look = DEFAULT_LOOK): Look {
  let o: Record<string, unknown> = {}
  try { o = typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : (raw as Record<string, unknown>) ?? {} } catch { return fallback }
  if (!o || typeof o !== "object") return fallback
- const f = fallback
- return {
-  color: hex(o.color, f.color), shape: known(SHAPES, o.shape, f.shape), head: num(o.head, .88, 1.12, f.head), ears: num(o.ears, -1, 1, f.ears),
-  eyes: o.eyes === "none" ? "none" : known(EYES, o.eyes, f.eyes), eyeGap: num(o.eyeGap, -1, 1, f.eyeGap), eyeY: num(o.eyeY, -1, 1, f.eyeY), eyeSize: num(o.eyeSize, -1, 1, f.eyeSize), pupil: num(o.pupil, -1, 1, f.pupil),
-  brows: known(BROWS, o.brows, f.brows), browGap: num(o.browGap, -1, 1, f.browGap), browY: num(o.browY, -1, 1, f.browY), browSize: num(o.browSize, -1, 1, f.browSize), browTilt: num(o.browTilt, -1, 1, f.browTilt),
-  mouth: o.mouth === "none" ? "none" : known(MOUTHS, o.mouth, f.mouth), mouthY: num(o.mouthY, -1, 1, f.mouthY), mouthSize: num(o.mouthSize, -1, 1, f.mouthSize),
-  blush: typeof o.blush === "boolean" ? o.blush : f.blush, hair: known(HAIRS, OLD_HAIRS[o.hair as string] ?? o.hair, f.hair), hairColor: hex(o.hairColor, f.hairColor), hat: known(HATS, o.hat, f.hat),
-  body: known(BODIES, o.body, f.body), glasses: known(GLASSES, o.glasses, f.glasses),
- }
+ if (isOld(o)) return fromOld(o, fallback)
+ return { color: hex(o.color, fallback.color), shape: known(SHAPES, o.shape, fallback.shape), prop: known(PROPS, o.prop, fallback.prop), accessory: known(ACCESSORIES, o.accessory, fallback.accessory) }
 }
-export const lookKey = (l: Look) => JSON.stringify(l)
+/// Saved before the blobs (it has a face of its own, or no prop field at all).
+export const isOld = (o: Record<string, unknown>) => "eyes" in o || "body" in o || !("prop" in o) && "shape" in o
+export const lookKey = (l: Look) => JSON.stringify({ color: l.color, shape: l.shape, prop: l.prop, accessory: l.accessory })
