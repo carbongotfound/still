@@ -23,14 +23,14 @@ export const HAIR_COLORS: [string, string][] = [
  ["#3b2f2a", "Espresso"], ["#6b4a35", "Brown"], ["#a8714a", "Caramel"], ["#e2b866", "Golden"], ["#d4683f", "Ginger"],
  ["#2c2f3a", "Black"], ["#ece6dc", "White"], ["#f3a3b9", "Pink"], ["#8fb8e8", "Blue"], ["#9ccf9a", "Green"],
 ]
-export const SHAPES: [string, string][] = [["round", "Round"], ["mochi", "Mochi"], ["bean", "Bean"], ["kitty", "Kitty"], ["fox", "Fox"], ["pebble", "Pebble"], ["droopy", "Floppy"], ["drop", "Drop"]]
+export const SHAPES: [string, string][] = [["round", "Round"], ["mochi", "Mochi"], ["bean", "Bean"], ["kitty", "Ears"], ["fox", "Pointy"], ["pebble", "Pebble"], ["droopy", "Floppy"], ["drop", "Drop"]]
 export const EYES: [string, string][] = [
  ["dot", "Dots"], ["button", "Buttons"], ["bean", "Beans"], ["sparkle", "Sparkly"], ["iris", "Bright"], ["ring", "Rings"], ["tiny", "Tiny"],
- ["wide", "Wide"], ["sleepy", "Sleepy"], ["happy", "Happy"], ["line", "Chill"], ["star", "Stars"], ["heart", "Hearts"], ["cat", "Cat"],
- ["lashes", "Lashes"], ["glow", "Glow"], ["square", "Pixel"], ["droop", "Puppy"], ["almond", "Almond"], ["shine", "Glossy"],
+ ["wide", "Wide"], ["sleepy", "Sleepy"], ["happy", "Happy"], ["line", "Chill"], ["star", "Stars"], ["heart", "Hearts"], ["cat", "Slit"],
+ ["lashes", "Lashes"], ["glow", "Glow"], ["square", "Pixel"], ["droop", "Droopy"], ["almond", "Almond"], ["shine", "Glossy"],
 ]
 export const BROWS: [string, string][] = [["none", "None"], ["soft", "Soft"], ["straight", "Straight"], ["thick", "Bold"], ["thin", "Thin"], ["dots", "Dots"], ["fluffy", "Fluffy"], ["tapered", "Tapered"], ["arch", "Arched"]]
-export const MOUTHS: [string, string][] = [["smile", "Smile"], ["grin", "Grin"], ["cat", "Cat"], ["open", "Oh"], ["tooth", "Tooth"], ["tongue", "Tongue"], ["flat", "Flat"], ["smirk", "Smirk"]]
+export const MOUTHS: [string, string][] = [["smile", "Smile"], ["grin", "Grin"], ["cat", "Wavy"], ["open", "Oh"], ["tooth", "Tooth"], ["tongue", "Tongue"], ["flat", "Flat"], ["smirk", "Smirk"]]
 export const HAIRS: [string, string][] = [["", "None"], ["tuft", "Tuft"], ["sprout", "Sprout"], ["swoop", "Swoop"], ["curls", "Curls"], ["bob", "Bob"], ["spiky", "Spiky"],
  ["bun", "Bun"], ["ponytail", "Ponytail"], ["pigtails", "Pigtails"], ["cloud", "Cloud"]]
 const OLD_HAIRS: Record<string, string> = { bowl: "bob", buns: "bun", mohawk: "spiky", part: "swoop", wisp: "tuft" } // styles that were folded into others
