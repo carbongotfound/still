@@ -7,7 +7,7 @@ export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string; pluginsOff?: string[]
  crew?: string // the crew member it was picked from (crew.tsx)
  askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
 /// One thing a companion remembers about the user. A "chat" is a past chat it learned from.

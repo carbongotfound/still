@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
+import { PluginsSettings } from "./Plugins"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { MemorySettings } from "./Memory"
@@ -773,7 +774,7 @@ export default function App() {
     <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "A few things to make it yours." : displayPane === "about" ? "The open-source agent browser." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? (MAC ? "Your logins, protected on this Mac." : "Your logins, protected on this PC.") : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
     {["passwords","extensions","cookies","security","profiles","import"].includes(displayPane)&&<BrowserTools key={displayPane} pane={displayPane} data={toolData[displayPane]??{}} send={send} url={active?.url??""} tracking={state.preferences.tracking} memory={state.preferences.memory} autofill={state.preferences.autofill}/> }
     {displayPane === "settings" && <Tabs value={settingsPage} onValueChange={setSettingsPage} className="settings-tabs">
-     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"], ["memory", "Memory"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
+     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"], ["memory", "Memory"], ["plugins", "Plugins"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
       {settingsPage === value && <motion.span className="settings-selection" layoutId="settings-selection" transition={FLOW} />}<span className="settings-tab-label">{label}</span>
      </TabsTrigger>)}</TabsList></LayoutGroup>
      <TabsContent value="general" className="settings-content">
@@ -794,6 +795,7 @@ export default function App() {
       {ai && !state.noAi && <><Separator /><Button variant="ghost" className="settings-link" onClick={() => { close(); send("aiToggle") }}><Bot />Your AI and its model<ChevronRight /></Button><Button variant="ghost" className="settings-link" onClick={() => { close(); goHome("companions") }}><UsersRound />Companions<ChevronRight /></Button></>}
      </TabsContent>
      {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
+     {ai && !state.noAi && <TabsContent value="plugins" className="settings-content"><PluginsSettings ai={ai} send={send} /></TabsContent>}
      {ai && !state.noAi && <TabsContent value="memory" className="settings-content"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></TabsContent>}
      <TabsContent value="privacy" className="settings-content">
       <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>

@@ -249,6 +249,31 @@ def not_now(process, pause=1.6):
     time.sleep(pause)
 
 
+def tools(process):
+    """Connect your tools, with no key: the belt of apps, the key field, the note about Composio, and Skip."""
+    check(until(lambda: "Want the team to work in your apps?" in talk_text(process), 4), "After hiring, setup offers to connect your apps")
+    until(lambda: js(process, "document.querySelectorAll('.plug-row').length") == 2, 5)
+    rows = js(process, "[...document.querySelectorAll('.plug-row')].map(r => [r.classList.contains('is-reverse'), r.querySelectorAll('.plug-chip:not([aria-hidden=true])').length])") or []
+    check(rows == [[False, 12], [True, 12]], f"Two rows of apps glide opposite ways ({rows})")
+    check(js(process, "document.querySelector('.plug-track')?.getAnimations().length > 0"), "The belt moves")
+    box = js(process, "(() => { const r = document.querySelector('.plug-belt').getBoundingClientRect(); return [r.left + r.width / 2, r.top + r.height / 2] })()") or [0, 0]
+    rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": box[0], "y": box[1]})
+    check(until(lambda: js(process, "getComputedStyle(document.querySelector('.plug-track')).animationPlayState") == "paused", 2), "It pauses under the pointer")
+    rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": 5, "y": 5})
+    rpc(process, "shellCdp", method="Emulation.setEmulatedMedia", parameters={"features": [{"name": "prefers-reduced-motion", "value": "reduce"}]})
+    check(until(lambda: js(process, "[...document.querySelectorAll('.plug-belt .plug-chip')].filter(c => c.getClientRects().length).length === 24 && !document.querySelector('.plug-track').getAnimations().length"), 3), "With reduced motion it's a still grid")
+    rpc(process, "shellCdp", method="Emulation.setEmulatedMedia", parameters={"features": [{"name": "prefers-reduced-motion", "value": ""}]})
+    until(lambda: js(process, "!!document.querySelector('.plug-row')"), 3)
+    names = js(process, "[...document.querySelectorAll('.plug-row .plug-chip')].map(c => c.lastChild.textContent)") or []
+    check(all(n in names for n in ("Gmail", "Google Calendar", "Slack", "Notion", "GitHub", "Google Drive", "Linear", "HubSpot")), "Gmail, Calendar, Slack, Notion, GitHub, Drive, Linear and HubSpot are on it, as name chips")
+    check(js(process, "document.querySelector(\"input[aria-label='Composio API key']\")?.type") == "password", "Below it, a field for your Composio API key")
+    words = talk_text(process)
+    check("Get a key" in words and "third-party service with its own" in words and "pricing and terms" in words, "With a link to get a key, and a note that Composio is a third party with its own pricing")
+    check("Settings → Plugins" in words, "No key: it says you can do it later in Settings → Plugins")
+    foot = js(process, "[...document.querySelectorAll('.ob-foot button')].map(b => b.innerText.trim() + (b.disabled ? ' (off)' : ''))") or []
+    check(foot == ["Back", "Skip", "Continue (off)"], f"Skip is the only other way on ({foot})")
+
+
 def state():
     try:
         return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))
@@ -331,7 +356,7 @@ def setup(process):
     if not MAC:
         ctypes.windll.shcore.SetProcessDpiAwareness(2)  # window sizes in real pixels
     check(until(lambda: js(process, "!!document.querySelector('.welcome.ob .ob-next')"), 20), "A fresh profile opens on setup")
-    check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "10", "Setup has 10 steps")
+    check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "11", "Setup has 11 steps")
     check(rpc(process).get("theme") == "System", "The theme follows the system until you pick one")
     check(js(process, "document.querySelector('.ob-theme [aria-checked=true]')?.getAttribute('aria-label')") == "System", "Setup's theme switch shows System")
     check(not companions(), "A fresh profile has no companions")
@@ -381,6 +406,7 @@ def setup(process):
         check(js(process, """[...document.querySelectorAll('.crew-card:not(.is-own)')].every(c => c.querySelector('.crew-pitch')?.innerText.startsWith("I'll")
               && c.querySelectorAll('.crew-will li').length === 3 && !!c.querySelector('.crew-learns') && c.querySelector('.crew-pick')?.innerText.trim() === 'Hire')"""),
               "Each role pitches itself in first person, with three things it will do, what it learns, and Hire")
+        check(js(process, "document.querySelector('.crew-card .crew-uses')?.innerText.trim()") == "I work with Gmail, HubSpot and Google Calendar.", "Each role says which apps it works in")
         check(js(process, "document.querySelector('.crew-card .crew-bubble')?.textContent") == "Give me your toughest lead. I like a challenge."
               and js(process, "document.querySelector('.crew-card.is-own .crew-pitch')?.innerText") == "Tell me what you need and I'll become it.", "Each one has its own line for when you hover it, and Make your own offers to become what you need")
         check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.crew-card.is-picked')") and not js(process, "!!document.querySelector('.ob-not-now')") and not click_text(process, ".ob-foot button", "Skip"),
@@ -409,14 +435,16 @@ def setup(process):
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
         click(process, ".ob-next")
         both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked h3')].map(h => h.innerText.trim()).join()") == "Glint,Miso", 3)
-        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "11", "Miso joins the crew, picked with Glint, and setup adds a step to pick the main one")
+        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Glint, and setup adds a step to pick the main one")
         time.sleep(1.2)
         next_step(process)  # -> main
         mains = js(process, "[...document.querySelectorAll('.ob-mains [role=radio] strong')].map(s => s.innerText.trim())") or []
         check(mains == ["Glint", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick who leads ({mains})")
         click_text(process, ".ob-mains [role=radio]", "Miso")
         time.sleep(1)
-        next_step(process)  # -> how
+        next_step(process)  # -> tools
+        tools(process)
+        not_now(process)  # Skip -> how
         check(until(lambda: companions() == ["Miso", "Glint"], 5), f"Both are added, Miso first as the main one ({companions()})")
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
@@ -551,11 +579,13 @@ def again(process):
     not_now(process, .8)  # -> ai
     next_step(process, .8)  # -> crew
     check(click_text(process, ".ob-keep", "Keep Miso"), "It offers to keep Miso")
-    until(lambda: "How should we set things up" in talk_text(process), 4)
+    until(lambda: js(process, "!!document.querySelector('.plug-belt')"), 4)
+    not_now(process, .8)  # Skip connecting apps -> how
+    until(lambda: "How do you want to set things up?" in talk_text(process), 4)
     time.sleep(1.2)
     click_text(process, ".ob-option", "Quick setup")
     time.sleep(1.2)
-    while step_now(process) < 10 and not js(process, "!!document.querySelector('.ob-tasks')"):
+    while step_now(process) < 11 and not js(process, "!!document.querySelector('.ob-tasks')"):
         at = step_now(process)
         click_text(process, ".ob-foot button", "Not now") or click(process, ".ob-next")  # skipping what can be skipped
         if not until(lambda: step_now(process) == at + 1, 4):
@@ -712,8 +742,10 @@ def shots():
         next_step(process)
         click_text(process, ".ob-mains [role=radio]", "Zest")
         shoot("pick-main")
+        next_step(process)  # -> tools
+        shoot("tools")
         shutil.copy(profile / "intro-mark.png", out / "intro-mark.png")
-        check(len(list(out.glob("pick-*.png"))) == 8, "Screenshots of the roles with 0, 1 and 3 hired and the lead pick, light and dark")
+        check(len(list(out.glob("pick-*.png"))) == 8 and len(list(out.glob("tools-*.png"))) == 2, "Screenshots of the roles with 0, 1 and 3 hired, the lead pick and Connect your tools, light and dark")
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)

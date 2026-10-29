@@ -87,6 +87,7 @@ public sealed class Preferences
  public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
+ public string PluginUser { get; set; } = ""; // who this profile is to Composio (plugins): a random id, not a secret
  public List<Companion> Companions { get; set; } = []; // empty until setup, which always leaves at least one; the first is the main one
  public bool NamesChecked { get; set; } // companions with an old stock name were flagged to ask about it (FlagOldNames)
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode

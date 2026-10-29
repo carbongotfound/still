@@ -114,7 +114,7 @@ public partial class MainWindow
    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
    if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
    var working = RunTool(who, tool, args, quick);
-   int limit = tool switch { "ask_user" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
+   int limit = tool switch { "ask_user" or "use_plugin" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
    string result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
@@ -731,6 +731,7 @@ public partial class MainWindow
  {
   switch (tool) {
    case "ask_user": return await AskInChat(who, args);
+   case "plugin_tools" or "use_plugin": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget": return Remembering(who, tool, args);
    case "save_file": {
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");

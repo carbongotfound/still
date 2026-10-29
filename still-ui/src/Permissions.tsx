@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { ShieldAlert, ShieldCheck, X } from "lucide-react"
+import { Plug, ShieldAlert, ShieldCheck, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -24,13 +24,17 @@ export function Approvals({ list, companion, send }: { list: Approval[]; compani
  return <>
   {list.filter(a => a.until).map(a => <Countdown key={a.id} card={a} send={send} />)}
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
-   <div className="ask-q"><Face companion={companion} size={22} mood="needs" /><p>{one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
-   <ul className="approve-steps">{asks.map(a => <li key={a.id} className={cn(a.action === "sensitive" && "is-sensitive")}>
-    {a.action === "sensitive" ? <ShieldAlert /> : <ShieldCheck />}
+   <div className="ask-q"><Face companion={companion} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
+   <ul className="approve-steps">{asks.map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin") && "is-sensitive")}>
+    {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" ? <ShieldAlert /> : <ShieldCheck />}
     <span><b>{a.what}</b><small>{[a.site, a.why].filter(Boolean).join(" · ")}</small></span>
     {!one && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
    </li>)}</ul>
-   <div className="approve-actions">{one
+   <div className="approve-actions">{one?.action === "connect"
+    ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "connect")}>{one.what}</Button></>
+    : one?.action === "plugin" // the user's own apps: once at a time, never "always"
+    ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
+    : one
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button>
      <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>
      {one.action === "sensitive"

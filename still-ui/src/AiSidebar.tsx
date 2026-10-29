@@ -18,6 +18,7 @@ import { starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
+import type { PluginsState } from "./Plugins"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
@@ -30,6 +31,7 @@ export type AiState = {
  chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
  advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
+ plugins?: PluginsState
 }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
 // A chat at work. Any number run at once.

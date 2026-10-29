@@ -51,6 +51,7 @@ public sealed class Companion
  public string Tone { get; set; } = ""; // its personality and how it talks, in the user's words or setup's
  public string Crew { get; set; } = ""; // the crew member it was picked from (crew.tsx), "" = made by the user
  public bool AskName { get; set; } // it still has a name Still used to hand out: the user is asked once whether to keep it
+ public List<string> PluginsOff { get; set; } = []; // connected plugins (Composio toolkit slugs) the user turned off for it
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -261,7 +262,8 @@ public partial class MainWindow
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName,
+  plugins = PluginsPayload(),
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff,
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
 
@@ -326,7 +328,7 @@ public partial class MainWindow
     break; }
    case "permAnswer" when runs.GetValueOrDefault(S("run") is { Length: > 0 } permRun ? permRun : ShownChat?.Id ?? "") is { } asking: // a card's answer; no id: Approve all
     foreach (var card in asking.Approvals.Where(c => S("id").Length > 0 ? c.Id == S("id") : c.Until == null).ToList())
-     card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" ? S("answer") : "deny");
+     card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" or "connect" ? S("answer") : "deny");
     break;
    case "permSet" when PermissionActions.Contains(S("action")): SetPermission(SiteOf(S("site")), S("action"), S("companion"), S("mode")); PublishAiEverywhere(); break;
    case "permSensitive" when SiteOf(S("site")) is { Length: > 0 } marked:
@@ -464,7 +466,7 @@ public partial class MainWindow
   - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
   - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
   - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
-  """;
+  """ + PluginInstructions(who);
 
  /// What the agent should know about where the user is right now.
  string AiContext(AiChat? chat = null)

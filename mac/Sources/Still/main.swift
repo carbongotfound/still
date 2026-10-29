@@ -457,7 +457,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(url.lastPathComponent, url) } }
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
-  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) { toast(unavailable) }
+  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) { toast(unavailable) }
   }
  }
 
@@ -1152,6 +1152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   loadStore()
   let browser = Browser()
   started = true
+  if PluginKey.exists { Task { @MainActor in await browser.refreshPlugins() } }
   NSApp.mainMenu = menu()
   watchKeys()
   for url in pending { browser.newTab(url.absoluteString, prompt: false) }

@@ -11,13 +11,14 @@ final class Companion {
  var askName = false // it still has a name Still used to hand out: the user is asked once whether to keep it
  var mode = "default" // efficient, default or expert
  var skills: [String] = [] // skills it reads at the start of every chat
+ var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
-  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false
+  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "PluginsOff": pluginsOff] }
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -281,7 +282,7 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
  - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
  - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
  - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
- """
+ """ + pluginInstructions(who)
 }
 
 /// Reads an install or sign-in process line by line (each line on the main thread) until it exits, for at most 10 minutes.
@@ -784,11 +785,12 @@ extension Browser {
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
-   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName,
+   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff,
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
    "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }
   ]
+  data["plugins"] = pluginsPayload()
   data.merge(agentAiFields(shown)) { _, new in new } // approvals, audit, permissions, sensitiveSites
   send(["kind": "ai", "data": data])
  }
