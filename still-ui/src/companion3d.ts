@@ -19,7 +19,7 @@ type Head = { c: number[]; r: number[]; s: number }
 type Fit = { wrap: { step: number; rows: number; cols: number; c: number[]; r: number[]; heads: Record<string, Head> }; blink: { seconds: number; stretch: number } }
 type Model = { scene: THREE.Object3D; clips: THREE.AnimationClip[] }
 const CLIP: Record<MascotState, string> = { idle: "idle", listening: "idle", thinking: "think", working: "work", needs: "needs", done: "done", error: "sad", talking: "talk", pointing: "point" }
-const ONCE = new Set(["done", "happy", "point", "wave", "admire", "pop", "gesture"])
+const ONCE = new Set(["done", "happy", "point", "wave", "admire", "pop", "gesture", "wake"])
 const HAT_COLORS: Record<string, [string, string]> = {
  beanie: ["#d1495b", "#f4efe6"], cap: ["#3e7cb1", "#2d3142"], newsboy: ["#8a7560", "#5a4a3c"], tophat: ["#2b2d42", "#c8553d"], party: ["#5aa9e6", "#ffd166"], beret: ["#c8553d", "#2d3142"],
  bucket: ["#e9c46a", "#6c8a5a"], crown: ["#f2c14e", "#b8862f"], headphones: ["#e8e4dc", "#3a3a46"], flower: ["#f7a1c4", "#ffd166"], bow: ["#e05a6d", "#b23a48"],
@@ -150,6 +150,7 @@ export class Companion {
  mixer: THREE.AnimationMixer
  actions: Record<string, THREE.AnimationAction> = {}
  current?: THREE.AnimationAction
+ get once() { return !!this.current?.isRunning() && this.current.loop === THREE.LoopOnce } // a gesture playing out
  base = "idle"
  face: { canvas: HTMLCanvasElement; g: CanvasRenderingContext2D; texture: THREE.CanvasTexture; key: string }
  hairMat = hairMaterial(); hatMat = felt(null); bodyMat: ReturnType<typeof felt>
@@ -389,7 +390,7 @@ function tick(now: number) {
  const visible = [...slots.values()].filter(s => s.visible)
  for (const [id, c] of instances) if (!slots.has(id)) { scene.remove(c.group); c.dispose(); instances.delete(id) }
  if (!visible.length) return
- const busy = visible.some(s => s.canvas.width >= 320 && s.state !== "idle")
+ const busy = visible.some(s => s.canvas.width >= 320 && (s.state !== "idle" || !!instances.get(s.id)?.once))
  if (now - last < 1000 / (busy ? 60 : 30) - 2) return
  const dt = Math.min(.05, last ? (now - last) / 1000 : 1 / 30), t = clock.frozen ?? now / 1000
  last = now

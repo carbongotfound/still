@@ -16,7 +16,7 @@ public partial class App : Application
   // (an extension capturing the page, a driver hiccup) took down the whole engine and every window with it.
   // Video is drawn by the engine, not handed to the graphics card as an overlay: NVIDIA overlays could freeze a
   // fullscreen YouTube picture (looking paused) while the sound played on.
-  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess --disable-direct-composition-video-overlays"+(IsQa?" --mute-audio "+Environment.GetEnvironmentVariable("STILL_QA_BROWSER_ARGS"):"")});
+  AdditionalBrowserArguments="--disable-features=AudioServiceOutOfProcess --disable-direct-composition-video-overlays"+(IsQa?(Environment.GetEnvironmentVariable("STILL_QA_SOUND")==null?" --mute-audio ":" ")+Environment.GetEnvironmentVariable("STILL_QA_BROWSER_ARGS"):"")});
  private Mutex? instance;
  private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];

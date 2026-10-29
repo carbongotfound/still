@@ -658,11 +658,51 @@ def clip_pop(t, T):
                 body_s=(1 + 0.08 * bump(t, 0.36, 0.6), 1 - 0.1 * bump(t, 0.36, 0.6), 1 + 0.08 * bump(t, 0.36, 0.6)),
                 arm_L=(0, 0, 40 * bump(t, 0.3, 0.8)), arm_R=(0, 0, -40 * bump(t, 0.3, 0.8)), mouth=(1.1, 1.2, 1))
 
+def blend(a, b, k):  # a pose part way to another; whatever a pose leaves out is at rest
+    out = {}
+    for key in set(a) | set(b):
+        if key == "root_spin": out[key] = a.get(key, 0) * (1 - k) + b.get(key, 0) * k; continue
+        rest = (1, 1, 1) if key.endswith("_s") or key.split("_")[0] in ("lid", "brow", "mouth", "look") else (0, 0, 0)
+        out[key] = tuple(x * (1 - k) + y * k for x, y in zip(a.get(key, rest), b.get(key, rest)))
+    return out
+
+def clip_wake(t, T):
+    """The intro, in step with its sound (tools/sound): asleep in the dark, the spark lands at 1.0 s, the eyes open at 1.4
+    and 1.55, a stretch, a little shake at 2.6, wonder while the light blooms from 3.0, a glance down at the wordmark,
+    then it turns to you and waves. It ends on idle's first pose, so idle takes over without a jump."""
+    breathe = wob(t, 2.6); wake = ramp(t, 1.0, 1.7); asleep = 1 - wake; jolt = bump(t, 1.0, 1.22)
+    if t < 1.4: eyes = 0.0
+    elif t < 1.46: eyes = 0.45 * ease((t - 1.4) / 0.06)
+    elif t < 1.55: eyes = 0.45 - 0.15 * ease((t - 1.46) / 0.09)  # a flutter, then open
+    else: eyes = 0.3 + 0.7 * back(min((t - 1.55) / 0.12, 1))
+    surprise = bump(t, 1.5, 2.0); chest = bump(t, 1.5, 1.95)  # looks down at the glow in its chest
+    up = ramp(t, 1.8, 2.25) * (1 - ramp(t, 2.4, 2.68)); yawn = bump(t, 1.95, 2.55)
+    e = bump(t, 2.58, 3.05); shake = math.sin(2 * math.pi * 8.5 * (t - 2.6)) * e if t > 2.6 else 0.0
+    d = ramp(t, 2.95, 3.3) * (1 - ramp(t, 3.75, 4.05))  # wonder at the light
+    g = bump(t, 3.8, 4.35)  # the wordmark lands below
+    turn = back(ramp(t, 4.12, 4.6), 1.4)
+    lift, sq = jump(t, 4.4, 0.1, 0.3, 0.14, 0.05)
+    hi = back(ramp(t, 4.5, 4.75)) * (1 - ramp(t, 4.95, 5.25)); w = wob(t - 4.5, 0.36) * hi
+    lid = (1 + 0.6 * yawn + 0.4 * e + 0.5 * hi, eyes * (1 - 0.75 * yawn) * (1 - 0.45 * e) + 0.08 * surprise, 1)
+    sx = 1 - 0.01 * breathe * asleep + 0.04 * jolt - 0.04 * up - 0.6 * sq
+    pose = dict(root_loc=(0, 0, 0.008 + 0.004 * breathe * asleep + 0.01 * wake + 0.022 * up + 0.012 * d + lift), root_spin=-20 * (1 - turn),
+                body=(7 * asleep + 3 * jolt, 0, 2 * asleep + 10 * shake), body_s=(sx, 1 + 0.018 * breathe * asleep - 0.05 * jolt + 0.08 * up + sq, sx),
+                head=(17 * asleep + 9 * chest - 14 * up - 9 * d + 7 * g, 6 * bump(t, 4.08, 4.5), 5 * asleep - 8 * shake),
+                arm_L=(4 * asleep - 15 * up - 4 * d, 0, 3 + 150 * up + 18 * d), hand_L=(0, 0, 10 * wob(t, 0.5) * up),
+                arm_R=(4 * asleep - 15 * up - 24 * hi, 0, -3 - 150 * up - 18 * d - 100 * hi - 14 * w), hand_R=(0, 0, -28 * w),
+                ear_L=(0, 0, -18 * asleep + 6 * surprise), ear_R=(0, 0, 18 * asleep - 6 * surprise), lid_L=lid, lid_R=lid,
+                brow_L=(1, 0.92 * asleep + wake * (1 + 0.16 * surprise + 0.1 * up + 0.22 * d + 0.12 * hi), 1),
+                brow_R=(1, 0.92 * asleep + wake * (1 + 0.16 * surprise + 0.1 * up + 0.22 * d + 0.12 * hi), 1),
+                mouth=(0.8 * asleep + wake * (1 - 0.2 * yawn + 0.15 * e + 0.12 * g + 0.2 * hi), 1 + 1.1 * yawn + 0.2 * e + 0.35 * d + 0.4 * hi, 1),
+                look=(1 + 0.25 * wob(t, 1.1) * d, 1 - 0.4 * chest + 0.5 * d - 0.45 * g, 1))
+    return blend(pose, clip_idle(0, 4.2), ramp(t, 5.0, T))
+
 CLIPS = {  # name: (function, seconds, loops)
     "idle": (clip_idle, 4.2, True), "talk": (clip_talk, 2.4, True), "think": (clip_think, 3.6, True),
     "work": (clip_work, 1.05, True), "point": (clip_point, 1.6, False), "needs": (clip_needs, 1.6, True),
     "happy": (clip_happy, 2.0, False), "done": (clip_done, 2.0, False), "sad": (clip_sad, 3.2, True),
     "wave": (clip_wave, 1.9, False), "admire": (clip_admire, 2.3, False), "pop": (clip_pop, 0.9, False),
+    "wake": (clip_wake, 5.3, False),
 }
 
 

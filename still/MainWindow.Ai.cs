@@ -354,6 +354,9 @@ public partial class MainWindow
     try { if (Path.Combine(App.DataRoot, "companions", gone.Id) is var dir && Directory.Exists(dir)) Directory.Delete(dir, true); CompanionMemory.Drop(gone.Id); }
     catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
     break;
+   case "companionMain" when Companions.FirstOrDefault(x => x.Id == S("id")) is { } main: // setup's main pick: it runs new chats
+    Prefs.Companions = [main, .. Companions.Where(x => x != main)]; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
+    break;
    case "companionMode" when S("mode") is "efficient" or "default" or "expert":
     if (Prefs.Companions.FirstOrDefault(x => x.Id == S("id")) is { } moded) { moded.Mode = S("mode"); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); }
     break;

@@ -482,6 +482,9 @@ extension Browser {
    guard companions.count > 1, let gone = companions.first(where: { $0.id == s("id") }) else { break }
    companions.removeAll { $0 === gone }; storeCompanions(); publishOthers()
    try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
+  case "companionMain": // setup's main pick: it runs new chats
+   guard let main = companions.first(where: { $0.id == s("id") }) else { break }
+   companions.removeAll { $0 === main }; companions.insert(main, at: 0); storeCompanions(); publishOthers()
   case "companionMode":
    guard ["efficient", "default", "expert"].contains(s("mode")), let moded = companions.first(where: { $0.id == s("id") }) else { break }
    moded.mode = s("mode"); storeCompanions(); publishOthers()

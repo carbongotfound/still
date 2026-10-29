@@ -185,8 +185,10 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
 
 // Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
 const MODE_NAMES: [Mode, string][] = [["efficient", "Quick"], ["default", "Everyday"], ["expert", "Thorough"]]
-export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
+/// `only`: it's the last companion, and Still always keeps one, so Delete explains instead.
+export function CompanionEditor({ ai, companion, canDelete, only, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; only?: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
  const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
+ const [lastOne, setLastOne] = useState(false)
  const [styling, setStyling] = useState(false)
  const skills = ai.skills ?? []
  useEffect(() => { // the folder picked in Windows' own dialog
@@ -224,8 +226,9 @@ export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onD
       {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
      {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
     <label><span>How should {c.name.trim() || "they"} talk?</span><textarea className="companion-job" rows={2} maxLength={600} placeholder="For example: upbeat and quick, with short answers and a joke now and then." value={c.tone} onChange={e => setC({ ...c, tone: e.target.value })} /></label>
+    {lastOne && <p className="companion-note is-warn" role="alert">{companion.name} is your only companion, and Still needs at least one. Add another before you delete {companion.name}.</p>}
     <div className="companion-actions">
-     {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={onDelete}><Trash2 />Delete</Button>}
+     {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={() => only ? setLastOne(true) : onDelete()}><Trash2 />Delete</Button>}
      <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
      <Button type="submit" className="companion-save" disabled={!c.name.trim()}>Save</Button>
     </div>

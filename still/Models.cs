@@ -87,10 +87,11 @@ public sealed class Preferences
  public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
- public List<Companion> Companions { get; set; } = []; // empty = the default crew
+ public List<Companion> Companions { get; set; } = []; // empty until setup, which always leaves at least one; the first is the main one
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode
  public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", a manifest id, or "" until chosen
  public bool Autofill { get; set; } = true;
+ public bool Sounds { get; set; } = true; // setup, the intro and the look editor; browsing never makes a sound
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
  public List<string> UnblockedHosts { get; set; } = [];
