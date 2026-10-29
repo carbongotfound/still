@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Check, Plug, Sparkles } from "lucide-react"
+import { Check, ClipboardPaste, Plug, Plus, Sparkles } from "lucide-react"
 import { andList, pluginName } from "./Plugins"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -155,6 +155,16 @@ export function starters(interests: string[] = [], companion?: { crew?: string }
  return all.filter((t, i) => all.findIndex(x => x[0] === t[0]) === i).slice(0, count)
 }
 
+/// What Share copies (ProfilePanel), and reading it back: a companion someone shared, or null when the text isn't one.
+export const SHARE_KIND = "still.companion"
+export function fromShared(text: string): Companion | null {
+ try {
+  const got = JSON.parse(text)
+  if (got?.kind !== SHARE_KIND || typeof got.name !== "string" || !got.name.trim()) return null
+  return { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? "") }
+ } catch { return null }
+}
+
 /// A new companion hired from a role: same name, job, way of talking and look, then it's the user's to change.
 export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.name, face: "", color: "", job: p.job, tone: p.tone, mode: "default", look: lookKey(p.look), crew: p.id })
 
@@ -224,4 +234,34 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
    </DialogContent>
   </Dialog>}
  </div>
+}
+
+/// "New companion": Still's own companions first, each a live mascot with its role and promise, then make your own or
+/// paste one someone shared. A card opens its preview (the profile panel); Add hires it right here. Ones you have say so.
+export function CompanionLibrary({ have = [], onPreview, onAdd, onOpen, onOwn, onPaste, onClose }: {
+ have?: Companion[]; onPreview: (p: Premade) => void; onAdd: (p: Premade) => void; onOpen: (id: string) => void; onOwn: () => void; onPaste: (c: Companion) => void; onClose: () => void
+}) {
+ const [pasting, setPasting] = useState(false)
+ const [bad, setBad] = useState(false)
+ const mine = (p: Premade) => have.find(c => premadeOf(c) === p)
+ const pasted = (text: string) => { const c = fromShared(text); setBad(!c && !!text.trim()); if (c) onPaste(c) }
+ return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+  <DialogContent className="app-dialog library-dialog" onOpenAutoFocus={e => { e.preventDefault(); (e.target as HTMLElement).focus() }}>
+   <DialogHeader><DialogTitle>Add a companion</DialogTitle><DialogDescription>Still's own seven, each ready for a part of your work. Open one to meet them before you add them.</DialogDescription></DialogHeader>
+   <div className="library-grid">{PREMADES.map(p => { const got = mine(p); return <article key={p.id} className={cn("library-card", got && "is-added")} style={{ "--hue": p.look.color } as CSSProperties}>
+    <button className="library-open" aria-label={got ? `Open ${p.name}'s profile` : `Meet ${p.name}`} onClick={() => got ? onOpen(got.id) : onPreview(p)}>
+     <span className="library-portrait"><Mascot look={p.look} size={84} follow /></span>
+     <span className="library-text"><b>{p.name}</b><small>{p.role}</small><span>{p.pitch}</span></span>
+    </button>
+    {got ? <span className="library-added"><Check />Added</span> : <Button size="sm" className="library-add" aria-label={`Add ${p.name}`} onClick={() => onAdd(p)}><Plus />Add</Button>}
+   </article> })}</div>
+   <div className="library-more">
+    <button className="library-row" onClick={onOwn}><span className="library-portrait is-own"><Mascot look={BLANK} size={60} /></span><span className="library-text"><b>Make your own</b><span>{OWN_PITCH}</span></span></button>
+    {pasting ? <label className="library-row is-paste"><span className="library-text"><b>Paste a shared companion</b>
+     <textarea autoFocus rows={2} aria-label="Shared companion" placeholder="Paste what they sent you. They copy it with Share, in their companion's profile." onPaste={e => { e.preventDefault(); pasted(e.clipboardData.getData("text")) }} onChange={e => pasted(e.target.value)} />
+     {bad && <small className="library-bad" role="alert">That isn't a shared companion. Ask them to copy it again with Share.</small>}</span></label>
+     : <button className="library-row" onClick={() => setPasting(true)}><span className="library-portrait is-own"><ClipboardPaste /></span><span className="library-text"><b>Paste a shared companion</b><span>Got one from a friend? Paste it here. They start fresh, knowing nothing about you.</span></span></button>}
+   </div>
+  </DialogContent>
+ </Dialog>
 }

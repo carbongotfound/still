@@ -103,8 +103,10 @@ def main():
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion, chips and ideas")
         check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Glint anything, or hand over a task…", "The message box asks the active companion")
 
-        # Create a companion.
+        # Create a companion: New companion opens the library, then Make your own.
         click(process, ".mate-switch-more[aria-label='New companion']")
+        until(lambda: js(process, "!!document.querySelector('.library-dialog')"), 5)
+        click_text(process, ".library-row", "Make your own")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         type_into(process, ".companion-dialog input[required]", "Ines")
         type_into(process, ".companion-dialog textarea", "A careful researcher who cites sources.")
