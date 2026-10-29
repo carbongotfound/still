@@ -458,7 +458,7 @@ export default function App() {
   const sync = () => { const r = element.getBoundingClientRect(); send("bounds", { x: r.x, y: r.y, width: r.width, height: r.height, viewportWidth: innerWidth }) }
   const observer = new ResizeObserver(sync); observer.observe(element); sync()
   return () => observer.disconnect()
- }, [state.focusMode, state.fullScreen, findOpen, chatTab, split, railOpen])
+ }, [state === initial, state.focusMode, state.fullScreen, findOpen, chatTab, split, railOpen]) // the page slot appears with the first state
  useEffect(() => {
   const handler = (e: KeyboardEvent) => {
    if (e.key === "F11") { e.preventDefault(); send("fullscreen"); return }
