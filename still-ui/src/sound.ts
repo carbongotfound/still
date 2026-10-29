@@ -1,5 +1,5 @@
-// Still's own little sounds (tools/sound makes them, MIT like the rest): the intro, setup's whooshes, clicks and pops,
-// the look editor, and a jingle at the end. Companions don't make noises when they talk. Browsing never makes a sound.
+// Still's own two sounds (tools/sound makes them, MIT like the rest): the intro, and a jingle at the end of setup.
+// Setup's steps, buttons and picks, the look editor, and companions talking or typing make none. Browsing never does.
 // They stay off with the Sounds setting off, the system's "no sounds", or reduced motion.
 const reduce = matchMedia("(prefers-reduced-motion: reduce)")
 let allowed = true, ctx: AudioContext | undefined, out: GainNode | undefined
