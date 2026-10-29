@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, Select
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
+import { CollisionBoundary } from "@/components/ui/collision"
 import { AiLogo } from "./AiLogo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -62,8 +63,13 @@ const nextSteps = (text: string) => { const next: string[] = []; const body = te
 // Before setup makes one there's no companion: Still itself talks, with the default look.
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
+// A tooltip that flips and slides to stay inside the window and the chat panel, where a native title can't.
+function Tip({ label, children }: { label: ReactNode; children: ReactElement }) {
+ return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
+}
+
 function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
- return <Tooltip><TooltipTrigger asChild><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
+ return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
 const MONOGRAM: Record<string, string> = { chatgpt: "Gp", grok: "Gk", claude: "Cl" }
@@ -124,7 +130,7 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
    </SelectGroup>)}</SelectContent></Select>
   {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
    <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
-   <SelectContent><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
+   <SelectContent position="popper" side="top" align="start"><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
  </>
 }
 
@@ -135,16 +141,28 @@ const MODES: [Mode, string, LucideIcon, string][] = [
  ["default", "Everyday", Coffee, "Your AI app's usual setup, right for most things"],
  ["expert", "Thorough", Brain, "Its strongest model, taking its time on hard jobs"],
 ]
+// The message box's menus open above the whole box, lined up with its edge, not over what you're typing. In the chat
+// panel they span the box, so nothing behind them peeks out at the sides.
+function useOverBox<T extends HTMLElement>(align: "start" | "end") {
+ const ref = useRef<T>(null)
+ const [at, setAt] = useState({ offset: 0, lift: 0, width: 0 })
+ const measure = (open: boolean) => {
+  const button = ref.current?.getBoundingClientRect(), box = ref.current?.closest(".composer")?.getBoundingClientRect()
+  if (open && button && box) setAt({ offset: align === "end" ? button.right - box.right : box.left - button.left, lift: button.top - box.top, width: ref.current!.closest(".ai-sidebar") ? box.width : 0 })
+ }
+ return { ref, measure, props: { side: "top" as const, align, alignOffset: at.offset, sideOffset: 8 + at.lift, style: at.width ? { width: at.width } : undefined } }
+}
 function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
  const [find, setFind] = useState("")
+ const over = useOverBox<HTMLButtonElement>("end")
  const mode = companion?.mode ?? "default"
  const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
- return <DropdownMenu onOpenChange={o => { if (!o) setFind("") }}>
-  <DropdownMenuTrigger asChild disabled={disabled}><button type="button" className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
-  <DropdownMenuContent side="top" align="end" sideOffset={8} className="mode-menu">
+ return <DropdownMenu onOpenChange={o => { over.measure(o); if (!o) setFind("") }}>
+  <DropdownMenuTrigger asChild disabled={disabled}><button type="button" ref={over.ref} className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
+  <DropdownMenuContent {...over.props} className="mode-menu">
    {onCompanion && <>
     <input className="mode-find" aria-label="Find a companion" placeholder="Find a companion…" value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} />
-    {mates.map(c => <DropdownMenuItem key={c.id} onSelect={() => onCompanion(c.id)}><Face companion={c} size={22} />{c.name}{c.id === companion?.id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
+    <div className="mode-mates">{mates.map(c => <DropdownMenuItem key={c.id} onSelect={() => onCompanion(c.id)}><Face companion={c} size={22} />{c.name}{c.id === companion?.id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}</div>
     {!mates.length && <p className="mode-none">No one by that name.</p>}
     <DropdownMenuSeparator />
    </>}
@@ -188,6 +206,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [text, setTextState] = useState("")
  const [pick, setPick] = useState(0)
  const box = useRef<HTMLTextAreaElement>(null)
+ const add = useOverBox<HTMLButtonElement>("start")
  const setText = (v: string) => { setTextState(v); setPick(0); onTyping?.(!!v.trim()) }
  const submit = () => { if (!text.trim() || disabled) return; onSubmit(text.trim()); setText("") }
  const skills = ai.skills ?? []
@@ -204,8 +223,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    if (matches.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); useSkill(matches[pick % matches.length]); return }
    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
   <InputGroupAddon align="block-end">
-   <DropdownMenu><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
-    <DropdownMenuContent side="top" align="start" sideOffset={8} className="w-72">
+   <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
+    <DropdownMenuContent {...add.props} className="w-72">
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => useSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
      {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
@@ -215,7 +234,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
    {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
-   {onStop && !text.trim() ? <InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" title="Stop · Ctrl+." onClick={onStop}><Square /></InputGroupButton>
+   {onStop && !text.trim() ? <Tip label="Stop · Ctrl+."><InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton></Tip>
     : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim() || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>
  </InputGroup>
@@ -257,7 +276,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
   {status === "installing" ? <>
    <h3>Installing {current.app}…</h3>
    <p>This usually takes about a minute.</p>
-   {ai.setup.line && <code className="ai-setup-line" title={ai.setup.line}>{ai.setup.line}</code>}
+   {ai.setup.line && <Tip label={ai.setup.line}><code className="ai-setup-line">{ai.setup.line}</code></Tip>}
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
@@ -265,7 +284,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <code className="byo-cmd">{current.installCommand}</code>
    {current.installer && <>
     <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>
-    <div className="ai-trust"><ShieldCheck /><span>Uses {current.maker}'s official installer from <b title={current.installer}>{host(current.installer)}</b>. It installs just for you and needs no admin rights.</span></div>
+    <div className="ai-trust"><ShieldCheck /><span>Uses {current.maker}'s official installer from <Tip label={current.installer}><b>{host(current.installer)}</b></Tip>. It installs just for you and needs no admin rights.</span></div>
    </>}
    <div className="ai-row"><Button variant="link" size="sm" onClick={() => send("aiCheck")}>I already installed it</Button><Button variant="link" size="sm" onClick={onSettings}>Pick another AI</Button></div>
   </>}
@@ -375,14 +394,14 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
-   {mode === "panel" && activeTab?.url && !activeTab.inChat && <span className="chat-chip" title={activeTab.url}><Globe />{activeTab.title || host(activeTab.url)}</span>}
+   {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
-   {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><button aria-label="Don't send" title="Don't send" onClick={() => send("aiUnqueue")}><X /></button></div>}
+   {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {companion && <label className="chat-memory" title={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label>}
+    {companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
    </div>
   </div></div>}
@@ -406,7 +425,8 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
 export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
  const companion = companionOf(ai, ai.chatCompanion)
  const mood = useRunMood(ai)
- return <aside className="ai-sidebar" aria-label="Chat">
+ const [panel, setPanel] = useState<HTMLElement | null>(null)
+ return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
   <div className="ai-head">
    {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Face companion={companion} size={22} mood={mood} className="ai-head-buddy" />}
    <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
@@ -418,7 +438,7 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { 
    <IconButton label="Close chat" onClick={() => { setView("chat"); send("aiToggle") }}><X /></IconButton>
   </div>
   {view === "settings" ? <AiSettings ai={ai} send={send} done={() => setView("chat")} /> : <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => setView("settings")} onFile={onFile} />}
- </aside>
+ </CollisionBoundary.Provider></aside>
 }
 
 
@@ -443,7 +463,7 @@ export function RunAnnouncer({ ai }: { ai: AiState }) {
 function LookedUp({ m, onLink }: { m: { role: string; text: string }; onLink: (url: string) => void }) {
  let data: { q?: string; url?: string; title?: string; results?: { title: string; url: string; snippet: string }[] } = {}
  try { data = JSON.parse(m.text) } catch { return null }
- const link = (url: string, label: ReactNode) => <a href={url} title={url} onClick={e => { e.preventDefault(); onLink(url) }}>{label}</a>
+ const link = (url: string, label: ReactNode) => <Tip label={url}><a href={url} onClick={e => { e.preventDefault(); onLink(url) }}>{label}</a></Tip>
  if (m.role === "read") return <div className="ai-look"><div className="ai-look-row"><Globe />{link(data.url ?? "", <b>Read {host(data.url ?? "")}</b>)}{data.title && <small>· {data.title}</small>}</div></div>
  const results = data.results ?? []
  return <details className="ai-look"><summary><Search /><b>Searched “{data.q}”</b><small>· {results.length} result{results.length === 1 ? "" : "s"}</small><ChevronDown className="ai-steps-chevron" /></summary>
