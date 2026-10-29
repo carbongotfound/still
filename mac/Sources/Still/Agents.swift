@@ -505,7 +505,7 @@ extension Browser {
   }
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
-  let limit: Double = tool == "ask_user" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
+  let limit: Double = tool == "ask_user" || tool == "use_plugin" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
   switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
   case .done(let reply): return reply ?? agentFail("Failed.")
   case .interrupted(let reply): return reply
@@ -791,6 +791,7 @@ extension Browser {
   do {
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
+   case "plugin_tools", "use_plugin": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget": return memoryTool(who, tool, args)
    case "save_file":
     let reply = saveFile(who, args)
@@ -1064,7 +1065,7 @@ extension Browser {
   case "permAnswer": // a card's answer; no id: Approve all
    let id = argText(data, "id"), answer = argText(data, "answer")
    guard let asking = runs[argText(data, "run").isEmpty ? shownChat?.id ?? "" : argText(data, "run")] else { break }
-   for card in asking.approvals where id.isEmpty ? card.until == nil : card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now"].contains(answer) ? answer : "deny") }
+   for card in asking.approvals where id.isEmpty ? card.until == nil : card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) ? answer : "deny") }
   case "permSet":
    guard permissionActions.contains(argText(data, "action")) else { break }
    setPermission(siteOf(argText(data, "site")), argText(data, "action"), argText(data, "companion"), argText(data, "mode")); publishAiEverywhere()
@@ -1256,7 +1257,12 @@ enum Mcp {
   tool("forget", "Forget a fact: pass its id from recall, or a few words that every fact to forget contains. Use it when the user asks you to forget something.", [str("id", "The fact's id"), str("about", "Or: words in the facts to forget")], []),
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
-        str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"])
+        str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),
+  // The user's own apps (Gmail, Calendar, Slack…) through Composio, once they connect them (Plugins.swift).
+  tool("plugin_tools", "Find tools in the user's connected apps (plugins), like Gmail, Google Calendar, Slack or Notion: each tool's name, what it does, its inputs and whether it asks the user first. Leave plugin empty to search every app connected for you.",
+       [str("plugin", "One app, like gmail or googlecalendar (optional)"), str("query", "A few words about what you want to do (optional)")], []),
+  tool("use_plugin", "Run a tool from plugin_tools in one of the user's apps. Reading goes ahead; anything that sends, posts, deletes, pays or changes data waits for the user's OK. If the app isn't connected, Still offers the user a button to connect it.",
+       [str("tool", "The tool's name from plugin_tools, like GMAIL_FETCH_EMAILS"), ("arguments", ["type": "object", "description": "The tool's inputs, as plugin_tools describes them"] as [String: Any])], ["tool"])
  ]
  static let listProfilesTool = tool("list_profiles", "List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or \"temp\" for a clean temporary window.", [], [])
  static let profileProp = str("profile", "Still profile name from list_profiles (optional; defaults to the launch profile). A closed profile is opened. \"temp\" opens a separate temporary window with no cookies, logins or history, deleted after it closes.")

@@ -1182,6 +1182,44 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .crew-card p.crew-pitch { flex:none; margin:6px 0 8px; font-size:13px; color:var(--foreground); }
 .crew-will { display:flex; flex-direction:column; gap:4px; margin:0 0 8px; padding:0; list-style:none; font-size:12.5px; line-height:1.4; color:var(--muted-foreground); }
 .crew-will li { position:relative; padding-left:14px; } .crew-will li::before { content:""; position:absolute; left:2px; top:.5em; width:6px; height:6px; border-radius:50%; background:color-mix(in oklab,var(--hue) 70%,var(--foreground)); }
+.crew-card p.crew-uses { display:flex; gap:6px; margin:-4px 0 10px; font-size:11.5px; color:var(--muted-foreground); } .crew-uses svg { flex:none; width:13px; height:13px; margin-top:1px; }
+/* Plugins (Plugins.tsx): name chips, setup's belt and grid, Settings → Plugins */
+.plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }
+.plug-chip i { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); font-style:normal; font-weight:700; font-size:12px; }
+.plug-belt { display:grid; gap:10px; margin:6px 0 16px; }
+.plug-row { overflow:hidden; mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
+.plug-track { display:flex; gap:10px; width:max-content; animation:plug-slide 60s linear infinite; }
+.plug-row.is-reverse .plug-track { animation-direction:reverse; animation-duration:72s; }
+.plug-belt:hover .plug-track { animation-play-state:paused; }
+@keyframes plug-slide { to { transform:translateX(calc(-50% - 5px)); } }
+@media (prefers-reduced-motion: reduce) { .plug-belt { display:flex; flex-wrap:wrap; gap:8px; } .plug-row, .plug-track { display:contents; } .plug-track { animation:none; } .plug-track > [aria-hidden=true] { display:none; } }
+.plug-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:8px; margin:6px 0 16px; }
+.plug-pick { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:2px 12px 2px 2px; border-radius:99px; border:1px solid var(--border); background:var(--card); color:inherit; transition:background .15s,border-color .15s,transform .15s; }
+.plug-pick .plug-chip { border:0; background:none; }
+.plug-pick:hover:not(:disabled) { background:var(--accent); } .plug-pick:active:not(:disabled) { transform:scale(.97); }
+.plug-pick.is-on { border-color:color-mix(in oklab,var(--primary) 55%,var(--border)); } .plug-pick:disabled:not(.is-on) { opacity:.55; }
+.plug-pick svg { flex:none; width:15px; height:15px; } .plug-pick.is-on svg { color:var(--primary); }
+.plug-key { display:grid; gap:8px; } .plug-key-row { display:flex; gap:8px; } .plug-key-row input { flex:1; min-width:0; }
+.plug-error { margin:0; font-size:12px; color:var(--destructive); }
+.plug-note { margin:0; font-size:12px; line-height:1.55; color:var(--muted-foreground); } .plug-note a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
+.plug-note svg { display:inline; width:13px; height:13px; margin-right:6px; vertical-align:-2px; }
+.plug-settings { display:grid; gap:14px; } .plug-section h4 { margin:0 0 8px; font-size:12px; font-weight:500; }
+.plug-list { list-style:none; margin:0; padding:0; display:grid; gap:6px; } .plug-list.is-found { max-height:300px; overflow:auto; }
+.plug-list li { display:flex; align-items:center; gap:10px; padding:7px 8px; border-radius:12px; background:var(--secondary); }
+.plug-list li > small { flex:1; min-width:0; font-size:11px; color:var(--muted-foreground); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.plug-list li > button:last-child, .plug-on { margin-left:auto; flex:none; }
+.plug-on { display:inline-flex; align-items:center; gap:4px; font-size:12px; color:var(--muted-foreground); } .plug-on svg { width:14px; height:14px; }
+.plug-who { display:flex; flex-wrap:wrap; gap:4px; flex:1; min-width:0; }
+.plug-who button { display:inline-flex; align-items:center; gap:3px; padding:2px 9px; border-radius:99px; border:1px solid var(--border); background:transparent; font-size:11px; color:var(--muted-foreground); }
+.plug-who button[aria-pressed=true] { color:var(--foreground); background:var(--card); } .plug-who svg { width:11px; height:11px; }
+.plug-search { display:flex; align-items:center; gap:8px; margin-bottom:8px; } .plug-search svg { flex:none; width:15px; height:15px; color:var(--muted-foreground); }
+.plug-down { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:12px; background:var(--secondary); } .plug-down p { margin:0; flex:1; font-size:12px; }
+.ob .plug-chip, .ob .plug-pick { background:var(--ob-card); border-color:var(--ob-line); } .ob .plug-pick .plug-chip { background:none; }
+.ob-team { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 14px; padding-top:30px; }
+.ob-team-mate { position:relative; display:grid; justify-items:center; }
+.ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }
+@keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
+.ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
 .crew-card p.crew-learns { display:flex; gap:6px; margin:0 0 10px; font-size:11.5px; } .crew-learns svg { flex:none; width:13px; height:13px; margin-top:1px; color:color-mix(in oklab,var(--hue) 60%,var(--foreground)); }
 .crew-hired { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; font-weight:580; color:color-mix(in oklab,var(--hue) 45%,var(--foreground)); } .crew-hired svg { width:14px; height:14px; }
 .crew-asks b { display:block; margin-bottom:2px; font-size:12.5px; font-weight:620; }

@@ -10,6 +10,7 @@ import { IntroLayer } from "./Intro"
 import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
 import { LookEditor, LookThumb } from "./LookEditor"
 import { Mascot, type MascotState } from "./Mascot"
+import { PluginBelt, PluginGrid, PluginKey, ThirdParty, pluginName } from "./Plugins"
 import { play, setSounds, warm } from "./sound"
 
 // First run, full window: a short intro (Intro.tsx), then your companion walks you through setup. Pick any of the crew,
@@ -18,7 +19,7 @@ import { play, setSounds, warm } from "./sound"
 // skipping never starts a task. A step that asks for something keeps Continue off until it has an answer, with "Not now"
 // to move on without one, so no two buttons ever do the same thing.
 type Send = (op: string, data?: Record<string, unknown>) => void
-type Step = "hello" | "import" | "ai" | "crew" | "main" | "how" | "talk" | "you" | "interests" | "layout" | "charge" | "start"
+type Step = "hello" | "import" | "ai" | "crew" | "main" | "tools" | "how" | "talk" | "you" | "interests" | "layout" | "charge" | "start"
 const QUICK: Step[] = ["you", "interests", "layout", "charge"]
 const EASE = [.22, 1, .36, 1] as const
 // The companion pops in: squashes as it lands, stretches up, settles.
@@ -137,7 +138,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   return own ? [own] : p ? [fromPremade(p, crewIds.current[k] ??= newId())] : []
  }), [picks, made])
  const flow: Step[] = again ? (how === "talk" ? ["talk"] : QUICK) : noAi || !ai ? ["hello", "import", "layout", "charge"]
-  : ["hello", "import", "ai", "crew", ...(chosen.length > 1 ? ["main"] as Step[] : []), "how", ...(how === "talk" ? ["talk"] as Step[] : QUICK), "start"]
+  : ["hello", "import", "ai", "crew", ...(chosen.length > 1 ? ["main"] as Step[] : []), "tools", "how", ...(how === "talk" ? ["talk"] as Step[] : QUICK), "start"]
  const [step, setStep] = useState(0)
  const [draft, setDraft] = useState<Companion>(blank) // "Make your own" while it's being made
  const [look, setLook] = useState<Look>(() => first ? lookOf(first) : DEFAULT_LOOK) // what the big companion wears: a friendly face until one is picked; BLANK is for making your own
@@ -174,9 +175,21 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const tasks = useMemo(() => starters(likes, picked ? c : undefined, 3), [likes, picked, c])
  const harness = ai?.harnesses.find(h => h.id === (c.ai || ai.harness))
  const aiReady = !!harness?.installed && !["missing", "signedOut"].includes(harness.status)
+ // Connect your tools: the team that was just hired, and which of them cheers when an app it works in gets connected.
+ const team = chosen.length ? chosen : first ? [first] : []
+ const plugins = ai?.plugins, linked = plugins?.connected.map(x => x.slug).join() ?? ""
+ const [cheer, setCheer] = useState<[string, string, number]>(["", "", 0])
+ const seen = useRef<string | null>(null)
+ useEffect(() => {
+  const now = linked ? linked.split(",") : [], before = seen.current === null ? now : seen.current.split(",")
+  seen.current = linked
+  const fresh = now.find(s => !before.includes(s))
+  const who = fresh && (team.find(x => premadeOf(x)?.uses.includes(fresh)) ?? lead ?? team[0])
+  if (fresh && who && at === "tools") { setCheer([who.id, fresh, Date.now()]); if (team.length < 2) setGesture(["happy", Date.now()]) } // on its own, the big one cheers
+ }, [linked]) // eslint-disable-line react-hooks/exhaustive-deps
  const blocked = at === "crew" && (making ? !draft.name.trim() : !chosen.length && !first) || at === "main" && !lead || at === "how" // "how" goes on from its two options
  // Steps that ask for something: Continue waits for an answer, and until then "Not now" moves on without one.
- const answered = at === "import" ? tried : at === "ai" ? aiReady : at === "talk" ? talked : at === "you" ? !!you.trim() : at === "interests" ? likes.length > 0 : at === "start" ? !!(task || typed.trim()) : true
+ const answered = at === "tools" ? !!plugins?.connected.length : at === "import" ? tried : at === "ai" ? aiReady : at === "talk" ? talked : at === "you" ? !!you.trim() : at === "interests" ? likes.length > 0 : at === "start" ? !!(task || typed.trim()) : true
  useEffect(() => { if (introOn) return; setTalking(true); const t = setTimeout(() => setTalking(false), 1700); return () => clearTimeout(t) }, [at, introOn])
  useEffect(() => {
   warm("jingle")
@@ -336,6 +349,19 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Reveal after={2}><div className="ob-layouts ob-mains" role="radiogroup" aria-label="Who leads">{chosen.map(x => <button key={x.id} role="radio" aria-checked={main === x.id} style={{ "--hue": lookOf(x).color } as CSSProperties} onClick={() => { setMain(x.id); setLook(lookOf(x)); react("happy") }}>
        <span className="ob-mains-face"><Mascot look={lookOf(x)} size={56} /></span><strong>{x.name}</strong><small>{premadeOf(x)?.role ?? "Made by you"}</small><span className="ob-check" aria-hidden><Check /></span></button>)}</div></Reveal>
      </>}
+     {at === "tools" && <>
+      <Bubbles lines={[team.length > 1 ? "Want the team to work in your apps?" : "Want me to work in your apps?", "Connect Gmail, Calendar, Slack and more through Composio. Reading is free. Anything that sends, posts or changes something still asks you first."]} />
+      <Reveal after={2}>
+       {team.length > 1 ? <div className="ob-team">{team.map(x => <span key={x.id} className="ob-team-mate" title={x.name}>
+        <Mascot look={lookOf(x)} size={52} gesture={cheer[0] === x.id ? "happy" : ""} gestureAt={cheer[0] === x.id ? cheer[2] : 0} />
+        {cheer[0] === x.id && <span key={cheer[2]} className="ob-team-line" role="status">Now I can work in {pluginName(cheer[1])}</span>}</span>)}</div>
+        : cheer[0] && <p key={cheer[2]} className="ob-bubble ob-cheer" role="status">Now I can work in {pluginName(cheer[1])}</p>}
+       {plugins?.key && plugins.status === "ok" ? <PluginGrid plugins={plugins} send={send} /> : <PluginBelt />}
+       {!(plugins?.key && plugins.status === "ok") && <PluginKey plugins={plugins} send={send} />}
+       <ThirdParty send={send} />
+       {!plugins?.key && <p className="ob-note">No key? Skip this. You can turn plugins on any time in Settings → Plugins.</p>}
+      </Reveal>
+     </>}
      {at === "how" && <>
       <Bubbles lines={[`Hi, I'm ${name}.`, "How do you want to set things up?"]} />
       <Reveal after={2}><div className="ob-options">
@@ -391,7 +417,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   <motion.footer className="ob-foot" initial={intro ? { opacity: 0, y: 18 } : false} animate={introOn ? { opacity: 0, y: 18 } : { opacity: 1, y: 0 }} transition={{ delay: introOn ? 0 : intro ? intro + 1.7 : 0, duration: .35, ease: EASE }}>
    {step > 0 ? <Button variant="ghost" onClick={() => go(step - 1)}><ArrowLeft />Back</Button> : <span />}
    <span className="flex-1" />
-   {!answered && <button className="ob-not-now" onClick={skip}>Not now</button>}
+   {!answered && <button className="ob-not-now" onClick={skip}>{at === "tools" ? "Skip" : "Not now"}</button>}
    {at !== "how" && <Button className="ob-next" disabled={blocked || !answered} onClick={next}>{at === "start" ? (!task && isNo(typed) ? "Finish" : "Let's go") : at === "hello" ? "Let's start" : at === "talk" ? (again ? "Done" : "Looks good")
     : at === "crew" && making ? (draft.name.trim() ? `Add ${draft.name.trim()}` : "Add them") : "Continue"}<CornerDownLeft /></Button>}
   </motion.footer>

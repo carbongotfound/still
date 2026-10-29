@@ -1,5 +1,6 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Check, Sparkles } from "lucide-react"
+import { Check, Plug, Sparkles } from "lucide-react"
+import { andList, pluginName } from "./Plugins"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -16,6 +17,7 @@ export type Premade = {
  bubble: string // what it says when you hover it
  will: string[] // three "I'll" lines, about outcomes
  learns: string // how it gets sharper from memory
+ uses: string[] // the apps it works in once they're connected (Plugins.tsx)
  job: string; tone: string
  asks: [string, string][] // "What I'm good at": [label, a prompt that works in Still today]
  look: Look
@@ -27,6 +29,7 @@ export const PREMADES: Premade[] = [
   bubble: "Give me your toughest lead. I like a challenge.",
   will: ["Learn how you sell, then prep every call with a one-page brief", "Find leads that fit and write first emails that get replies", "Keep every deal moving with a next step and a date"],
   learns: "I remember what you sell, who buys it and what closes, so every brief gets sharper.",
+  uses: ["gmail", "hubspot", "googlecalendar"],
   job: "A deal closer for the user's sales. Learns what the user sells and to whom, researches leads and companies from public information, preps a one-page brief before each call, drafts outreach and follow-ups in the user's voice, and keeps a simple pipeline table with a next step and a date for every deal. Never sends, books or posts anything without asking first, and never makes up a number.",
   tone: "Bold and upbeat. Talks in next steps and dates, and gets straight to what moves the deal.",
   asks: [
@@ -40,6 +43,7 @@ export const PREMADES: Premade[] = [
   bubble: "Tell me who you need. I'll find who fits.",
   will: ["Find and rank candidates against what the role really needs", "Write outreach that sounds like you, not a template", "Keep a short, fair shortlist you can check every week"],
   learns: "I remember your roles, your team and what a great hire looks like to you, so each shortlist fits better.",
+  uses: ["gmail", "linkedin", "googlesheets"],
   job: "A scout for the user's hiring. Turns a role into a clear job post and a fair scorecard, finds candidates from public profiles and portfolios, ranks them against the scorecard using only what they shared publicly, drafts personal outreach, and keeps a shortlist up to date. Leaves every decision to the user, points out bias when it creeps in, and never sends anything without asking.",
   tone: "Warm and perceptive. Says in one line why someone fits, and is honest about the gaps.",
   asks: [
@@ -53,6 +57,7 @@ export const PREMADES: Premade[] = [
   bubble: "Hand me the chaos. I'll hand you back a plan.",
   will: ["Plan tomorrow tonight, with the important things first", "Brief you before each meeting in two minutes or less", "Clear what's waiting on you, one reply at a time"],
   learns: "I remember your priorities, your people and how you like your day, so the plans keep getting better.",
+  uses: ["gmail", "googlecalendar", "slack"],
   job: "A chief of staff for the user's day. Plans tomorrow with the important things first, briefs the user before meetings, keeps a short list of what's waiting on them and drafts the replies, and turns projects into checklists with owners and dates. Works in the user's own calendar and mail in Still's tabs when asked. Asks before sending, accepting, declining or changing anything.",
   tone: "Composed and organized. Short lists, clear priorities and one next step at a time.",
   asks: [
@@ -66,6 +71,7 @@ export const PREMADES: Premade[] = [
   bubble: "One idea in, a whole week of posts out. Let's go!",
   will: ["Learn your brand's voice and keep every post on it", "Turn one idea into posts for every platform you use", "Keep a posting rhythm so you never go quiet"],
   learns: "I remember your voice, your audience and what landed last time, so every post hits a little harder.",
+  uses: ["linkedin", "notion", "googledocs"],
   job: "Hype for the user's marketing. Learns the brand's voice from examples, turns one idea into posts sized for each platform, writes launch posts, emails and landing page copy, and keeps a simple posting plan. Shows every draft first and never posts or sends anything without asking.",
   tone: "Energetic and punchy. Big on hooks, short sentences and a clear call to action.",
   asks: [
@@ -79,6 +85,7 @@ export const PREMADES: Premade[] = [
   bubble: "Send me the tricky ones. I'll take it from here.",
   will: ["Sort incoming tickets into urgent, quick and needs a fix", "Draft replies in your tone that actually solve the problem", "Spot repeat issues and write them up as fixes"],
   learns: "I remember your product, your tone and the answers that worked, so replies get faster and better.",
+  uses: ["gmail", "zendesk", "slack"],
   job: "A fixer for the user's customer support. Triages tickets and messages by urgency, drafts clear, kind replies in the user's tone, writes a short help article when the same question keeps coming, and writes repeat issues up as bug reports. Shows every reply first and never sends anything without asking.",
   tone: "Calm and kind. Clear steps, no jargon, and always a real answer.",
   asks: [
@@ -92,6 +99,7 @@ export const PREMADES: Premade[] = [
   bubble: "Point me at the build. I'll find what breaks.",
   will: ["Test each release in the browser and file clear bugs", "Turn messy feedback into specs you can build from", "Read the docs and the code so you don't have to"],
   learns: "I remember your product, your stack and how you like bugs written up, so each report needs less back and forth.",
+  uses: ["github", "linear", "notion"],
   job: "A builder for the user's dev and product work. Tests web releases in the browser like a careful user, files clear bug reports with steps to reproduce, turns feedback into short specs with acceptance checks, and reads docs and code to explain how things work. Says plainly what it couldn't test, and never submits or deploys anything without asking.",
   tone: "Practical and dry. Steps, evidence and no fluff.",
   asks: [
@@ -105,6 +113,7 @@ export const PREMADES: Premade[] = [
   bubble: "Ask me anything. Every answer comes with a source.",
   will: ["Answer hard questions with a link for every claim", "Compare your options in one honest table", "Check your market and tell you what changed"],
   learns: "I remember your market, your competitors and the sources you trust, so every brief starts further ahead.",
+  uses: ["googledrive", "notion", "googlesheets"],
   job: "A sleuth for the user's research. Answers hard questions from solid sources with a link for every claim, compares tools, vendors and options in one table, checks whether claims hold up, and looks into the user's market and competitors when asked. Says plainly when something is uncertain or the sources disagree.",
   tone: "Precise and direct. Leads with the answer, then the evidence, and flags weak sources.",
   asks: [
@@ -151,8 +160,8 @@ export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.na
 
 /// One card: the blob pitching itself for the job. Hover or focus and it leans in with its line in a bubble; hire it and
 /// it bounces. `nudge` makes it pitch again now and then while others are already hired.
-function Card({ hue, look, name, role, pitch, bubble, will, learns, own, hired, nudge, children }: {
- hue: string; look: Look; name: string; role: string; pitch: string; bubble: string; will?: string[]; learns?: string; own?: boolean; hired?: boolean; nudge?: number; children: React.ReactNode
+function Card({ hue, look, name, role, pitch, bubble, will, learns, uses, own, hired, nudge, children }: {
+ hue: string; look: Look; name: string; role: string; pitch: string; bubble: string; will?: string[]; learns?: string; uses?: string[]; own?: boolean; hired?: boolean; nudge?: number; children: React.ReactNode
 }) {
  const [move, setMove] = useState<[string, number]>(["", 0])
  const [was, setWas] = useState(hired)
@@ -167,6 +176,7 @@ function Card({ hue, look, name, role, pitch, bubble, will, learns, own, hired, 
    <p className="crew-pitch">{pitch}</p>
    {will && <ul className="crew-will">{will.map(w => <li key={w}>{w}</li>)}</ul>}
    {learns && <p className="crew-learns"><Sparkles />{learns}</p>}
+   {!!uses?.length && <p className="crew-uses"><Plug />I work with {andList(uses.map(pluginName))}.</p>}
    <div className="crew-actions">{children}</div>
   </div>
  </article>
@@ -191,7 +201,7 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
  }, [waiting])
  const hire = (key: string, name: string, toggle: () => void) => <button className="crew-pick" aria-pressed={picked ? on(key) : undefined} aria-label={picked ? `${on(key) ? "Hired" : "Hire"} ${name}` : undefined} onClick={toggle}>{on(key) ? <>Hired<Check /></> : "Hire"}</button>
  return <div className="crew-grid">
-  {PREMADES.map(p => <Card key={p.id} hue={p.look.color} look={p.look} name={p.name} role={p.role} pitch={p.pitch} bubble={p.bubble} will={p.will} learns={p.learns} hired={on(p.id) || !!mine(p)} nudge={nudge[0] === p.id ? nudge[1] : 0}>
+  {PREMADES.map(p => <Card key={p.id} hue={p.look.color} look={p.look} name={p.name} role={p.role} pitch={p.pitch} bubble={p.bubble} will={p.will} learns={p.learns} uses={p.uses} hired={on(p.id) || !!mine(p)} nudge={nudge[0] === p.id ? nudge[1] : 0}>
    {mine(p) ? <><span className="crew-hired"><Check />Hired</span><button className="crew-pick" onClick={() => act(p)}>Say hi</button></> : hire(p.id, p.name, () => act(p))}
    <button className="crew-more" onClick={() => setMore(p)}>What I'm good at</button>
   </Card>)}

@@ -78,6 +78,7 @@ public partial class MainWindow : Window
    StartupMetrics.Mark("controllers-ready");
    await DrainExternalLinks();
    if (!secondary) StartUpdateChecks();
+   if (!secondary && HasPluginKey) _ = RefreshPlugins();
    if (!secondary && store.Recovered) Toast("Recovered your saved session. A backup is kept in your profile.");
 #if STILL_QA
    if (App.IsQa && !secondary) StartQa();
