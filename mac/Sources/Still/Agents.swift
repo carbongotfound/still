@@ -38,6 +38,8 @@ final class Worker {
  var name = "", label = "", color = "", action = "" // name: the app; label and color: who the user sees (a companion)
  var seen = Date.distantPast
  var paused = false // the user took over: its calls wait until they hand it back
+ var signIn = "" // paused on a sign-in page of this site: the user signs in, then hands it back
+ var signedIn: (site: String, at: Date)? // when the user last handed back after signing in
 }
 var workers: [String: Worker] = [:]
 func worker(_ who: String) -> Worker {
@@ -80,6 +82,16 @@ var agentServerStarted = false
 var confirmCodes: [String: (client: String, ask: String, until: Date)] = [:]
 let stopText = "The user pressed Stop. Stop what you are doing and wait for the user's next message."
 let tookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page."
+func signingIn(_ site: String) -> String { "This is a sign-in page for " + site + ". AIs never type or see passwords, so Still paused you and asked the user to sign in themselves. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page." }
+/// A sign-in page: AIs never type or see passwords, so this one waits, like after Take over, while the user signs in
+/// (a saved login fills from the key in the field). The tab comes to the front and its pill asks them to sign in.
+func askToSignIn(_ who: String, _ browser: Browser, _ tab: Tab, _ site: String) {
+ let me = worker(who)
+ if me.paused { return }
+ me.paused = true; me.signIn = site
+ if !tab.closed { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
+ publishEverywhere(); browser.toast(me.label + " needs you to sign in to " + site + ". It never sees your password.")
+}
 
 /// The window agent calls land in: the one used last.
 var homeBrowser: Browser? {
@@ -140,7 +152,7 @@ enum Raced { case done(String?), interrupted(String), late }
 // The page scripts come straight from the Windows app (mac/build.sh copies them), so both stay in step.
 let agentScripts: [String: String] = {
  var scripts: [String: String] = [:]
- for name in ["Page", "Snapshot", "Find", "Click", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor"] {
+ for name in ["Page", "Snapshot", "Find", "Click", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
   scripts[name] = (try? String(contentsOf: resources.appendingPathComponent("agent-\(name).js"), encoding: .utf8)) ?? ""
  }
  return scripts
@@ -475,7 +487,7 @@ extension Browser {
   let paused = Date().addingTimeInterval(40)
   while me.paused && Date() < paused { try? await Task.sleep(nanoseconds: 250_000_000); me.seen = Date() }
   if let until = stoppedAgents[who], Date() < until { return agentFail(stopText) }
-  if me.paused { return agentFail(tookOver) }
+  if me.paused { return agentFail(me.signIn.isEmpty ? tookOver : signingIn(me.signIn)) }
   let interrupt = Answer()
   agentInterrupts[who] = interrupt
   defer {
@@ -573,7 +585,7 @@ extension Browser {
    let x = agentTabs[a.key] == shownId, y = agentTabs[b.key] == shownId
    return x != y ? !x : a.value.seen < b.value.seen
   }) else { return nil }
-  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "key": key]
+  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "signIn": me.signIn, "key": key]
   if let tab = agentTabs[key] { data["tab"] = tab }
   return data
  }
@@ -582,6 +594,7 @@ extension Browser {
  func takeOver(_ on: Bool, _ key: String) {
   guard let me = workers[key] else { return }
   me.paused = on
+  if !on && !me.signIn.isEmpty { me.signedIn = (me.signIn, Date()); me.signIn = "" }
   if on { agentInterrupts.removeValue(forKey: key)?.set(agentFail(tookOver)) }
   if on, let id = agentTabs[key], let (browser, tab) = findTab(id) { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
   publishEverywhere()
@@ -729,6 +742,12 @@ extension Browser {
      let look = try await agentJs(try await agentPage(who, args).view, agentScripts["Sensitive"] ?? "", o) as? [String: Any] ?? [:]
      let label = look["label"] as? String ?? ""
      why = look["why"] as? String ?? ""
+     // AIs never type a password: they wait while the user signs in.
+     if look["password"] as? Bool == true && tool != "click" && !(tool == "press_key" && ["Tab", "Escape", "Esc"].contains(argText(args, "key"))) {
+      let (browser, tab) = try agentTab(who, args)
+      askToSignIn(who, browser, tab, site)
+      return agentFail(signingIn(site))
+     }
      if tool == "click" { what = "Click “" + label + "”" }
      else if tool == "type" { what = look["secret"] as? Bool == true || argText(args, "text").isEmpty ? "Type into “" + label + "”" : "Type “" + clipped(argText(args, "text"), 60) + "” into “" + label + "”" }
     }
@@ -821,20 +840,29 @@ extension Browser {
     await waitLoaded(tab)
     did(who, tool == "reload" ? "Reloaded the page" : tool == "go_back" ? "Went back" : "Went forward"); return agentOk(["url": tab.url, "title": tab.title])
    case "read_page":
-    let (_, tab, view) = try await agentPage(who, args)
+    let (browser, tab, view) = try await agentPage(who, args)
     let text = !(args["text"] as? Bool == false || args["text"] as? String == "false")
     let page = try await agentJs(view, agentScripts["Snapshot"] ?? "", ["text": text, "all": argFlag(args, "all"), "offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))])
-    did(who, "Read " + hostName(tab.url)); return agentOk(["text": page as? String ?? ""])
+    var seen = redactLogins(view.url?.absoluteString ?? "", page as? String ?? "")
+    let site = hostName(tab.url)
+    let back = worker(who).signedIn.map { $0.site == site && Date().timeIntervalSince($0.at) < 120 } ?? false
+    if !back, (try? await agentJs(view, "return [...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)", [:])) as? Bool == true {
+     askToSignIn(who, browser, tab, site); seen += "\n\n" + signingIn(site)
+    }
+    did(who, "Read " + hostName(tab.url)); return agentOk(["text": seen])
    case "find":
     let (_, _, view) = try await agentPage(who, args)
     let found = try await agentJs(view, agentScripts["Find"] ?? "", ["text": argText(args, "text")])
-    did(who, "Looked for \"" + argText(args, "text") + "\""); return agentOk(["text": found as? String ?? ""])
+    did(who, "Looked for \"" + argText(args, "text") + "\""); return agentOk(["text": redactLogins(view.url?.absoluteString ?? "", found as? String ?? "")])
    case "screenshot":
     let (browser, tab, view) = try await agentPage(who, args)
     // A page only paints while it's on screen: show it for a moment, then give the user their tab back.
     let previous = browser.active
     if tab !== previous { browser.select(tab); try? await Task.sleep(nanoseconds: 300_000_000) }
+    let prints = loginPrints(view.url?.absoluteString ?? "") // fields showing a saved login are masked in the picture
+    if !prints.isEmpty { _ = try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": true]) }
     let shot: (NSImage?, Error?) = await withCheckedContinuation { done in view.takeSnapshot(with: nil) { done.resume(returning: ($0, $1)) } }
+    if !prints.isEmpty { _ = try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": false]) }
     if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
     guard let image = shot.0, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
      return agentFail("Couldn't take the screenshot" + (shot.1.map { ": " + $0.localizedDescription } ?? "."))

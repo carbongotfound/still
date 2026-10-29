@@ -129,7 +129,9 @@ final class Tab: NSObject {
  var dialog: PageDialog? // an alert/confirm/prompt the page is paused on
  var agentUpload: AgentUpload? // a file picker an AI's click opened, waiting for upload_file
  var uploadFiles: [URL]? // files upload_file is handing to the next file picker
- var loginToken = "", loginDetected = false, loginFilled = false
+ var loginToken = "", loginApi = "", loginFilled = false // loginApi: the page's login helper (LoginObserver.js), named at random per page
+ var generatedLogin = "" // the login saved with a strong password suggested on this page
+ var loginUsername: (origin: String, username: String, at: Date)? // a two-step sign-in's first step
  var hideToken: String?, hideExpires = Date.distantPast
 }
 
@@ -157,7 +159,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  let youTube = (try? String(contentsOf: resources.appendingPathComponent("youtube.js"))) ?? ""
  var publishQueued = false, overlayVersion = 0
  var appearanceObserver: NSKeyValueObservation?
- var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]])?
+ var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found)?
  var importBusy = false, importError = "", importDone = ""
  // Windows (Windows.swift)
  let windowId = newId()
@@ -454,7 +456,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    picker.message = "Choose a browser profile folder, such as Chrome's Default folder or ~/Library/Safari."
    picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(url.lastPathComponent, url) } }
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; publishImport() }
-  case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false)
+  case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
   default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) { toast(unavailable) }
   }
  }
@@ -640,7 +642,6 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   for page in [shown, partner] { if let page, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } }
   layoutPages()
   if !overlay, let view = shown?.view, shown === tab { window.makeFirstResponder(view) }
-  inspectLogin(tab)
   saveLater()
   schedulePublish()
  }
@@ -807,7 +808,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    ("vivaldi", "Vivaldi", support.appendingPathComponent("Vivaldi/Default")),
    ("opera", "Opera", support.appendingPathComponent("com.operasoftware.Opera"))
   ]
-  return known.filter { FileManager.default.fileExists(atPath: $0.2.path) }.map { (id: $0.0, name: $0.1, folder: $0.2) }
+  // Firefox names its profile folders like "x1y2z3.default-release".
+  let firefox = ((try? FileManager.default.contentsOfDirectory(at: support.appendingPathComponent("Firefox/Profiles"), includingPropertiesForKeys: nil)) ?? [])
+   .filter { FileManager.default.fileExists(atPath: $0.appendingPathComponent("places.sqlite").path) }.prefix(30)
+   .map { ("firefox-" + $0.lastPathComponent, "Firefox · " + ($0.lastPathComponent.split(separator: ".", maxSplits: 1).last.map(String.init) ?? $0.lastPathComponent), $0) }
+  return (known + firefox).filter { FileManager.default.fileExists(atPath: $0.2.path) }.map { (id: $0.0, name: $0.1, folder: $0.2) }
  }
 
  func publishImport() { publishBrowserTools("import") }
@@ -818,7 +823,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
                                  "sources": importSources().map { ["id": $0.id, "name": $0.name] }]
   if let preview = pendingImport {
    external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
-                          "passwords": 0, "cookies": 0, "cookiesLocked": false, "skipped": 0, "warnings": [String]()]
+                          "passwords": preview.logins.logins.count, "cookies": 0, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings]
   }
   var data: [String: Any] = ["external": external]
   if let batch = importBatch {
@@ -828,19 +833,22 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   return data
  }
 
- /// Reads bookmarks and history (never passwords or cookies, which macOS keeps locked to each browser) for review first.
+ /// Reads bookmarks, history and saved passwords (not cookies, which macOS keeps locked to each browser) for review first.
  func reviewImport(_ name: String, _ folder: URL) {
   guard !importBusy else { return }
   importBusy = true; importError = ""; importDone = ""; pendingImport = nil
   publishImport()
   DispatchQueue.global(qos: .userInitiated).async {
    let safari = FileManager.default.fileExists(atPath: folder.appendingPathComponent("Bookmarks.plist").path) || folder.lastPathComponent == "Safari"
-   let result = Result { try safari ? Browser.readSafari(folder) : Browser.readChromium(folder) }
+   let firefox = ["places.sqlite", "key4.db"].contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
+   let result = Result { try safari ? Browser.readSafari(folder) : firefox ? Browser.readFirefox(folder) : Browser.readChromium(folder) }
+   let logins: BrowserLogins.Found = safari ? ([], ["Safari keeps its passwords in the Passwords app. To bring them over, choose File → Export All Passwords there, then add the file with Passwords CSV."], 0)
+    : firefox ? BrowserLogins.firefox(folder) : BrowserLogins.chromium(folder)
    DispatchQueue.main.async {
     self.importBusy = false
     switch result {
-    case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty: self.importError = "No bookmarks or history were found in \(name)."
-    case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history)
+    case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty && logins.logins.isEmpty && logins.warnings.isEmpty: self.importError = "No bookmarks, history or passwords were found in \(name)."
+    case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history, logins)
     case .failure(let error):
      let denied = (error as NSError).code == NSFileReadNoPermissionError || (error as NSError).domain == NSPOSIXErrorDomain
      self.importError = safari && denied ? "macOS keeps Safari's data private. Turn on Still in System Settings → Privacy & Security → Full Disk Access, then try again."
@@ -851,9 +859,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   }
  }
 
- func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool) {
+ func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool, passwords takePasswords: Bool, autofill: Bool) {
   guard let preview = pendingImport, !importBusy else { return }
-  var added = 0, visits = 0
+  var added = 0, visits = 0, saved = 0
   if takeBookmarks {
    var have = Set(bookmarks.compactMap { $0["Url"] as? String })
    for mark in preview.bookmarks { if let url = mark["Url"] as? String, have.insert(url).inserted { bookmarks.append(mark); added += 1 } }
@@ -864,8 +872,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    visits = fresh.count
    history = Array((history + fresh).sorted { ($0["At"] as? String ?? "") > ($1["At"] as? String ?? "") }.prefix(5000))
   }
+  if takePasswords {
+   var entries = Vault.read()
+   for login in preview.logins.logins where !entries.contains(where: { $0.origin == login.origin && $0.username == login.username }) { entries.append(login); saved += 1 }
+   Vault.write(entries)
+   if autofill { prefs["AutoFillPasswords"] = true; prefs["OfferPasswordSave"] = true; prefs["OfferPasswordUpdate"] = true }
+  }
   pendingImport = nil
-  importDone = "Imported \(added) bookmarks and \(visits) history entries from \(preview.name)."
+  importDone = "Imported \(added) bookmarks, \(visits) history entries and \(saved) passwords from \(preview.name)."
   save()
   publishImport()
   schedulePublish()
@@ -893,6 +907,19 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   return (marks, visits)
  }
 
+ static func readFirefox(_ folder: URL) throws -> (bookmarks: [[String: Any]], history: [[String: Any]]) {
+  let places = folder.appendingPathComponent("places.sqlite")
+  guard FileManager.default.fileExists(atPath: places.path) else { return ([], []) }
+  let marks = try rows(places, "SELECT p.url, COALESCE(b.title, '') FROM moz_bookmarks b JOIN moz_places p ON p.id = b.fk WHERE b.type = 1 LIMIT 5000").map { row -> [String: Any] in
+   ["Title": row[1].isEmpty ? row[0] : row[1], "Url": row[0]]
+  }
+  // Firefox counts microseconds from 1970.
+  let visits = try rows(places, "SELECT url, COALESCE(title, ''), last_visit_date FROM moz_places WHERE last_visit_date IS NOT NULL AND hidden = 0 ORDER BY last_visit_date DESC LIMIT 5000").map { row -> [String: Any] in
+   ["Url": row[0], "Title": row[1].isEmpty ? row[0] : row[1], "At": stamp.string(from: Date(timeIntervalSince1970: (Double(row[2]) ?? 0) / 1_000_000))]
+  }
+  return (marks, visits)
+ }
+
  static func readSafari(_ folder: URL) throws -> (bookmarks: [[String: Any]], history: [[String: Any]]) {
   var marks: [[String: Any]] = []
   func walk(_ node: Any?) {
@@ -911,7 +938,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  /// Queries a copy of a browser's database, so a running browser's lock doesn't get in the way and its file is never touched.
- static func rows(_ file: URL, _ sql: String) throws -> [[String]] {
+ static func rows(_ file: URL, _ sql: String) throws -> [[String]] { try blobs(file, sql).map { $0.map { String(decoding: $0, as: UTF8.self) } } }
+ static func blobs(_ file: URL, _ sql: String) throws -> [[Data]] {
   let temp = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: temp) }
@@ -925,9 +953,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    throw NSError(domain: "Still", code: 1, userInfo: [NSLocalizedDescriptionKey: String(cString: sqlite3_errmsg(db))])
   }
   defer { sqlite3_finalize(statement) }
-  var result: [[String]] = []
+  var result: [[Data]] = []
   while sqlite3_step(statement) == SQLITE_ROW {
-   result.append((0..<sqlite3_column_count(statement)).map { column in sqlite3_column_text(statement, column).map { String(cString: $0) } ?? "" })
+   result.append((0..<sqlite3_column_count(statement)).map { column in sqlite3_column_blob(statement, column).map { Data(bytes: $0, count: Int(sqlite3_column_bytes(statement, column))) } ?? Data() })
   }
   return result
  }
@@ -956,14 +984,13 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func webView(_ view: WKWebView, didCommit navigation: WKNavigation!) {
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
   if hostName(tab.url) != hostName(view.url?.absoluteString ?? "") { tab.favicon = "" }
-  tab.reader = false; tab.hideToken = nil; tab.loginFilled = false; tab.loginDetected = false
+  tab.reader = false; tab.hideToken = nil; tab.loginFilled = false; tab.loginApi = ""
   schedulePublish()
  }
 
  func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
   updateFavicon(tab)
-  if tab === active { inspectLogin(tab) }
   guard !tab.isPrivate, let url = view.url?.absoluteString, url.hasPrefix("http") else { return }
   history.removeAll { $0["Url"] as? String == url }
   history.insert(["Title": view.title ?? url, "Url": url, "At": ISO8601DateFormatter().string(from: Date())], at: 0)

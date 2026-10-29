@@ -48,7 +48,7 @@ public partial class MainWindow
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
-       if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,"Opera GX");return "{\"ok\":true}"; }
+       if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,doc.RootElement.TryGetProperty("name", out var source) ? source.GetString()! : "Opera GX");return "{\"ok\":true}"; }
        if (op == "shellEval" && shellView?.CoreWebView2 is { } ui) return await ui.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "shellCdp" && shellView?.CoreWebView2 is { } dev) return await dev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
        if (op == "pageCdp" && active?.View?.CoreWebView2 is { } pageDev) return await pageDev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
@@ -92,6 +92,8 @@ public partial class MainWindow
         return JsonSerializer.Serialize(new {path});
        }
        if (op == "systemTheme") { qaSystemTheme = doc.RootElement.GetProperty("value").GetString() == "Light" ? "Light" : "Dark"; foreach (var w in Windows) if (Prefs.Theme == "System") w.ApplyTheme(); return "{\"ok\":true}"; }
+       // Answers the Windows Hello prompt for tests (allow, deny or none: not set up), and where an export is written.
+       if (op == "osAuth") { if (doc.RootElement.TryGetProperty("answer", out var a)) { qaAuthAnswer = a.GetString() ?? "deny"; verifiedUntil = default; } if (doc.RootElement.TryGetProperty("exportPath", out var x)) qaExportPath = x.GetString() ?? ""; return JsonSerializer.Serialize(new { asks = qaAuthAsks, answer = qaAuthAnswer }); }
        if (op == "quit") { Close(); return "{\"ok\":true}"; }
        return "{\"error\":\"unknown operation or no page\"}";
       } catch (Exception ex) { return JsonSerializer.Serialize(new { error = ex.Message }); }

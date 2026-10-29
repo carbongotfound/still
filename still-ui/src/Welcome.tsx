@@ -299,7 +299,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
      {at === "import" && <>
       <Bubbles lines={["Coming from Chrome, Edge or another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
       <Reveal after={2}><div className="ob-options">
-       <button className="ob-option" onClick={onImport}><Download /><span><strong>Bring my stuff over</strong><small>Chrome, Edge, Brave, Opera GX or a saved export. You check it before anything is copied.</small></span></button>
+       <button className="ob-option" onClick={onImport}><Download /><span><strong>Bring my stuff over</strong><small>{MAC ? "Chrome, Safari, Firefox, Edge, Brave" : "Chrome, Edge, Firefox, Brave, Opera GX"} or a saved export. You check it before anything is copied.</small></span></button>
        <button className="ob-option" disabled={isDefault} onClick={() => send("defaultBrowser")}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : `${MAC ? "macOS" : "Windows"} asks you to confirm`}</small></span>{isDefault && <Check />}</button>
       </div></Reveal>
      </>}
