@@ -4,6 +4,7 @@ node_modules/
 artifacts/
 tools/*
 !tools/mascot/
+!tools/sound/
 tools/mascot/out/
 *.user
 .vs/
