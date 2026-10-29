@@ -14,7 +14,7 @@ import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { FALLBACK, Face, hueOf, showProfile, type Companion, type Mode, type Mood } from "./Buddy"
-import { starters } from "./crew"
+import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
@@ -42,7 +42,8 @@ export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?
 const waits = (r: Run) => !!r.question || !!r.asks?.length
 export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && waits(r))
 type Send = (op: string, payload?: Record<string, unknown>) => void
-type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean }
+type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean; favicon?: string }
+const TabIcon = ({ tab }: { tab: TabRef }) => tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" /> : <Globe />
 
 const IDEAS = [
  [FileText, "Sum up this page", "Summarize this page in a few short bullet points."],
@@ -212,25 +213,45 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+// The message box. / picks a skill, # attaches an open tab (never a private one) and @ brings in a companion; tabs and
+// companions sit above the text as chips that x or Backspace at the start removes. Arrows, Enter or Tab and Esc work the pickers.
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const [text, setTextState] = useState("")
  const [pick, setPick] = useState(0)
+ const [chips, setChips] = useState<{ tab?: TabRef; mate?: Companion }[]>([])
+ const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const box = useRef<HTMLTextAreaElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
- const setText = (v: string) => { setTextState(v); setPick(0); onTyping?.(!!v.trim()) }
- const submit = () => { if (!text.trim() || disabled) return; onSubmit(text.trim()); setText("") }
+ const setText = (v: string) => { setTextState(v); setPick(0); setShut(null); onTyping?.(!!v.trim()) }
+ const attached = chips.flatMap(c => c.tab ? [c.tab.id] : [])
+ const message = [...chips.flatMap(c => c.mate ? ["@" + c.mate.name] : []), text.trim()].join(" ").trim()
+ const submit = () => { if (!message || disabled) return; onSubmit(message, attached); setText(""); setChips([]) }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(text)?.[2].toLowerCase()
- const matches = typed === undefined ? [] : skills.filter(k => k.id.startsWith(typed) || k.name.toLowerCase().includes(typed)).slice(0, 6)
+ const tabWord = /(^|\s)#([^\s#]*)$/.exec(text)?.[2].toLowerCase()
+ const mateWord = /(^|\s)@([\w-]*)$/.exec(text)?.[2].toLowerCase()
  const used = skills.filter(k => skillToken(k.id).test(text))
  const pickSkill = (k: Skill) => { setText(typed === undefined ? `/${k.id} ${text}` : text.replace(/(^|\s)\/[\w-]*$/, `$1/${k.id} `)); box.current?.focus() }
- const pages = (tabs ?? []).filter(t => t.url && !t.isPrivate && !t.chatId && !t.inChat).slice(0, 6)
+ const attach = (chip: { tab?: TabRef; mate?: Companion }, token?: RegExp) => { setChips([...chips, chip]); if (token) setText(text.replace(token, "$1")); box.current?.focus() }
+ const open = (tabs ?? []).filter(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && !attached.includes(t.id))
+ const pages = open.slice(0, 6)
+ const [menuLabel, items]: [string, { key: string; icon: ReactNode; label: string; sub: string; run: () => void }[]] = shut === text ? ["", []]
+  : typed !== undefined ? ["Skills", skills.filter(k => k.id.startsWith(typed) || k.name.toLowerCase().includes(typed)).slice(0, 6).map(k => ({ key: k.id, icon: <BookOpen />, label: "/" + k.id, sub: k.description || k.name, run: () => pickSkill(k) }))]
+  : tabWord !== undefined ? ["Tabs", open.filter(t => (t.title + " " + t.url).toLowerCase().includes(tabWord)).slice(0, 6).map(t => ({ key: t.id, icon: <TabIcon tab={t} />, label: t.title || host(t.url), sub: host(t.url), run: () => attach({ tab: t }, /(^|\s)#[^\s#]*$/) }))]
+  : mateWord !== undefined ? ["Companions", (ai.companions ?? []).filter(c => !chips.some(x => x.mate?.id === c.id) && c.name.toLowerCase().includes(mateWord)).slice(0, 6).map(c => ({ key: c.id, icon: <Face companion={c} size={22} />, label: c.name, sub: premadeOf(c)?.role ?? "Your own companion", run: () => attach({ mate: c }, /(^|\s)@[\w-]*$/) }))]
+  : ["", []]
  return <InputGroup className="composer" style={{ "--hue": hueOf(companion) } as CSSProperties}>
-  {matches.length > 0 && <div className="skill-menu" role="listbox" aria-label="Skills">{matches.map((k, i) => <button type="button" key={k.id} role="option" aria-selected={i === pick % matches.length} onMouseDown={e => { e.preventDefault(); pickSkill(k) }}><BookOpen /><b>/{k.id}</b><span>{k.description || k.name}</span></button>)}</div>}
-  {used.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">{used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}</InputGroupAddon>}
+  {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
+  {used.length + chips.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+   {chips.map(c => c.tab ? <span key={"t" + c.tab.id} className="skill-chip mention-chip" title={c.tab.url}><TabIcon tab={c.tab} /><span>{c.tab.title || host(c.tab.url)}</span><button type="button" aria-label={"Remove " + (c.tab.title || host(c.tab.url))} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>
+    : c.mate && <span key={"m" + c.mate.id} className="skill-chip mention-chip" style={{ "--hue": hueOf(c.mate) } as CSSProperties}><Face companion={c.mate} size={16} /><span>@{c.mate.name}</span><button type="button" aria-label={"Remove " + c.mate.name} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>)}
+   {used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}
+  </InputGroupAddon>}
   <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => {
-   if (matches.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : matches.length - 1)); return }
-   if (matches.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); pickSkill(matches[pick % matches.length]); return }
+   if (items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : items.length - 1)); return }
+   if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
+   if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
+   if (e.key === "Backspace" && chips.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) { e.preventDefault(); setChips(chips.slice(0, -1)); return }
    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
   <InputGroupAddon align="block-end">
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
@@ -239,13 +260,13 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
      {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
      {pages.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Add a tab</DropdownMenuLabel>
-      {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => { setText(`${text}${text && !text.endsWith(" ") ? " " : ""}[${t.title || host(t.url)}](${t.url}) `); box.current?.focus() }}><Globe /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
+      {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => attach({ tab: t })}><TabIcon tab={t} /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
     </DropdownMenuContent></DropdownMenu>
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
    {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
-   {onStop && !text.trim() ? <Tip label="Stop · Ctrl+."><InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton></Tip>
-    : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!text.trim() || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
+   {onStop && !message ? <Tip label="Stop · Ctrl+."><InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton></Tip>
+    : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!message || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>
  </InputGroup>
 }
@@ -345,7 +366,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const chat = ai.chats.find(c => c.id === ai.chatId)
  const [offRecord, setOffRecord] = useState(false)
  const forget = chat ? !!chat.noMemory : offRecord
- const submit = (value: string) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }) })
+ const submit = (value: string, tabs: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }) })
  const you = calledBy(companion)
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.

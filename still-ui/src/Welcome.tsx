@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
 import { lookOf, type Companion } from "./Buddy"
-import { CrewCards, INTERESTS, OWN_PITCH, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
+import { CrewCards, INTERESTS, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
 import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
 import { LookEditor, LookThumb } from "./LookEditor"
@@ -326,7 +326,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       </Reveal>
      </>}
      {at === "crew" && making && <>
-      <Bubbles lines={[OWN_PITCH, "Pick a color and a shape, give me a name, and tell me what I'm here to do."]} />
+      <Bubbles lines={["Let's make one that's all yours.", "Pick a color and a shape, give me a name, and tell me what I'm here to do."]} />
       <Reveal after={2}><div className="ob-build">
        <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([hex, label]) => <button key={hex} role="radio" aria-checked={look.color === hex} aria-label={label} title={label} style={{ "--swatch": hex } as CSSProperties} onClick={() => pickColor(hex)} />)}</div></div>
        {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Shape</span><div className="ob-faces" role="radiogroup" aria-label="Shape">{SHAPES.map(([k, label]) => <button key={k} role="radio" aria-checked={look.shape === k} aria-label={label} title={label} onClick={() => pickShape(k)}><LookThumb look={{ ...look, shape: k }} /></button>)}</div></motion.div>}

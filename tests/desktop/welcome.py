@@ -401,21 +401,23 @@ def setup(process):
         next_step(process)  # -> crew
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 8, 4)
         rpc(process, "capture", name="pick-none.png")
-        crew = js(process, "[...document.querySelectorAll('.crew-card h3')].map(h => h.innerText.trim())") or []
+        crew = js(process, "[...document.querySelectorAll('.crew-card .role-title')].map(h => h.innerText.trim())") or []
         check(crew == ["Zest", "Bloom", "Noon", "Fizz", "Mallow", "Rivet", "Glint", "Make your own"], f"Step 4: seven roles to hire, then Make your own ({', '.join(crew)})")
-        check(js(process, """[...document.querySelectorAll('.crew-card:not(.is-own)')].every(c => c.querySelector('.crew-pitch')?.innerText.startsWith("I'll")
-              && c.querySelectorAll('.crew-will li').length === 3 && !!c.querySelector('.crew-learns') && c.querySelector('.crew-pick')?.innerText.trim() === 'Hire')"""),
-              "Each role pitches itself in first person, with three things it will do, what it learns, and Hire")
-        check(js(process, "document.querySelector('.crew-card .crew-uses')?.innerText.trim()") == "I work with Gmail, HubSpot and Google Calendar.", "Each role says which apps it works in")
-        check(js(process, "document.querySelector('.crew-card .crew-bubble')?.textContent") == "Give me your toughest lead. I like a challenge."
-              and js(process, "document.querySelector('.crew-card.is-own .crew-pitch')?.innerText") == "Tell me what you need and I'll become it.", "Each one has its own line for when you hover it, and Make your own offers to become what you need")
+        check(js(process, """[...document.querySelectorAll('.crew-card')].every(c => c.querySelector('.role-tag')?.innerText && c.querySelector('.role-expect h4')?.innerText === 'What to expect'
+              && c.querySelectorAll('.role-expect li').length === 3 && ['Hire', 'Make'].includes(c.querySelector('.crew-pick')?.innerText.trim()))"""),
+              "Each card has its role, three things to expect and Hire, like the library's")
+        check(not js(process, "/\\bI'll\\b|\\bI will\\b/.test([...document.querySelectorAll('.crew-card')].map(c => c.innerText).join(' '))"), "No card makes a first-person promise")
+        check(js(process, "document.querySelector('.crew-card .role-bubble')?.textContent") == "Give me your toughest lead. I like a challenge."
+              and js(process, "document.querySelector('.crew-card.is-own .role-expect li')?.innerText") == "Any job you describe, in your words", "Each one has its own line for when you hover it, and Make your own lists what you get")
+        check("Geist" in (js(process, "getComputedStyle(document.querySelector('.crew-card .role-title')).fontFamily") or "") and "Geist" in (js(process, "getComputedStyle(document.querySelector('.ob-name') ?? document.body).fontFamily") or ""),
+              "Setup uses the same UI typeface, no serif")
         check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.crew-card.is-picked')") and not js(process, "!!document.querySelector('.ob-not-now')") and not click_text(process, ".ob-foot button", "Skip"),
               "Nothing is picked, and Continue waits for a pick; this step can't be skipped")
         click(process, ".ob-skip-all")
         check(until(lambda: "Hire at least one companion first" in talk_text(process), 3) and js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), "Skip setup asks for a companion first")
         time.sleep(.8)
         click(process, ".crew-pick[aria-label='Hire Glint']")
-        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked h3')?.innerText.trim() == 'Glint'"), 3)
+        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked .role-title')?.innerText.trim() == 'Glint'"), 3)
               and js(process, "document.querySelector('.crew-card.is-picked .crew-pick')?.innerText.trim()") == "Hired", "Hiring Glint turns its button into Hired and lets you continue")
         time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Make your own")
@@ -434,7 +436,7 @@ def setup(process):
         time.sleep(.6)
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
         click(process, ".ob-next")
-        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked h3')].map(h => h.innerText.trim()).join()") == "Glint,Miso", 3)
+        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Glint,Miso", 3)
         check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Glint, and setup adds a step to pick the main one")
         time.sleep(1.2)
         next_step(process)  # -> main

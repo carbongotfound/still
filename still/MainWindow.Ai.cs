@@ -331,13 +331,18 @@ public partial class MainWindow
      ? chosen.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() ?? "" : "").Where(id => Companions.Any(c => c.Id == id)).ToList() : [];
     string companion = team.FirstOrDefault() ?? S("companion");
     team.AddRange(Mentioned(text));
+    // # in the message box attaches open tabs, never a private one: the message links them, and the AI reads them with read_page.
+    var attached = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("tabs", out var picked) && picked.ValueKind == JsonValueKind.Array
+     ? picked.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null).Distinct().Select(id => Windows.SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id && !t.Private && !t.Closed)).OfType<BrowserTab>().Take(8).ToList() : [];
+    if (attached.Count > 0) text += "\n\n" + string.Join("\n", attached.Select(t => $"[{t.Title.Replace('[', '(').Replace(']', ')')}]({t.Url})"));
+    string asked = attached.Count == 0 ? text : text + $"\n\n[Still] The user attached {(attached.Count == 1 ? "this tab" : "these tabs")}: " + string.Join("; ", attached.Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})")) + ". Read each with read_page before you answer.";
     if (target != null) Join(target, team);
     if (target != null && runs.TryGetValue(target.Id, out var working)) {
      if (target.Team.Count > 0) target.Messages.Add(new() { Role = "user", Text = text }); // a team chat shows it now, and whoever's next answers it
      working.Queue.Add(text); break;
     }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    await RunAi(target, text, into: B("home") || active?.ChatId != null ? active : null, companion: companion, noMemory: B("noMemory"), team: team);
+    await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: companion, noMemory: B("noMemory"), team: team);
     break; }
    case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
     var asked = answering.Chat;
@@ -487,7 +492,14 @@ public partial class MainWindow
   - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
   - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
   - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
-  """ + PluginInstructions(who);
+  """ + PluginInstructions(who) + RoleSetup(who);
+
+ /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
+ static string RoleSetup(Companion? who)
+ {
+  using var file = who is { Crew.Length: > 0 } ? typeof(AppContent).Assembly.GetManifestResourceStream("Still.Content.Assets/roles/" + who.Crew + ".md") : null;
+  return file == null ? "" : "\nStill's setup for your role follows. Where the user's own instructions above differ, theirs win.\n\n" + new StreamReader(file).ReadToEnd().ReplaceLineEndings("\n").Trim() + "\n";
+ }
 
  /// What the agent should know about where the user is right now.
  string AiContext(AiChat? chat = null)
