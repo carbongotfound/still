@@ -18,9 +18,9 @@ export function Tour({ name, ready }: { name: string; ready: boolean }) {
  const [on, setOn] = useState(pending)
  const [i, setI] = useState(0)
  const [box, setBox] = useState<DOMRect | null>(null)
- const [, settle] = useState(0) // the home page draws after this does: look again once it has
- useEffect(() => { if (!on || !ready) return; const t = setTimeout(() => settle(n => n + 1), 700); return () => clearTimeout(t) }, [on, ready])
+ const [, settle] = useState(0) // the home page draws after this does, later on a busy computer: look again until it has
  const steps = on && ready ? STEPS.filter(s => document.querySelector(s[0])) : []
+ useEffect(() => { if (!on || !ready || steps.length) return; const t = setTimeout(() => settle(n => n + 1), 300); return () => clearTimeout(t) })
  const step = steps[i]
  useLayoutEffect(() => {
   if (!step) return

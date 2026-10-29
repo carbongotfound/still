@@ -9,6 +9,7 @@ final class SetupTalk {
  var error = ""
  var turns: [[String: Any]] = [] // what was said, for the welcome to show: { role, text, options }
  var changes: [SetupChange] = []
+ var also: [String] = [] // the other companions picked in setup: they learn the same things
  init(_ companion: String) { self.companion = companion }
 }
 final class SetupChange {
@@ -40,7 +41,7 @@ extension Browser {
   func s(_ k: String) -> String { data[k] as? String ?? "" }
   switch op {
   case "setupStart":
-   setupTalk = SetupTalk(s("companion")); welcomeTalk = false
+   setupTalk = SetupTalk(s("companion")); setupTalk?.also = (data["also"] as? [Any])?.compactMap { $0 as? String } ?? []; welcomeTalk = false
    Task { await setupAsk("Start now: say hello in one line and ask your first question.", "") }
   case "setupAnswer":
    let answer = tidy(s("text"))
@@ -212,8 +213,11 @@ extension Browser {
    let name = str("name", 40)
    if !name.isEmpty { facts.insert("Likes to be called " + name + ".", at: 0) }
    if !interests.isEmpty { facts.append("Into " + interests.joined(separator: ", ").lowercased() + ".") }
-   let kept = facts.enumerated().compactMap { i, f in CompanionMemory.remember(who.id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Into ") ? "interests" : "") }
-   if !kept.isEmpty { change("memory", "\(who.name) remembers", kept.map(\.text).joined(separator: " ")) { for f in kept { CompanionMemory.forget(who.id, f.id) } } }
+   var ids = [who.id]
+   for id in setupTalk?.also ?? [] where !ids.contains(id) && companions.contains(where: { $0.id == id }) { ids.append(id) }
+   let kept = ids.flatMap { id in facts.enumerated().compactMap { i, f in CompanionMemory.remember(id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Into ") ? "interests" : "").map { (id, $0) } } }
+   let mine = kept.filter { $0.0 == who.id }.map(\.1)
+   if !mine.isEmpty { change("memory", "\(who.name) remembers", mine.map(\.text).joined(separator: " ")) { for (id, f) in kept { CompanionMemory.forget(id, f.id) } } }
   }
  }
 }

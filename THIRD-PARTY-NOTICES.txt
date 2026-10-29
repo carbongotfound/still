@@ -6,9 +6,11 @@ still-ui/public/companion (*.glb, fit.json), the portraits in still-ui/src/asset
 the faces the app draws on them, and the Blender scripts that build and render them
 (tools/mascot). So are the app icon (still/Assets/still.ico, still.png) and the favicon.
 They contain no third-party models, textures, fonts or art, and they are covered by
-Still's MIT license like the rest of the code.
+Still's MIT license like the rest of the code. The same goes for the sounds in
+still-ui/public/sounds (*.ogg): tools/sound/build.py synthesizes every one of them
+from sine waves and noise, with nothing sampled or downloaded.
 
-Still ships no sound files and no AI models. It works through the AI service you
+Still ships no AI models. It works through the AI service you
 sign into yourself.
 
 INTERFACE (bundled into the app as still/Shell)

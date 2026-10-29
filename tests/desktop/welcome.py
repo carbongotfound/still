@@ -1,14 +1,18 @@
 """Setup on a fresh profile, the tour, Run setup again, "Set me up with <name>", and the look editor.
 
-The 10 steps of the Quick setup are walked like a person would: pick an AI, pass on the crew and make your own helper
-(a color, a face, a name), say who you are, pick interests, keep the Classic layout, try the permission card, and start
-the first task. Quick setup runs no AI at all. The task runs on a fake AI app (a manifest in Still's agents folder): it
+A fresh profile starts with the intro (skipped with Space) and no companions. The steps of the Quick setup are walked
+like a person would: pick an AI, pick Hazel from the crew and make your own helper too (a color, a face, a name), pick
+the main one, say who you are, pick interests, keep the Classic layout, try the permission card, and start the first
+task. Setup can't finish with no companion, and the last one can't be deleted. Quick setup runs no AI at all. The task runs on a fake AI app (a manifest in Still's agents folder): it
 searches, opens a page beside the chat and reads it for a while. The whole run is recorded with ffmpeg, frames taken
 from the window itself. Then setup runs again and is skipped ("Nothing right now" starts nothing), and the AI setup
 runs: the fake app asks one question, then picks settings, which apply, show in a summary and undo one by one.
 
+A second fresh profile lets the intro play out, then shoots the crew with 0, 1 and 3 picked and the main pick, light and dark.
+
 Run: python tests/desktop/welcome.py artifacts/Still-QA/Still.exe
-Out: docs/agentic/mascot/look-*.png (the look editor for 6 companions), artifacts/welcome-*/setup.mp4 (the recording)
+Out: docs/agentic/mascot/look-*.png (the look editor for 6 companions), artifacts/welcome-*/setup.mp4 (the recording),
+     artifacts/welcome-*/shots/pick-*.png
 """
 import ctypes
 import ctypes.wintypes
@@ -17,6 +21,7 @@ import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import subprocess
 import sys
 import textwrap
@@ -158,7 +163,7 @@ def record(pid, out, fps=20):
     """Frames come from the window itself (PrintWindow with full content), so it records wherever the window is, even off screen.
     On the Mac, macOS records the whole screen to a .mov (Screen Recording must be allowed for the terminal or SSH)."""
     if MAC:
-        recorder = subprocess.Popen(["screencapture", "-v", "-x", "-C", str(Path(out).with_suffix(".mov"))], stdin=subprocess.PIPE)
+        recorder = subprocess.Popen(["screencapture", "-v", "-x", "-C", str(Path(out).with_suffix(".mov"))], stdin=subprocess.DEVNULL)
         recorder.done = None
         return recorder
     hwnd, ww, wh, x, y, w, h = window_of(pid)
@@ -202,8 +207,9 @@ def record(pid, out, fps=20):
 
 
 def stop(recorder):
-    if recorder.done is None:  # screencapture stops at a keypress
-        recorder.communicate(b"\n", timeout=60)
+    if recorder.done is None:  # screencapture stops and saves at Ctrl-C (a keypress needs a terminal, which SSH runs lack)
+        recorder.send_signal(signal.SIGINT)
+        recorder.wait(timeout=60)
         return
     recorder.done.set()
     recorder.thread.join(timeout=10)
@@ -280,11 +286,39 @@ def main():
         again(process)
         interview(process)
         looks(process)
+        replay(process)
         errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
         check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
+    shots()
+
+
+def sounds(process):
+    return js(process, "stillSounds.played.map(p => p.name)") or []
+
+
+def key(process, name):
+    js(process, f"(document.activeElement ?? document.body).dispatchEvent(new KeyboardEvent('keydown', {{ key: {json.dumps(name)}, bubbles: true }}))")
+
+
+def companions(prefs=None):
+    return [c["Name"] for c in (prefs or state().get("Preferences", {})).get("Companions") or []]
+
+
+def to_helper(process):
+    """hello -> import -> ai, picking the fake AI app -> the crew."""
+    next_step(process)
+    next_step(process)
+    if not until(lambda: click_text(process, ".byo-main", "Fake agent"), 4):
+        click(process, ".byo-more")  # agents you added sit under More agents
+        until(lambda: click_text(process, ".byo-main", "Fake agent"), 6)
+    ok = until(lambda: js(process, "!!document.querySelector('.byo-row[data-chosen] .byo-ok')"), 10)
+    time.sleep(1)
+    next_step(process)
+    until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 7, 4)
+    return ok
 
 
 def setup(process):
@@ -294,10 +328,35 @@ def setup(process):
     check(js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "10", "Setup has 10 steps")
     check(rpc(process).get("theme") == "System", "The theme follows the system until you pick one")
     check(js(process, "document.querySelector('.ob-theme [aria-checked=true]')?.getAttribute('aria-label')") == "System", "Setup's theme switch shows System")
+    check(not companions(), "A fresh profile has no companions")
+    check(until(lambda: js(process, "!!document.querySelector('.welcome.ob .intro.is-on')"), 6), "The intro plays first")
+    reduced = js(process, "matchMedia('(prefers-reduced-motion: reduce)').matches")
+    check(reduced or until(lambda: "intro" in sounds(process), 2), "Its sound plays with it")
+    check(js(process, "!!document.querySelector('.intro-sound[aria-label=Mute]') && document.activeElement?.matches('.intro-skip')"), "It has a mute button, and Skip has the focus")
+    time.sleep(1.5)
+    key(process, " ")
+    check(until(lambda: not js(process, "!!document.querySelector('.intro')"), 2), "Space skips it")
+    check(until(lambda: "Hi! Welcome to Still." in talk_text(process), 3), "Then setup asks its first question")
+    check(js(process, "localStorage.getItem('still.intro')") == "1", "The intro plays only once")
     time.sleep(1)
     recorder = record(process.pid, RUN / "setup.mp4")
     try:
-        time.sleep(3.5)
+        time.sleep(2.5)
+        if js(process, "document.querySelector('.ob-sound')?.disabled"):
+            check(js(process, "document.querySelector('.ob-sound')?.title").startswith("Off because"), "The sound switch says why it's off")
+        else:
+            click(process, ".ob-sound")
+            check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "true", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is False, 5),
+                  "The sound switch mutes setup, and Still remembers it")
+            heard = len(sounds(process))
+            next_step(process)  # hello -> import, with no whoosh or chirps
+            check(len(sounds(process)) == heard, "Muted, nothing plays")
+            click(process, ".ob-sound")
+            check(until(lambda: js(process, "document.querySelector('.ob-sound')?.getAttribute('aria-pressed')") == "false", 2) and until(lambda: state().get("Preferences", {}).get("Sounds") is True, 5),
+                  "And it turns them back on")
+            click(process, ".ob-foot button")  # back to hello
+            until(lambda: step_now(process) == 1, 3)
+            time.sleep(1)
         next_step(process)  # hello -> import
         check(js(process, "document.querySelectorAll('.ob-option').length") == 2, "Step 2 offers to bring your stuff over and to open your links in Still")
         next_step(process)  # -> ai
@@ -308,8 +367,17 @@ def setup(process):
         time.sleep(1)
         next_step(process)  # -> helper
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 7, 4)
+        rpc(process, "capture", name="pick-none.png")
         crew = js(process, "[...document.querySelectorAll('.crew-card h3')].map(h => h.innerText.trim())") or []
         check(crew == ["Hazel", "Rio", "Juno", "Bram", "Wren", "Pip", "Make your own"], f"Step 4: six companions to pick, then Make your own ({', '.join(crew)})")
+        check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.crew-card.is-picked')") and not click_text(process, ".ob-foot button", "Skip"),
+              "Nothing is picked, and Continue waits for a pick; this step can't be skipped")
+        click(process, ".ob-skip-all")
+        check(until(lambda: "Pick at least one companion first" in talk_text(process), 3) and js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), "Skip setup asks for a companion first")
+        time.sleep(.8)
+        click_text(process, ".crew-pick", "Pick Hazel")
+        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked h3')?.innerText.trim() == 'Hazel'"), 3), "Picking Hazel lets you continue")
+        time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Start from scratch")
         check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
         click(process, ".ob-colors button[aria-label=Cornflower]")
@@ -320,7 +388,18 @@ def setup(process):
         time.sleep(1.2)
         type_into(process, ".ob-name-box input", "Miso")
         time.sleep(1.4)
+        check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
+        click(process, ".ob-next")
+        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked h3')].map(h => h.innerText.trim()).join()") == "Hazel,Miso", 3)
+        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "11", "Miso joins the crew, picked with Hazel, and setup adds a step to pick the main one")
+        time.sleep(1.2)
+        next_step(process)  # -> main
+        mains = js(process, "[...document.querySelectorAll('.ob-mains [role=radio] strong')].map(s => s.innerText.trim())") or []
+        check(mains == ["Hazel", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick your main companion ({mains})")
+        click_text(process, ".ob-mains [role=radio]", "Miso")
+        time.sleep(1)
         next_step(process)  # -> how
+        check(until(lambda: companions() == ["Miso", "Hazel"], 5), f"Both are added, Miso first as the main one ({companions()})")
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
         check(look.get("color") == "#8fb8e8" and look.get("eyes") == "sparkle", "Step 4 saves the helper's name, color and face")
@@ -341,6 +420,8 @@ def setup(process):
         next_step(process)  # -> layout
         facts = until(lambda: [f["Text"] for f in memory("Miso")] if len(memory("Miso")) >= 2 else None, 5) or []
         check("Likes to be called Sam." in facts and "Into cooking, travel, music." in facts, f"Your name and interests are Miso's first memories ({facts})")
+        hers = [f["Text"] for f in memory("Hazel")]
+        check("Likes to be called Sam." in hers and "Into cooking, travel, music." in hers, f"Hazel remembers them too ({hers})")
         check(js(process, "document.querySelector('.ob-layouts [aria-checked=true]')?.innerText ?? ''").startswith("Classic"), "Step 7: Classic tabs are the default")
         time.sleep(.8)
         next_step(process)  # -> charge
@@ -368,15 +449,19 @@ def setup(process):
     rows = js(process, "[...document.querySelectorAll('.chat-pane .ai-look')].map(r => r.innerText)") or []
     check(any("Searched" in r for r in rows), "The chat shows its search as one row")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-next-step').length") == 3, 30), "It finishes with three next steps")
-    size = (RUN / "setup.mp4").stat().st_size if (RUN / "setup.mp4").exists() else 0
+    video = RUN / ("setup.mov" if MAC else "setup.mp4")
+    size = video.stat().st_size if video.exists() else 0
     check(size > 200_000, f"The recording is saved ({size // 1024} KB)")
 
 
 def new_tab(process):
     """A new tab opens with the address bar's suggestions; the tour waits until they close, as a person would close them."""
     send(process, "new")
-    until(lambda: js(process, "!!document.querySelector('.address-bar.is-editing')"), 3)
-    js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+    until(lambda: js(process, "!!document.querySelector('.address-bar.is-editing')"), 10)
+    for _ in range(3):  # a busy computer can miss the first one
+        js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        if until(lambda: not js(process, "!!document.querySelector('.address-bar.is-editing')"), 3):
+            break
 
 
 def tour(process):
@@ -469,7 +554,24 @@ BASE = {"shape": "round", "head": 1, "ears": 0, "eyes": "dot", "eyeGap": 0, "eye
 
 
 def looks(process):
-    """The look editor, open for six companions."""
+    """Deleting companions, then the look editor, open for six companions."""
+    new_tab(process)
+    until(lambda: js(process, "!!document.querySelector('.home-rail')"), 10)
+    click(process, ".home-rail-item[aria-label=Companions]")
+    until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 2, 10)
+    for name in ("Hazel", "Miso"):
+        click(process, f".mate-portrait[aria-label='Edit {name}']")
+        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
+        click_text(process, ".companion-actions button", "Delete")
+        if name == "Hazel":
+            check(until(lambda: companions() == ["Miso"], 5), "Deleting Hazel works while Miso is there")
+            continue
+        note = until(lambda: js(process, "document.querySelector('.companion-dialog [role=alert]')?.innerText"), 3) or ""
+        time.sleep(1)
+        check("Still needs at least one" in note and companions() == ["Miso"], f"Miso, the last one, can't be deleted ({note})")
+        rpc(process, "capture", name="last-one.png")
+        click_text(process, ".companion-actions button", "Cancel")
+        until(lambda: not js(process, "!!document.querySelector('.companion-dialog')"), 3)
     for i, (name, color, look) in enumerate(CREW):
         send(process, "companionSave", id=f"crew{i}", name=name, job="", look=json.dumps({**BASE, "color": color, **look}))
     new_tab(process)
@@ -495,6 +597,54 @@ def looks(process):
             click(process, ".companion-dialog [data-slot=dialog-close]")
             until(lambda: not js(process, "!!document.querySelector('.companion-dialog')"), 3)
     check(shot == 6, f"The look editor opens for all six ({shot} screenshots)")
+
+
+def replay(process):
+    send(process, "openPanel", name="about")
+    check(until(lambda: click_text(process, ".about-content button", "Replay the intro"), 5), "About can replay the intro")
+    check(until(lambda: js(process, "!!document.querySelector('.intro-replay .intro.is-on')"), 6), "It plays over the browser")
+    time.sleep(2)
+    rpc(process, "capture", name="replay.png")
+    key(process, " ")
+    check(until(lambda: not js(process, "!!document.querySelector('.intro-replay')"), 3), "Space skips it there too")
+
+
+def shots():
+    """A second fresh profile: the intro plays out on its own, then the crew with 0, 1 and 3 picked and the main pick, light and dark."""
+    profile, out = RUN / "profile2", RUN / "shots"
+    (profile / "agents").mkdir(parents=True)
+    out.mkdir()
+    shutil.copy(PROFILE / "agents" / "fake.json", profile / "agents" / "fake.json")
+    process = launch(EXE, profile)
+    try:
+        until(lambda: js(process, "!!document.querySelector('.welcome.ob .intro.is-on')"), 8)
+        time.sleep(4)
+        rpc(process, "capture", name="intro-mark.png")  # Still's name below the companion
+        check(until(lambda: not js(process, "!!document.querySelector('.intro')"), 8) and until(lambda: "Hi! Welcome to Still." in talk_text(process), 3), "Left alone, the intro ends and setup begins")
+        to_helper(process)
+
+        def shoot(name):
+            for theme in ("Light", "Dark"):
+                click(process, f".ob-theme [aria-label={theme}]")
+                time.sleep(1.4)
+                rpc(process, "capture", name=f"{name}-{theme.lower()}.png")
+                shutil.copy(profile / f"{name}-{theme.lower()}.png", out / f"{name}-{theme.lower()}.png")
+        time.sleep(1.5)
+        shoot("pick-0")
+        click_text(process, ".crew-pick", "Pick Hazel")
+        shoot("pick-1")
+        for name in ("Rio", "Wren"):
+            click_text(process, ".crew-pick", f"Pick {name}")
+            time.sleep(.3)
+        shoot("pick-3")
+        next_step(process)
+        click_text(process, ".ob-mains [role=radio]", "Rio")
+        shoot("pick-main")
+        shutil.copy(profile / "intro-mark.png", out / "intro-mark.png")
+        check(len(list(out.glob("pick-*.png"))) == 8, "Screenshots of the crew with 0, 1 and 3 picked and the main pick, light and dark")
+    finally:
+        rpc(process, "quit")
+        process.wait(timeout=20)
 
 
 if __name__ == "__main__":

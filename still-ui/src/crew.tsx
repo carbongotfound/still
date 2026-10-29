@@ -1,9 +1,11 @@
 import { useState, type CSSProperties } from "react"
+import { Check } from "lucide-react"
+import { cn } from "@/lib/utils"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
 import { BLANK, DEFAULT_LOOK, lookKey, type Look } from "./look"
 import { Mascot } from "./Mascot"
-import type { Companion } from "./Buddy"
+import { lookOf, type Companion } from "./Buddy"
 
 // Still's own companions, ready to pick: each has its own body, prop, idle and gesture (tools/mascot), a job for the
 // AI, and a way of talking. Picking one makes a companion like any other, which the user can then change.
@@ -94,17 +96,30 @@ export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.na
 const SILHOUETTE: Look = { ...BLANK, color: "#c4c4ca" }
 
 /// The crew as profile cards, round portrait first, then "Make your own". Ones the user already has say hi instead.
-export function CrewCards({ have = [], onPick, onOwn, onChat }: { have?: Companion[]; onPick: (p: Premade) => void; onOwn: () => void; onChat?: (id: string) => void }) {
+/// In setup (`picked` given) every card toggles, and the ones you made show beside the crew.
+export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn, onChat }: {
+ have?: Companion[]; picked?: string[]; made?: Companion[]; onPick: (p: Premade) => void; onMade?: (id: string) => void; onOwn: () => void; onChat?: (id: string) => void
+}) {
  const [more, setMore] = useState<Premade | null>(null)
  const mine = (p: Premade) => onChat && have.find(c => premadeOf(c) === p)
  const act = (p: Premade) => { const c = mine(p); setMore(null); if (c) onChat!(c.id); else onPick(p) }
+ const on = (key: string) => !!picked?.includes(key)
+ const pick = (key: string, name: string, toggle: () => void) => <button className="crew-pick" aria-pressed={picked ? on(key) : undefined} onClick={toggle}>{on(key) ? <><Check />Picked</> : `Pick ${name}`}</button>
  return <div className="crew-grid">
-  {PREMADES.map(p => <article key={p.id} className="crew-card" style={{ "--hue": p.look.color } as CSSProperties}>
+  {PREMADES.map(p => <article key={p.id} className={cn("crew-card", on(p.id) && "is-picked")} style={{ "--hue": p.look.color } as CSSProperties}>
    <div className="crew-portrait"><Mascot look={p.look} size={118} follow /></div>
    <div className="crew-info">
     <h3>{p.name}</h3><span className="crew-role">{p.role}</span>
     <p>{p.pitch}</p>
-    <div className="crew-actions"><button className="crew-pick" onClick={() => act(p)}>{mine(p) ? "Say hi" : `Pick ${p.name}`}</button><button className="crew-more" onClick={() => setMore(p)}>About {p.name}</button></div>
+    <div className="crew-actions">{mine(p) ? <button className="crew-pick" onClick={() => act(p)}>Say hi</button> : pick(p.id, p.name, () => act(p))}<button className="crew-more" onClick={() => setMore(p)}>About {p.name}</button></div>
+   </div>
+  </article>)}
+  {made.map(c => <article key={c.id} className={cn("crew-card", on(c.id) && "is-picked")} style={{ "--hue": lookOf(c).color } as CSSProperties}>
+   <div className="crew-portrait"><Mascot look={lookOf(c)} size={118} follow /></div>
+   <div className="crew-info">
+    <h3>{c.name}</h3><span className="crew-role">Made by you</span>
+    <p>All yours. Give them a job any time on the Companions page.</p>
+    <div className="crew-actions">{pick(c.id, c.name, () => onMade?.(c.id))}</div>
    </div>
   </article>)}
   <article className="crew-card is-own">
@@ -124,7 +139,7 @@ export function CrewCards({ have = [], onPick, onOwn, onChat }: { have?: Compani
      <section><h4>How {more.name} talks</h4><p>{more.tone}</p></section>
      <section><h4>Try asking</h4><ul className="crew-asks">{more.starters.map(s => <li key={s}>{s}</li>)}</ul></section>
     </div>
-    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : `Pick ${more.name}`}</Button>
+    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : on(more.id) ? `Unpick ${more.name}` : `Pick ${more.name}`}</Button>
    </DialogContent>
   </Dialog>}
  </div>
