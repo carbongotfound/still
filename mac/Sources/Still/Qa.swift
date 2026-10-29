@@ -166,17 +166,25 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  case "quit":
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) } // after the reply is on its way
- case "shellCdp" where qaShellInput(b, text("method"), request["parameters"] as? [String: Any] ?? [:]): done(["ok": true])
- case "stageExtension", "stageStorePackage", "stageImport", "stageExternalProfile", "shellCdp", "pageCdp":
+ case "shellCdp" where qaInput(b, b.shell, text("method"), request["parameters"] as? [String: Any] ?? [:]): done(["ok": true])
+ case "pageCdp" where (b.shown ?? b.active)?.view.map({ qaInput(b, $0, text("method"), request["parameters"] as? [String: Any] ?? [:]) }) == true: done(["ok": true])
+ // Answers the Touch ID / password prompt for tests (allow, deny or none: no login password), and where an export is written.
+ case "osAuth":
+  if let answer = request["answer"] as? String { qaAuthAnswer = answer; passwordsVerifiedUntil = .distantPast }
+  if let path = request["exportPath"] as? String { qaExportPath = path }
+  done(["asks": qaAuthAsks, "answer": qaAuthAnswer])
+ case "stageImport":
+  do { try b.prepareImport(text("kind"), URL(fileURLWithPath: text("path"))); done(["ok": true]) } catch { done(["error": error.localizedDescription]) }
+ case "stageExternalProfile": b.reviewImport(request["name"] as? String ?? "Opera GX", URL(fileURLWithPath: text("path"))); done(["ok": true])
+ case "stageExtension", "stageStorePackage", "shellCdp", "pageCdp":
   done(["error": "\(op) needs WebView2 (extensions or DevTools), so the Mac app has no such step"])
  default: done(["error": "unknown operation or no page"])
  }
 }
 
-/// The DevTools input calls the tests make on Windows, as real AppKit events on the interface: the mouse at CSS pixels
-/// from its top left (moved, pressed, released, wheel) and typed text. Anything else isn't on the Mac.
-private func qaShellInput(_ b: Browser, _ method: String, _ p: [String: Any]) -> Bool {
- let view: WKWebView = b.shell
+/// The DevTools input calls the tests make on Windows, as real AppKit events on the interface or the page: the mouse at
+/// CSS pixels from its top left (moved, pressed, released, wheel) and typed text. Anything else isn't on the Mac.
+private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [String: Any]) -> Bool {
  func number(_ key: String) -> CGFloat { CGFloat((p[key] as? NSNumber)?.doubleValue ?? 0) }
  switch method {
  case "Input.insertText":

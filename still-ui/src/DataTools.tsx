@@ -33,7 +33,7 @@ function ExternalImport({data,send}:{data:ToolData;send:Send}){
  const external=data.external
  const preview=external?.preview
  return <section className="external-import" aria-label="Import from another browser">
-  <div className="tool-copy"><strong>From another browser</strong><p>Opera GX, Opera, Chrome, Edge, Brave, or Vivaldi. Brings bookmarks, history, saved passwords, and signed-in sessions into {external?.profile??"this profile"}. The source browser can stay open.</p></div>
+  <div className="tool-copy"><strong>From another browser</strong><p>Opera GX, Opera, Chrome, Edge, Brave, Vivaldi, or Firefox. Brings bookmarks, history, saved passwords, and signed-in sessions into {external?.profile??"this profile"}. The source browser can stay open.</p></div>
   <div className="external-sources">{external?.sources?.map(source=><Button key={source.id} variant="outline" size="sm" disabled={external.busy} onClick={()=>send("externalReview",{id:source.id})}><Import/>{source.name}</Button>)}<Button variant="outline" size="sm" disabled={external?.busy} onClick={()=>send("externalChoose")}><FolderOpen/>Choose profile folder</Button></div>
   {external?.busy&&<p role="status" className="import-progress"><Loader2 className="animate-spin"/>Reading your browser data…</p>}
   {external?.error&&<p role="alert" className="import-error">{external.error}</p>}

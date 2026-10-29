@@ -252,7 +252,6 @@ public partial class MainWindow : Window
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
   if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;LayoutSplit();RestorePageWindow(); if (shown == tab) view.Focus(); }
   if (active == tab && Partner is { } partner) { await EnsureView(partner); LayoutSplit(); RestorePageWindow(); }
-  if(active==tab)await InspectLogin(tab);
  }
  async Task CloseTab(BrowserTab tab, bool removePin = false)
  {
@@ -412,7 +411,6 @@ public partial class MainWindow : Window
    if(!ok&&!showError&&!string.IsNullOrEmpty(core.Source)&&core.Source!="about:blank")tab.Url=core.Source;
    tab.Secure=ok&&!tab.CertificateError&&Uri.TryCreate(tab.Url,UriKind.Absolute,out var secured)&&secured.Scheme=="https";
    tab.Loading = false; if (tab == Shown) UpdateChrome();
-   if(ok)_=InspectLogin(tab);
    if(ok&&tab.RestoreScroll>0){var y=tab.RestoreScroll;tab.RestoreScroll=0;_=core.RunAsync("window.scrollTo(0,"+y.ToString(System.Globalization.CultureInfo.InvariantCulture)+")");}
    if (ok && !tab.ShowingError && !tab.Private && !tab.Reader && Uri.TryCreate(tab.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http") {
     state.History.RemoveAll(v => v.Url == tab.Url && (DateTime.Now - v.At).TotalMinutes < 5);
