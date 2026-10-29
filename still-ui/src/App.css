@@ -1006,6 +1006,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .ob.is-leaving { pointer-events:none; } .ob.is-leaving::before { opacity:0; }
 .ob.is-leaving .ob-top, .ob.is-leaving .ob-talk, .ob.is-leaving .ob-foot, .ob.is-leaving .ob-name { opacity:0 !important; transition:opacity .3s ease; } /* over motion's own inline opacity */
 .ob.is-hidden { visibility:hidden; }
+html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the first state must take focus */
 .ob.is-intro { animation:none; } /* the intro starts from black: fading in would show the browser behind it */
 @keyframes welcome-in { from { opacity:0; } to { opacity:1; } }
 .ob-top { display:flex; align-items:center; gap:16px; padding:18px 24px; }
