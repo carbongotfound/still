@@ -1,0 +1,42 @@
+{
+ "idle_a": {
+  "frames": 69,
+  "fps": 15,
+  "loop": true
+ },
+ "blink_once": {
+  "frames": 9,
+  "fps": 15,
+  "loop": false
+ },
+ "look_around": {
+  "frames": 80,
+  "fps": 15,
+  "loop": true
+ },
+ "working": {
+  "frames": 75,
+  "fps": 15,
+  "loop": true
+ },
+ "thinking": {
+  "frames": 91,
+  "fps": 15,
+  "loop": false
+ },
+ "nod": {
+  "frames": 33,
+  "fps": 15,
+  "loop": false
+ },
+ "shrug": {
+  "frames": 46,
+  "fps": 15,
+  "loop": false
+ },
+ "wave": {
+  "frames": 63,
+  "fps": 15,
+  "loop": false
+ }
+}

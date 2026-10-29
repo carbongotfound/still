@@ -90,6 +90,15 @@ export function pictureOf(look: Look, state: MascotState, px: number, frame: Fra
 // and 144px (crew/blob.py, view "avatar"); any other look gets a full-body picture from the 3D model.
 const avatarFiles = import.meta.glob("./assets/avatar/*.png", { eager: true, import: "default" }) as Record<string, string>
 const AVATAR = new Map(RIGS.map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/avatar/${f}-96.png`], avatarFiles[`./assets/avatar/${f}-144.png`]]]))
+// Rigged companions move there too: strips of their own clips (96px, 15 fps, rig/sprites), one per state, played by CSS.
+const strips = import.meta.glob("./assets/sprite/*/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>
+const sheets = import.meta.glob("./assets/sprite/*/*.json", { eager: true, import: "default" }) as Record<string, Record<string, { frames: number; fps: number }>>
+const RIG = new Map(RIGS.map(([l, f]) => [lookKey(l), f]))
+const STRIP: Partial<Record<MascotState, string>> = { working: "working", thinking: "thinking", done: "nod", error: "shrug", needs: "wave" } // the rest idle
+function strip(look: Look, state: MascotState) {
+ const id = RIG.get(lookKey(look)), clip = STRIP[state] ?? "idle_a", url = strips[`./assets/sprite/${id}/${id}-${clip}.webp`], info = sheets[`./assets/sprite/${id}/${id}.json`]?.[clip]
+ return url && info ? { url, ...info, once: state === "done" || state === "error" } : undefined // a nod or a shrug plays once and holds
+}
 
 // ---------------------------------------------------------------- the component
 
@@ -101,7 +110,7 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  useVersion()
  const reduced = useReduced()
  const small = size < 40
- const avatar = small ? AVATAR.get(lookKey(look)) : undefined
+ const avatar = small ? AVATAR.get(lookKey(look)) : undefined, sprite = avatar && strip(look, state)
  const live = webgl && !reduced && (!small || !!gesture) && !avatar
  const frame: Frame = "full" // the whole body at every size, never a crop
  const px = Math.min(768, Math.round(size * Math.min(devicePixelRatio || 1, 2)))
@@ -116,7 +125,8 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  }, [live, id]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { const s = slots.get(id); if (s) Object.assign(s, { look, state, follow, gesture, gestureAt, frame }) }, [id, look, state, follow, gesture, gestureAt, frame])
  return <span className={cn("mascot", avatar && "is-avatar", className)} data-state={state} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
-  {avatar && <img src={avatar[0]} srcSet={`${avatar[0]} 96w, ${avatar[1]} 144w`} sizes={`${size}px`} alt="" draggable={false} />}
+  {sprite ? <span key={sprite.url} className={cn("mascot-sprite", sprite.once && "is-once")} style={{ backgroundImage: `url(${sprite.url})`, "--n": sprite.frames, "--d": `${sprite.frames / sprite.fps}s` } as CSSProperties} />
+   : avatar && <img src={avatar[0]} srcSet={`${avatar[0]} 96w, ${avatar[1]} 144w`} sizes={`${size}px`} alt="" draggable={false} />}
   {picture && <img src={picture} alt="" draggable={false} />}
   {live && <canvas ref={ref} width={px} height={px} />}
  </span>

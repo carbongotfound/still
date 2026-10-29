@@ -44,6 +44,15 @@ def files():
         edge = min(any_[0], any_[1], a.width - any_[2], a.height - any_[3])
         clear = min(body[0], body[1], a.width - body[2], a.height - body[3]) / a.width
         check(edge > 0 and clear >= .1, f"{png.name}: {clear:.1%} clear around the body, nearest drawn pixel {edge}px from the edge")
+    for strip in sorted((ROOT / "still-ui" / "src" / "assets" / "sprite").glob("*/*.webp")):  # every frame of the rigs' strips
+        a = Image.open(strip).getchannel("A")
+        n, worst, edge = a.width // a.height, 1.0, a.height
+        for i in range(n):
+            f = a.crop((i * a.height, 0, (i + 1) * a.height, a.height))
+            any_, body = f.point(lambda v: 255 if v > 0 else 0).getbbox(), f.point(lambda v: 255 if v >= 8 else 0).getbbox()
+            edge = min(edge, any_[0], any_[1], f.width - any_[2], f.height - any_[3])
+            worst = min(worst, min(body[0], body[1], f.width - body[2], f.height - body[3]) / f.width)
+        check(edge > 0 and worst >= .1, f"{strip.name}: {n} frames, at least {worst:.1%} clear around the body, nearest drawn pixel {edge}px from the edge")
 
 
 CANVAS_RING = """JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map((m, i) => {
