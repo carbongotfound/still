@@ -46,7 +46,7 @@ public partial class MainWindow
  {
   try{
    object data=new{};
-   if(name=="passwords")data=new{vault=Vault.Read().Select(v=>new{id=v.Id,origin=v.Origin,username=v.Username}),offer=LoginOfferData(),passwordOptions=new{save=Prefs.OfferPasswordSave,fill=Prefs.AutoFillPasswords,update=Prefs.OfferPasswordUpdate}};
+   if(name=="passwords")data=PasswordsData();
    if(name=="profiles")data=ProfileData();
    if(name=="import"){DiscoverExternalProfiles();data=ImportData();}
    if(name=="cookies"){
@@ -89,34 +89,9 @@ public partial class MainWindow
    case "exportData":ExportBrowserData();break;
    case "storeExtension":await PrepareStoreExtension(active?.Url??"");break;
    case "openStore":await NewTab("https://chromewebstore.google.com/",false,false);break;
-   case "loginAccept":await AcceptLoginOffer(S("id"),S("username"));break;
-   case "loginDismiss":loginOffer=null;ShellPublish();await PublishBrowserTools("passwords");break;
-   case "passwordPermission":{
-    bool enabled=data.TryGetProperty("enabled",out var allowed)&&allowed.GetBoolean();
-    switch(S("feature")){case "save":Prefs.OfferPasswordSave=enabled;break;case "fill":Prefs.AutoFillPasswords=enabled;break;case "update":Prefs.OfferPasswordUpdate=enabled;break;default:return;}
-    if(!Prefs.OfferPasswordSave&&!Prefs.OfferPasswordUpdate)loginOffer=null;
-    foreach(var tab in tabs.Where(t=>t.View?.CoreWebView2!=null&&!t.Private)){await InstallLoginObserver(tab);if(tab==active)await InspectLogin(tab);}
-    SaveLater();await PublishBrowserTools("passwords");break;
-   }
+   case "loginAccept":case "loginNever":case "loginDismiss":case "neverRemove":case "passwordPermission":case "vaultReveal":case "vaultEdit":case "vaultCopy":case "vaultSave":case "vaultDelete":case "vaultFill":case "vaultExport":await HandlePasswordTool(op,data);break;
    case "refreshTools":await PublishBrowserTools(S("name"));break;
    case "vaultGenerate":ShellSend(new{kind="vaultGenerated",password=Vault.Generate()});break;
-   case "vaultSave":{
-    if(!Uri.TryCreate(S("origin"),UriKind.Absolute,out var origin)||origin.Scheme is not("https" or "http")){Toast("Enter a complete website address.");break;}
-    if(S("password").Length is <1 or >8192||S("username").Length>1024){Toast("Enter a password.");break;}
-    var entries=Vault.Read();var normalized=origin.GetLeftPart(UriPartial.Authority);
-    var entry=entries.FirstOrDefault(v=>v.Origin==normalized&&v.Username==S("username"));if(entry==null){entry=new LoginEntry();entries.Add(entry);}
-    entry.Origin=normalized;entry.Username=S("username");entry.Password=S("password");Vault.Write(entries);
-    await PublishBrowserTools("passwords");ShellSend(new{kind="vaultSaved"});Toast("Login saved for this Windows account.");break;
-   }
-   case "vaultDelete":{var entries=Vault.Read();entries.RemoveAll(v=>v.Id==S("id"));Vault.Write(entries);await PublishBrowserTools("passwords");break;}
-   case "vaultCopy":{
-    var entry=Vault.Read().FirstOrDefault(v=>v.Id==S("id"));if(entry==null)break;Clipboard.SetText(entry.Password);copiedPassword=entry.Password;Toast("Password copied. Clipboard clears in 30 seconds.");_ = ClearPasswordClipboard(entry.Password,++clipboardVersion);break;
-   }
-   case "vaultFill":{
-    var entry=Vault.Read().FirstOrDefault(v=>v.Id==S("id"));var tab=active;
-    if(entry==null||tab?.View?.CoreWebView2 is not{} core||!Uri.TryCreate(tab.Url,UriKind.Absolute,out var url)||url.GetLeftPart(UriPartial.Authority)!=entry.Origin||!(url.Scheme=="https"||url.IsLoopback)||tab.CertificateError){Toast("Open this login's exact secure website before filling it.");break;}
-    if(await FillSavedLogin(entry,tab)){CloseSheet();Toast("Login filled. Review it, then sign in.");}else Toast("No matching visible login form was found.");break;
-   }
    case "cookieDelete":if(cookieInventory.TryGetValue(S("id"),out var cookie)){await DeleteStoredCookie(cookie.Cookie,cookie.Manager);await PublishBrowserTools("cookies");}break;
    case "cookieDeleteDomain":foreach(var item in cookieInventory.Values.Where(v=>v.Cookie.Domain==S("domain")).ToArray())await DeleteStoredCookie(item.Cookie,item.Manager);await PublishBrowserTools("cookies");break;
    case "permissionReset":{

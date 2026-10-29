@@ -133,6 +133,7 @@ public partial class MainWindow
  static string? MemoryRefuses(ChatRun? run, string text)
  {
   if (CompanionMemory.Secret(text)) return "That looks like a password, a code or an account number. Still never keeps those.";
+  if (Vault.Read().Any(v => v.Password.Length >= 4 && text.Contains(v.Password, StringComparison.Ordinal))) return "That's one of your saved passwords. Still never keeps those.";
   if (run?.Typed.Any(t => text.Contains(t, StringComparison.OrdinalIgnoreCase)) == true) return "That's something typed into a form on a page. Still doesn't keep form data.";
   foreach (var t in Windows.SelectMany(w => w.tabs).Where(t => t.Private))
    if (t.Title.Length >= 4 && t.Title != "Private tab" && text.Contains(t.Title, StringComparison.OrdinalIgnoreCase) || Host(t.Url) is { Length: > 3 } host && text.Contains(host, StringComparison.OrdinalIgnoreCase))

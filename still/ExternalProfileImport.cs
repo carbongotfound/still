@@ -1,3 +1,4 @@
+using System.Formats.Asn1;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -14,7 +15,7 @@ public sealed class ImportedCookie
  public DateTime Expires;
 }
 
-// Reads a Chromium-family profile (Opera GX, Opera, Chrome, Edge, Brave) for the current
+// Reads a Chromium-family profile (Opera GX, Opera, Chrome, Edge, Brave) or a Firefox profile for the current
 // Windows account. Works while the source browser is running: every database is copied
 // into a private, per-import snapshot folder inside Still's profile and deleted afterwards.
 // Encrypted values are decrypted only with the source browser's own DPAPI-protected key,
@@ -42,7 +43,8 @@ public sealed class ExternalProfileImport : IDisposable
   if(!Directory.Exists(folder))throw new IOException("That profile folder no longer exists.");
   if(!File.Exists(Path.Combine(folder,"Bookmarks"))&&!File.Exists(Path.Combine(folder,"History"))&&Directory.Exists(Path.Combine(folder,"Default")))folder=Path.Combine(folder,"Default");
   string bookmarks=Path.Combine(folder,"Bookmarks"),history=Path.Combine(folder,"History");
-  if(!File.Exists(bookmarks)&&!File.Exists(history))throw new IOException("No Chromium bookmarks or history were found in that folder.");
+  bool firefox=File.Exists(Path.Combine(folder,"places.sqlite"))||File.Exists(Path.Combine(folder,"key4.db"));
+  if(!firefox&&!File.Exists(bookmarks)&&!File.Exists(history))throw new IOException("No browser bookmarks or history were found in that folder.");
   var result=new ExternalProfileImport();
   // Remove leftovers from an import that was interrupted by a crash or power loss.
   string snapshots=Path.Combine(App.DataRoot,"ImportSnapshot");
@@ -50,6 +52,12 @@ public sealed class ExternalProfileImport : IDisposable
   string snapshot=Path.Combine(App.DataRoot,"ImportSnapshot",result.Id);
   Directory.CreateDirectory(snapshot);
   try{
+   if(firefox){
+    string places=Path.Combine(folder,"places.sqlite");
+    if(File.Exists(places))result.Section("Bookmarks and history",()=>result.ReadFirefoxPlaces(Copy(places,snapshot)));
+    if(File.Exists(Path.Combine(folder,"logins.json"))&&File.Exists(Path.Combine(folder,"key4.db")))result.Section("Passwords",()=>result.ReadFirefoxLogins(folder,snapshot));
+    return result;
+   }
    result.key=ReadKey(folder);
    if(File.Exists(bookmarks))result.Section("Bookmarks",()=>result.ReadBookmarks(bookmarks));
    if(File.Exists(history))result.Section("History",()=>result.ReadHistory(Copy(history,snapshot)));
@@ -178,7 +186,7 @@ public sealed class ExternalProfileImport : IDisposable
    if(password.Length is <1 or >8192||username.Length>1024||Logins.Any(l=>l.Origin==origin&&l.Username==username)){Skipped++;continue;}
    Logins.Add(new(){Origin=origin,Username=username,Password=password});
   }
-  if(locked>0)Warnings.Add($"{locked} passwords use the source browser's app-bound encryption and can't be read. Export them to CSV from that browser to import them.");
+  if(locked>0)Warnings.Add((locked==1?"One password is locked to the browser that saved it, so Still can't read it.":$"{locked} passwords are locked to the browser that saved them, so Still can't read them.")+" Export your passwords to a CSV file from that browser (in Chrome: Google Password Manager, then Settings, then Export passwords) and add the file with Passwords CSV.");
  }
  void ReadCookies(string path)
  {
@@ -205,6 +213,84 @@ public sealed class ExternalProfileImport : IDisposable
    Cookies.Add(new(){Domain=host,Name=name,Value=value,Path=reader.IsDBNull(4)?"/":reader.GetString(4),Secure=reader.GetInt64(6)!=0,HttpOnly=reader.GetInt64(7)!=0,SameSite=(int)reader.GetInt64(8),Session=session,Expires=expires});
   }
   if(locked>0)Warnings.Add($"{locked} cookies use app-bound encryption and can't be transferred; sign in to those sites again.");
+ }
+ void ReadFirefoxPlaces(string path)
+ {
+  using var connection=Open(path);using var command=connection.CreateCommand();
+  command.CommandText="SELECT p.url, b.title FROM moz_bookmarks b JOIN moz_places p ON p.id=b.fk WHERE b.type=1 LIMIT 5000";
+  var seen=new HashSet<string>(StringComparer.Ordinal);
+  using(var reader=command.ExecuteReader())while(reader.Read()){
+   var url=reader.IsDBNull(0)?null:SafeUrl(reader.GetString(0));
+   if(url==null||!seen.Add(url)){Skipped++;continue;}
+   Bookmarks.Add(new(){Url=url,Title=Title(reader.IsDBNull(1)?null:reader.GetString(1),url)});
+  }
+  command.CommandText="SELECT url, title, last_visit_date FROM moz_places WHERE last_visit_date IS NOT NULL AND hidden=0 ORDER BY last_visit_date DESC LIMIT 2000";
+  seen.Clear();
+  using(var reader=command.ExecuteReader())while(reader.Read()){
+   var url=reader.IsDBNull(0)?null:SafeUrl(reader.GetString(0));
+   if(url==null||!seen.Add(url)){Skipped++;continue;}
+   var at=DateTimeOffset.FromUnixTimeMilliseconds(reader.GetInt64(2)/1000).LocalDateTime; // stored in microseconds
+   if(at.Year<1990||at>DateTime.Now.AddDays(1)){Skipped++;continue;}
+   History.Add(new(){Url=url,Title=Title(reader.IsDBNull(1)?null:reader.GetString(1),url),At=at});
+  }
+ }
+ const string FirefoxLocked="Firefox has a primary password, so Still can't read its saved passwords. In Firefox, open Passwords, choose Export passwords from the menu, and add the file with Passwords CSV.";
+ // Firefox encrypts logins.json with a key kept in key4.db. Without a primary password that key opens with an
+ // empty one: PBKDF2 over SHA-1(global salt), then AES-256-CBC (PBES2), as NSS does.
+ void ReadFirefoxLogins(string folder,string snapshot)
+ {
+  using var connection=Open(Copy(Path.Combine(folder,"key4.db"),snapshot));using var command=connection.CreateCommand();
+  command.CommandText="SELECT item1, item2 FROM metaData WHERE id='password'";
+  byte[] salt,check;
+  using(var reader=command.ExecuteReader()){if(!reader.Read())throw new IOException("No Firefox key.");salt=(byte[])reader[0];check=(byte[])reader[1];}
+  var verified=Pbes2(salt,check);
+  if(verified==null||!verified.AsSpan().SequenceEqual("password-check"u8)){Warnings.Add(FirefoxLocked);return;}
+  command.CommandText="SELECT a11 FROM nssPrivate";
+  byte[]? master=null;
+  using(var reader=command.ExecuteReader())while(master==null&&reader.Read())if(!reader.IsDBNull(0))master=Pbes2(salt,(byte[])reader[0]);
+  if(master==null){Warnings.Add(FirefoxLocked);return;}
+  try{
+   using var source=new FileStream(Path.Combine(folder,"logins.json"),FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
+   if(source.Length>20*1024*1024)throw new IOException("logins.json exceeds 20 MB.");
+   using var json=JsonDocument.Parse(source);
+   string? Text(JsonElement login,string name){
+    if(!login.TryGetProperty(name,out var v)||v.ValueKind!=JsonValueKind.String)return null;
+    var plain=DecryptFirefox(master,Convert.FromBase64String(v.GetString()??""));if(plain==null)return null;
+    try{return Encoding.UTF8.GetString(plain);}finally{CryptographicOperations.ZeroMemory(plain);}
+   }
+   foreach(var login in json.RootElement.GetProperty("logins").EnumerateArray().Take(5000)){
+    var url=login.TryGetProperty("hostname",out var host)&&host.ValueKind==JsonValueKind.String?SafeUrl(host.GetString()):null;
+    string? username=url==null?null:Text(login,"encryptedUsername"),password=username==null?null:Text(login,"encryptedPassword");
+    if(url==null||username==null||password==null||password.Length is <1 or >8192||username.Length>1024){Skipped++;continue;}
+    string origin=new Uri(url).GetLeftPart(UriPartial.Authority);
+    if(Logins.Any(l=>l.Origin==origin&&l.Username==username)){Skipped++;continue;}
+    Logins.Add(new(){Origin=origin,Username=username,Password=password});
+   }
+  }finally{CryptographicOperations.ZeroMemory(master);}
+ }
+ static byte[]? Pbes2(byte[] globalSalt,byte[] der)
+ {
+  try{
+   var outer=new AsnReader(der,AsnEncodingRules.DER).ReadSequence();var algorithm=outer.ReadSequence();
+   if(algorithm.ReadObjectIdentifier()!="1.2.840.113549.1.5.13")return null; // Firefox before 75 used 3DES here
+   var scheme=algorithm.ReadSequence();var kdf=scheme.ReadSequence();kdf.ReadObjectIdentifier();
+   var p=kdf.ReadSequence();byte[] entrySalt=p.ReadOctetString();int iterations=(int)p.ReadInteger();
+   var cipher=scheme.ReadSequence();cipher.ReadObjectIdentifier();byte[] iv=cipher.ReadOctetString();byte[] data=outer.ReadOctetString();
+   if(iterations is <1 or >10_000_000)return null;
+   var key=Rfc2898DeriveBytes.Pbkdf2(SHA1.HashData(globalSalt),entrySalt,iterations,HashAlgorithmName.SHA256,32);
+   try{using var aes=Aes.Create();aes.Key=key;return aes.DecryptCbc(data,(byte[])[0x04,(byte)iv.Length,..iv]);} // NSS uses the DER-encoded IV
+   finally{CryptographicOperations.ZeroMemory(key);}
+  }catch(Exception ex) when(ex is AsnContentException or CryptographicException or OverflowException){return null;}
+ }
+ static byte[]? DecryptFirefox(byte[] master,byte[] der)
+ {
+  try{
+   var outer=new AsnReader(der,AsnEncodingRules.DER).ReadSequence();outer.ReadOctetString();
+   var algorithm=outer.ReadSequence();string oid=algorithm.ReadObjectIdentifier();byte[] iv=algorithm.ReadOctetString();byte[] data=outer.ReadOctetString();
+   if(oid=="1.2.840.113549.3.7"&&master.Length>=24){using var des=TripleDES.Create();des.Key=master[..24];return des.DecryptCbc(data,iv);}
+   if(oid=="2.16.840.1.101.3.4.1.42"&&master.Length>=32){using var aes=Aes.Create();aes.Key=master[..32];return aes.DecryptCbc(data,iv);}
+   return null;
+  }catch(Exception ex) when(ex is AsnContentException or CryptographicException or FormatException){return null;}
  }
  public void Dispose(){Logins.Clear();Cookies.Clear();}
 }

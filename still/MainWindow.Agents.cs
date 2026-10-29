@@ -24,6 +24,8 @@ public partial class MainWindow
   public string Name = "", Label = "", Color = "", Action = ""; // Name: the app; Label and Color: who the user sees (a companion)
   public DateTime Seen;
   public bool Paused; // the user took over: its calls wait until they hand it back
+  public string SignIn = ""; // paused on a sign-in page of this site: the user signs in, then hands it back
+  public (string Site, DateTime At) SignedIn; // when the user last handed back after signing in
  }
  static readonly Dictionary<string, Worker> workers = new(StringComparer.OrdinalIgnoreCase);
  static Worker Me(string who)
@@ -104,7 +106,7 @@ public partial class MainWindow
    // The user took over: wait for them to hand it back, like a person would.
    for (var paused = DateTime.UtcNow.AddSeconds(40); me.Paused && DateTime.UtcNow < paused;) { await Task.Delay(250); me.Seen = DateTime.UtcNow; }
    if (stoppedAgents.TryGetValue(who, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
-   if (me.Paused) return Fail(TookOver);
+   if (me.Paused) return Fail(me.SignIn.Length > 0 ? SigningIn(me.SignIn) : TookOver);
    var interrupt = agentInterrupts[who] = new(TaskCreationOptions.RunContinuationsAsynchronously);
    // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
    var gate = Gate(who, tool, args, quick);
@@ -190,13 +192,14 @@ public partial class MainWindow
   if (agentApproval != null) return new { client = askClient, pending = true, action = "", ask = askText, paused = false };
   string? shown = Shown?.Id;
   var at = AtWork().OrderByDescending(w => agentTabs.GetValueOrDefault(w.Key) == shown).ThenByDescending(w => w.Value.Seen).FirstOrDefault();
-  return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key } : null;
+  return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, signIn = me.SignIn, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key } : null;
  }
  // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
  async Task TakeOver(bool on, string key)
  {
   if (workers.GetValueOrDefault(key) is not { } me) return;
   me.Paused = on;
+  if (!on && me.SignIn.Length > 0) { me.SignedIn = (me.SignIn, DateTime.UtcNow); me.SignIn = ""; }
   if (on && agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail(TookOver));
   if (on && agentTabs.GetValueOrDefault(key) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
   PublishAll();
@@ -211,6 +214,27 @@ public partial class MainWindow
   workers.Remove(key); PublishAll(); PublishAiEverywhere(); Toast("Stopped " + (me?.Label ?? "the AI agent") + ".");
  }
  static readonly Dictionary<string, DateTime> stoppedAgents = new(StringComparer.OrdinalIgnoreCase);
+ /// A sign-in page: AIs never type or see passwords, so this one waits, like after Take over, while the user signs in
+ /// (a saved login fills from the key in the field). The tab comes to the front and its pill asks them to sign in.
+ async Task AskToSignIn(string who, MainWindow w, BrowserTab t, string site)
+ {
+  var me = Me(who);
+  if (me.Paused) return;
+  me.Paused = true; me.SignIn = site;
+  if (!t.Closed) await w.SelectTab(t);
+  PublishAll(); w.Toast(me.Label + " needs you to sign in to " + site + ". It never sees your password.");
+ }
+ static string SigningIn(string site) => "This is a sign-in page for " + site + ". AIs never type or see passwords, so Still paused you and asked the user to sign in themselves. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
+ // Masks inputs whose value matches a saved login's fingerprint (MainWindow.LoginPrints), then unmasks them.
+ const string MaskJs = """
+  const print = s => { let h = 0; for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0; return h; };
+  walk(document, e => {
+   if (e.localName !== 'input') return;
+   if (!o.on) { if (e.hasAttribute('data-still-masked')) { e.style.removeProperty('-webkit-text-security'); e.removeAttribute('data-still-masked'); } return; }
+   if (e.value && o.prints.includes(print(e.value))) { e.style.setProperty('-webkit-text-security', 'disc', 'important'); e.setAttribute('data-still-masked', ''); }
+  });
+  return true;
+ """;
  const string TookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  static void InterruptAgent(BrowserTab t, object reply)
@@ -314,7 +338,7 @@ public partial class MainWindow
   walk(document, e => {
    const cs = view(e).getComputedStyle(e);
    if (!isControl(e, cs) || !visible(e, cs)) return;
-   if ((label(e) + ' ' + (e.value || '') + ' ' + (e.getAttribute('href') || '') + ' ' + (e.title || '')).toLowerCase().includes(want)) out.push(line(e));
+   if ((label(e) + ' ' + (e.type === 'password' ? '' : e.value || '') + ' ' + (e.getAttribute('href') || '') + ' ' + (e.title || '')).toLowerCase().includes(want)) out.push(line(e));
    if (out.length >= 25) return false;
   });
   const text = pageText().split('\n').filter(l => l.toLowerCase().includes(want)).slice(0, 15).map(l => clip(l, 200));
@@ -392,7 +416,7 @@ public partial class MainWindow
   else if (/\b(send|post|publish|reply|tweet|comment)\b/.test(words)) why = 'It sends something in your name.';
   else if (/\b(delete|remove|discard|trash|unsubscribe|close account|cancel order|cancel subscription)\b/.test(words)) why = 'It deletes or cancels something.';
   else if (posts && e.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
-  return { label: label(e) || kind(e), why, secret: !!secret(e) };
+  return { label: label(e) || kind(e), why, secret: !!secret(e), password: secret(e) === 'password' };
  """;
  const string FileInputJs = """
   const e = target(o); return e && e.localName === 'input' && e.type === 'file' ? e : e?.querySelector?.('input[type=file]') || e?.closest?.('label')?.control || null;
@@ -558,6 +582,11 @@ public partial class MainWindow
     if (tool is "click" or "type" or "press_key") {
      var look = await Js((await AgentPage(who, args)).core, SensitiveJs, new { tool, id = Id(args), selector = S(args, "selector"), text = S(args, "text"), key = S(args, "key"), submit = B(args, "submit") });
      string label = Str(look, "label"); why = Str(look, "why");
+     // AIs never type a password: they wait while the user signs in.
+     if (look.GetProperty("password").GetBoolean() && !(tool == "press_key" && S(args, "key") is "Tab" or "Escape" or "Esc") && tool != "click") {
+      var (w, t) = AgentTab(who, args); await AskToSignIn(who, w, t, site);
+      return Fail(SigningIn(site));
+     }
      if (tool == "click") what = "Click “" + label + "”";
      else if (tool == "type") what = look.GetProperty("secret").GetBoolean() || S(args, "text").Length == 0 ? "Type into “" + label + "”" : "Type “" + Clip(S(args, "text"), 60) + "” into “" + label + "”";
     }
@@ -749,12 +778,14 @@ public partial class MainWindow
    case "read_page": {
     var (w, t, core) = await AgentPage(who, args);
     var page = await Js(core, SnapshotJs, new { text = !(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("text", out var tx) && (tx.ValueKind == JsonValueKind.False || tx.ValueKind == JsonValueKind.String && tx.GetString() == "false")), all = B(args, "all"), offset = (int)Math.Max(0, N(args, "offset", 0)) });
-    Did(who, "Read " + Host(t.Url)); return Reply(new { text = page.GetString() ?? "" });
+    string seen = RedactLogins(core.Source, page.GetString() ?? ""), site = Host(t.Url), back = Me(who) is { SignedIn: var done } && done.Site == site && DateTime.UtcNow - done.At < TimeSpan.FromMinutes(2) ? "signed in" : "";
+    if (back.Length == 0 && await core.RunAsync("[...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)") == "true") { await AskToSignIn(who, w, t, site); seen += "\n\n" + SigningIn(site); }
+    Did(who, "Read " + Host(t.Url)); return Reply(new { text = seen });
    }
    case "find": {
     var (w, t, core) = await AgentPage(who, args);
     var found = await Js(core, FindJs, new { text = S(args, "text") });
-    Did(who, "Looked for \"" + S(args, "text") + "\""); return Reply(new { text = found.GetString() ?? "" });
+    Did(who, "Looked for \"" + S(args, "text") + "\""); return Reply(new { text = RedactLogins(core.Source, found.GetString() ?? "") });
    }
    case "screenshot": {
     var (w, t, core) = await AgentPage(who, args);
@@ -762,8 +793,9 @@ public partial class MainWindow
     var previous = w.active;
     if (t != previous) { await w.SelectTab(t); await Task.Delay(200); }
     using var ms = new MemoryStream();
-    try { await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms); }
-    finally { if (previous != null && previous != t && !previous.Closed && w.active == t) await w.SelectTab(previous); }
+    var prints = LoginPrints(core.Source); // fields showing a saved login are masked in the picture
+    try { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = true }); await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms); }
+    finally { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = false }); if (previous != null && previous != t && !previous.Closed && w.active == t) await w.SelectTab(previous); }
     Did(who, "Took a screenshot"); return Reply(new { image = Convert.ToBase64String(ms.ToArray()), mimeType = "image/png" });
    }
    case "click": {

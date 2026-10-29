@@ -1,0 +1,620 @@
+"""The password manager: save, update, fill, several accounts, two-step sign-in, the strong-password suggestion, Never
+for this site, auto sign-in, insecure pages, cross-site frames, private tabs, Windows Hello / Touch ID before a password
+shows (answered by the QA hook), CSV export, import from CSV, Firefox and Chrome, and that AIs (MCP, CLI, companions'
+memory) never get a password: no tool lists one, fields holding a saved login read as hidden, and a sign-in page
+pauses the AI until the user signs in and hands it back.
+
+Run: python tests/desktop/passwords.py <Still.exe or Still.app/Contents/MacOS/Still>
+Out: artifacts/passwords-*/ (result.json, shots/*.png: save prompt, fill menu and Passwords, light and dark)
+"""
+import csv
+import http.server
+import json
+import os
+from pathlib import Path
+import shutil
+import sqlite3
+import subprocess
+import sys
+import textwrap
+import threading
+import time
+import traceback
+import uuid
+
+sys.path.insert(0, str(Path(__file__).parent))
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, text, until  # noqa: E402
+from mcp_client import Mcp  # noqa: E402
+
+EXE = Path(sys.argv[1]).resolve()
+RUN = ROOT / "artifacts" / ("passwords-" + uuid.uuid4().hex[:8])
+PROFILE, BIN, SHOTS = RUN / "profile", RUN / "bin", RUN / "shots"
+RESULT = {"checks": []}
+FIXTURES = Path(__file__).parent / "fixtures"
+
+
+def check(ok, name):
+    RESULT["checks"].append({"name": name, "passed": bool(ok)})
+    print(("PASS " if ok else "FAIL ") + name, flush=True)
+
+
+FORM = "<!doctype html><meta charset=utf-8><title>{title}</title><style>body{{font:16px system-ui;margin:40px}}input{{display:block;font:inherit;padding:8px;width:300px;margin:8px 0}}button{{font:inherit;padding:8px 16px}}</style><h1>{title}</h1>{body}"
+PAGES = {
+    "/login": ("Sign in", '<form method=post action=/welcome><input id=user name=username autocomplete=username aria-label=Email placeholder=Email>'
+               '<input id=pw name=password type=password autocomplete=current-password aria-label=Password placeholder=Password><button id=go>Sign in</button></form>'),
+    "/signup": ("Create your account", '<form method=post action=/welcome><input id=user name=email autocomplete=email aria-label=Email placeholder=Email>'
+                '<input id=pw name=password type=password autocomplete=new-password aria-label="New password" placeholder="New password"><button id=go>Create account</button></form>'),
+    "/change": ("Change password", '<form method=post action=/welcome><input id=user name=username autocomplete=username aria-label=Email placeholder=Email>'
+                '<input id=cur type=password autocomplete=current-password aria-label="Current password"><input id=new type=password autocomplete=new-password aria-label="New password">'
+                '<input id=again type=password autocomplete=new-password aria-label="Confirm new password"><button id=go>Change password</button></form>'),
+    "/step1": ("Sign in", '<form method=get action=/step2><input id=user name=identifier autocomplete=username aria-label=Email placeholder=Email><button id=go>Next</button></form>'),
+    "/step2": ("Enter your password", '<form method=post action=/welcome><input id=pw type=password autocomplete=current-password aria-label=Password><button id=go>Sign in</button></form>'),
+    "/frame": ("A page with a sign-in frame", '<p>The frame below is another site.</p><iframe id=f src="{other}/login" style="width:420px;height:320px;border:1px solid #ccc"></iframe>'),
+    "/welcome": ("Welcome back", "<p>You're signed in.</p>"),
+}
+
+
+class Handler(http.server.BaseHTTPRequestHandler):
+    def page(self):
+        title, body = PAGES.get(self.path.split("?")[0], PAGES["/welcome"])
+        data = FORM.format(title=title, body=body.replace("{other}", OTHER)).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.end_headers()
+        self.wfile.write(data)
+
+    def do_GET(self):
+        self.page()
+
+    def do_POST(self):
+        self.rfile.read(int(self.headers.get("Content-Length") or 0))
+        self.page()
+
+    def log_message(self, *_):
+        pass
+
+
+SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+threading.Thread(target=SERVER.serve_forever, daemon=True).start()
+PORT = SERVER.server_port
+SITE = f"http://127.0.0.1:{PORT}"          # this computer: treated as secure
+OTHER = f"http://localhost:{PORT}"         # another site, also on this computer
+INSECURE = f"http://insecure.test:{PORT}"  # mapped to 127.0.0.1 for the browser: an ordinary http site
+
+# A companion that only remembers (see memory.py): its MCP call shows whether Still keeps a saved password.
+FAKE = textwrap.dedent(r'''
+    import json, os, subprocess, sys, time
+    here = os.path.dirname(os.path.abspath(__file__))
+    args = sys.argv[1:]
+    if args[:1] == ["status"]: print("signed in"); sys.exit(0)
+    prompt = sys.stdin.read()
+    def say(e): print(json.dumps(e), flush=True)
+    server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
+    still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+    n = 0
+    def request(method, params):
+        global n
+        n += 1
+        still.stdin.write((json.dumps({"jsonrpc": "2.0", "id": n, "method": method, "params": params}) + "\n").encode()); still.stdin.flush()
+        for line in still.stdout:
+            try: m = json.loads(line)
+            except ValueError: continue
+            if m.get("id") == n: return m
+    request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}})
+    still.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); still.stdin.flush()
+    say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
+    fact = prompt.strip().splitlines()[-1].partition("REMEMBER: ")[2]
+    r = request("tools/call", {"name": "remember", "arguments": {"fact": fact, "kind": "preference"}})["result"]
+    with open(os.path.join(here, "results.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"error": bool(r.get("isError")), "text": r["content"][0]["text"]}) + "\n")
+    say({"type": "assistant", "message": {"content": [{"type": "text", "text": "Okay."}]}})
+    still.stdin.close()
+''')
+
+# ---- the page, used as a person would: trusted clicks and typing ----
+LISTEN = """window.__msgs = []; window.__tools = {};
+window.chrome.webview.addEventListener('message', e => { const d = e.data; if (d?.kind === 'tools') __tools[d.name] = d.data; else if (/^vault/.test(d?.kind || '')) __msgs.push(d) })"""
+
+
+def page(process, script):
+    return rpc(process, "eval", script=script)
+
+
+def rect(process, selector):
+    return page(process, f"(() => {{ const r = document.querySelector({json.dumps(selector)})?.getBoundingClientRect(); return r ? {{x: r.x, y: r.y, h: r.height, bottom: r.bottom}} : null }})()")
+
+
+def click_at(process, x, y):
+    for kind in ("mousePressed", "mouseReleased"):
+        rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": x, "y": y, "button": "left", "clickCount": 1})
+
+
+def click(process, selector):
+    r = rect(process, selector)
+    click_at(process, r["x"] + 20, r["y"] + r["h"] / 2)
+
+
+def type_into(process, selector, value):
+    click(process, selector)
+    time.sleep(.15)
+    rpc(process, "pageCdp", method="Input.insertText", parameters={"text": value})
+
+
+def values(process, *selectors):
+    return [page(process, f"document.querySelector({json.dumps(s)})?.value ?? null") for s in selectors]
+
+
+def settle(process):
+    """The page has loaded, reported its form, and Still has answered with this site's logins."""
+    until(lambda: page(process, "document.readyState") == "complete" and page(process, "typeof window.__stillLoginCleanup") == "function", 10)
+    time.sleep(.6)
+
+
+def go(process, url):
+    send(process, "navigate", url=url)
+    until(lambda: page(process, "location.href") == url, 15)
+    settle(process)
+
+
+def shadow(process, **want):
+    """Centre of a button in Still's closed menu in the page, found through DevTools (which sees closed shadow roots)."""
+    if MAC:
+        return None
+    stack = [rpc(process, "pageCdp", method="DOM.getDocument", parameters={"depth": -1, "pierce": True})["root"]]
+    while stack:
+        node = stack.pop(0)
+        raw = node.get("attributes", [])
+        attrs = dict(zip(raw[::2], raw[1::2]))
+        if node.get("nodeName", "").lower() == "button" and all(attrs.get(k) == v for k, v in want.items()):
+            quad = rpc(process, "pageCdp", method="DOM.getBoxModel", parameters={"nodeId": node["nodeId"]})["model"]["border"]
+            rpc(process, "pageCdp", method="DOM.disable", parameters={})
+            return ((quad[0] + quad[2]) / 2, (quad[1] + quad[5]) / 2)
+        stack += node.get("children", []) + node.get("shadowRoots", [])
+    rpc(process, "pageCdp", method="DOM.disable", parameters={})  # getDocument turned DevTools' DOM tracking on: leave the page as it was
+    return None
+
+
+def menu_item(process, field, index, **want):
+    """A row of the menu under a field: found exactly on Windows, from the menu's fixed layout on the Mac."""
+    if not MAC:
+        return shadow(process, **want)
+    r = rect(process, field)
+    return (r["x"] + 40, r["bottom"] + 6 + 1 + 6 + 49 * index + 24) if page(process, "!!document.querySelector('still-passwords')") else None
+
+
+def has_key(process):
+    if MAC:
+        return page(process, "!!document.querySelector('still-passwords')")
+    return shadow(process, **{"aria-label": "Saved passwords"}) is not None
+
+
+def pick(process, field, index, login):
+    """Opens the menu under a field and clicks one of its logins."""
+    page(process, "document.activeElement?.blur()")
+    click(process, field)
+    at = until(lambda: menu_item(process, field, index, **{"data-id": login["id"]}), 5)
+    if at:
+        click_at(process, *at)
+    return at
+
+
+# ---- Still's side ----
+def bar(process):
+    return js(process, "document.querySelector('.permission-wrap.is-open .save-login')?.textContent ?? ''")
+
+
+def bar_button(process, label):
+    js(process, f"[...document.querySelectorAll('.save-login button')].find(b => b.innerText === {json.dumps(label)}).click()")
+    until(lambda: not bar(process), 5)
+
+
+def vault(process):
+    js(process, "window.__tools.passwords = null")
+    send(process, "refreshTools", name="passwords")
+    return until(lambda: js(process, "window.__tools.passwords?.vault ?? null"), 5) or []
+
+
+def entry(process, origin, username):
+    return next((v for v in vault(process) if v["origin"] == origin and v["username"] == username), None)
+
+
+def reveal(process, item):
+    rpc(process, "osAuth", answer="allow")
+    send(process, "vaultReveal", id=item["id"])
+    return until(lambda: js(process, f"__msgs.filter(m => m.kind === 'vaultRevealed' && m.id === {json.dumps(item['id'])}).pop()?.password ?? null"), 5)
+
+
+def row(username, script):
+    """Runs script with `r` as the Passwords row for username."""
+    return f"(r => {script})([...document.querySelectorAll('.password-row')].find(r => r.querySelector('small')?.innerText === {json.dumps(username)}))"
+
+
+def shot(process, name):
+    rpc(process, "capture", name=name + ".png")
+    until(lambda: (PROFILE / (name + ".png")).exists(), 5)
+    shutil.copy(PROFILE / (name + ".png"), SHOTS / (name + ".png"))
+
+
+def themed(process, name, setup):
+    for theme in ("Light", "Dark"):
+        send(process, "preference", key="theme", value=theme)
+        time.sleep(.6)
+        setup()
+        time.sleep(.6)
+        shot(process, f"{'mac' if MAC else 'win'}-{name}-{theme.lower()}")
+    send(process, "preference", key="theme", value="Light")
+
+
+def plain_text_anywhere(needle):
+    """A file in the profile holding needle as plain text (UTF-8 or UTF-16), if any."""
+    for path in PROFILE.rglob("*"):
+        try:
+            if path.is_file() and path.suffix != ".png" and path.stat().st_size < 20_000_000:
+                data = path.read_bytes()
+                if needle.encode() in data or needle.encode("utf-16-le") in data:
+                    return str(path.relative_to(PROFILE))
+        except OSError:
+            pass
+    return None
+
+
+def chrome_profile(folder):
+    """A Chrome profile with one login Windows can decrypt and one locked by Chrome's app-bound encryption."""
+    import ctypes
+    import ctypes.wintypes as wt
+
+    class Blob(ctypes.Structure):
+        _fields_ = [("cbData", wt.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
+    plain = b"Chrome-dpapi-77"
+    buf = ctypes.create_string_buffer(plain, len(plain))
+    out = Blob()
+    assert ctypes.windll.crypt32.CryptProtectData(ctypes.byref(Blob(len(plain), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))), None, None, None, None, 0, ctypes.byref(out))
+    sealed = ctypes.string_at(out.pbData, out.cbData)
+    ctypes.windll.kernel32.LocalFree(out.pbData)
+    folder.mkdir(parents=True)
+    (folder / "Bookmarks").write_text(json.dumps({"roots": {"bookmark_bar": {"children": [{"type": "url", "name": "Chrome page", "url": "https://chrome.example/"}]}}}))
+    db = sqlite3.connect(folder / "Login Data")
+    db.execute("CREATE TABLE logins (origin_url TEXT, username_value TEXT, password_value BLOB, blacklisted_by_user INTEGER)")
+    db.execute("INSERT INTO logins VALUES ('https://chrome.example/login', 'chromie', ?, 0)", (sealed,))
+    db.execute("INSERT INTO logins VALUES ('https://bound.example/', 'locked', ?, 0)", (b"v20" + os.urandom(60),))
+    db.commit()
+    db.close()
+
+
+def stage_profile(process, path, name):
+    js(process, "window.__tools.import = null")
+    rpc(process, "stageExternalProfile", path=str(path), name=name)
+    return until(lambda: js(process, "window.__tools.import?.external?.preview ?? null"), 15)
+
+
+def main():
+    for d in (PROFILE / "agents", BIN, SHOTS):
+        d.mkdir(parents=True)
+    (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
+    launcher(BIN / "fakeagent", BIN / "fake_agent.py")
+    (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
+        "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {
+        # Edge's own form autofill stays off: closing a tab while its suggestion list is open crashes
+        # the engine (WebView2 156, also on builds without saved passwords). Still's passwords don't use it.
+        "Autofill": False,
+        "Companions": CREW, "AiHarness": "fake", "AgentsEnabled": True, "ApprovedAgents": ["Claude"],
+        "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}]},
+        "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
+    env = dict(os.environ, STILL_QA_BROWSER_ARGS='--host-resolver-rules="MAP insecure.test 127.0.0.1"')
+    process = launch(EXE, PROFILE, env)
+    agent = None
+    try:
+        js(process, LISTEN)
+        rpc(process, "osAuth", answer="deny", exportPath=str(RUN / "export.csv"))
+
+        # Save: sign in on a site, and Still offers to save, with both fields editable.
+        go(process, SITE + "/login")
+        type_into(process, "#user", "ada@example.com")
+        type_into(process, "#pw", "Lighthouse-Keeper-42")
+        click(process, "#go")
+        offered = until(lambda: bar(process), 8)
+        check(offered and "Save your password for" in offered and "127.0.0.1" in offered, "Signing in offers to save the password")
+        check(js(process, "document.querySelector('.save-login input[aria-label=Username]')?.value") == "ada@example.com"
+              and js(process, "document.querySelector('.save-login input[type=password]')?.value") == "Lighthouse-Keeper-42", "The prompt shows the username and password, ready to edit")
+        themed(process, "save-prompt", lambda: None)
+        js(process, "document.querySelector('.save-login button[type=submit]').click()")
+        until(lambda: not bar(process), 5)
+        ada = entry(process, SITE, "ada@example.com")
+        check(ada and reveal(process, ada) == "Lighthouse-Keeper-42", "Save keeps the login")
+        if not MAC:
+            found = plain_text_anywhere("Lighthouse-Keeper-42")
+            check((PROFILE / "logins.dpapi").exists() and not found, "It's encrypted: the password isn't in plain text anywhere in the profile" + (f" (found in {found})" if found else ""))
+
+        # Update: a change-password form updates the saved login.
+        go(process, SITE + "/change")
+        type_into(process, "#user", "ada@example.com")
+        type_into(process, "#cur", "Lighthouse-Keeper-42")
+        type_into(process, "#new", "Lighthouse-Keeper-43")
+        type_into(process, "#again", "Lighthouse-Keeper-43")
+        click(process, "#go")
+        offered = until(lambda: bar(process), 8)
+        check(offered and "Update your password for" in offered, "Changing a password offers to update the saved one")
+        js(process, "document.querySelector('.save-login button[type=submit]').click()")
+        until(lambda: not bar(process), 5)
+        check(len([v for v in vault(process) if v["origin"] == SITE]) == 1 and reveal(process, entry(process, SITE, "ada@example.com")) == "Lighthouse-Keeper-43",
+              "Update replaces the password and keeps one login")
+
+        # Fill: the key in the field opens this site's logins; a click fills.
+        go(process, SITE + "/login")
+        click(process, "#user")
+        check(until(lambda: has_key(process), 5), "A saved login puts a key in the field")
+        ada = entry(process, SITE, "ada@example.com")
+        pick(process, "#user", 0, ada)
+        check(until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5), "Picking the login fills the username and password")
+
+        # Several accounts: the menu lists each one.
+        send(process, "vaultSave", origin=SITE, username="grace@example.com", password="Compiler-Admiral-06")
+        time.sleep(.5)
+        grace = entry(process, SITE, "grace@example.com")
+        go(process, SITE + "/login")
+        click(process, "#user")
+        listed = MAC or until(lambda: all(shadow(process, **{"data-id": v["id"]}) for v in (ada, grace)), 5)
+        check(until(lambda: has_key(process), 5) and listed, "With two saved logins the menu lists both")
+        themed(process, "fill-menu", lambda: (go(process, SITE + "/login"), click(process, "#user")))
+        pick(process, "#user", 1, grace)
+        check(until(lambda: values(process, "#user", "#pw") == ["grace@example.com", "Compiler-Admiral-06"], 5), "Picking the second login fills that one")
+
+        # Auto sign-in: one saved login fills by itself; with two, it never guesses.
+        send(process, "passwordPermission", feature="fill", enabled=True)
+        time.sleep(.5)
+        go(process, SITE + "/login")
+        check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in never guesses between two logins")
+        send(process, "vaultDelete", id=grace["id"])
+        time.sleep(.5)
+        go(process, SITE + "/login")
+        check(until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5), "Auto sign-in fills the only login as the page opens")
+
+        # Cross-site frames: a sign-in form from another site inside this page gets nothing.
+        send(process, "vaultSave", origin=OTHER, username="frame@example.com", password="Frame-Never-Fill-1")
+        go(process, SITE + "/frame")
+        time.sleep(1.5)
+        f = rect(process, "#f")
+        click_at(process, f["x"] + 60, f["y"] + 120)
+        time.sleep(1)
+        check(not page(process, "!!document.querySelector('still-passwords')") and not has_key(process),
+              "A sign-in form in a frame from another site gets no key and no fill")
+
+        # Insecure pages: auto sign-in stays off, and the first click only warns; the second fills.
+        if not MAC:  # needs Chromium's host resolver rules to reach an http site that isn't this computer
+            send(process, "vaultSave", origin=INSECURE, username="open@example.com", password="Plain-Http-Page-9")
+            time.sleep(.5)
+            plain = entry(process, INSECURE, "open@example.com")
+            go(process, INSECURE + "/login")
+            check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in never fills on an insecure page")
+            first = pick(process, "#user", 0, plain)
+            time.sleep(.5)
+            armed = values(process, "#user", "#pw") == ["", ""]
+            at = until(lambda: shadow(process, **{"data-id": plain["id"]}), 5)
+            if at:
+                click_at(process, *at)
+            check(first and armed and until(lambda: values(process, "#user", "#pw") == ["open@example.com", "Plain-Http-Page-9"], 5),
+                  "On an http page the first click only warns; the second fills")
+        send(process, "passwordPermission", feature="fill", enabled=False)
+
+        # Two-step sign-in: the username from the first page goes with the password from the second.
+        go(process, SITE + "/step1")
+        type_into(process, "#user", "kit@example.com")
+        click(process, "#go")
+        until(lambda: "/step2" in page(process, "location.href"), 8)
+        settle(process)
+        type_into(process, "#pw", "Two-Step-Fox-31")
+        click(process, "#go")
+        offered = until(lambda: bar(process), 8)
+        check(offered and js(process, "document.querySelector('.save-login input[aria-label=Username]')?.value") == "kit@example.com",
+              "A two-step sign-in is offered with the username from its first step")
+        bar_button(process, "Not now")
+        check(entry(process, SITE, "kit@example.com") is None, "Not now saves nothing")
+
+        # Strong passwords: a new-password field suggests one, and taking it saves the login straight away.
+        go(process, SITE + "/signup")
+        type_into(process, "#user", "new@example.com")
+        page(process, "document.activeElement?.blur()")
+        click(process, "#pw")
+        at = until(lambda: menu_item(process, "#pw", 0, **{"data-generate": "1"}), 5)
+        if at:
+            click_at(process, *at)
+        made = until(lambda: values(process, "#pw")[0], 5) or ""
+        strong = len(made) == 20 and any(c.isupper() for c in made) and any(c.islower() for c in made) and any(c.isdigit() for c in made) and any(not c.isalnum() for c in made)
+        saved = until(lambda: entry(process, SITE, "new@example.com"), 5)
+        check(strong and saved and reveal(process, saved) == made, "The suggested strong password fills the field and is saved at once")
+        check(until(lambda: "Strong password saved for 127.0.0.1" in text(process), 3), "and Still says so")
+        click(process, "#go")
+        time.sleep(2)
+        check(not bar(process), "Signing up with the suggestion asks nothing more")
+
+        # Never for this site.
+        def sign_in_elsewhere():
+            go(process, OTHER + "/login")
+            type_into(process, "#user", "someone@example.com")
+            type_into(process, "#pw", "Other-Site-Pass-8")
+            click(process, "#go")
+        sign_in_elsewhere()
+        until(lambda: bar(process), 8)
+        bar_button(process, "Never for this site")
+        sign_in_elsewhere()
+        time.sleep(2.5)
+        vault(process)
+        check(not bar(process) and OTHER in (js(process, "window.__tools.passwords?.never ?? []") or []), "Never for this site stops the offers there and lists the site")
+
+        # Private tabs never save and get no helper.
+        send(process, "new", url=SITE + "/login", private=True)
+        until(lambda: any(t.get("Private") for t in rpc(process)["tabs"]), 10)
+        until(lambda: page(process, "location.pathname") == "/login" and page(process, "document.readyState") == "complete", 10)
+        time.sleep(.6)
+        helper = page(process, "typeof window.__stillLoginCleanup")
+        type_into(process, "#user", "private@example.com")
+        type_into(process, "#pw", "Private-Tab-Pass-5")
+        click(process, "#go")
+        time.sleep(2.5)
+        check(helper == "undefined" and not bar(process) and entry(process, SITE, "private@example.com") is None, "A private tab never saves a password")
+        send(process, "select", id="home")
+
+        # Passwords: showing one asks Windows Hello / Touch ID first (answered here by the QA hook).
+        send(process, "openPanel", name="passwords")
+        until(lambda: js(process, "!!document.querySelector('.passwords-list')"), 5)
+        before = rpc(process, "osAuth", answer="deny")["asks"]
+        js(process, "__msgs.length = 0")
+        js(process, row("ada@example.com", "r.querySelector('[aria-label^=\"Show password\"]').click()"))
+        time.sleep(1)
+        denied = not js(process, "__msgs.some(m => m.kind === 'vaultRevealed')") and rpc(process, "osAuth")["asks"] == before + 1
+        rpc(process, "osAuth", answer="allow")
+        js(process, row("ada@example.com", "r.querySelector('[aria-label^=\"Show password\"]').click()"))
+        shown = until(lambda: js(process, row("ada@example.com", "r.querySelector('.password-shown')?.innerText")), 5)
+        check(denied and shown == "Lighthouse-Keeper-43", "A password shows only after Windows Hello or Touch ID says yes")
+        js(process, row("ada@example.com", "r.querySelector('[aria-label^=\"Copy password\"]').click()"))
+        check(until(lambda: "Password copied" in text(process), 5), "Copy works after the check (test builds never touch the clipboard)")
+        send(process, "vaultSave", origin="https://weak.example", username="me", password="password")
+        send(process, "vaultSave", origin="https://reuse.example", username="me", password="Lighthouse-Keeper-43")
+        time.sleep(.6)
+        flags = {(v["origin"], v["username"]): (v["weak"], v["reused"]) for v in vault(process)}
+        check(flags.get(("https://weak.example", "me")) == (True, False) and flags.get(("https://reuse.example", "me")) == (False, True)
+              and flags.get((SITE, "ada@example.com")) == (False, True) and flags.get((SITE, "new@example.com")) == (False, False), "Weak and reused passwords are flagged")
+        themed(process, "manager", lambda: (send(process, "openPanel", name="passwords"), until(lambda: js(process, "!!document.querySelector('.passwords-list')"), 5)))
+
+        # Export: a CSV other browsers can import, only after the check.
+        send(process, "openPanel", name="passwords")
+        until(lambda: js(process, "!!document.querySelector('.passwords-list')"), 5)
+        rpc(process, "osAuth", answer="deny")
+        send(process, "vaultExport")
+        time.sleep(1)
+        refused = not (RUN / "export.csv").exists()
+        rpc(process, "osAuth", answer="allow")
+        js(process, "document.querySelector('[aria-label=\"Export passwords\"]').click()")
+        until(lambda: js(process, "!!document.querySelector('[role=alertdialog]:not(.permission-bar)')"), 5)
+        js(process, "[...document.querySelectorAll('[role=alertdialog]:not(.permission-bar) button')].find(b => b.innerText === 'Confirm').click()")
+        exported = until(lambda: (RUN / "export.csv").exists() and (RUN / "export.csv").read_text(encoding="utf-8"), 5) or ""
+        rows = list(csv.DictReader(exported.splitlines()))
+        check(refused and any(r["username"] == "ada@example.com" and r["password"] == "Lighthouse-Keeper-43" and r["url"].startswith(SITE) for r in rows),
+              "Export writes a CSV only after the check")
+
+        # Import a CSV.
+        (RUN / "import.csv").write_text("name,url,username,password\nbreakfast,https://csv.example/login,csvuser,maple syrup pancakes forever\n", encoding="utf-8")
+        js(process, "window.__tools.import = null")
+        rpc(process, "stageImport", kind="passwords", path=str(RUN / "import.csv"))
+        preview = until(lambda: js(process, "window.__tools.import?.preview ?? null"), 5) or {}
+        send(process, "importConfirm", id=preview.get("id", ""), replace=False)
+        time.sleep(.6)
+        found = entry(process, "https://csv.example", "csvuser")
+        check(preview.get("logins") == 1 and found and reveal(process, found) == "maple syrup pancakes forever", "Importing a password CSV adds its logins")
+
+        # Import from Firefox (a fixture profile without a primary password), and one with a primary password.
+        fox = RUN / "firefox"
+        shutil.copytree(FIXTURES / "firefox-profile", fox)
+        external = stage_profile(process, fox, "Firefox") or {}
+        check(external.get("passwords") == 2 and external.get("bookmarks") == 1 and external.get("history") == 2, "Firefox's passwords, bookmarks and history are read")
+        send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
+        time.sleep(1)
+        a, b = entry(process, "https://fox.example", "fox@example.com"), entry(process, "https://burrow.example", "kit")
+        check(a and b and reveal(process, a) == "Fennec-3des-91!" and reveal(process, b) == "Burrow-aes-27?", "Firefox logins import with the right passwords (3DES and AES)")
+        locked = RUN / "firefox-locked"
+        shutil.copytree(FIXTURES / "firefox-profile", locked)
+        db = sqlite3.connect(locked / "key4.db")
+        item = bytearray(db.execute("SELECT item2 FROM metaData WHERE id='password'").fetchone()[0])
+        item[-1] ^= 0xFF  # as with a primary password: the empty one no longer opens the check
+        db.execute("UPDATE metaData SET item2=? WHERE id='password'", (bytes(item),))
+        db.commit()
+        db.close()
+        external = stage_profile(process, locked, "Firefox") or {}
+        check(external.get("passwords") == 0 and any("primary password" in w and "Export passwords" in w for w in external.get("warnings", [])),
+              "A Firefox primary password is explained, with the way through (export a CSV)")
+        send(process, "externalCancel")
+
+        # Import from Chrome: what Windows can decrypt comes in; app-bound passwords are explained.
+        if not MAC:
+            chrome = RUN / "chrome"
+            chrome_profile(chrome)
+            external = stage_profile(process, chrome, "Chrome") or {}
+            check(external.get("passwords") == 1 and any("locked to the browser" in w and "Export your passwords" in w for w in external.get("warnings", [])),
+                  "Chrome passwords import, and app-bound ones point to Chrome's own CSV export")
+            send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
+            time.sleep(1)
+            c = entry(process, "https://chrome.example", "chromie")
+            check(c and reveal(process, c) == "Chrome-dpapi-77", "The Chrome login arrives with its password")
+
+        # ---- AIs never get a password ----
+        js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        agent = Mcp(EXE, "Claude", PROFILE)
+        tools = [t["name"] for t in agent.request("tools/list", {})["result"]["tools"]]
+        check(tools and not any(w in t for t in tools for w in ("pass", "vault", "login", "credential", "secret")), "No MCP tool reads, lists, fills or exports passwords")
+        ok, _ = agent.call("get_passwords")
+        check(not ok, "Asking for passwords over MCP fails")
+        helped = subprocess.run([str(EXE), "--cli", "help"], capture_output=True, timeout=60).stdout.decode("utf-8", "replace")
+        commands = [line.split()[0] for line in helped.splitlines() if line.startswith("  ") and not line.startswith("   ") and line.strip()]
+        check(len(commands) > 10 and not any(w in c for c in commands for w in ("pass", "vault", "login", "credential")), "The CLI has no password command")
+
+        # A sign-in page pauses the AI and brings the page to the user.
+        ok, opened = agent.call("open_tab", url=SITE + "/login")
+        tab = json.loads(opened)["tabId"] if ok else ""
+        ok, said = agent.call("read_page", tabId=tab)
+        paused = until(lambda: rpc(process).get("activeId") == tab and "Sign in, then hand it back" in (js(process, "document.querySelector('.page-control')?.innerText") or ""), 8)
+        check(ok and "sign-in page" in said and "never type or see passwords" in said and paused, "On a sign-in page the AI pauses and the user is asked to sign in")
+        settle(process)
+        # The user fills their saved login from the key, then hands the tab back without sending the form.
+        pick(process, "#user", 0, ada)
+        filled = until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5)
+        js(process, "document.querySelector('.page-take').click()")
+        time.sleep(.5)
+        ok, seen = agent.call("read_page", tabId=tab)
+        check(filled and ok and "[saved login, hidden]" in seen and "ada@example.com" not in seen and "Lighthouse" not in seen and "sign-in page" not in seen,
+              "After the user signs in, what the AI reads hides the saved login")
+        ok, found = agent.call("find", tabId=tab, text="Lighthouse-Keeper-43")
+        check("Lighthouse" not in found and "No buttons, links or fields match" in found, "find can't search for a saved password")
+        page(process, "window.__masks = 0; new MutationObserver(r => __masks += r.length).observe(document.querySelector('#user'), { attributes: true, attributeFilter: ['style'] })")
+        ok, _ = agent.call("screenshot", tabId=tab)
+        check(ok and page(process, "window.__masks") >= 2 and not page(process, "document.querySelector('#user').getAttribute('style')"),
+              "A screenshot masks fields that show a saved login, then puts them back")
+        started = time.monotonic()
+        ok, said = agent.call("type", tabId=tab, selector="#pw", text="guessing")
+        check(not ok and "never type or see passwords" in said and time.monotonic() - started < 5 and values(process, "#pw") == ["Lighthouse-Keeper-43"],
+              "An AI can't type into a password field")
+        until(lambda: js(process, "!!document.querySelector('.page-control.is-paused .page-take')"), 5)
+        js(process, "document.querySelector('.page-control.is-paused .page-take').click()")
+        time.sleep(.5)
+        # While an AI drives the tab, the key fills nothing.
+        agent.call("scroll", tabId=tab, direction="down")
+        page(process, "document.querySelector('#user').value = ''; document.querySelector('#pw').value = ''")
+        at = pick(process, "#user", 0, ada)
+        time.sleep(1)
+        check(at and values(process, "#user", "#pw") == ["", ""], "While an AI drives the tab, nothing fills")
+        agent.call("close_tab", tabId=tab)
+        agent.close()
+        agent = None
+
+        # Companions' memory never keeps a saved password.
+        results = BIN / "results.jsonl"
+        send(process, "new")
+        until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 10)
+        js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        send(process, "aiSend", text="REMEMBER: Loves maple syrup pancakes forever", home=True, companion="pip")
+        said = until(lambda: results.exists() and json.loads(results.read_text(encoding="utf-8").splitlines()[0]), 30) or {}
+        memory = PROFILE / "companions" / "pip" / "memory.json"
+        check(said.get("error") and "saved passwords" in said.get("text", "") and (not memory.exists() or "pancakes" not in memory.read_text(encoding="utf-8")),
+              "A companion can't remember a saved password")
+        errors = rpc(process).get("shellErrors")
+        check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
+    except Exception as error:
+        traceback.print_exc()
+        check(False, "The run finished (" + type(error).__name__ + ")")
+    finally:
+        if agent:
+            agent.close()
+        try:
+            rpc(process, "quit")
+            process.wait(timeout=15)
+        except Exception:
+            process.kill()
+        SERVER.shutdown()
+        (RUN / "result.json").write_text(json.dumps(RESULT, indent=2))
+        failed = [c["name"] for c in RESULT["checks"] if not c["passed"]]
+        print(("PASSED " if not failed else "FAILED ") + f"{len(RESULT['checks']) - len(failed)}/{len(RESULT['checks'])}", "->", RUN)
+        sys.exit(1 if failed else 0)
+
+
+if __name__ == "__main__":
+    main()

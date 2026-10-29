@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react"
-import { KeyRound, Plus, Copy, ArrowDownToLine, Trash2, Puzzle, FolderOpen, ExternalLink, RotateCw, Settings2, ShieldCheck, Cookie, Eye, EyeOff } from "lucide-react"
+import { useState } from "react"
+import { Trash2, Puzzle, FolderOpen, ExternalLink, RotateCw, Settings2, ShieldCheck, Cookie } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MAC } from "@/lib/utils"
 import { Input } from "@/components/ui/input"
@@ -9,40 +9,19 @@ import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@
 import { Separator } from "@/components/ui/separator"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { DataTools } from "./DataTools"
-import { LoginControls } from "./LoginControls"
+import { PasswordsPane, type LoginOffer } from "./Passwords"
 type Send = (op:string,payload?:Record<string,unknown>)=>void
-export type ToolData={external?:{busy:boolean;error:string;done:string;profile:string;sources:{id:string;name:string}[];preview?:{id:string;name:string;bookmarks:number;history:number;passwords:number;cookies:number;cookiesLocked:boolean;skipped:number;warnings:string[]}};error?:string;vault?:{id:string;origin:string;username:string}[];cookies?:{id:string;name:string;domain:string;path:string;secure:boolean;httpOnly:boolean;session:boolean}[];extensions?:{id:string;name:string;enabled:boolean;hasPage:boolean;hasPopup?:boolean;icon?:string|null;}[];candidate?:{name:string;permissions:string[];desktopCompanion?:boolean};permissions?:{origin:string;kind:string;state:string}[];engine?:string;isPrivate?:boolean;profiles?:{id:string;name:string;current:boolean;launch:boolean;permanent:boolean;running:boolean}[];preview?:{id:string;file:string;kind:string;logins:number;bookmarks:number;history:number;tabs:number;skipped:number};offer?:{id:string;origin:string;username:string;update:boolean};passwordOptions?:{save:boolean;fill:boolean;update:boolean};downloading?:boolean}
+export type ToolData={external?:{busy:boolean;error:string;done:string;profile:string;sources:{id:string;name:string}[];preview?:{id:string;name:string;bookmarks:number;history:number;passwords:number;cookies:number;cookiesLocked:boolean;skipped:number;warnings:string[]}};error?:string;vault?:{id:string;origin:string;username:string;weak:boolean;reused:boolean}[];never?:string[];cookies?:{id:string;name:string;domain:string;path:string;secure:boolean;httpOnly:boolean;session:boolean}[];extensions?:{id:string;name:string;enabled:boolean;hasPage:boolean;hasPopup?:boolean;icon?:string|null;}[];candidate?:{name:string;permissions:string[];desktopCompanion?:boolean};permissions?:{origin:string;kind:string;state:string}[];engine?:string;isPrivate?:boolean;profiles?:{id:string;name:string;current:boolean;launch:boolean;permanent:boolean;running:boolean}[];preview?:{id:string;file:string;kind:string;logins:number;bookmarks:number;history:number;tabs:number;skipped:number};offer?:LoginOffer;passwordOptions?:{save:boolean;fill:boolean};downloading?:boolean}
 export function BrowserTools({pane,data,send,url,tracking,memory,autofill}:{pane:string;data:ToolData;send:Send;url:string;tracking:string;memory:boolean;autofill:boolean}){
  const [filter,setFilter]=useState("")
- const [adding,setAdding]=useState(false)
- const [origin,setOrigin]=useState("")
- const [username,setUsername]=useState("")
- const [password,setPassword]=useState("")
- const [visible,setVisible]=useState(false)
  const [confirmation,setConfirmation]=useState<{title:string;body:string;run:()=>void}|null>(null)
- useEffect(()=>{
-  const listener=(e:MessageEvent)=>{if(e.data.kind==="vaultGenerated")setPassword(e.data.password);if(e.data.kind==="vaultSaved"){setAdding(false);setPassword("");setUsername("");setVisible(false)}}
-  window.chrome?.webview?.addEventListener("message",listener)
-  return()=>window.chrome?.webview?.removeEventListener("message",listener)
- },[])
  const pref=(key:string,value:string)=>send("preference",{key,value})
  const refresh=()=>send("refreshTools",{name:pane})
- const currentOrigin=(()=>{try{return new URL(url).origin}catch{return ""}})()
  const ask=(title:string,body:string,run:()=>void)=>setConfirmation({title,body,run})
  return <div className="browser-tools">
   {data.error&&<p className="tool-error" role="alert">{data.error}</p>}
   {(pane==="profiles"||pane==="import")&&<DataTools pane={pane} data={data} send={send}/>}
-  {pane==="passwords"&&<>
-   <div className="tool-intro"><KeyRound/><p>{MAC ? "Kept in your Mac's Keychain." : "Encrypted by Windows for your account."} Logins fill only on the exact website you saved.</p></div>
-   <LoginControls data={data} send={send} ask={ask}/>
-   {!adding?<div className="tool-toolbar"><Input aria-label="Search saved logins" placeholder="Find a login" value={filter} onChange={e=>setFilter(e.target.value)}/><Button variant="outline" onClick={()=>{setOrigin(currentOrigin);setAdding(true)}}><Plus/>Add login</Button></div>:<form className="vault-form" onSubmit={e=>{e.preventDefault();send("vaultSave",{origin,username,password})}}>
-    <label htmlFor="login-site">Website</label><Input id="login-site" type="url" required placeholder="https://example.com" value={origin} onChange={e=>setOrigin(e.target.value)}/>
-    <label htmlFor="login-user">Username or email</label><Input id="login-user" autoComplete="off" value={username} onChange={e=>setUsername(e.target.value)}/>
-    <label htmlFor="login-password">Password</label><div className="password-input"><Input id="login-password" type={visible?"text":"password"} autoComplete="new-password" required value={password} onChange={e=>setPassword(e.target.value)}/><Button type="button" variant="ghost" size="icon" aria-label={visible?"Hide password":"Show password"} onClick={()=>setVisible(!visible)}>{visible?<EyeOff/>:<Eye/>}</Button></div>
-    <div className="tool-toolbar"><Button type="button" variant="ghost" onClick={()=>send("vaultGenerate")}><RotateCw/>Generate strong password</Button><span/><Button type="button" variant="ghost" onClick={()=>{setAdding(false);setPassword("")}}>Cancel</Button><Button type="submit">Save login</Button></div>
-   </form>}
-   {!adding&&<ScrollArea className="tools-list">{data.vault?.filter(v=>(v.origin+v.username).toLowerCase().includes(filter.toLowerCase())).map(v=><div className="tool-row" key={v.id}><KeyRound/><div className="tool-copy"><strong>{new URL(v.origin).host}</strong><small>{v.username||"No username"}</small></div><Button variant="ghost" size="icon-sm" aria-label={"Fill login for "+v.username} disabled={currentOrigin!==v.origin} onClick={()=>send("vaultFill",{id:v.id})}><ArrowDownToLine/></Button><Button variant="ghost" size="icon-sm" aria-label={"Copy password for "+v.username} onClick={()=>send("vaultCopy",{id:v.id})}><Copy/></Button><Button variant="ghost" size="icon-sm" aria-label={"Delete login for "+v.username} onClick={()=>ask("Delete this login?",v.username+" at "+v.origin,()=>send("vaultDelete",{id:v.id}))}><Trash2/></Button></div>)}{data.vault?.length===0&&<p className="empty-state">Your saved logins will appear here.</p>}</ScrollArea>}
-  </>}
+  {pane==="passwords"&&<PasswordsPane data={data} send={send} ask={ask} url={url}/>}
   {pane==="extensions"&&<>
    <div className="tool-intro"><Puzzle/><p>Open any extension in the Chrome Web Store and press <strong>Add to Still</strong> next to the address bar. You review its permissions before it installs.</p></div>
    <div className="tool-toolbar"><Button disabled={data.downloading} onClick={()=>send("openStore")}>{data.downloading?"Downloading…":<><ExternalLink/>Chrome Web Store</>}</Button><Button variant="ghost" onClick={()=>send("extensionChoose")}><FolderOpen/>Load folder</Button><Button variant="ghost" size="icon-sm" aria-label="Refresh extensions" onClick={refresh}><RotateCw/></Button></div>

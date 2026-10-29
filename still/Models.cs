@@ -46,6 +46,9 @@ public sealed class BrowserTab
  [JsonIgnore] public string LoginToken { get; set; }="";
  [JsonIgnore] public bool LoginDetected { get; set; }
  [JsonIgnore] public bool LoginFilled { get; set; }
+ [JsonIgnore] public string LoginApi { get; set; }=""; // the page's login helper (LoginObserver.js), named at random per page
+ [JsonIgnore] public string GeneratedLogin { get; set; }=""; // the login saved with a strong password suggested on this page
+ [JsonIgnore] public (string Origin,string Username,DateTime At) LoginUsername { get; set; } // a two-step sign-in's first step
  [JsonIgnore] public PageDialog? Dialog { get; set; } // an alert/confirm/prompt the page is paused on
  [JsonIgnore] public object? AgentUpload { get; set; } // a file picker an AI's click opened, waiting for upload_file
  [JsonIgnore] public DateTime AgentActedAt { get; set; }
@@ -74,6 +77,7 @@ public sealed class Preferences
  public bool OfferPasswordSave { get; set; } = true;
  public bool AutoFillPasswords { get; set; }
  public bool OfferPasswordUpdate { get; set; } = true;
+ public List<string> NeverSavePasswords { get; set; } = []; // origins where you said Never
  public bool Blocking { get; set; } = true;
  public string Tracking { get; set; } = "Balanced";
  public bool MemorySaver { get; set; } = true;
