@@ -18,7 +18,7 @@
 
 - The AI's cursor glides to what it clicks or types into, with its name under it, in its companion's hue.
   It lives in a closed shadow root, and goes when the page navigates.
-- The pill at the bottom says what it's doing: "Controlled by Pip", the last step, Take over, Go to chat, Stop.
+- The pill at the bottom says what it's doing: "Pip is working…", the last step, Take over, Open chat, Stop.
 
 ## Files
 

@@ -23,7 +23,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, MAC, ROOT, compare, js, launch, launcher, rpc, send, text, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, text, until  # noqa: E402
 from mcp_client import Mcp  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
@@ -32,7 +32,6 @@ RUN = ROOT / "artifacts" / ("agentic-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 OUT = ROOT / "docs" / "agentic" / "compare"
-REFS = Path("D:/Still/work/refs")
 RESULT = {"checks": []}
 
 
@@ -230,12 +229,9 @@ def ask(process, words, companion="pip"):
     send(process, "aiSend", text=words, home=True, companion=companion)
 
 
-def capture(process, name, reference=None):
+def capture(process, name):
     rpc(process, "capture", name=name + ".png")
     (OUT / f"{name}.png").write_bytes((PROFILE / f"{name}.png").read_bytes())
-    if reference and REFS.exists():  # the reference frames live only on the Windows machine
-        (REFS / "compare").mkdir(exist_ok=True)
-        compare(OUT / f"{name}.png", REFS / reference, REFS / "compare" / f"{name}-compare.png")  # their frames stay out of the repo
 
 
 def running(process):
@@ -315,7 +311,7 @@ def laptops(process):
     check(rpc(process, "eval", tab=page["Id"], script="document.querySelector('#q').value") == "laptop", "Typing reached the search field")
     check(rpc(process, "eval", tab=page["Id"], script="location.search") == "?max=800", "The click went through to the page")
     time.sleep(.6)
-    capture(process, "split-v01", "screens/hero_split.png")
+    capture(process, "split-v01")
     done = until(lambda: js(process, "!!document.querySelector('.chat-pane .file-card')"), 30)
     check(done, "The saved file shows as a card in the chat")
     saved = next(PROFILE.glob("library/*/laptops-under-800.csv"), None)
@@ -333,9 +329,9 @@ def laptops(process):
     send(process, "chatPage", on=False)
     until(lambda: not js(process, "!!document.querySelector('.page-column.is-split')"), 5)
     check("laptops-under-800.csv" in (js(process, "document.querySelector('.chat-info')?.innerText ?? ''") or ""), "The chat's details list its files")
-    check("Worked for" in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat opened later still says how long it worked")
+    check("Took " in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat opened later still says how long it worked")
     time.sleep(.6)
-    capture(process, "done-v01", "screens/hero_done.png")
+    capture(process, "done-v01")
     click(process, ".chat-pane .file-card-open")
     grid = ".page-column.is-viewing .file-view .csv-grid"
     check(until(lambda: js(process, f"document.querySelectorAll('{grid} tbody tr').length") == 10, 10)
@@ -368,7 +364,7 @@ def parallel(process):
     open_menu(process, ".tasks-button")
     items = until(lambda: js(process, "document.querySelectorAll('.tasks-item').length"), 5)
     menu = js(process, "document.querySelector('.tasks-menu')?.innerText ?? ''") or ""
-    check(items == 2 and "Working for" in menu, "The running tasks panel lists both, with how long each has worked")
+    check(items == 2 and "Working · " in menu, "The running tasks panel lists both, with how long each has worked")
     check(js(process, "document.querySelectorAll('.tasks-menu .tasks-page').length") == 2 and "Move to my tabs" in menu, "Each lists its page, with Watch and Move to my tabs")
     capture(process, "tasks-v01")
     escape(process)
@@ -479,7 +475,7 @@ def queue_and_question(process):
     check(until(lambda: js(process, "!!document.querySelector('.ask-card')"), 20), "Send now stops the run and sends the follow-up, which asks a question")
     check(until(lambda: js(process, "!!document.querySelector('.tasks-button .is-needs')"), 5), "The running tasks button shows that a chat needs you")
     time.sleep(.5)
-    capture(process, "question-v01", "screens/hero_question.png")
+    capture(process, "question-v01")
     open_menu(process, ".tasks-button")
     until(lambda: js(process, "!!document.querySelector('.tasks-ask button')"), 5)
     click_text(process, ".tasks-ask button", "15 inch")

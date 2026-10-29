@@ -157,7 +157,6 @@ if "--fallbacks" in sys.argv:
 
 if "--screens" in sys.argv:
     from qa import shots
-    REFS = Path(r"D:\Still\work\refs\screens")
     live = "canvas[data-live]"
 
     def home(p):
@@ -171,7 +170,7 @@ if "--screens" in sys.argv:
         until(lambda: js(p, "!!document.querySelector('.ai-sidebar .mascot img, .ai-sidebar .mascot canvas[data-live]')"), 30)
 
     signed_in = {"AiHarness": "claude", "Companions": CREW}
-    shots(EXE, "newtab-mascot", "v03", home, signed_in, REFS / "hero_newtab.png")
+    shots(EXE, "newtab-mascot", "v03", home, signed_in)
     shots(EXE, "sidebar-mascot", "v03", sidebar, signed_in)
 
 print(("PASSED " if all(RESULT) else "FAILED ") + f"{sum(RESULT)}/{len(RESULT)}")

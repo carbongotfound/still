@@ -20,5 +20,5 @@ Without WebGL, or with reduced motion on, still pictures rendered from the same 
 Where they show: the new tab hero (follows the cursor), the companion row and picker, the sidebar header and chat
 turns, the takeover pill, and the marker on a tab an AI is working in.
 
-Shots: `compare/mascots-v01-{light,dark}.png` (every mascot in every state), `compare/newtab-mascot-v02*.png`
-(beside `screens/hero_newtab.png`), `compare/sidebar-mascot-v02-*.png`, `compare/picker-mascot-v02-*.png`.
+Shots: `compare/mascots-v01-{light,dark}.png` (every mascot in every state), `compare/newtab-mascot-v02-*.png`,
+`compare/sidebar-mascot-v02-*.png`, `compare/picker-mascot-v02-*.png`.

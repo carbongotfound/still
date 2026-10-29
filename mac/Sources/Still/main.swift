@@ -116,7 +116,7 @@ final class Tab: NSObject {
  var pageOpen = false // a chat tab showing its AI's page beside the conversation
  var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  var agentKey: String? // which AI run is at work here
- var runChat: String? // an ordinary tab Still's chat AI opened: "Go to chat" opens that chat
+ var runChat: String? // an ordinary tab Still's chat AI opened: "Open chat" opens that chat
  var favicon = ""
  var closed = false, reader = false, edited = false, media = false
  var blocked = 0
@@ -1080,7 +1080,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "reopen": reopen()
   case "address": openPanel("address", active?.url ?? "")
   case "findTab": openPanel("tabs", "")
-  case "find", "history", "downloads", "settings", "bookmarks": openPanel(name, "")
+  case "find", "history", "downloads", "settings", "bookmarks", "about": openPanel(name, "")
   case "reload": handle("reload", [:])
   case "back": shown?.view?.goBack()
   case "forward": shown?.view?.goForward()
@@ -1203,7 +1203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
   let left = String(UnicodeScalar(NSLeftArrowFunctionKey)!), right = String(UnicodeScalar(NSRightArrowFunctionKey)!)
   add("Still", [
-   standard("About Still", "orderFrontStandardAboutPanel:", ""),
+   command("About Still", "about", ""), // the same About as Windows, not the bare system panel
    .separator(),
    command("Settings…", "settings", ","),
    .separator(),

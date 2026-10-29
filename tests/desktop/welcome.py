@@ -309,7 +309,7 @@ def setup(process):
         next_step(process)  # -> helper
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 7, 4)
         crew = js(process, "[...document.querySelectorAll('.crew-card h3')].map(h => h.innerText.trim())") or []
-        check(crew == ["Hazel", "Rio", "Juno", "Bram", "Wren", "Pip", "Create your own"], f"Step 4: six companions to pick, then Create your own ({', '.join(crew)})")
+        check(crew == ["Hazel", "Rio", "Juno", "Bram", "Wren", "Pip", "Make your own"], f"Step 4: six companions to pick, then Make your own ({', '.join(crew)})")
         click_text(process, ".crew-card.is-own button", "Start from scratch")
         check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
         click(process, ".ob-colors button[aria-label=Cornflower]")

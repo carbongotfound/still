@@ -124,9 +124,8 @@ ROOT = Path(__file__).resolve().parents[2]
 SIZES = ((1720, 1080), (1280, 800))
 
 
-def shots(exe, name, version, setup, preferences=None, reference=None):
-    """Captures one screen at the brief's two sizes in light and dark, into docs/agentic/compare as
-    <name>-<version>-<theme>-<width>.png, plus <name>-<version>.png: the light 1720 shot beside the reference."""
+def shots(exe, name, version, setup, preferences=None):
+    """Captures one screen at two sizes in light and dark, into docs/agentic/compare as <name>-<version>-<theme>-<width>.png."""
     import shutil
     import uuid
     out = ROOT / "docs" / "agentic" / "compare"
@@ -147,18 +146,3 @@ def shots(exe, name, version, setup, preferences=None, reference=None):
             finally:
                 rpc(process, "quit")
                 process.wait(timeout=15)
-    if reference:
-        theirs = Path(r"D:\Still\work\refs\compare")  # reference frames never go into the repo
-        theirs.mkdir(parents=True, exist_ok=True)
-        compare(out / f"{name}-{version}-light-1720.png", reference, theirs / f"{name}-{version}.png")
-
-
-def compare(mine, reference, to):
-    """The reference on the left, Still on the right, at the same height."""
-    from PIL import Image
-    mine, theirs = Image.open(mine), Image.open(reference)
-    theirs = theirs.resize((round(theirs.width * mine.height / theirs.height), mine.height))
-    both = Image.new("RGB", (mine.width + theirs.width + 16, mine.height), "white")
-    both.paste(theirs, (0, 0))
-    both.paste(mine, (theirs.width + 16, 0))
-    both.save(to)

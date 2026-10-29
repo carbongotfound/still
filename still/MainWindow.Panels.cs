@@ -134,10 +134,10 @@ public partial class MainWindow
  {
   if(shellReady){ShellOpen("about");return;}
   OpenSheet("about", "still.");
-  SheetContent.Children.Add(Note("Version 1.0\nThe browser you share with your AI.", 15));
+  SheetContent.Children.Add(Note("The open-source agent browser that runs on the AI you already pay for.", 15));
   Heading("Built here");
   SheetContent.Children.Add(Note("Your tabs, history and bookmarks stay in your Windows user profile. Still has no account, telemetry, or cloud sync. Websites have their own privacy policies. Microsoft's WebView2 runtime is maintained and updated separately."));
-  SheetContent.Children.Add(Note("Still uses Microsoft WebView2 and Mozilla Readability. This first release does not include extension installation, browser-data migration, or a Still updater."));
+  SheetContent.Children.Add(Note("Still is MIT licensed. THIRD-PARTY-NOTICES.txt in Still's folder lists everything it ships from others."));
   SheetContent.Children.Add(ActionButton("Open Still's data folder", () => Process.Start(new ProcessStartInfo("explorer.exe", App.DataRoot) { UseShellExecute = true })));
  }
  void ShowShortcuts()

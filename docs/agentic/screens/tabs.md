@@ -73,8 +73,7 @@ log2(1 + picks)). Up to 300 picks, newest kept. Private tabs neither learn nor u
 
 Screens: `docs/agentic/compare/tabs-modern-v01.png`, `tabs-groups-v01.png`, `tabs-groups-modern-v01.png`,
 `tabs-split-v01.png`, `tabs-split-drop-v01.png`, `tabs-split-menu-v01.png`, `tabs-split-options-v01.png`,
-`tabs-recent-v01.png`. Side by side with the reference: `tabs-split-v01-compare.png` (split-view.png) and
-`tabs-modern-v01-compare.png` (alongside-you.png).
+`tabs-recent-v01.png`.
 
 ## Not done yet
 

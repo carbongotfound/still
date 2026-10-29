@@ -10,3 +10,11 @@ tools/mascot/out/
 mac/.build/
 mac/build/
 __pycache__/
+# Side-by-side frames with other products stay out of the repo
+docs/agentic/compare/*-compare.png
+docs/agentic/compare/modes-v01.png
+docs/agentic/compare/newtab-mascot-v02.png
+docs/agentic/compare/newtab-v03.png
+docs/agentic/compare/companions-v01.png
+docs/agentic/compare/companion-editor-v02.png
+docs/agentic/compare/onboarding-v01.png

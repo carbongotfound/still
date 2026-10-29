@@ -22,6 +22,8 @@ mkdir -p "$app/Contents/MacOS" "$resources"
 cp "$bin" "$app/Contents/MacOS/Still"
 cp -R "$repo/still/Shell" "$resources/Shell"
 cp "$repo/still/Assets/Readability.js" "$repo/still/Assets/LoginObserver.js" "$resources/"
+cp "$repo/LICENSE" "$repo/THIRD-PARTY-NOTICES.txt" "$resources/"
+cp -R "$repo/Licenses" "$resources/Licenses"
 
 # Scripts and lists come straight from the Windows app, so both stay in step: extract <const> from a C# file into <file>.
 extract() {

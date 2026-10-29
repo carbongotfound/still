@@ -114,7 +114,7 @@ def body_def(**change):
     return out
 
 BODIES = {
-    # research: tall and slender, an egg of a head, small ears set high
+    # cooking: tall and slender, an egg of a head, small ears set high
     "hazel": body_def(
         head=dict(c=(0, 0, 0.80), r=(0.258, 0.24, 0.30)), cheek=dict(c=(0.138, -0.068, 0.715), r=(0.112, 0.102, 0.094)),
         ear=dict(c=(0.152, 0.02, 1.045), r=(0.052, 0.036, 0.068), tilt=0.22),
@@ -147,7 +147,7 @@ BODIES = {
         leg=dict(a=(0.09, 0.0, 0.15), b=(0.098, -0.004, 0.07), r1=0.074, r2=0.072, foot=(0.102, -0.036, 0.046), foot_r=(0.084, 0.104, 0.056)),
         tail=[((0.0, 0.172, 0.21), (0.05, 0.05, 0.05))], hip=0.13, neck=0.45, belly=(0.27, 0.11, 0.12), felt=0.0015,
         face=dict(cx=0.0, cz=0.665, su=0.56, sv=0.56)),
-    # code: a huge head on a tiny body, long pointed ears
+    # movies and music: a huge head on a tiny body, long pointed ears
     "bram": body_def(
         head=dict(c=(0, 0, 0.6), r=(0.37, 0.322, 0.315)), cheek=dict(c=(0.2, -0.092, 0.508), r=(0.152, 0.132, 0.12)),
         ear=dict(c=(0.372, 0.03, 0.7), r=(0.062, 0.034, 0.17), tilt=1.18, tip=0.16),
@@ -668,18 +668,20 @@ CLIPS = {  # name: (function, seconds, loops)
 
 # Each official companion's own idle and gesture, on the shared bones.
 
-def hazel_idle(t, T):  # reading: the magnifier at her chest, head tipping as she follows a line
-    p = clip_idle(t, T); tilt = wob(t, T, 0.15)
-    p.update(arm_R=(-46 + 3 * wob(t, T, 0.5), 0, 10), hand_R=(-28, 0, 6), head=(4 + 2 * wob(t, T / 2, 0.6), 5 * tilt, 6 * tilt),
-             look=(1 + 0.25 * tilt, 0.8, 1), lid_L=(1, 0.93, 1), lid_R=(1, 0.93, 1), brow_L=(1, 1.06, 1), brow_R=(1, 1.06, 1))
+def hazel_idle(t, T):  # whisking at her chest in quick little circles, head tipping now and then to check the recipe
+    p = clip_idle(t, T); c = wob(t, 0.6); s = wob(t, 0.6, 0.25); peek = bump(t % T, 2.4, 4.2)
+    p.update(arm_R=(-65 + 8 * c, 0, 20 + 8 * s), hand_R=(58 + 8 * s, 0, 15 + 6 * c), body=(2 + 1.5 * c, 0, p["body"][2]),
+             head=(5 + 3 * peek + 1.5 * wob(t, T / 2, 0.6), 12 * peek - 2, -9 * peek + 1.5 * c), look=(1 + 0.45 * peek, 0.75 - 0.15 * peek, 1),
+             lid_L=(1, 0.93, 1), lid_R=(1, 0.93, 1), brow_L=(1, 1.06 + 0.15 * peek, 1), brow_R=(1, 1.06, 1), mouth=(0.95, 1, 1))
     return p
 
-def hazel_gesture(t, T):  # takes a closer look through the glass
-    up = back(ramp(t, 0.1, 0.55)) * (1 - ramp(t, 1.75, 2.3))
+def hazel_gesture(t, T):  # done: lifts the whisk up beside her face, proud of it, with a little hop
+    up = back(ramp(t, 0.1, 0.5)) * (1 - ramp(t, 1.8, 2.3)); lift, sq = jump(t, 0.3, 0.12, 0.3, 0.14, 0.05); w = wob(t, 0.3) * bump(t, 0.6, 1.7)
     p = hazel_idle(t, 4.8)
-    p.update(arm_R=(-46 - 62 * up, 0, 10 + 18 * up), hand_R=(-28 + 10 * up, 0, 6), head=(4 + 6 * up, 10 * up, 4 * up), body=(4 * up, 6 * up, 0),
-             look=(1 - 0.3 * up, 1, 1), lid_L=(1, 0.93 + 0.25 * up, 1), lid_R=(1, 0.93 - 0.3 * up, 1), brow_L=(1, 1.06 + 0.3 * up, 1),
-             brow_R=(1, 1.06 - 0.05 * up, 1), mouth=(0.8 + 0.2 * (1 - up), 1 + 0.25 * up, 1))
+    p.update(root_loc=(0, 0, 0.018 + lift), body_s=(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6), body=(0, -4 * up, -3 * up),
+             arm_R=(-65 - 45 * up, 0, 20 - 20 * up), hand_R=(58 + 12 * up, 0, 15 - 65 * up + 12 * w), head=(-6 * up, 6 * up, -8 * up),
+             look=(1 - 0.25 * up, 1 + 0.15 * up, 1), lid_L=(1 + 0.9 * up, 1 - 0.35 * up, 1), lid_R=(1 + 0.9 * up, 1 - 0.35 * up, 1),
+             brow_L=(1, 1.06 + 0.25 * up, 1), brow_R=(1, 1.06 + 0.25 * up, 1), mouth=(0.95 + 0.3 * up, 1 + 0.45 * up, 1))
     return p
 
 def rio_idle(t, T):  # can't stand still: a bounce, leaning one way and then the other
@@ -711,17 +713,23 @@ def juno_gesture(t, T):  # ticks a box, nods, pleased
              lid_L=(1 + 0.8 * joy, 1 - 0.3 * joy, 1), lid_R=(1 + 0.8 * joy, 1 - 0.3 * joy, 1), mouth=(0.95 + 0.3 * joy, 1 + 0.2 * joy, 1))
     return p
 
-def bram_idle(t, T):  # headphones on: nodding to the beat, a foot tapping every other one
-    beat = (t % 0.5) / 0.5; nod = math.exp(-beat * 6); s = wob(t, 1.0)
-    return dict(root_loc=(0, 0, 0.012 + 0.006 * (1 - nod)), body=(2 + 2 * nod, 0, 3 * s), head=(4 + 7 * nod, 6 * wob(t, T, 0.2), -5 * s),
-                arm_L=(-8, 0, 10), arm_R=(-4 + 4 * s, 0, -8 - 4 * nod), leg_R=(-10 * nod * (int(round(t / 0.5 - beat)) % 2), 0, 0),
-                lid_L=(1, 0.8, 1), lid_R=(1, 0.8, 1), mouth=(1.08, 1, 1), brow_L=(1, 1.02, 1), brow_R=(1, 1.02, 1))
+def bram_idle(t, T):  # headphones on, popcorn at his tummy: nodding to the beat, a foot tapping, and now and then a puff
+    beat = (t % 0.5) / 0.5; nod = math.exp(-beat * 6); s = wob(t, 1.0); x = t % T
+    dip = bump(x, 1.9, 2.45); up = bump(x, 2.35, 2.85); chew = ramp(x, 2.75, 2.9) * (1 - ramp(x, 3.45, 3.75)); bite = abs(wob(x, 0.44)) * chew
+    beat_on = 1 - 0.7 * bump(x, 1.85, 3.8)  # he eases off the nodding while he eats
+    return dict(root_loc=(0, 0, 0.012 + 0.006 * (1 - nod) * beat_on), body=(2 + 2 * nod * beat_on, 0, 3 * s),
+                head=(4 + 7 * nod * beat_on - 9 * up + 3 * dip, 6 * wob(t, T, 0.2), -5 * s), arm_L=(-20, 0, -20), hand_L=(19, 0, 21),  # keeps the bucket upright
+                arm_R=(-4 + 4 * s - 46 * dip - 91 * up, 0, -8 - 4 * nod + 113 * dip + 8 * up), hand_R=(10 * dip - 20 * up, 0, 0),
+                leg_R=(-10 * nod * beat_on * (int(round(t / 0.5 - beat)) % 2), 0, 0), look=(1 + 0.3 * dip, 1 - 0.5 * dip, 1),
+                lid_L=(1 + 0.7 * chew, 0.8 - 0.2 * chew + 0.25 * up, 1), lid_R=(1 + 0.7 * chew, 0.8 - 0.2 * chew + 0.25 * up, 1),
+                mouth=(1.08 + 0.15 * chew, 1 + 0.9 * up - 0.25 * bite, 1), brow_L=(1, 1.02 + 0.2 * up, 1), brow_R=(1, 1.02 + 0.2 * up, 1))
 
-def bram_gesture(t, T):  # got it: one finger up, eyebrows up
-    up = back(ramp(t, 0.05, 0.3)) * (1 - ramp(t, 1.15, 1.6)); lift, sq = jump(t, 0.02, 0.1, 0.26, 0.14, 0.05)
-    return dict(root_loc=(0, 0, 0.012 + lift), body_s=(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6), arm_R=(-20 * up, 0, -150 * up), hand_R=(0, 0, -10 * up),
-                arm_L=(-8, 0, 10), head=(-8 * up, 0, -6 * up), lid_L=(1, 1 + 0.2 * up, 1), lid_R=(1, 1 + 0.2 * up, 1),
-                brow_L=(1, 1 + 0.4 * up, 1), brow_R=(1, 1 + 0.4 * up, 1), mouth=(1.1, 1 + 0.8 * up, 1))
+def bram_gesture(t, T):  # want some? holds the bucket out to you, head tipped, eyebrows up
+    up = back(ramp(t, 0.05, 0.35)) * (1 - ramp(t, 1.15, 1.55)); lift, sq = jump(t, 0.02, 0.08, 0.2, 0.12, 0.03)
+    return dict(root_loc=(0, 0.02 * up, 0.012 + lift), body_s=(1 - sq * 0.6, 1 + sq, 1 - sq * 0.6), body=(8 * up, 0, 0),
+                arm_L=(-20 - 57 * up, 0, -20 + 12 * up), hand_L=(19 + 58 * up, -2 * up, 21 - 14 * up), arm_R=(-10 * up, 0, -8 - 18 * up),
+                head=(-4 * up, 0, -9 * up), look=(1, 1 + 0.1 * up, 1), lid_L=(1 + 0.4 * up, 1 + 0.12 * up, 1), lid_R=(1 + 0.4 * up, 1 + 0.12 * up, 1),
+                brow_L=(1, 1 + 0.4 * up, 1), brow_R=(1, 1 + 0.4 * up, 1), mouth=(1.1 + 0.15 * up, 1 + 0.5 * up, 1))
 
 def wren_idle(t, T):  # daydreaming, quill at her cheek, a slow sigh now and then
     p = clip_idle(t, T); s = wob(t, T); sigh = bump(t % T, 2.6, 3.9)
@@ -1216,21 +1224,27 @@ def cylinder(p, a, b, r):
 def local(p, c, rows): return (p - np.asarray(c)) @ np.asarray(rows).T
 
 def props(who, L):
-    """Each official companion's signature props: (name, field, color, bone)."""
+    """Each official companion's signature props: (name, field, color, bone[, faces])."""
     hR = np.array(M(L["hand"]["c"], -1)); hL = np.array(M(L["hand"]["c"], 1))
     out = []
-    if who == "hazel":  # a magnifying glass
-        top = hR + np.array([0, -0.012, 0.07]); ring = top + np.array([0, -0.004, 0.072]); ax = unit((0.25, -1, 0.1))
+    if who == "hazel":  # a balloon whisk: a wooden handle, then four wire loops that cross at the tip
+        ax = unit((0.5, -0.75, 0.62)); rows = frame(ax); base = hR + ax * 0.045; H, W = 0.175, 0.056
         def fn(p):
-            handle = cone(p, hR + np.array([0, -0.004, -0.05]), top, 0.016, 0.014)
-            collar = cone(p, top - np.array([0, 0, 0.004]), top + np.array([0, 0, 0.018]), 0.019, 0.017)
-            return smin(smin(smin(handle, collar, 0.005), torus(p, ring, ax, 0.06, 0.011), 0.006), sbox(p, ring, (0.058, 0.058, 0.0045), 2, frame(ax)), 0.002)
+            handle = cone(p, hR - ax * 0.04, base, 0.0135, 0.0125)
+            ferrule = cone(p, base - ax * 0.004, base + ax * 0.016, 0.0145, 0.0105)
+            q = local(p, base + ax * 0.012, rows); s = np.clip(q[:, 2] / H, 0, 1); wires = None
+            for a in np.arange(4) * math.pi / 4:  # each loop an ellipse through the axis, a little wider toward the tip
+                v = q[:, 0] * math.cos(a) + q[:, 1] * math.sin(a); off = q[:, 1] * math.cos(a) - q[:, 0] * math.sin(a)
+                e = np.stack([q[:, 2] - H / 2, v / (0.7 + 0.5 * s)], 1); r = np.array([H / 2, W])
+                k0 = np.linalg.norm(e / r, axis=1); k1 = np.linalg.norm(e / (r * r), axis=1)
+                d = np.hypot(k0 * (k0 - 1) / np.maximum(k1, 1e-9), off) - 0.007
+                wires = d if wires is None else np.minimum(wires, d)
+            return smin(smin(handle, ferrule, 0.003), wires, 0.004)
         def color(p):
-            c = paint(p, "#7a5236"); r = np.linalg.norm(p - ring, axis=1)
-            c[(r > 0.046) & (p[:, 2] > top[2] - 0.006)] = srgb("#d4a64a")
-            c[(r < 0.05)] = srgb("#d6ecf3")
+            h = (p - hR) @ ax; c = paint(p, "#b7bec8")
+            c[h < 0.064] = srgb("#8c939c"); c[h < 0.043] = srgb("#c08a55")
             return c
-        out.append(("prop.magnifier", fn, color, "hand.R"))
+        out.append(("prop.whisk", fn, color, "hand.R", 6000))
     elif who == "rio":  # a price tag pinched in one hand, a tote bag on the other
         tc = hR + np.array([-0.03, -0.035, 0.085]); rows = frame((0.3, -1, 0), up=(0.2, 0, 1)); hole = tc + rows[1] * 0.046
         def tag(p):
@@ -1277,17 +1291,26 @@ def props(who, L):
             c[h < 0] = srgb("#b9bcc4"); c[h < -0.01] = srgb("#f3a3b9")
             return c
         out.append(("prop.pencil", pencil, pencil_color, "hand.R"))
-    elif who == "bram":  # a laptop, carried closed, with stickers on the lid
-        lc = hL + np.array([0.034, 0.0, 0.05]); rows = frame((1, 0, 0))
-        def laptop(p): return sbox(p, lc, (0.1, 0.072, 0.012), 6, rows)
-        def laptop_color(p):
-            q = local(p, lc, rows); c = paint(p, "#c4c8ce")
-            c[np.abs(q[:, 2]) < 0.0022] = srgb("#80868f")
-            outer = q[:, 2] > 0.006
-            c[outer & (np.hypot(q[:, 0] + 0.03, q[:, 1] - 0.016) < 0.022)] = srgb("#e05a6d")
-            c[outer & (np.abs(q[:, 0] - 0.036) + np.abs(q[:, 1] + 0.022) < 0.021)] = srgb("#f2c14e")
+    elif who == "bram":  # a popcorn bucket, red and white stripes, heaped over the rim
+        bc = hL + np.array([-0.092, -0.105, -0.082]); hgt = 0.145; top = bc + np.array([0, 0, hgt])
+        heap = np.array([(0, 0, 0.03), (0.026, 0.01, 0.022), (-0.024, 0.016, 0.022), (0.01, -0.027, 0.022), (-0.02, -0.022, 0.02), (0.04, -0.016, 0.008),
+                         (-0.041, -0.004, 0.008), (0.006, 0.04, 0.01), (0.033, 0.03, 0.006), (-0.03, 0.032, 0.006), (0.022, -0.042, 0.004), (-0.012, -0.044, 0.006)]) * 1.25
+        rng = np.random.default_rng(5)
+        puffs = [(top + c + rng.normal(0, 0.008, 3), (0.014,) * 3) for c in heap for _ in range(3)]  # each puff, three lumps
+        def bucket(p):
+            cup = smax(cone(p, bc, top, 0.052, 0.07), np.maximum(bc[2] - p[:, 2], p[:, 2] - top[2]), 0.007)
+            cup = smin(cup, torus(p, top - np.array([0, 0, 0.005]), (0, 0, 1), 0.07, 0.008), 0.004)
+            corn = smin(ellipsoid(p, top + np.array([0, 0, 0.005]), (0.062, 0.062, 0.025)), lobes(p, puffs, 0.014, 0.007), 0.007)
+            return smin(cup, corn, 0.004)
+        def bucket_color(p):
+            q = p - bc; rad = np.hypot(q[:, 0], q[:, 1]); c = paint(p, "#f7f1e6")
+            c[np.sin(np.arctan2(q[:, 1], q[:, 0]) * 6) > 0] = srgb("#d8413a")
+            c[q[:, 2] > hgt - 0.014] = srgb("#f7f1e6")  # the rolled rim
+            corn = (q[:, 2] > hgt + 0.004) | ((q[:, 2] > hgt - 0.025) & (rad < 0.062))
+            c[corn] = srgb("#fbf0d2")
+            c[corn & (np.sin(p[:, 0] * 250) * np.sin(p[:, 1] * 230) * np.sin(p[:, 2] * 270) > 0.3)] = srgb("#efcb6a")  # butter
             return c
-        out.append(("prop.laptop", laptop, laptop_color, "hand.L"))
+        out.append(("prop.popcorn", bucket, bucket_color, "hand.L", 3000))
     elif who == "wren":  # a quill, and a striped scarf
         a = hR + np.array([0.004, 0.004, -0.06]); b = hR + np.array([-0.02, -0.025, 0.2]); ax = unit(b - a)
         x = unit(np.cross(ax, (0, 1, 0))); rows = np.array([x, np.cross(ax, x), ax]); vc = a + (b - a) * 0.7
@@ -1333,11 +1356,11 @@ def props(who, L):
         out.append(("prop.paper", paper, paper_color, "hand.R"))
     return out
 
-def prop_mesh(name, fn, color):
+def prop_mesh(name, fn, color, faces=1300):
     lo, hi = bounds(fn, (-0.7, -0.6, -0.03), (0.7, 0.6, 1.4), 0.02)
     v, f = surface_nets(fn, lo, hi, 0.003)
     ob = make_mesh(name, project(fn, v, 3), f)
-    remesh(ob, 1300, fn, 0.0025)
+    remesh(ob, faces, fn, 0.0025)
     me = ob.data; p = coords(ob); nb = neighbors(ob)
     occ = smooth_values(ao(ob, 24, 0.08), nb, 1)
     rgb = color(p) * (0.55 + 0.45 * occ)[:, None]
@@ -1413,8 +1436,8 @@ def main():
                 if not only or name in only: material(accessory("hat." + name, fn, mask), "Hat")
         name = "companion"
     else:
-        for pname, fn, color, bone in props(WHAT, L):
-            ob = prop_mesh(pname, fn, color); skin_to(ob, rig, bone); material(ob, "Prop")
+        for pname, fn, color, bone, *faces in props(WHAT, L):
+            ob = prop_mesh(pname, fn, color, *faces); skin_to(ob, rig, bone); material(ob, "Prop")
         if "clips" not in skip: bake(rig, OWN[WHAT]); rig.animation_data.action = bpy.data.actions["idle"]
         name = "body-" + WHAT
     bpy.ops.wm.save_as_mainfile(filepath=os.path.join(OUT, name + ".blend"))

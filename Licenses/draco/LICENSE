@@ -1,0 +1,4 @@
+Draco 3D decoder (draco_decoder.js, draco_decoder.wasm, draco_wasm_wrapper.js), shipped inside three.js.
+Copyright 2017 The Draco Authors (Google).
+Licensed under the Apache License, Version 2.0; see ../Apache-2.0.txt.
+Source: https://github.com/google/draco
