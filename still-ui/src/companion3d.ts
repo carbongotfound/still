@@ -3,7 +3,7 @@ import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.j
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
 import { lookKey, type Look } from "./look"
-import { clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
+import { STATES, clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
 
 // The companions as soft blobs, built here from code: no model files. A body is a sphere pushed into a silhouette
 // (SHAPE), with two glossy bead eyes, a tiny smile, two nub arms, one job prop and maybe an accessory. Motion is
@@ -652,8 +652,27 @@ export class Companion {
 
 let renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera
 const instances = new Map<string, Companion>()
-// What each framing shows: the whole body with room to hop and wave, the top half, or the face.
-const FRAMES = { full: { y: .66, span: 1.8 }, bust: { y: .7, span: 1.1 }, head: { y: 0, span: .72 } }
+// Each companion is framed from its own bounds, swept over every state and gesture (antennae, tufts, props and all),
+// centered with 12% clear on every side, so no hop, stretch or wave reaches the edge. The shadow stays out of the
+// bounds, and so does the start of the drop, which falls in from above the frame on purpose.
+const fits = new Map<string, { x: number; y: number; span: number }>()
+function fit(look: Look) {
+ const key = lookKey(look), known = fits.get(key)
+ if (known) return known
+ const c = new Companion(), box = new THREE.Box3()
+ c.setLook(look); c.live = false
+ for (const s of STATES) { c.state = s; c.still(); for (let t = 0; t < LOOP; t += 1 / 20) { c.update(1 / 20, t, null); box.expandByObject(c.root) } }
+ c.state = "idle"
+ for (const [name, dur] of Object.entries(DUR)) {
+  c.begin(name, 0); c.still()
+  for (let t = 0; t <= dur; t += 1 / 30) { c.update(1 / 30, t, null); if (name !== "drop" || t > .38) box.expandByObject(c.root) }
+ }
+ c.dispose()
+ const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3())
+ const f = { x: mid.x, y: mid.y, span: Math.max(size.x, size.y) / .76 }
+ fits.set(key, f)
+ return f
+}
 
 export async function load() { /* nothing to fetch: every blob is built here */ }
 function setup() {
@@ -670,12 +689,11 @@ function setup() {
  const rim = new THREE.DirectionalLight("#ffffff", 1.1); rim.position.set(1.2, 1.6, -2.6); scene.add(rim)
 }
 
-/// Frames the camera on a companion. The whole body is framed the same for every shape, so heights compare.
+/// Frames the camera on a companion: the whole of it (fit), or the top half for the look editor's extras.
 function aim(frame: Frame, c: Companion) {
- const f = FRAMES[frame], s = c.shape.def, d = f.span / 2 / Math.tan(THREE.MathUtils.degToRad(10))
- const y = frame === "full" ? f.y : frame === "bust" ? Math.max(f.y, s.h * .62) : s.eye * s.h * (c.pose.sy || 1) + c.pose.y - .03
- const az = .1
- camera.position.set(Math.sin(az) * d, y + d * .06, Math.cos(az) * d); camera.lookAt(0, y, 0)
+ const f = frame === "full" ? fit(c.look!) : { x: 0, y: Math.max(.7, c.shape.def.h * .62), span: 1.1 }
+ const d = f.span / 2 / Math.tan(THREE.MathUtils.degToRad(10)), az = .1
+ camera.position.set(f.x + Math.sin(az) * d, f.y + d * .06, Math.cos(az) * d); camera.lookAt(f.x, f.y, 0)
 }
 
 /// Draws one companion into the top-left w x w of the shared canvas.

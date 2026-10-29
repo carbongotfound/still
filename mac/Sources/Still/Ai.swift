@@ -75,8 +75,8 @@ let oldNames: Set<UInt32> = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x4
 func fnv(_ s: String) -> UInt32 { tidy(s).lowercased().utf8.reduce(2166136261) { ($0 ^ UInt32($1)) &* 16777619 } }
 func oldName(_ name: String) -> Bool { oldNames.contains(fnv(name)) }
 /// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
-let movedCrew: [UInt32: (role: String, name: String)] = [327684010: ("sleuth", "Glint"), 235257612: ("closer", "Zest"), 3817335319: ("scout", "Bloom"),
-  2393765392: ("chief", "Noon"), 389508247: ("chief", "Noon"), 2625268281: ("hype", "Fizz"), 56376696: ("builder", "Rivet")]
+let movedCrew: [UInt32: (role: String, name: String)] = [327684010: ("researcher", "Glint"), 235257612: ("closer", "Zest"), 3817335319: ("scout", "Bloom"),
+  2393765392: ("chief", "Noon"), 389508247: ("chief", "Noon"), 2625268281: ("marketer", "Fizz"), 56376696: ("builder", "Rivet")]
 /// The first match of pattern in text, or its group.
 func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
  guard let rx = try? NSRegularExpression(pattern: pattern), let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let r = Range(m.range(at: group), in: text) else { return nil }

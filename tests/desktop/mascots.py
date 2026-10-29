@@ -1,6 +1,6 @@
 """The companions in 3D: every sample look in every state, live, in light and dark (docs/agentic/compare/mascots-*.png).
   --gifs       one GIF per animation of the default look, posed frame by frame (docs/agentic/mascot/*.gif)
-  --fallbacks  the three pictures shown when WebGL is off (still-ui/src/assets/companion; rebuild the shell afterwards)
+  --fallbacks  the two pictures shown when WebGL is off (still-ui/src/assets/companion; rebuild the shell afterwards)
   --screens    the companions where people meet them, at the brief's sizes
 
 Run: python tests/desktop/mascots.py artifacts/Still-QA/Still.exe [--gifs] [--fallbacks] [--screens]
@@ -127,20 +127,20 @@ def gifs():
 
 
 def fallbacks():
-    """Without WebGL, Still shows the default look drawn ahead, one picture per framing."""
+    """Without WebGL, Still shows the default look drawn ahead, one picture per framing (whole, and the look editor's top half)."""
     process, _ = window()
     try:
         js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: { state: 'idle' } }))")
         until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
         chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
         look = json.dumps({"color": "#8cc3ee", "shape": "bean", "prop": "", "accessory": ""})  # look.ts: DEFAULT_LOOK
-        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust'), head: m.picture({look}, 'idle', 96, 'head') }})")
+        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust') }})")
         until(lambda: js(process, "!!window.__pics"), 10)
         folder = ROOT / "still-ui" / "src" / "assets" / "companion"
         folder.mkdir(parents=True, exist_ok=True)
-        for frame in ("full", "bust", "head"):
+        for frame in ("full", "bust"):
             (folder / f"default-{frame}-idle.webp").write_bytes(base64.b64decode(js(process, f"window.__pics.{frame}").split(",", 1)[1]))
-        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 1000 for f in ("full", "bust", "head")), "The three fallback pictures are drawn")
+        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 1000 for f in ("full", "bust")), "The two fallback pictures are drawn")
     finally:
         quit(process)
 

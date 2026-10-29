@@ -92,6 +92,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Chat from anywhere**: Ctrl+Shift+A chats about the page; text typed in the address bar offers "Start a chat" (`aiAsk`).
 - ✅ **Questions with options**: the AI asks via `ask_user`; the chat shows options and waits up to 10 min.
 - ✅ **Replies**: Markdown renderer (no HTML injection), copyable draft cards, next-step suggestions from `>>` lines (`Markdown.tsx`).
+- 🚧 **Step cards**: the companion's avatar sits left of a turn's first line, once per turn, its name only as the avatar's tooltip, and every card and paragraph lines up right of it; each run of actions is one card: icon tile, bold verb and muted target (a site shows as its host, the full address on hover), a check, "+ N more" opens the list (`AiSidebar.tsx` `Step`; branch `chatpolish`).
 - ✅ **Skills**: Markdown files with front matter in the profile's skills folder; invoke as `/id` or give to a companion (`MainWindow.Ai.cs` `Skill`).
 - ✅ **Library**: files the AI saved with `save_file`, one folder per chat; built-in viewer with CSV grid and Markdown (`Files.tsx`).
 - ✅ **Set me up again**: typing it reopens setup's interview.
@@ -104,6 +105,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **AI tabs**: agents work in background tabs grouped under AI; tabs close 48 h after their chat goes quiet.
 - ✅ **AI cursor and glow**: a named arrow in the companion's color glides to each click; a glow frames the page in use.
 - ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs.
+- 🚧 **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`; branch `chatpolish`).
 - ✅ **Permission layer**: every call is read, navigate, interact or sensitive; rules per site and companion: always, once per chat, or every time.
 - ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first.
 - ✅ **Sensitive sites**: every click or keystroke on a listed site counts as sensitive (Preferences `SensitiveSites`).
@@ -127,12 +129,14 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Create and edit**: look, name, job, way of talking, AI, effort, skills; one is main; the last can't be deleted (`Home.tsx`).
 - ✅ **3D companions**: Blender-built glTF on a shared rig, rendered by three.js through one hidden WebGL canvas (`companion3d.ts`, `Mascot.tsx`, `tools/mascot`).
 - ✅ **Still pictures**: small idle companions are cached renders in localStorage; WebGL off or reduced motion → stills only.
+- 🚧 **Chat avatars**: under 40px, every role and Make your own is a full-body Blender avatar (96/144px, `assets/avatar`, `crew/blob.py` view `avatar`) that bobs while working; other looks get a full-body still, never a head crop (`Mascot.tsx`; branch `chatpolish`).
+- 🚧 **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture, centered with 12% clear, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`; branch `chatpolish`).
 - ✅ **Look editor**: color, eyes, brows, mouth, body shape, hair, hats, glasses, live 3D preview (`LookEditor.tsx`, `look.ts`, `face.ts`).
 - ✅ **Old-name check**: once after an update, a companion with an old stock name asks whether to keep it.
 - ✅ **Outside AI apps' look**: other AI apps working in Still wear their maker's look and color.
 - 🚧 **Blob companions**: soft blobs in three.js, Zest to the character spec (branch `blobs`).
-- 🚧 **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint pitch their roles; work interests (branch `roles`).
-- 🚧 **Rigged, animated blobs**: Blender rig, clip library with per-frame intersection checks, glTF to a three.js mixer; Zest's 6 clips await review (not in the repo yet).
+- 🚧 **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint pitch their roles; work interests (branch `roles`). Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs) on branch `chatpolish`.
+- 🚧 **Rigged, animated blobs**: Blender rig, clip library with per-frame intersection checks, glTF to a three.js mixer; Zest's clips approved, the other seven in progress (not in the repo yet).
 - 🚧 **Companions act on themselves**: change their look, settings and memory on request, each with Undo (branch `selfact`, uncommitted).
 
 ## Memory
@@ -194,6 +198,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - 🧪 **QA hooks**: test-only automation compiled in only with `StillQa=true` (`STILL_QA`), never in releases (`MainWindow.Qa.cs`, `Qa.swift`).
 - ✅ **Desktop tests**: Python suites per area run against real windows on Windows and Mac (`tests/desktop/*.py`, `mac/test.sh`).
+- 🚧 **Avatar edge check**: every look at 16 to 168px, through every frame of every state and gesture, fails if a drawn pixel touches its box; plus the avatar files' margins (`tests/desktop/avatars.py`; branch `chatpolish`).
 - ✅ **Unit checks**: CRX signature and ID verification, unsafe URL and argument rejection (`tests/Still.PerformanceChecks`); speed and RAM in `tests/desktop/performance.py`.
 
 ## Known gaps
