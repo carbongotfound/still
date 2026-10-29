@@ -361,6 +361,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   switch op {
   case "ready":
    ready = true
+   publish() // the interface draws nothing until its first state
    shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
    publishAi()
   case "bounds":
