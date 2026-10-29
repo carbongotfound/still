@@ -11,8 +11,7 @@ import { lookKey, surprise } from "./look"
 import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
-import { CrewCards, fromPremade } from "./crew"
-import { SHARE_KIND } from "./ProfilePanel"
+import { CrewCards, fromPremade, fromShared } from "./crew"
 import { toast } from "sonner"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
@@ -102,16 +101,13 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
 /// The AI a companion runs on, for its badge: its own pick, or the one picked for chats.
 const aiOf = (ai: AiState, c: Companion) => ai.harnesses.find(h => h.id === (c.ai || ai.harness))
 
-export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onChat: (id: string) => void; onMemory: (id: string) => void }) {
+export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onMake: () => void; onChat: (id: string) => void; onMemory: (id: string) => void }) {
  useEffect(() => { // a companion someone shared (ProfilePanel's Share), pasted anywhere on the page
   const paste = (e: ClipboardEvent) => {
-   if ((e.target as HTMLElement).closest?.("input, textarea")) return
-   try {
-    const got = JSON.parse(e.clipboardData?.getData("text") ?? "")
-    if (got?.kind !== SHARE_KIND || typeof got.name !== "string" || !got.name.trim()) return
-    send("companionSave", { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? "") })
-    toast(`Added ${got.name.trim()}. They start fresh: they don't know anything about you yet.`)
-   } catch { /* not a companion */ }
+   const c = !(e.target as HTMLElement).closest?.("input, textarea") && fromShared(e.clipboardData?.getData("text") ?? "")
+   if (!c) return
+   send("companionSave", c)
+   toast(`Added ${c.name}. They start fresh: they don't know anything about you yet.`)
   }
   addEventListener("paste", paste); return () => removeEventListener("paste", paste)
  }, [send])
@@ -132,7 +128,7 @@ export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiS
   </div>
   <h2 className="home-page-sub">Hire for a role</h2>
   <p className="home-page-lead">Each one owns a part of your work and gets sharper as it learns about you. Hire one, then change anything you like.</p>
-  <CrewCards have={ai.companions} onChat={onChat} onOwn={() => onEdit(randomCompanion())} onPick={p => send("companionSave", fromPremade(p))} />
+  <CrewCards have={ai.companions} onChat={onChat} onOwn={onMake} onPick={p => send("companionSave", fromPremade(p))} />
  </section>
 }
 

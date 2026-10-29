@@ -1372,6 +1372,36 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-modes b { font-size:14px; font-weight:600; } .profile-modes small { font-size:12px; color:var(--muted-foreground); }
 .profile-routine { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border); border-radius:12px; }
 .profile-routine textarea { border:0; padding:4px; resize:none; }
+/* A library companion's preview: the same panel, with what it does and an Add bar at the foot. */
+.profile-switch.is-static { cursor:default; } .profile-switch.is-static:hover { background:none; }
+.profile-role { flex:none; padding:2px 9px; border-radius:99px; font-size:12px; background:color-mix(in oklab,var(--hue) 22%,transparent); }
+.profile-will { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; list-style:none; }
+.profile-will li { padding:8px 12px; border-radius:10px; background:color-mix(in oklab,var(--hue) 8%,var(--muted)); font-size:13.5px; line-height:1.45; }
+.profile-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
+.profile-add[data-slot=button] { border-radius:99px; }
+/* "New companion": Still's library, then make your own or paste one. */
+.library-dialog[data-slot=dialog-content] { max-width:min(800px, calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow-y:auto; scrollbar-width:thin; gap:16px; }
+.library-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:10px; }
+.library-card { display:flex; align-items:center; gap:8px; padding:10px 14px 10px 10px; border:1px solid var(--border); border-radius:18px; background:var(--card); transition:border-color .2s,background-color .2s; }
+.library-card:hover, .library-card:focus-within { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
+.library-open { display:flex; flex:1; min-width:0; align-items:center; gap:14px; border-radius:12px; text-align:left; cursor:pointer; outline:none; }
+.library-card:has(.library-open:focus-visible) { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent); }
+.library-portrait { flex:none; display:grid; place-items:center; width:72px; height:72px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
+.library-portrait.is-own { width:52px; height:52px; background:var(--muted); box-shadow:none; color:var(--muted-foreground); } .library-portrait.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.5; } .library-portrait.is-own > svg { width:20px; height:20px; }
+.library-text { display:flex; flex:1; min-width:0; flex-direction:column; align-items:flex-start; gap:3px; }
+.library-text b { font-family:var(--font-display); font-size:17px; font-weight:500; }
+.library-text small { padding:1px 8px; border-radius:99px; font-size:11.5px; background:color-mix(in oklab,var(--hue) 22%,transparent); }
+.library-text > span { margin-top:3px; font-size:12.5px; line-height:1.4; color:var(--muted-foreground); }
+.library-add[data-slot=button] { flex:none; border-radius:99px; }
+.library-added { flex:none; display:flex; align-items:center; gap:4px; height:28px; padding:0 10px; border-radius:99px; background:var(--muted); font-size:12.5px; color:var(--muted-foreground); } .library-added svg { width:14px; height:14px; }
+.library-card.is-added .library-portrait { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 30%,var(--card)); }
+.library-more { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; padding-top:16px; border-top:1px solid var(--border); }
+.library-row { --hue:var(--muted-foreground); display:flex; align-items:center; gap:12px; padding:10px 14px 10px 10px; border:1px dashed var(--border); border-radius:18px; text-align:left; cursor:pointer; outline:none; }
+.library-row:hover, .library-row:focus-visible { background:var(--muted); }
+.library-row.is-paste { cursor:default; } .library-row.is-paste .library-text { align-items:stretch; }
+.library-row textarea { margin-top:6px; padding:8px 10px; border:1px solid var(--input); border-radius:10px; background:var(--background); font:inherit; font-size:13px; resize:none; outline:none; }
+.library-row textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
+.library-bad { color:var(--destructive); font-size:12px; }
 .profile-routine-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .profile-routine-row input[type=time] { width:120px; } .profile-routine-row [type=submit] { margin-left:auto; }
 .profile-days { display:flex; gap:4px; }
 .profile-days button { width:32px; height:32px; border-radius:50%; background:var(--muted); font-size:12px; font-weight:600; color:var(--muted-foreground); cursor:pointer; }
