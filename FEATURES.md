@@ -125,18 +125,21 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Companions
 
-- ✅ **Crew**: seven ready companions with a job and voice (Nadia, Kenji, Marcus, Amara, Jonah, Priya, Lena) plus Make your own (`crew.tsx`); looks use placeholder bodies.
-- ✅ **Create and edit**: look, name, job, way of talking, AI, effort, skills; one is main; the last can't be deleted (`Home.tsx`).
+- ✅ **Crew**: seven ready companions with a job and voice (Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint) plus Make your own (`crew.tsx`).
+- ✅ **Create**: look, name, job, way of talking, AI, effort, skills; one is main; the last can't be deleted (`Home.tsx` `CompanionEditor`); a companion that exists edits in its profile.
+- 🚧 **Companion profile**: clicking any mascot (home, chat header, chat turns and hello, switcher, Companions page) slides in a panel: a switcher, ⋯ (rename, duplicate, reset to the crew original, fire or delete after a confirm) and close; tabs General (live mascot on a dotted stage, Edit look, Share, name, instructions, way of talking), Skills, Routines, Files (working folder, files it made), Memory, Plugins, Model (AI and thinking); saves as you type; Esc or the backdrop closes (`ProfilePanel.tsx`; branch `characters`).
+- 🚧 **Share a companion**: Share copies its name, look, instructions, way of talking, thinking and role, never its memory, folder, skills, plugins or routines; pasting that on the Companions page adds it (`ProfilePanel.tsx`, `Home.tsx`; branch `characters`).
+- 🚧 **Routines**: up to 20 per companion, each "do this at HH:MM on these days"; while Still is open it runs once that day in a new chat (up to 15 minutes late), approvals as in any chat (`MainWindow.Routines.cs`, `Routines.swift`; branch `characters`).
 - ✅ **3D companions**: Blender-built glTF on a shared rig, rendered by three.js through one hidden WebGL canvas (`companion3d.ts`, `Mascot.tsx`, `tools/mascot`).
 - ✅ **Still pictures**: small idle companions are cached renders in localStorage; WebGL off or reduced motion → stills only.
 - 🚧 **Chat avatars**: under 40px, every role and Make your own is a full-body Blender avatar (96/144px, `assets/avatar`, `crew/blob.py` view `avatar`) that bobs while working; other looks get a full-body still, never a head crop (`Mascot.tsx`; branch `chatpolish`).
-- 🚧 **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture, centered with 12% clear, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`; branch `chatpolish`).
+- 🚧 **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture (rigs carry theirs in the file), centered with 12% clear and grown for the camera's perspective on deep bodies, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`; branch `chatpolish`).
 - ✅ **Look editor**: color, eyes, brows, mouth, body shape, hair, hats, glasses, live 3D preview (`LookEditor.tsx`, `look.ts`, `face.ts`).
 - ✅ **Old-name check**: once after an update, a companion with an old stock name asks whether to keep it.
 - ✅ **Outside AI apps' look**: other AI apps working in Still wear their maker's look and color.
 - 🚧 **Blob companions**: soft blobs in three.js, Zest to the character spec (branch `blobs`).
 - 🚧 **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint pitch their roles; work interests (branch `roles`). Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs) on branch `chatpolish`.
-- 🚧 **Rigged, animated blobs**: Blender rig, clip library with per-frame intersection checks, glTF to a three.js mixer; Zest's clips approved, the other seven in progress (not in the repo yet).
+- 🚧 **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; idle blinks, glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`; branch `characters`).
 - 🚧 **Companions act on themselves**: change their look, settings and memory on request, each with Undo (branch `selfact`, uncommitted).
 
 ## Memory
@@ -198,7 +201,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - 🧪 **QA hooks**: test-only automation compiled in only with `StillQa=true` (`STILL_QA`), never in releases (`MainWindow.Qa.cs`, `Qa.swift`).
 - ✅ **Desktop tests**: Python suites per area run against real windows on Windows and Mac (`tests/desktop/*.py`, `mac/test.sh`).
-- 🚧 **Avatar edge check**: every look at 16 to 168px, through every frame of every state and gesture, fails if a drawn pixel touches its box; plus the avatar files' margins (`tests/desktop/avatars.py`; branch `chatpolish`).
+- 🚧 **Avatar edge check**: every look at 16 to 168px, through every frame of every state and gesture, fails if a drawn pixel touches its box (except the drop's fall from above); plus the avatar files' margins (`tests/desktop/avatars.py`; branch `chatpolish`).
 - ✅ **Unit checks**: CRX signature and ID verification, unsafe URL and argument rejection (`tests/Still.PerformanceChecks`); speed and RAM in `tests/desktop/performance.py`.
 
 ## Known gaps
@@ -208,6 +211,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.
 - Agents can't read cross-origin frames or closed shadow roots.
 - Companions on `welcome` still use placeholder bodies; the blob crew, roles, plugins and self-actions sit on unmerged branches.
+- No team chat yet (several companions in one chat), so "the speaker animates and the others listen" has nothing to run in.
+- Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
 - Local `main` holds older copies of 14 commits that `welcome` replaced; it needs a cleanup decision before release.
 - Dropped: the Chromium port (`chromium`) and the animal mascots (`characters-app`), both unmerged.

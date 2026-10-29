@@ -13,7 +13,7 @@ import { AiLogo } from "./AiLogo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
-import { FALLBACK, Face, hueOf, type Companion, type Mode, type Mood } from "./Buddy"
+import { FALLBACK, Face, hueOf, showProfile, type Companion, type Mode, type Mood } from "./Buddy"
 import { starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { FileCard, type LibFile } from "./Files"
@@ -357,7 +357,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more).
- const face = (i: number) => fromAi(i - 1) ? null : <span className="ai-turn-face" title={name}><Face companion={companion} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></span>
+ const face = (i: number) => fromAi(i - 1) ? null : <button type="button" className="ai-turn-face profile-open" title={name} aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></button>
  const turn = (i: number) => fromAi(i - 1) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
@@ -366,7 +366,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
   {setup ?? <div className="ai-log" ref={log} onScroll={fadeTop}><div className="chat-column">
    {!items.length && (mode === "tab" ? <div className="chat-hello">
-    <Face companion={companion} size={168} follow gesture="wave" gestureAt={1} className="chat-hello-face" />
+    <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
     <h3>{you ? `Hi ${you}! What are we working on?` : `Hi, I'm ${name}. What are we working on?`}</h3>
     <p>{companion?.job || "Ask me anything, or hand me a task. I work in my own background tabs while you keep browsing."}</p>
     <div className="chat-starters">{starters(interests, companion, 4).map(([label, prompt]) => <button key={label} onClick={() => submit(prompt)}><Lightbulb aria-hidden />{label}</button>)}</div>
@@ -439,7 +439,7 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { 
  const [panel, setPanel] = useState<HTMLElement | null>(null)
  return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
   <div className="ai-head">
-   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <Face companion={companion} size={22} mood={mood} className="ai-head-buddy" />}
+   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>}
    <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    {view === "chat" && <>
     <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>

@@ -9,6 +9,7 @@ import { AuditList, PermissionsSettings } from "./Permissions"
 import { PluginsSettings } from "./Plugins"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
+import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { starters } from "./crew"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
@@ -271,6 +272,9 @@ export default function App() {
  const [views, setViews] = useState<Record<string, HomeView>>({}) // per new tab: the home page it shows
  const wantView = useRef<HomeView>(undefined)
  const [editing, setEditing] = useState<Companion | null>(null)
+ const [profile, setProfile] = useState("") // the companion whose profile is open
+ const edit = (c: Companion) => c.id ? setProfile(c.id) : setEditing(c) // a new one gets the create dialog
+ useEffect(() => { const show = (e: Event) => setProfile((e as CustomEvent<string>).detail); addEventListener("still-profile", show); return () => removeEventListener("still-profile", show) }, [])
  const [railOpen, setRailOpenState] = useState(() => { try { return localStorage.getItem("still.chatRail") !== "closed" } catch { return true } })
  const setRailOpen = (v: boolean) => { setRailOpenState(v); try { localStorage.setItem("still.chatRail", v ? "open" : "closed") } catch { /* storage unavailable */ } }
  const extButton = useRef<HTMLButtonElement>(null)
@@ -403,7 +407,7 @@ export default function App() {
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
  const oldName = state.welcome || state.secondary ? undefined : ai?.companions?.find(c => c.askName) // a companion with an old stock name, asked once
- const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || (!!viewing && !sideViewer) || tasksOpen || replay
+ const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || !!profile || (!!viewing && !sideViewer) || tasksOpen || replay
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
@@ -618,7 +622,7 @@ export default function App() {
       <Button variant="ghost" className="still-signature" onClick={() => open("about")}>still<span>{state.profileName}</span></Button>
      </footer>
     </aside>}
-    {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={setEditing} onSettings={openAiSettings} openPanel={open} goHome={goHome} />}
+    {chatTab && ai && !state.focusMode && !state.fullScreen && <ChatSide ai={ai} state={state} activeChat={active?.chatId} open={railOpen} setOpen={setRailOpen} split={split} onEdit={edit} onSettings={openAiSettings} openPanel={open} goHome={goHome} />}
     <main className={cn("page-column", chatTab && "is-chat", split && "is-split", sideViewer && "is-viewing")}>
      {pane === "find" && <div className="find-bar"><Input autoFocus placeholder="Find on this page" aria-label="Find in page" value={filter} onChange={e => setFilter(e.target.value)} onKeyDown={e => { if (e.key === "Enter") send("find", { text: filter }) }} /><Button variant="ghost" size="sm" onClick={() => send("find", { text: filter })}>Next</Button><Button variant="ghost" size="icon-sm" aria-label="Close find" onClick={close}><X /></Button></div>}
      {!state.focusMode && !state.fullScreen && state.bookmarks.length > 0 && <nav className={cn("bookmarks-bar", barOpen && state.bookmarks.length >= 5 && "is-expanded")} aria-label="Bookmarks bar">
@@ -657,7 +661,7 @@ export default function App() {
        {chatPages.length > 0 && <Button variant="ghost" size="icon-sm" aria-label={split ? "Hide the page" : "Show the page"} title={split ? "Hide the page" : "Show the page"} onClick={() => send("chatPage", { on: !split })}>{split ? <PanelRightClose /> : <PanelRightOpen />}</Button>}
       </div>
       <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} interests={state.preferences.interests} />
-      {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={setEditing} onSettings={openAiSettings} onFile={openFile} />}
+      {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={edit} onSettings={openAiSettings} onFile={openFile} />}
      </section>}
      <div className="page-pane">
      {split && chatPages.length > 1 && <div className="page-tabs" role="tablist" aria-label={`${companion?.name ?? "Your companion"}'s tabs`}>{chatPages.map(p => <button key={p.id} role="tab" aria-selected={p.url === state.chatPage?.url} title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<span>{p.title || host(p.url)}</span>{p.agent && <i aria-label="Working" />}</button>)}</div>}
@@ -683,16 +687,16 @@ export default function App() {
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
-         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={setEditing} onChat={id => { setBuddy(id); setView("home") }} onMemory={id => { setMemoryFor(id); open("settings", "memory") }} />
+         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onChat={id => { setBuddy(id); setView("home") }} onMemory={id => { setMemoryFor(id); open("settings", "memory") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
-           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={setEditing} onManage={() => setView("companions")} />
+           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={edit} onManage={() => setView("companions")} />
 
           </div>
           <div className="home-center">
-           <Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} className="home-face" />
+           <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>
            <div className="home-compose"><Composer ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs} placeholder={`Ask ${companion.name} anything, or hand over a task…`} onSubmit={text => send("aiSend", { text, home: true, companion: companion.id })} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills</button>
@@ -868,6 +872,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !editing && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
+  {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onPlugins={() => { setProfile(""); open("settings", "plugins") }} onSkills={() => { setProfile(""); setView("skills") }} />}
   {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id} only={(ai?.companions?.length ?? 0) <= 1} onClose={() => setEditing(null)} onSave={c => { send("companionSave", c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />

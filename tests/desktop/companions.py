@@ -2,7 +2,7 @@
 (a manifest in Still's agents folder) logs the prompt Still hands it.
 
 Run: python tests/desktop/companions.py artifacts/Still-QA/Still.exe [--shots]
-Screenshots (--shots): docs/agentic/compare/ (newtab-v03, modes-v01, companions-v01, companion-editor-v02, skills-v01, chats-v01, skill-chip-v01)
+Screenshots (--shots): docs/agentic/compare/ (newtab-v03, modes-v01, companions-v01, companion-profile-v01, skills-v01, chats-v01, skill-chip-v01)
 """
 import json
 from pathlib import Path
@@ -138,12 +138,13 @@ def main():
         check(until(lambda: mates().get("Ines", {}).get("Mode") == "efficient", 5), "Picking Quick saves Ines's mode")
         check(until(lambda: "Quick" in js(process, "document.querySelector('.home-compose .mode-chip')?.innerText ?? ''"), 5), "The chip shows the mode")
 
-        # Edit: how it talks.
+        # Edit: how it talks, in its profile (saved as you type).
         click(process, ".mate-switch-on")
-        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        type_into(process, ".companion-dialog textarea[placeholder^='For example: upbeat']", "Calm and precise, always with sources.")
-        click(process, ".companion-save")
+        until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
+        type_into(process, ".profile-panel textarea[placeholder^='For example: upbeat']", "Calm and precise, always with sources.")
         check(until(lambda: mates().get("Ines", {}).get("Tone") == "Calm and precise, always with sources.", 5), "Edit: how Ines talks is saved")
+        key(process, "body", "Escape")
+        until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
 
         # The Companions page: a card per companion, then the crew to pick from; memory opens Settings > Memory.
         click(process, ".home-rail-item[aria-label=Companions]")
@@ -233,8 +234,12 @@ def main():
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
         click(process, ".mate-portrait[aria-label='Edit Ines']")
-        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        click_text(process, ".companion-dialog button", "Delete")
+        until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
+        open_menu(process, ".profile-head [aria-label=More]")
+        until(lambda: js(process, "!!document.querySelector('[role=menuitem]')"), 3)
+        click_text(process, "[role=menuitem]", "Delete Ines")
+        until(lambda: js(process, "!!document.querySelector('[role=alertdialog]')"), 3)
+        click(process, "[data-slot=alert-dialog-action]")
         check(until(lambda: "Ines" not in mates(), 5), "Delete removes the companion")
         check(until(lambda: not file.exists(), 5), "and its memory file")
         check("Codex" not in text(process), "No Codex on screen")
@@ -288,7 +293,7 @@ def screens():
     shots(EXE, "newtab", "v03", newtab)
     shots(EXE, "modes", "v01", modes)
     shots(EXE, "companions", "v01", companions)
-    shots(EXE, "companion-editor", "v02", editor)
+    shots(EXE, "companion-profile", "v01", editor)
     shots(EXE, "skills", "v01", skills)
 
 

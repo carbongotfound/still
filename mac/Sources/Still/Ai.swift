@@ -12,13 +12,15 @@ final class Companion {
  var mode = "default" // efficient, default or expert
  var skills: [String] = [] // skills it reads at the start of every chat
  var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
+ var routines: [Routine] = [] // what it does on a schedule (Routines.swift)
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
   mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []
+  routines = (d["Routines"] as? [[String: Any]] ?? []).map(Routine.init)
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "PluginsOff": pluginsOff] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff] }
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -497,6 +499,7 @@ extension Browser {
    if data["folder"] != nil { var folder: ObjCBool = false; c.folder = s("folder").hasPrefix("/") && FileManager.default.fileExists(atPath: s("folder"), isDirectory: &folder) && folder.boolValue ? s("folder") : "" }
    if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
    if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
+   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
    if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
    c.askName = false // saved, renamed or kept: it's the user's name now
    storeCompanions(); publishOthers()
@@ -785,7 +788,7 @@ extension Browser {
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
-   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff,
+   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "routines": c.routines.map(\.shell),
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
    "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }

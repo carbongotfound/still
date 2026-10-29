@@ -20,6 +20,6 @@ document.addEventListener('still-mascot-sheet', () => {
 
 // A row of big mascots in one state or gesture, posed frame by frame for the GIFs in docs/agentic/mascot (tests/desktop/mascots.py).
 document.addEventListener('still-mascot-reel', e => {
-  const { state = 'idle', gesture = '', size = 320, looks = [{}] } = (e as CustomEvent<{ state?: MascotState; gesture?: string; size?: number; looks?: Partial<Look>[] }>).detail ?? {}
-  root.render(<div className="mascot-reel">{looks.map((l, i) => <Mascot key={i} look={{ ...DEFAULT_LOOK, ...l }} state={state} size={size} gesture={gesture} gestureAt={gesture ? Date.now() : 0} />)}<MascotStage /></div>)
+  const { state = 'idle', gesture = '', size = 320, looks = [{}], follow = false } = (e as CustomEvent<{ state?: MascotState; gesture?: string; size?: number; looks?: Partial<Look>[]; follow?: boolean }>).detail ?? {}
+  root.render(<div className="mascot-reel">{looks.map((l, i) => <Mascot key={i} look={{ ...DEFAULT_LOOK, ...l }} state={state} size={size} follow={follow} gesture={gesture} gestureAt={gesture ? Date.now() : 0} />)}<MascotStage /></div>)
 })

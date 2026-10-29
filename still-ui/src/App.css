@@ -1329,3 +1329,48 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-mains button { align-items:center; padding:14px 14px 16px; text-align:center; }
 .ob-mains-face { display:grid; place-items:center; width:72px; height:72px; margin-bottom:4px; border-radius:50%; background:color-mix(in oklab,var(--hue) 26%,var(--ob-card)); }
 .ob-note.is-warn, .companion-note.is-warn { color:var(--destructive); }
+/* A companion's profile (ProfilePanel.tsx): a sheet from the right, on an 8px grid */
+.profile-scrim { position:fixed; inset:0; z-index:60; background:rgb(0 0 0 / .28); animation:profile-fade .2s ease-out; }
+.profile-panel { position:fixed; top:8px; right:8px; bottom:8px; z-index:61; width:min(520px, calc(100vw - 16px)); display:flex; flex-direction:column; background:var(--background); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 64px rgb(0 0 0 / .2); overflow:hidden; animation:profile-in .24s cubic-bezier(.2,.8,.2,1); }
+.profile-panel.is-closing { animation:profile-out .16s ease-in forwards; } .profile-scrim.is-closing { animation:profile-fade .16s ease-in reverse forwards; }
+@keyframes profile-in { from { opacity:0; transform:translateX(32px); } }
+@keyframes profile-out { to { opacity:0; transform:translateX(32px); } }
+@keyframes profile-fade { from { opacity:0; } }
+.profile-head { display:flex; align-items:center; gap:8px; padding:16px 16px 8px; }
+.profile-switch { display:flex; align-items:center; gap:8px; min-width:0; height:40px; padding:0 12px 0 6px; border-radius:999px; font-size:15px; cursor:pointer; }
+.profile-switch:hover, .profile-switch[data-state=open] { background:color-mix(in oklab,var(--hue) 14%,var(--muted)); }
+.profile-switch b { font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .profile-switch > svg { width:16px; height:16px; flex:none; color:var(--muted-foreground); }
+.profile-tabs { flex:1; min-height:0; gap:0; }
+.profile-tablist[data-slot] { margin:0 16px; width:auto; height:40px; overflow-x:auto; scrollbar-width:none; }
+.profile-tablist [data-slot=tabs-trigger] { flex:1 0 auto; padding:0 8px; font-size:13px; }
+.profile-body { flex:1; min-height:0; overflow-y:auto; scrollbar-width:thin; padding:16px 16px 24px; }
+.profile-body [data-slot=tabs-content] { display:flex; flex-direction:column; gap:16px; }
+.profile-stage { position:relative; display:grid; place-items:center; height:264px; border-radius:16px; background:radial-gradient(circle at 2px 2px, color-mix(in oklab,var(--hue) 34%,transparent) 1.5px, transparent 0) 0 0/16px 16px, radial-gradient(ellipse at 50% 40%, color-mix(in oklab,var(--hue) 20%,var(--card)), color-mix(in oklab,var(--hue) 8%,var(--card)) 70%); }
+.profile-stage-actions { position:absolute; right:12px; bottom:12px; display:flex; gap:8px; }
+.profile-stage-actions [data-slot=button] { background:color-mix(in oklab,var(--background) 86%,transparent); backdrop-filter:blur(8px); }
+.profile-field { display:flex; flex-direction:column; gap:8px; } .profile-field > span { font-size:13px; font-weight:600; }
+.profile-field textarea, .profile-routine textarea { width:100%; padding:8px 12px; border:1px solid var(--input); border-radius:10px; background:transparent; font:inherit; font-size:14px; line-height:1.5; resize:vertical; outline:none; }
+.profile-field textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
+.profile-lead, .profile-note { margin:0; font-size:13px; line-height:1.5; color:var(--muted-foreground); } .profile-note { font-size:12px; }
+.profile-list { display:flex; flex-direction:column; margin:0; padding:0; list-style:none; border:1px solid var(--border); border-radius:12px; }
+.profile-list > li { display:flex; align-items:center; gap:12px; min-height:56px; padding:8px 16px; } .profile-list > li + li { border-top:1px solid var(--border); }
+.profile-list > li > div { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
+.profile-list b { font-size:14px; font-weight:600; overflow-wrap:anywhere; } .profile-list small { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted-foreground); } .profile-list small svg { width:12px; height:12px; }
+.profile-list > li > .plug-chip, .profile-list > li > span:first-child { flex:1; min-width:0; }
+.profile-empty { display:flex; flex-direction:column; align-items:center; gap:16px; padding:32px 24px; border:1px dashed var(--border); border-radius:12px; text-align:center; } .profile-empty p { margin:0; max-width:40ch; font-size:13px; line-height:1.5; color:var(--muted-foreground); }
+.profile-section { display:flex; flex-direction:column; gap:8px; } .profile-section h4 { margin:0; font-size:13px; font-weight:600; }
+.profile-files { display:flex; flex-direction:column; gap:8px; }
+.profile-modes { display:grid; gap:8px; }
+.profile-modes button { display:flex; flex-direction:column; gap:2px; padding:12px 16px; border:1px solid var(--border); border-radius:12px; text-align:left; cursor:pointer; }
+.profile-modes button:hover { background:var(--muted); }
+.profile-modes button[aria-checked=true] { border-color:var(--hue); background:color-mix(in oklab,var(--hue) 10%,transparent); box-shadow:inset 0 0 0 1px var(--hue); }
+.profile-modes b { font-size:14px; font-weight:600; } .profile-modes small { font-size:12px; color:var(--muted-foreground); }
+.profile-routine { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border); border-radius:12px; }
+.profile-routine textarea { border:0; padding:4px; resize:none; }
+.profile-routine-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .profile-routine-row input[type=time] { width:120px; } .profile-routine-row [type=submit] { margin-left:auto; }
+.profile-days { display:flex; gap:4px; }
+.profile-days button { width:32px; height:32px; border-radius:50%; background:var(--muted); font-size:12px; font-weight:600; color:var(--muted-foreground); cursor:pointer; }
+.profile-days button[aria-pressed=true] { background:var(--hue); color:#fff; }
+.profile-open { cursor:pointer; border-radius:999px; } .profile-open:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.profile-open > .mascot { transition:transform .18s cubic-bezier(.2,.8,.2,1); } .profile-open:hover > .mascot { transform:translateY(-2px) scale(1.04); }
+@media (prefers-reduced-motion: reduce) { .profile-panel, .profile-scrim { animation:none; } .profile-open > .mascot { transition:none; } }

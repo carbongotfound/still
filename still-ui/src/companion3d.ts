@@ -4,6 +4,8 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
 import { lookKey, type Look } from "./look"
 import { STATES, clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
+import { Rigged, bounds, model, rigFor } from "./rig"
+export { onRigReady } from "./rig"
 
 // The companions as soft blobs, built here from code: no model files. A body is a sphere pushed into a silhouette
 // (SHAPE), with two glossy bead eyes, a tiny smile, two nub arms, one job prop and maybe an accessory. Motion is
@@ -448,6 +450,11 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
 }
 const GESTURE: Record<string, string> = { signature: "pitch", point: "pointing", "needs-you": "needs", sad: "error", thinking: "thinking", working: "working", talking: "talking" }
 const ONCE = new Set(Object.keys(DUR))
+function makeShadow() {
+ const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }))
+ s.rotation.x = -Math.PI / 2; s.position.y = .002; s.renderOrder = -1
+ return s
+}
 
 function mixPose(a: Pose, b: Pose, k: number): Pose {
  const out = { ...a }
@@ -485,8 +492,7 @@ export class Companion {
 
  constructor() {
   this.group.add(this.root); this.root.add(this.body)
-  this.shadow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }))
-  this.shadow.rotation.x = -Math.PI / 2; this.shadow.position.y = .002; this.shadow.renderOrder = -1
+  this.shadow = makeShadow()
   this.group.add(this.shadow)
   const ink = INK()
   for (let i = 0; i < 2; i++) {
@@ -651,7 +657,18 @@ export class Companion {
 // ---------------------------------------------------------------- the shared renderer
 
 let renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera
-const instances = new Map<string, Companion>()
+// The eight companions play their Blender models (rig.ts); any other look is a blob drawn here.
+type Body = Companion | Rigged
+const instances = new Map<string, Body>()
+/// A body for a look, or null while its model loads.
+function make(look: Look): Body | null {
+ const id = rigFor(look), m = id ? model(id) : null
+ if (id && !m) return null
+ const c = m ? new Rigged(m, makeShadow()) : new Companion()
+ c.setLook(look)
+ return c
+}
+const kind = (c: Body) => c instanceof Rigged ? c.id : ""
 // Each companion is framed from its own bounds, swept over every state and gesture (antennae, tufts, props and all),
 // centered with 12% clear on every side, so no hop, stretch or wave reaches the edge. The shadow stays out of the
 // bounds, and so does the start of the drop, which falls in from above the frame on purpose.
@@ -659,6 +676,8 @@ const fits = new Map<string, { x: number; y: number; span: number }>()
 function fit(look: Look) {
  const key = lookKey(look), known = fits.get(key)
  if (known) return known
+ const id = rigFor(look), m = id && model(id)
+ if (m) return frameOf(key, bounds(m))
  const c = new Companion(), box = new THREE.Box3()
  c.setLook(look); c.live = false
  for (const s of STATES) { c.state = s; c.still(); for (let t = 0; t < LOOP; t += 1 / 20) { c.update(1 / 20, t, null); box.expandByObject(c.root) } }
@@ -668,8 +687,14 @@ function fit(look: Look) {
   for (let t = 0; t <= dur; t += 1 / 30) { c.update(1 / 30, t, null); if (name !== "drop" || t > .38) box.expandByObject(c.root) }
  }
  c.dispose()
+ return frameOf(key, box)
+}
+function frameOf(key: string, box: THREE.Box3) {
  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3())
- const f = { x: mid.x, y: mid.y, span: Math.max(size.x, size.y) / .76 }
+ // The camera is close, so the front of a deep body draws bigger than its bounds: grow the frame by that, taken halfway
+ // to the front (the widest part of a blob is its middle, not the tip of its belly).
+ const span = Math.max(size.x, size.y) / .76, d = span / 2 / Math.tan(THREE.MathUtils.degToRad(10))
+ const f = { x: mid.x, y: mid.y, span: span * d / (d - Math.max(0, box.max.z) / 2) }
  fits.set(key, f)
  return f
 }
@@ -690,14 +715,14 @@ function setup() {
 }
 
 /// Frames the camera on a companion: the whole of it (fit), or the top half for the look editor's extras.
-function aim(frame: Frame, c: Companion) {
- const f = frame === "full" ? fit(c.look!) : { x: 0, y: Math.max(.7, c.shape.def.h * .62), span: 1.1 }
+function aim(frame: Frame, c: Body) {
+ const f = frame === "full" ? fit(c.look!) : { x: 0, y: Math.max(.7, (c instanceof Rigged ? c.height : c.shape.def.h) * .62), span: 1.1 }
  const d = f.span / 2 / Math.tan(THREE.MathUtils.degToRad(10)), az = .1
  camera.position.set(f.x + Math.sin(az) * d, f.y + d * .06, Math.cos(az) * d); camera.lookAt(f.x, f.y, 0)
 }
 
 /// Draws one companion into the top-left w x w of the shared canvas.
-function draw(c: Companion, w: number, frame: Frame) {
+function draw(c: Body, w: number, frame: Frame) {
  if (renderer.domElement.width < w) renderer.setSize(Math.min(768, w), Math.min(768, w), false)
  const H = renderer.domElement.height
  for (const o of instances.values()) o.group.visible = o === c
@@ -720,7 +745,7 @@ function pointerFor(s: Slot) {
 }
 
 /// Poses a companion at a frozen time t (tests): the state's loop or the gesture at t seconds in, the spring run up to it.
-function seek(c: Companion, t: number) {
+function seek(c: Body, t: number) {
  c.live = false; c.still()
  const start = c.move ? c.moveStart : 0
  for (let x = Math.max(0, t - 2); x < t; x += 1 / 60) c.update(1 / 60, start + x, null)
@@ -740,7 +765,8 @@ function tick(now: number) {
  last = now
  for (const s of visible) {
   let c = instances.get(s.id)
-  if (!c) instances.set(s.id, c = new Companion())
+  if (c && kind(c) !== (rigFor(s.look) ?? "")) { scene.remove(c.group); c.dispose(); instances.delete(s.id); c = undefined }
+  if (!c) { const made = make(s.look); if (!made) continue; instances.set(s.id, c = made) }
   c.setLook(s.look)
   if (frozen !== null) { c.setState(s.state, s.gesture, s.gestureAt, 0); if (c.move) c.moveStart = 0; seek(c, frozen) }
   else { c.live = true; c.setState(s.state, s.gesture, s.gestureAt, now / 1000); c.update(dt, now / 1000, pointerFor(s)) }
@@ -765,8 +791,9 @@ const STILL_AT: Partial<Record<MascotState, number>> = { idle: .3, working: .3, 
 /// A still picture of a look, for small places and for reduced motion.
 export function picture(look: Look, state: MascotState, px: number, frame: Frame) {
  start()
- const c = new Companion()
- c.setLook(look); c.state = state; c.live = false
+ const c = make(look)
+ if (!c) return null // its model is loading (onRigReady)
+ c.state = state; c.live = false
  c.update(0, STILL_AT[state] ?? .3, null)
  instances.set("__picture", c)
  draw(c, px, frame)
@@ -777,11 +804,13 @@ export function picture(look: Look, state: MascotState, px: number, frame: Frame
 }
 
 /// A gesture (or a state's loop) as frames, for reels and review: PNG data URLs at fps for the given seconds.
-export function frames(look: Look, move: string, seconds: number, fps = 30, px = 512, frame: Frame = "full"): string[] {
+export function frames(look: Look, move: string, seconds: number, fps = 30, px = 512, frame: Frame = "full"): string[] | null {
  start()
- const c = new Companion(), name = GESTURE[move] ?? move
- c.setLook(look); c.live = false
- if (ONCE.has(name)) c.begin(name, 0); else c.state = (name === "needs-you" ? "needs" : name) as MascotState
+ const c = make(look), name = GESTURE[move] ?? move
+ if (!c) return null // its model is loading
+ c.live = false
+ if (c instanceof Rigged ? c.has(move) : ONCE.has(name)) c.begin(c instanceof Rigged ? move : name, 0)
+ else c.state = (name === "needs-you" ? "needs" : name) as MascotState
  instances.set("__reel", c)
  const out: string[] = [], canvas = document.createElement("canvas"); canvas.width = canvas.height = px
  const g = canvas.getContext("2d")!

@@ -7,9 +7,11 @@ export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string; pluginsOff?: string[]
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; tone?: string; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
  crew?: string // the crew member it was picked from (crew.tsx)
  askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
+/// Something a companion does on a schedule, in a new chat: days are 0 (Sunday) to 6, time is HH:MM on this PC's clock.
+export type Routine = { id: string; text: string; time: string; days: number[]; on: boolean }
 /// One thing a companion remembers about the user. A "chat" is a past chat it learned from.
 export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null }
 export type Mood = MascotState | "sleep"
@@ -42,3 +44,5 @@ export function Face({ companion, mood = "idle", size = 56, follow, gesture, ges
   className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face
+/// Opens a companion's profile (App listens), from any of its mascots.
+export const showProfile = (c?: Companion) => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: c.id })) }
