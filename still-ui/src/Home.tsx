@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, Check, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -11,7 +11,8 @@ import { lookKey, surprise } from "./look"
 import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
-import { CrewCards, fromPremade, fromShared } from "./crew"
+import { CrewCards, fromPremade, fromShared, premadeOf } from "./crew"
+import { andList } from "./Plugins"
 import { toast } from "sonner"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
@@ -36,7 +37,7 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
 }
 
 /// Top center of the home: who you're working with, the others as small faces, and a way to add one.
-export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage }: { ai: AiState; companion: Companion; onPick: (id: string) => void; onEdit: (c: Companion) => void; onManage: () => void }) {
+export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage, onTeam }: { ai: AiState; companion: Companion; onPick: (id: string) => void; onEdit: (c: Companion) => void; onManage: () => void; onTeam: () => void }) {
  return <div className="mate-switch" role="radiogroup" aria-label="Who to work with">
   <button role="radio" aria-checked className="mate-switch-on" title={"Edit " + companion.name} onClick={() => onEdit(companion)}><Face companion={companion} size={24} /><b>{companion.name}</b></button>
   {ai.companions?.filter(c => c.id !== companion.id).slice(0, 5).map(c => <button key={c.id} role="radio" aria-checked={false} className="mate-switch-face" title={c.name} aria-label={c.name} onClick={() => onPick(c.id)}><Face companion={c} size={24} /></button>)}
@@ -46,7 +47,24 @@ export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage }: { a
     <DropdownMenuSeparator /><DropdownMenuItem onSelect={onManage}><Users />Manage companions</DropdownMenuItem>
    </DropdownMenuContent></DropdownMenu>
   <button className="mate-switch-more" aria-label="New companion" title="New companion" onClick={() => onEdit(randomCompanion())}><Plus /></button>
+  {(ai.companions?.length ?? 0) > 1 && <button className="mate-switch-team" onClick={onTeam}><Users />Team chat</button>}
  </div>
+}
+
+/// Team chat: pick two or more companions to work in one chat. The first one picked starts, unless you @name another.
+export function TeamPicker({ ai, open, onOpenChange, onStart }: { ai: AiState; open: boolean; onOpenChange: (on: boolean) => void; onStart: (ids: string[]) => void }) {
+ const [ids, setIds] = useState<string[]>([])
+ const close = (on: boolean) => { onOpenChange(on); if (!on) setIds([]) }
+ const names = ids.map(id => companionOf(ai, id)?.name ?? "")
+ return <Dialog open={open} onOpenChange={close}><DialogContent className="team-dialog">
+  <DialogHeader><DialogTitle>Team chat</DialogTitle><DialogDescription>Pick who works on this together. They share one thread, ask each other things and pass work along, and you see every message. Jump in or stop them any time.</DialogDescription></DialogHeader>
+  <div className="team-pick">{ai.companions?.map(c => {
+   const on = ids.includes(c.id)
+   return <button key={c.id} type="button" className="team-pick-card" aria-pressed={on} style={{ "--hue": hueOf(c) } as CSSProperties} onClick={() => setIds(on ? ids.filter(x => x !== c.id) : [...ids, c.id])}>
+    <span className="team-pick-face"><Face companion={c} size={56} mood={on ? "listening" : "idle"} /></span><b>{c.name}</b><small>{premadeOf(c)?.role ?? "Your own"}</small>{on && <Check className="team-pick-check" aria-hidden />}</button>
+  })}</div>
+  <Button className="team-start" disabled={ids.length < 2} onClick={() => { onStart(ids); close(false) }}>{ids.length < 2 ? "Pick two or more" : `Start with ${andList(names)}`}</Button>
+ </DialogContent></Dialog>
 }
 
 const ago = (iso: string) => { const m = (Date.now() - Date.parse(iso)) / 6e4; return m < 60 ? Math.max(1, Math.round(m)) + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d" }
@@ -61,7 +79,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const needs = (id: string) => needsYou(ai, id)
  const first = ai.companions?.[0]?.id
  const chats = ai.chats.filter(c => (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
-  && (!who || (c.companion || first) === who) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
+  && (!who || (c.team?.length ? c.team.includes(who) : (c.companion || first) === who)) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
  if (oldest) chats.reverse()
  const groups = chats.reduce<[string, typeof chats][]>((all, c) => { const day = dayOf(c.updated); if (all.at(-1)?.[0] === day) all.at(-1)![1].push(c); else all.push([day, [c]]); return all }, [])
  const chip = (key: typeof only, label: string, dot?: string) => <button className="history-chip" aria-pressed={only === key} onClick={() => setOnly(only === key ? "" : key)}>{label}{dot && <i className={dot} />}</button>
@@ -85,7 +103,8 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
   {!chats.length && <p className="home-empty">{find || only || who ? "No chats match." : "Your chats show up here. Start one from the new tab page."}</p>}
   {groups.map(([day, list]) => <div key={day} className="history-group"><h2>{day}</h2>
    {list.map(c => <div key={c.id} className="history-row">
-    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
+    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}>{c.team?.length ? <span className="history-team">{c.team.slice(0, 3).map(id => <Face key={id} companion={companionOf(ai, id)} size={22} mood={isRunning(ai, c.id) && id === c.companion ? "working" : "idle"} />)}</span>
+     : <Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} />}<b>{c.title}</b>
      {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</button>
     <button className="history-act" aria-label={c.archived ? "Unarchive " + c.title : "Archive " + c.title} title={c.archived ? "Unarchive" : "Archive"} onClick={() => send("chatArchive", { id: c.id, on: !c.archived })}>{c.archived ? <ArchiveRestore /> : <Archive />}</button>
     <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>

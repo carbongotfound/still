@@ -6,7 +6,15 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Still;
 
-public sealed class AiMessage { public string Role { get; set; } = ""; public string Text { get; set; } = ""; }
+public sealed class AiMessage
+{
+ public string Role { get; set; } = "";
+ public string Text { get; set; } = "";
+ // Team chats: the companion who said it; a handoff card's receiver, and how it's going (waiting, working, done, stopped).
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Who { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? To { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Status { get; set; }
+}
 public sealed class AiChat
 {
  public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -14,7 +22,9 @@ public sealed class AiChat
  public string Harness { get; set; } = "";
  public string? Session { get; set; } // the CLI's conversation, resumed by the next message
  public bool Started { get; set; }
- public string Companion { get; set; } = ""; // who the user is working with in this chat
+ public string Companion { get; set; } = ""; // who the user is working with in this chat (a team chat: who spoke last)
+ public List<string> Team { get; set; } = []; // a team chat's companions, in the order they joined; empty = one companion
+ public Dictionary<string, string> Sessions { get; set; } = []; // a team chat: each companion's own conversation with its AI app
  public bool Unread { get; set; } // a reply landed while the user was elsewhere
  public bool Archived { get; set; }
  public bool NoMemory { get; set; } // "Don't remember this chat": nothing from it goes into the companion's memory
@@ -246,7 +256,7 @@ public partial class MainWindow
  }
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
-  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Select(c => c.Id),
+  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = shown?.Team.Count > 0 ? null : run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Select(c => c.Id),
   runs = runs.Values.Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced,
@@ -255,8 +265,8 @@ public partial class MainWindow
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
-  chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text }),
+  chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion, chatTeam = shown?.Team,
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page } : null,
   approvals = run?.Approvals.Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until }),
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
@@ -266,7 +276,7 @@ public partial class MainWindow
   plugins = PluginsPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
-  chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
+  chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, team = c.Team, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
 
  async Task HandleAi(string op, JsonElement data)
  {
@@ -315,10 +325,19 @@ public partial class MainWindow
    case "aiSend" when S("text").Trim() is { Length: > 0 and <= 20000 } text: {
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
     // A chat that's still working takes it as a follow-up for when it finishes.
+    // @Name pulls that companion in: a chat with one companion becomes a team chat. New team chat sends who to start with.
     var target = active?.ChatId is { } chatId ? AiChats.FirstOrDefault(c => c.Id == chatId) : B("home") ? null : aiChat;
-    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(text); break; }
+    List<string> team = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("team", out var chosen) && chosen.ValueKind == JsonValueKind.Array
+     ? chosen.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() ?? "" : "").Where(id => Companions.Any(c => c.Id == id)).ToList() : [];
+    string companion = team.FirstOrDefault() ?? S("companion");
+    team.AddRange(Mentioned(text));
+    if (target != null) Join(target, team);
+    if (target != null && runs.TryGetValue(target.Id, out var working)) {
+     if (target.Team.Count > 0) target.Messages.Add(new() { Role = "user", Text = text }); // a team chat shows it now, and whoever's next answers it
+     working.Queue.Add(text); break;
+    }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    await RunAi(target, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"));
+    await RunAi(target, text, into: B("home") || active?.ChatId != null ? active : null, companion: companion, noMemory: B("noMemory"), team: team);
     break; }
    case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
     var asked = answering.Chat;
@@ -481,14 +500,98 @@ public partial class MainWindow
   return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open." + (pages.Count > 0 ? " Your tabs in this chat: " + string.Join("; ", pages) + "." : "");
  }
 
- /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null).
- async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false)
+ /// The companions a message @mentions (of among, when given), in the order it names them.
+ IEnumerable<string> Mentioned(string text, ICollection<string>? among = null) => Companions.Where(c => among?.Contains(c.Id) != false)
+  .Select(c => (c.Id, At: Regex.Match(text, @"(?<![\w.@])@" + Regex.Escape(c.Name) + @"(?!\w)", RegexOptions.IgnoreCase))).Where(x => x.At.Success).OrderBy(x => x.At.Index).Select(x => x.Id);
+
+ /// Brings companions into a chat. A chat with one companion becomes a team chat: what it said so far stays its own.
+ void Join(AiChat chat, IEnumerable<string> ids)
+ {
+  var more = ids.Where(id => id != chat.Companion && !chat.Team.Contains(id)).Distinct().ToList();
+  if (more.Count == 0) return;
+  if (chat.Team.Count == 0 && chat.Companion.Length > 0) {
+   chat.Team.Add(chat.Companion);
+   foreach (var m in chat.Messages.Where(m => m.Role == "assistant")) m.Who ??= chat.Companion;
+   if (chat.Started && chat.Session != null) chat.Sessions[chat.Companion] = chat.Session;
+  }
+  chat.Team.AddRange(more);
+  if (chat.Messages.Count > 0) foreach (var id in more) chat.Messages.Add(new() { Role = "note", Text = $"{Companions.First(c => c.Id == id).Name} joined the chat." });
+ }
+ static string? Speaking(AiChat chat) => chat.Team.Count > 0 ? chat.Companion : null;
+
+ /// A team chat's turn: who's here, how they talk to each other, what the team noted in this chat, and what was said
+ /// since this companion last spoke (everything recent, when it's new here).
+ string TeamPrompt(AiChat chat, Companion who)
+ {
+  string Name(string? id) => id == null ? "User" : Companions.FirstOrDefault(c => c.Id == id)?.Name ?? "A former teammate";
+  var others = chat.Team.Where(id => id != who.Id).Select(id => Companions.FirstOrDefault(c => c.Id == id)).OfType<Companion>().Select(c => c.Name + (c.Job.Length > 0 ? $" ({(c.Job.Length > 80 ? c.Job[..80] + "…" : c.Job)})" : ""));
+  int since = chat.Started ? chat.Messages.FindLastIndex(m => m.Role == "assistant" && m.Who == who.Id) + 1 : 0;
+  var said = chat.Messages.Skip(since).Where(m => m.Role is "user" or "assistant" or "handoff").TakeLast(20)
+   .Select(m => m.Role == "handoff" ? $"({Name(m.Who)} handed this to {Name(m.To)}: {m.Text})" : (m.Role == "user" ? "User" : Name(m.Who)) + ": " + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text));
+  var notes = chat.Team.SelectMany(id => CompanionMemory.Of(id).Where(f => f.Chat == chat.Id && f.Kind != "chat")).Select(f => "- " + f.Text).Distinct().ToList();
+  var task = chat.Messages.LastOrDefault(m => m.Role == "handoff" && m.To == who.Id && m.Status == "working");
+  return $"""
+   [Team chat] You're {who.Name}, working with the user and {string.Join(", ", others)} in one chat. Everyone sees every message.
+   - Speak only as yourself. Never write lines for a teammate or for the user.
+   - To ask a teammate something, put @Name in your message. They answer right after you.
+   - To pass work on, end with a line of its own: HANDOFF @Name: what they should do, with what they need from you. It shows as a card.
+   - Hand off only what a teammate does better. When the work is done, or you need the user, don't @ anyone: the user has the floor.
+   """ + (notes.Count > 0 ? "\nWhat the team noted in this chat:\n" + string.Join("\n", notes) : "")
+   + "\n\n" + (since > 0 ? "Since you last spoke:\n" : "The chat so far:\n") + string.Join("\n", said)
+   + (task != null ? $"\n\n{Name(task.Who)} handed this to you: {task.Text}" : "") + "\n\nYour turn.";
+ }
+
+ const int TeamTurns = 8; // turns the team takes on its own before it waits for the user
+ /// After a team chat's turn: its HANDOFF lines become cards, then whoever's next speaks: a teammate the user named as they
+ /// jumped in (or the one who just spoke), else the oldest waiting handoff, else a teammate the speaker asked with @Name.
+ /// Otherwise the user has the floor.
+ async Task TeamNext(AiChat chat, ChatRun me, int from, bool said, int turn)
+ {
+  string speaker = chat.Companion;
+  var open = chat.Messages.Where(m => m.Role == "handoff" && m.Status is "waiting" or "working").ToList();
+  string? next = null;
+  if (me.Queue.Count > 0) { next = Mentioned(string.Join("\n", me.Queue), chat.Team).FirstOrDefault() ?? speaker; me.Queue.Clear(); turn = -1; }
+  if (said && !me.Stopped) {
+   foreach (var h in open.Where(h => h.To == speaker && h.Status == "working")) h.Status = "done";
+   var reply = chat.Messages.Skip(from).Where(m => m.Role == "assistant" && m.Who == speaker).ToList();
+   List<AiMessage> cards = [];
+   foreach (var m in reply) {
+    m.Text = HandoffLine().Replace(m.Text, x => {
+     if (Companions.FirstOrDefault(c => c.Id != speaker && chat.Team.Contains(c.Id) && x.Groups[1].Value.StartsWith(c.Name, StringComparison.OrdinalIgnoreCase)) is not { } to) return x.Value;
+     cards.Add(new() { Role = "handoff", Who = speaker, To = to.Id, Text = x.Groups[1].Value[to.Name.Length..].Trim(' ', '\t', '\r', ':', '*', '_', '-', '—', '–'), Status = "waiting" });
+     return "";
+    }).Trim();
+    if (m.Text.Length == 0) chat.Messages.Remove(m);
+   }
+   chat.Messages.AddRange(cards);
+   next ??= chat.Messages.FirstOrDefault(h => h.Role == "handoff" && h.Status == "waiting")?.To ?? Mentioned(string.Join("\n", reply.Select(m => m.Text)), chat.Team).FirstOrDefault(id => id != speaker);
+  }
+  else if (next == null) foreach (var h in open) h.Status = "stopped";
+  if (next != null && turn + 1 >= TeamTurns) { chat.Messages.Add(new() { Role = "note", Text = $"The team paused after {TeamTurns} turns. Reply to keep them going." }); next = null; }
+  SaveAiChats(); PublishAiEverywhere();
+  if (next == null) return;
+  if (chat.Messages.FirstOrDefault(h => h.Role == "handoff" && h.Status == "waiting" && h.To == next) is { } handoff) handoff.Status = "working";
+  await RunAi(chat, "", speaker: next, turn: turn + 1);
+ }
+ [GeneratedRegex(@"^[ \t>*_-]*HANDOFF\b[*_: \t]*@(.+)$", RegexOptions.Multiline | RegexOptions.IgnoreCase)] private static partial Regex HandoffLine();
+
+ /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null). team: who joins a new
+ /// chat besides companion. A team chat's turns name their speaker, and an empty text is a turn the team took on its own.
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, List<string>? team = null, string? speaker = null, int turn = 0)
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
    chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito }; // a private window remembers nothing
    AiChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
+   Join(chat, team ?? []);
+  }
+  // A team chat: one companion speaks at a time, each on its own AI app and in its own conversation with it.
+  if (chat.Team.Count > 0 && !runs.ContainsKey(chat.Id)) {
+   speaker ??= Mentioned(text, chat.Team).FirstOrDefault() ?? chat.Messages.LastOrDefault(m => m.Role == "assistant")?.Who ?? chat.Team[0];
+   var next = Companions.FirstOrDefault(c => c.Id == speaker);
+   chat.Companion = speaker; chat.Harness = next is { Ai.Length: > 0 } ? next.Ai : Prefs.AiHarness;
+   chat.Session = chat.Sessions.GetValueOrDefault(speaker); chat.Started = chat.Session != null;
   }
   if (chat.Harness.Length == 0) chat.Harness = Prefs.AiHarness;
   if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
@@ -499,11 +602,13 @@ public partial class MainWindow
   stoppedAgents.Remove(chat.Id); workers.Remove(chat.Id);
   shown ??= text;
   // A chat on a new session (moved to another AI, or its CLI lost it) brings what was said so far.
-  if (!chat.Started && chat.Messages.Any(m => m.Role is "user" or "assistant"))
+  if (!chat.Started && chat.Team.Count == 0 && chat.Messages.Any(m => m.Role is "user" or "assistant"))
    text = "(Our conversation so far, for context:)\n" + string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(20).Select(m => (m.Role == "user" ? "User: " : "You: ") + (m.Text.Length > 2000 ? m.Text[..2000] + "…" : m.Text))) + "\n\n" + text;
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
-  aiError = chat.Error = ""; chat.Messages.Add(new() { Role = "user", Text = shown }); chat.Updated = DateTime.UtcNow; chat.Running = true;
+  aiError = chat.Error = ""; chat.Updated = DateTime.UtcNow; chat.Running = true;
+  if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown });
+  int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
   var skills = Skill.Invoked(shown);
   if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
@@ -515,7 +620,7 @@ public partial class MainWindow
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n"
    + (memory.Length > 0 ? "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n" : "")
    + (chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : ""))
-   + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
+   + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + (chat.Team.Count > 0 && who != null ? TeamPrompt(chat, who) : text);
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
   string folder = Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
   Directory.CreateDirectory(folder);
@@ -534,15 +639,16 @@ public partial class MainWindow
    if (me.Stopped) run.Cancel();
    await foreach (var e in run.Events()) { said |= ApplyEvent(chat, cli, e); PublishAiEverywhere(); }
    chat.Started = chat.Session != null;
+   if (chat.Team.Count > 0 && chat.Session != null) chat.Sessions[chat.Companion] = chat.Session;
    stopped = run.Cancelled && !run.TimedOut;
    bool lost = run.Errors.Any(LostSession) || LostSession(chat.Error);
    if (lost && !said && !stopped && cli.NamesSession) {
     // The CLI has no record of this chat (stopped before it saved it, or from before chats had their own folders):
     // a new session brings the chat over.
-    chat.Session = null; chat.Started = false; chat.Error = "";
-    chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
+    chat.Session = null; chat.Started = false; chat.Error = ""; chat.Sessions.Remove(chat.Companion);
+    if (shown.Length > 0) chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
     runs.Remove(chat.Id); run.Dispose(); run = null;
-    await RunAi(chat, shown);
+    await RunAi(chat, shown, speaker: Speaking(chat), turn: turn);
     return;
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
@@ -569,6 +675,7 @@ public partial class MainWindow
    if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
    _ = AiSignIn(cli);
   }
+  else if (chat.Team.Count > 0 && run != null) await TeamNext(chat, me, from, said, turn);
   else if (me.Queue.Count > 0 && run != null) { string next = string.Join("\n\n", me.Queue); me.Queue.Clear(); await RunAi(chat, next); }
   PublishAiEverywhere();
  }
@@ -758,8 +865,8 @@ public partial class MainWindow
  bool ApplyEvent(AiChat chat, AgentAdapter cli, AgentEvent e)
  {
   switch (e) {
-   case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last: last.Text += join + m.Text; return true;
-   case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text }); return true;
+   case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last && last.Who == Speaking(chat): last.Text += join + m.Text; return true;
+   case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text, Who = Speaking(chat) }); return true;
    case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); break;
    case AgentEvent.Session session: chat.Session ??= session.Id; break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;

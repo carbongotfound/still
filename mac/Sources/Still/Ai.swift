@@ -178,7 +178,8 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
 func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
  switch e {
  case .message(let text, let join):
-  if let join, let last = chat.messages.last, last.role == "assistant" { last.text += join + text } else { chat.messages.append(AiMessage("assistant", text)) }
+  let speaking = chat.team.isEmpty ? nil : chat.companion
+  if let join, let last = chat.messages.last, last.role == "assistant", last.who == speaking { last.text += join + text } else { chat.messages.append(AiMessage("assistant", text, who: speaking)) }
   return true
  case .toolCall(_, let name, let args): chatStep(chat, toolLabel(name, args))
  case .session(let id): if chat.session == nil { chat.session = id }
@@ -259,6 +260,69 @@ func askInChat(_ who: String, _ args: [String: Any], _ done: @escaping (String) 
   publishAiEverywhere()
   done(answer.map { agentOk(["answer": $0]) } ?? agentFail("The user didn't answer within 10 minutes. Stop here and ask them in your reply."))
  }
+}
+
+/// The companions a message @mentions (of among, when given), in the order it names them.
+func mentioned(_ text: String, among: [String]? = nil) -> [String] {
+ companions.filter { among?.contains($0.id) != false }.compactMap { c -> (String, String.Index)? in
+  text.range(of: #"(?<![\w.@])@"# + NSRegularExpression.escapedPattern(for: c.name) + #"(?!\w)"#, options: [.regularExpression, .caseInsensitive]).map { (c.id, $0.lowerBound) }
+ }.sorted { $0.1 < $1.1 }.map(\.0)
+}
+
+/// Brings companions into a chat. A chat with one companion becomes a team chat: what it said so far stays its own.
+func join(_ chat: AiChat, _ ids: [String]) {
+ var more: [String] = []
+ for id in ids where id != chat.companion && !chat.team.contains(id) && !more.contains(id) { more.append(id) }
+ if more.isEmpty { return }
+ if chat.team.isEmpty && !chat.companion.isEmpty {
+  chat.team.append(chat.companion)
+  for m in chat.messages where m.role == "assistant" && m.who == nil { m.who = chat.companion }
+  if chat.started, let s = chat.session { chat.sessions[chat.companion] = s }
+ }
+ chat.team += more
+ if !chat.messages.isEmpty { for id in more { chat.messages.append(AiMessage("note", "\(companions.first { $0.id == id }?.name ?? "") joined the chat.")) } }
+}
+
+/// A team chat's turn: who's here, how they talk to each other, what the team noted in this chat, and what was said
+/// since this companion last spoke (everything recent, when it's new here).
+func teamPrompt(_ chat: AiChat, _ who: Companion) -> String {
+ func name(_ id: String?) -> String { id.map { id in companions.first { $0.id == id }?.name ?? "A former teammate" } ?? "User" }
+ let others = chat.team.filter { $0 != who.id }.compactMap { id in companions.first { $0.id == id } }
+  .map { $0.name + ($0.job.isEmpty ? "" : " (\($0.job.count > 80 ? String($0.job.prefix(80)) + "…" : $0.job))") }
+ let since = chat.started ? (chat.messages.lastIndex { $0.role == "assistant" && $0.who == who.id }.map { $0 + 1 } ?? 0) : 0
+ let said = chat.messages.dropFirst(since).filter { ["user", "assistant", "handoff"].contains($0.role) }.suffix(20).map { m in
+  m.role == "handoff" ? "(\(name(m.who)) handed this to \(name(m.to)): \(m.text))" : (m.role == "user" ? "User" : name(m.who)) + ": " + (m.text.count > 2000 ? String(m.text.prefix(2000)) + "…" : m.text)
+ }
+ var notes: [String] = []
+ for id in chat.team { for f in CompanionMemory.of(id) where f.chat == chat.id && f.kind != "chat" && !notes.contains("- " + f.text) { notes.append("- " + f.text) } }
+ let task = chat.messages.last { $0.role == "handoff" && $0.to == who.id && $0.status == "working" }
+ return """
+  [Team chat] You're \(who.name), working with the user and \(others.joined(separator: ", ")) in one chat. Everyone sees every message.
+  - Speak only as yourself. Never write lines for a teammate or for the user.
+  - To ask a teammate something, put @Name in your message. They answer right after you.
+  - To pass work on, end with a line of its own: HANDOFF @Name: what they should do, with what they need from you. It shows as a card.
+  - Hand off only what a teammate does better. When the work is done, or you need the user, don't @ anyone: the user has the floor.
+  """ + (notes.isEmpty ? "" : "\nWhat the team noted in this chat:\n" + notes.joined(separator: "\n"))
+  + "\n\n" + (since > 0 ? "Since you last spoke:\n" : "The chat so far:\n") + said.joined(separator: "\n")
+  + (task.map { "\n\n\(name($0.who)) handed this to you: \($0.text)" } ?? "") + "\n\nYour turn."
+}
+
+let teamTurns = 8 // turns a team takes on its own before it waits for the user
+let handoffLine = try! NSRegularExpression(pattern: #"^[ \t>*_-]*HANDOFF\b[*_: \t]*@(.+)$"#, options: [.caseInsensitive])
+/// A reply's HANDOFF @Name: task lines, as cards from speaker to a teammate. The rest of the reply stays.
+func takeHandoffs(_ text: String, _ speaker: String, _ team: [String], _ cards: inout [AiMessage]) -> String {
+ var found: [AiMessage] = []
+ let kept = text.components(separatedBy: "\n").filter { line in
+  let ns = line as NSString
+  guard let m = handoffLine.firstMatch(in: line, range: NSRange(location: 0, length: ns.length)) else { return true }
+  let rest = ns.substring(with: m.range(at: 1))
+  guard let to = companions.first(where: { $0.id != speaker && team.contains($0.id) && rest.lowercased().hasPrefix($0.name.lowercased()) }) else { return true }
+  let card = AiMessage("handoff", String(rest.dropFirst(to.name.count)).trimmingCharacters(in: CharacterSet(charactersIn: " \t\r:*_-—–")), who: speaker)
+  card.to = to.id; card.status = "waiting"; found.append(card)
+  return false
+ }
+ cards += found
+ return kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
 }
 
 func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _ folder: String) -> String {
@@ -432,10 +496,18 @@ extension Browser {
    guard (1...20000).contains(text.count) else { break }
    // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
    // A chat that's still working takes it as a follow-up for when it finishes.
+   // @Name pulls that companion in: a chat with one companion becomes a team chat. New team chat sends who to start with.
    let target = active?.chatId.map { id in aiChats.first { $0.id == id } } ?? (b("home") ? nil : v.chat)
-   if let target, let working = runs[target.id] { working.queue.append(text); break }
+   var team = (data["team"] as? [Any] ?? []).compactMap { $0 as? String }.filter { id in companions.contains { $0.id == id } }
+   let companion = team.first ?? s("companion")
+   team += mentioned(text)
+   if let target { join(target, team) }
+   if let target, let working = runs[target.id] {
+    if !target.team.isEmpty { target.messages.append(AiMessage("user", text)) } // a team chat shows it now, and whoever's next answers it
+    working.queue.append(text); break
+   }
    if active?.chatId != nil || b("home") { v.chat = target }
-   runAi(target, text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"))
+   runAi(target, text, into: b("home") || active?.chatId != nil ? active : nil, companion: companion, noMemory: b("noMemory"), team: team)
   case "aiAnswer": // from the chat, or the running tasks list
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))
@@ -646,8 +718,9 @@ extension Browser {
   return "[Still] \(place) \(open) tab\(open == 1 ? "" : "s") open." + (pages.isEmpty ? "" : " Your tabs in this chat: " + pages.joined(separator: "; ") + ".")
  }
 
- /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is nil).
- func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false) {
+ /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is nil). team: who joins a new
+ /// chat besides companion. A team chat's turns name their speaker, and an empty text is a turn the team took on its own.
+ func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, team: [String] = [], speaker: String? = nil, turn: Int = 0) {
   let v = aiView
   var text = text
   let chat = chat ?? {
@@ -660,8 +733,16 @@ extension Browser {
    v.chat = chat
    aiChats.insert(chat, at: 0); saveAiChats()
    if let into, !into.closed { into.chatId = chat.id; into.title = chat.title; saveLater() }
+   join(chat, team)
    return chat
   }()
+  // A team chat: one companion speaks at a time, each on its own AI app and in its own conversation with it.
+  if !chat.team.isEmpty && runs[chat.id] == nil {
+   let speaker = speaker ?? mentioned(text, among: chat.team).first ?? chat.messages.last(where: { $0.role == "assistant" })?.who ?? chat.team[0]
+   let next = companions.first { $0.id == speaker }
+   chat.companion = speaker; chat.harness = next.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
+   chat.session = chat.sessions[speaker]; chat.started = chat.session != nil
+  }
   if chat.harness.isEmpty { chat.harness = pref("AiHarness", "") }
   if chat.harness.isEmpty { v.pending = text; return } // asked before picking an AI: runs once it's set up
   let cli = aiClis.first { $0.id == chat.harness } ?? aiClis[0]
@@ -673,12 +754,14 @@ extension Browser {
   let shown = shown ?? text
   // A chat on a new session (moved to another AI, or its CLI lost it) brings what was said so far.
   let said = chat.messages.filter { $0.role == "user" || $0.role == "assistant" }
-  if !chat.started && !said.isEmpty {
+  if !chat.started && chat.team.isEmpty && !said.isEmpty {
    text = "(Our conversation so far, for context:)\n" + said.suffix(20).map { ($0.role == "user" ? "User: " : "You: ") + ($0.text.count > 2000 ? String($0.text.prefix(2000)) + "…" : $0.text) }.joined(separator: "\n") + "\n\n" + text
   }
   if !pref("AgentsEnabled", false) { prefs["AgentsEnabled"] = true; saveLater(); chat.messages.append(AiMessage("note", "Turned on Settings → Let other AI apps use Still, so \(cli.name) can use your tabs.")) }
   approvedAgents.insert(cli.name.lowercased()) // the user started this agent here, so it needs no approval bar
-  v.error = ""; chat.error = ""; chat.messages.append(AiMessage("user", shown)); chat.updated = Date(); chat.running = true
+  v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
+  if !shown.isEmpty { chat.messages.append(AiMessage("user", shown)) }
+  let from = chat.messages.count
   let who = companions.first { $0.id == chat.companion }
   var skills = Skill.invoked(shown)
   if !chat.started { skills += Skill.all.filter { k in who?.skills.contains(k.id) == true && !skills.contains { $0.id == k.id } } }
@@ -692,7 +775,7 @@ extension Browser {
   let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work) + "\n\n"
    + (memory.isEmpty ? "" : "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n")
    + (chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
-  let prompt = intro + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
+  let prompt = intro + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + (!chat.team.isEmpty && who != nil ? teamPrompt(chat, who!) : text)
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
   let folder = (aiFolder as NSString).appendingPathComponent("chats/" + chat.id)
   try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
@@ -704,10 +787,10 @@ extension Browser {
   if cli.namesSession && chat.session == nil { chat.session = UUID().uuidString.lowercased() }
   var request = RunRequest(prompt: prompt, model: model, effort: effort, folder: folder, mcp: mcp, session: chat.session, resume: chat.started && chat.session != nil)
   request.workFolder = work
-  Task { await finishRun(chat, cli, exe, me, request, shown) }
+  Task { await finishRun(chat, cli, exe, me, request, shown, from: from, turn: turn) }
  }
 
- @MainActor func finishRun(_ chat: AiChat, _ cli: AgentAdapter, _ exe: String, _ me: ChatRun, _ request: RunRequest, _ shown: String) async {
+ @MainActor func finishRun(_ chat: AiChat, _ cli: AgentAdapter, _ exe: String, _ me: ChatRun, _ request: RunRequest, _ shown: String, from: Int, turn: Int) async {
   var said = false, stopped = false, run: AgentRun?
   func finish() {
    if let run, !run.cancelled, run.exitCode != 0 { run.saveLog(request.folder, chat.id) }
@@ -726,13 +809,14 @@ extension Browser {
    if me.stopped { started.cancel() }
    for await e in started.events() { if applyEvent(chat, cli, e) { said = true }; publishAiEverywhere() }
    chat.started = chat.session != nil
+   if !chat.team.isEmpty, let s = chat.session { chat.sessions[chat.companion] = s }
    stopped = started.cancelled && !started.timedOut
    if (started.errors.contains(where: lostSession) || lostSession(chat.error)) && !said && !stopped && cli.namesSession {
     // The CLI has no record of this chat (stopped before it saved it): a new session brings the chat over.
-    chat.session = nil; chat.started = false; chat.error = ""
-    if let last = chat.messages.lastIndex(where: { $0.role == "user" }) { chat.messages.remove(at: last) }
+    chat.session = nil; chat.started = false; chat.error = ""; chat.sessions[chat.companion] = nil
+    if !shown.isEmpty, let last = chat.messages.lastIndex(where: { $0.role == "user" }) { chat.messages.remove(at: last) }
     runs[chat.id] = nil; run = nil
-    finish(); runAi(chat, shown); publishAiEverywhere()
+    finish(); runAi(chat, shown, speaker: chat.team.isEmpty ? nil : chat.companion, turn: turn); publishAiEverywhere()
     return
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
@@ -752,11 +836,39 @@ extension Browser {
    chat.error = ""; aiStatus[cli.id] = "signedOut"; aiView.pending = shown; aiView.chat = chat
    if chat.messages.last?.role == "user" { chat.messages.removeLast() }
    Task { await aiSignIn(cli) }
+  } else if !chat.team.isEmpty && run != nil {
+   teamNext(chat, me, from: from, said: said, turn: turn)
   } else if !me.queue.isEmpty && run != nil {
    let next = me.queue.joined(separator: "\n\n"); me.queue.removeAll()
    runAi(chat, next)
   }
   publishAiEverywhere()
+ }
+
+ /// After a team chat's turn: its HANDOFF lines become cards, then whoever's next speaks: a teammate the user named as they
+ /// jumped in (or the one who just spoke), else the oldest waiting handoff, else a teammate the speaker asked with @Name.
+ /// Otherwise the user has the floor.
+ func teamNext(_ chat: AiChat, _ me: ChatRun, from: Int, said: Bool, turn: Int) {
+  let speaker = chat.companion
+  let open = chat.messages.filter { $0.role == "handoff" && ($0.status == "waiting" || $0.status == "working") }
+  var next: String?, turn = turn
+  if !me.queue.isEmpty { next = mentioned(me.queue.joined(separator: "\n"), among: chat.team).first ?? speaker; me.queue.removeAll(); turn = -1 }
+  if said && !me.stopped {
+   for h in open where h.to == speaker && h.status == "working" { h.status = "done" }
+   let reply = chat.messages.dropFirst(from).filter { $0.role == "assistant" && $0.who == speaker }
+   var cards: [AiMessage] = []
+   for m in reply {
+    m.text = takeHandoffs(m.text, speaker, chat.team, &cards)
+    if m.text.isEmpty { chat.messages.removeAll { $0 === m } }
+   }
+   chat.messages += cards
+   next = next ?? chat.messages.first { $0.role == "handoff" && $0.status == "waiting" }?.to ?? mentioned(reply.map(\.text).joined(separator: "\n"), among: chat.team).first { $0 != speaker }
+  } else if next == nil { for h in open { h.status = "stopped" } }
+  if next != nil && turn + 1 >= teamTurns { chat.messages.append(AiMessage("note", "The team paused after \(teamTurns) turns. Reply to keep them going.")); next = nil }
+  saveAiChats(); publishAiEverywhere()
+  guard let next else { return }
+  chat.messages.first { $0.role == "handoff" && $0.status == "waiting" && $0.to == next }?.status = "working"
+  runAi(chat, "", speaker: next, turn: turn + 1)
  }
 
  /// AI fields of the `state` message.
@@ -773,7 +885,7 @@ extension Browser {
   let harness = view.chat?.harness ?? pref("AiHarness", "")
   let day = { (date: Date) in isoText(date) }
   var data: [String: Any] = [
-   "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
+   "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": shown?.team.isEmpty == false ? NSNull() as Any : run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
    "interrupted": interruptedChats.map(\.id),
    "runs": runs.values.map { r -> [String: Any] in ["id": r.chat.id, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site] }] },
@@ -785,13 +897,13 @@ extension Browser {
    "harnesses": aiClis.map { c -> [String: Any] in ["id": c.id, "name": c.name, "app": c.app, "maker": c.maker, "installed": findCli(c.command) != nil, "status": aiStatus[c.id] ?? "",
     "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary] },
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
-   "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
-   "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text] },
+   "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(), "chatTeam": shown.map { $0.team as Any } ?? NSNull(),
+   "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "routines": c.routines.map(\.shell),
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
-   "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }
+   "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "team": $0.team, "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }
   ]
   data["plugins"] = pluginsPayload()
   data.merge(agentAiFields(shown)) { _, new in new } // approvals, audit, permissions, sensitiveSites
