@@ -221,6 +221,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   shell = WKWebView(frame: root.bounds, configuration: config)
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
+  shell.setValue(false, forKey: "drawsBackground") // until the interface paints, the window's own color shows, not WebKit's white
   root.addSubview(shell)
   shell.load(URLRequest(url: URL(string: "still://app/index.html")!))
 
@@ -423,7 +424,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     applyBlocking(view); view.reload()
    }
   case "preference": setPreference(text("key"), text("value"))
-  case "welcomeDone": welcome = false; saveLater()
+  case "welcomeDone": welcome = false; saveLater(); applyTheme()
   case "defaultBrowser": makeDefault()
   case "chooseDownloads":
    let picker = NSOpenPanel()
@@ -488,7 +489,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let name: NSAppearance.Name? = theme == "Light" ? .aqua : theme == "Dark" ? .darkAqua : qaSystemTheme.map { $0 == "Light" ? .aqua : .darkAqua }
   for browser in browsers {
    browser.window.appearance = name.flatMap { NSAppearance(named: $0) }
-   browser.window.backgroundColor = browser.dark ? .black : .white
+   browser.window.backgroundColor = browser.dark || browser.welcome && !browser.secondary && !browser.incognito ? .black : .white // the first run opens dark, into the intro
    browser.schedulePublish()
   }
  }
