@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -26,13 +26,15 @@ export type AiState = {
  runs?: Run[]; interrupted?: string[]; queued?: string[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
- chatId?: string; chatHarness?: string; chatCompanion?: string; messages: { role: string; text: string }[]
+ chatId?: string; chatHarness?: string; chatCompanion?: string; chatTeam?: string[]; messages: Message[]
  question?: { text: string; options: string[]; page?: string | null } | null; companions?: Companion[]
- chats: { id: string; title: string; harness: string; updated: string; companion?: string; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
+ chats: { id: string; title: string; harness: string; updated: string; companion?: string; team?: string[]; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
  advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState
 }
+// who: the companion who said it, in a team chat. A handoff card: who passed it, to whom, and how it's going.
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
 // A chat at work. Any number run at once.
 export type Run = { id: string; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
@@ -348,22 +350,29 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
- const items: ({ role: string; text: string } | { role: "steps"; steps: string[] })[] = []
+ const items: (Message | { role: "steps"; steps: string[]; who?: string | null })[] = []
  for (const m of messages) {
   const prev = items[items.length - 1]
-  if (m.role === "tool") { if (prev && "steps" in prev) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text] }) }
+  if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text], who: m.who }) }
   else items.push(m)
  }
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
- // the turn lines up right of it, and what follows in the same turn sits closer (is-more).
- const face = (i: number) => fromAi(i - 1) ? null : <button type="button" className="ai-turn-face profile-open" title={name} aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></button>
- const turn = (i: number) => fromAi(i - 1) ? "ai-turn is-more" : "ai-turn"
+ // the turn lines up right of it, and what follows in the same turn sits closer (is-more). In a team chat, each speaker's.
+ const team = ai.chatTeam ?? []
+ const whoOf = (i: number) => items[i]?.who ?? ai.chatCompanion
+ const same = (i: number) => fromAi(i - 1) && whoOf(i - 1) === whoOf(i)
+ const face = (i: number) => {
+  if (same(i)) return null
+  const c = team.length ? companionOf(ai, whoOf(i)) : companion, n = c?.name ?? name
+  return <button type="button" className="ai-turn-face profile-open" title={n} aria-label={`${n}'s profile`} onClick={() => showProfile(c)}><Face companion={c} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></button>
+ }
+ const turn = (i: number) => same(i) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
  const openLink = (url: string) => send("new", { url })
 
- return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
+ return <section className="chat-view" data-mode={mode} aria-label={team.length ? "Team chat" : "Chat with " + name}>
   {setup ?? <div className="ai-log" ref={log} onScroll={fadeTop}><div className="chat-column">
    {!items.length && (mode === "tab" ? <div className="chat-hello">
     <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
@@ -390,6 +399,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
     if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
+    if (m.role === "handoff") return <HandoffCard key={i} m={m} from={companionOf(ai, m.who ?? "")} to={companionOf(ai, m.to ?? "")} />
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
     const last = i === items.length - 1 && !busy
@@ -409,14 +419,39 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
+   {team.length > 0 && <TeamBar ai={ai} team={team} mood={mood} />}
    <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
-    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
+    placeholder={team.length ? (busy ? "Jump in…" : "Reply to the team…") : busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
    </div>
   </div></div>}
  </section>
+}
+
+const HANDOFF: Record<string, string> = { waiting: "Up next", working: "On it", done: "Done", stopped: "Stopped" }
+/// A handoff in a team chat: who passed what to whom, and how it's going.
+function HandoffCard({ m, from, to }: { m: Message; from?: Companion; to?: Companion }) {
+ return <div className="team-handoff" data-status={m.status ?? "waiting"} style={{ "--hue": hueOf(to) } as CSSProperties}>
+  <span className="team-handoff-faces"><Face companion={from} size={26} /><ArrowRight aria-hidden /><Face companion={to} size={26} /></span>
+  <div className="team-handoff-text"><p><b>{from?.name}</b> handed this to <b>{to?.name}</b><span className="team-handoff-status">{HANDOFF[m.status ?? "waiting"]}</span></p><span>{m.text}</span></div>
+ </div>
+}
+
+/// A team chat's companions, over the message box: whoever's speaking talks, the rest listen. The newest handoff plays
+/// on the two it's between: the one passing it waves it over, the one taking it nods.
+function TeamBar({ ai, team, mood }: { ai: AiState; team: string[]; mood: Mood }) {
+ const handoffs = ai.messages.filter(m => m.role === "handoff"), last = handoffs.at(-1)
+ const speaking = companionOf(ai, ai.chatCompanion), talking = ai.messages.at(-1)?.role === "assistant"
+ return <div className="team-bar" role="group" aria-label="Team">
+  {team.map(id => {
+   const c = companionOf(ai, id), on = ai.busy && id === ai.chatCompanion
+   return <button key={id} type="button" className="team-bar-face profile-open" data-on={on || undefined} title={c?.name} aria-label={`${c?.name}'s profile`} onClick={() => showProfile(c)}>
+    <Face companion={c} size={30} mood={on ? (talking && mood === "thinking" ? "talking" : mood) : ai.busy ? "listening" : "idle"} gesture={last?.who === id ? "wave" : last?.to === id ? "admire" : undefined} gestureAt={handoffs.length} /></button>
+  })}
+  <span className="team-bar-line">{ai.busy ? `${speaking?.name} is on it` : "Your turn"}</span>
+ </div>
 }
 
 // AI apps, what the AI can see, and the saved chats.
