@@ -698,13 +698,15 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mode-chip { display:flex; align-items:center; gap:6px; height:32px; padding:0 9px 0 5px; border-radius:999px; background:var(--muted); color:var(--foreground); font-size:13px; font-weight:500; transition:background .15s; }
 .mode-chip:hover, .mode-chip[data-state=open] { background:color-mix(in oklab,var(--hue,var(--foreground)) 14%,var(--muted)); }
 .mode-chip > svg { width:13px; height:13px; color:var(--hue,currentColor); } .mode-chip:disabled { opacity:.5; }
-.mode-menu[data-slot=dropdown-menu-content] { width:272px; overflow:visible; padding:6px; border-radius:14px; }
+.mode-menu[data-slot=dropdown-menu-content] { width:272px; padding:6px; border-radius:14px; }
 .mode-menu [data-slot=dropdown-menu-item] { height:38px; gap:10px; border-radius:10px; font-size:14px; }
 .mode-find { width:100%; height:36px; padding:0 10px; margin-bottom:2px; border:0; outline:0; background:none; font-size:13.5px; color:var(--foreground); }
 .mode-find::placeholder { color:var(--muted-foreground); }
 .mode-check { margin-left:auto; width:17px !important; height:17px !important; color:var(--card) !important; fill:var(--foreground); }
 .mode-icon { width:16px !important; height:16px !important; color:var(--foreground) !important; }
 .mode-menu .mode-item[data-slot=dropdown-menu-item] { height:auto; padding-block:7px; }
+.mode-mates { max-height:171px; overflow-y:auto; } /* four and a half companions: the half shows there are more */
+[data-slot=dropdown-menu-content], [data-slot=context-menu-content], [data-slot=select-content], .mode-mates { scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }
 .mode-text { display:flex; flex-direction:column; gap:1px; } .mode-text small { font-size:11.5px; line-height:1.35; color:var(--muted-foreground); }
 .mode-none { padding:6px 10px 8px; font-size:12.5px; color:var(--muted-foreground); }
 .mode-advanced { display:flex; align-items:center; justify-content:space-between; padding:10px 8px 6px !important; font-weight:450 !important; color:var(--muted-foreground); }
@@ -830,7 +832,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .tasks-button { position:relative; gap:6px; height:32px; padding:0 10px; border-radius:999px; } .tasks-button b { font-weight:600; font-size:12.5px; }
 .tasks-button i { position:absolute; top:5px; right:5px; width:7px; height:7px; box-shadow:0 0 0 2px var(--background); } .tasks-button i + i { right:13px; }
 .tasks-spin { width:15px; height:15px; color:#38bf6c; }
-.tasks-menu { width:340px; max-height:70vh; overflow:auto; }
+.tasks-menu { width:340px; max-height:min(70vh,var(--radix-dropdown-menu-content-available-height)); overflow:auto; }
 .tasks-menu [role=menuitem] { gap:10px; min-height:44px; }
 .tasks-title { flex:1; min-width:0; display:flex; flex-direction:column; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13.5px; }
 .tasks-title small { font-size:12px; color:var(--muted-foreground); }
