@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { KeyRound, Plus, Copy, ArrowDownToLine, Trash2, RotateCw, Eye, EyeOff, Pencil, Import, Upload, X } from "lucide-react"
+import { KeyRound, Plus, Copy, LogIn, Trash2, RotateCw, Eye, EyeOff, Pencil, Import, Upload, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
@@ -102,7 +102,7 @@ function Row({ entry: v, password, here, send, ask, hide }: { entry: Entry; pass
   <Button variant="ghost" size="icon-sm" aria-label={(password !== undefined ? "Hide" : "Show") + " password for " + host(v.origin)} onClick={() => password !== undefined ? hide() : send("vaultReveal", { id: v.id })}>{password !== undefined ? <EyeOff /> : <Eye />}</Button>
   <Button variant="ghost" size="icon-sm" aria-label={"Copy password for " + host(v.origin)} onClick={() => send("vaultCopy", { id: v.id })}><Copy /></Button>
   <Button variant="ghost" size="icon-sm" aria-label={"Edit login for " + host(v.origin)} onClick={() => send("vaultEdit", { id: v.id })}><Pencil /></Button>
-  {here && <Button variant="ghost" size="icon-sm" aria-label={"Fill login for " + host(v.origin)} onClick={() => send("vaultFill", { id: v.id })}><ArrowDownToLine /></Button>}
+  {here && <Button variant="ghost" size="icon-sm" aria-label={"Fill login for " + host(v.origin)} onClick={() => send("vaultFill", { id: v.id })}><LogIn /></Button>}
   <Button variant="ghost" size="icon-sm" aria-label={"Delete login for " + host(v.origin)} onClick={() => ask("Delete this login?", (v.username || "The login") + " on " + host(v.origin) + " will be removed from Still.", () => send("vaultDelete", { id: v.id }))}><Trash2 /></Button>
  </div>
 }
