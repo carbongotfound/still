@@ -1,8 +1,8 @@
 import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react"
 import { cn } from "@/lib/utils"
-import { AGENT_LOOKS, BLANK, BODY_COLORS, DEFAULT_LOOK, FACES, lookKey, type Look } from "./look"
+import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, ROLE_LOOKS, lookKey, type Look } from "./look"
 
-// The companion, as a 3D character (companion3d.ts). Every <Mascot> is a small 2D canvas: one hidden WebGL canvas
+// The companion, as a soft 3D blob (companion3d.ts). Every <Mascot> is a small 2D canvas: one hidden WebGL canvas
 // renders each visible companion in turn and copies it in, so they layer, clip and scroll like any other element.
 // Small idle ones (the toolbar, tab markers, lists) are still pictures rendered from the same model and kept in
 // localStorage, so a plain window never loads three.js for them. Big or busy ones are live. The engine waits until a
@@ -37,6 +37,8 @@ const useReduced = () => useSyncExternalStore(l => { reduce.addEventListener("ch
 type Engine = typeof import("./companion3d")
 let engine: Engine | null = null, loading: Promise<Engine | null> | null = null
 export const engineReady = () => !!engine
+/// Gestures a companion plays by name (the gesture prop), besides the states. pitch is "pick me", hired a happy bounce.
+export const GESTURES = ["idle", "happy", "thinking", "working", "pointing", "needs-you", "done", "sad", "talking", "wave", "admire", "pop", "wake", "drop", "pitch", "hired"] as const
 export function loadEngine() {
  return loading ??= import("./companion3d").then(async m => { await m.load(); m.start(); engine = m; changed(); drain(); return m })
   .catch(e => { console.error("The companion couldn't load", e); return null })
@@ -54,8 +56,6 @@ const STORE = "still.picture."
 
 function drain() {
  if (!engine || !wanted.size) return
- const e = engine, bodies = [...new Set([...wanted.values()].map(w => w.look.body))].filter(b => !e.hasBody(b))
- if (bodies.length) { void Promise.all(bodies.map(e.loadBody)).then(drain); return } // an official companion's body loads first
  for (const [key, w] of wanted) {
   try {
    const url = engine.picture(w.look, w.state, w.px, w.frame)
@@ -125,10 +125,7 @@ export function MascotStage() {
 }
 
 // Companions in every state, for screenshots and for rendering the shipped pictures (tests/desktop/mascots.py).
-export const SHEET_LOOKS: [string, Look][] = [
- ["default", DEFAULT_LOOK], ["blank", BLANK], ...Object.entries(AGENT_LOOKS),
- ...FACES.slice(1, 4).map((f, i) => ["sample" + i, { ...DEFAULT_LOOK, ...f, color: BODY_COLORS[[4, 19, 28][i]][0], shape: ["mochi", "kitty", "bean"][i], hat: ["", "beanie", ""][i], hair: ["curls", "", "bob"][i] }] as [string, Look]),
-]
+export const SHEET_LOOKS: [string, Look][] = [...Object.entries(ROLE_LOOKS), ["blank", BLANK]]
 export function MascotSheet() {
  return <div className="mascot-sheet">
   {SHEET_LOOKS.map(([name, look]) => <section key={name}><h3>{name}</h3>

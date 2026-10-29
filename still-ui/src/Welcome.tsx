@@ -7,8 +7,8 @@ import { AiPicker, type AiState } from "./AiSidebar"
 import { lookOf, type Companion } from "./Buddy"
 import { CrewCards, INTERESTS, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
-import { BLANK, BODY_COLORS, DEFAULT_LOOK, FACES, lookKey, surprise, type Look } from "./look"
-import { FaceSwatch, LookEditor } from "./LookEditor"
+import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
+import { LookEditor, LookThumb } from "./LookEditor"
 import { Mascot, type MascotState } from "./Mascot"
 import { play, setSounds, warm } from "./sound"
 
@@ -25,7 +25,7 @@ const EASE = [.22, 1, .36, 1] as const
 const POP: Record<"from" | "to" | "rest", TargetAndTransition> & { timing: Transition } = { from: { scaleX: .3, scaleY: .3, y: 60, opacity: 0 }, to: { scaleX: [.3, 1.16, .92, 1.03, 1], scaleY: [.3, .84, 1.1, .98, 1], y: [60, 0, -16, 0, 0], opacity: [0, 1, 1, 1, 1] },
  rest: { scaleX: 1, scaleY: 1, y: 0, opacity: 1 }, timing: { duration: .85, times: [0, .38, .62, .82, 1], ease: "easeOut" } }
 
-const COLORS = ["#f4c2a8", "#e5876a", "#f3b7c1", "#f2c66b", "#bcd98c", "#7fb39b", "#8ed3c7", "#8fb8e8", "#6f8fd0", "#b9a5e6", "#c9a58a", "#5b6170"].map(hex => BODY_COLORS.find(c => c[0] === hex) ?? [hex, hex])
+const COLORS = BODY_COLORS.slice(0, 12)
 const THEMES = [["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const
 const newId = () => "c" + Math.random().toString(36).slice(2, 11)
 const blank = (): Companion => ({ id: newId(), name: "", face: "", color: "", job: "", mode: "default" })
@@ -169,7 +169,6 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const picked = !!(lead ?? first)
  const intro = !again && step === 0 && !reduce ? hadIntro ? .45 : .75 : 0 // the hello waits for the companion to pop in, or to glide in after the intro
  const name = c.name.trim() || "your companion"
- const hasFace = look.eyes !== "none"
  const wide = at === "crew" && !making
  const size = Math.round(Math.min(520, Math.max(200, Math.min(height / 2.3, width / 4))) * (wide ? .6 : 1))
  const tasks = useMemo(() => starters(likes, picked ? c : undefined, 3), [likes, picked, c])
@@ -228,7 +227,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  }
  // "Make your own" ends with "Add <name>", back on the crew with it picked.
  const addOwn = () => {
-  const final = hasFace ? look : { ...surprise(), ...(look.color !== BLANK.color && { color: look.color }) }
+  const final = look
   const own = { ...draft, name: draft.name.trim(), look: lookKey(final) }
   setMade(m => [...m, own]); setPicks(p => [...p, own.id]); setLook(final); setMaking(false); setNeedOne(false); react("happy")
  }
@@ -269,7 +268,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
 
  const mood: MascotState = introOn ? "idle" : at === "charge" && !allowed ? "needs" : talking ? "talking" : "idle"
  const pickColor = (hex: string) => { setLook(l => ({ ...l, color: hex })); setGrown(g => Math.max(g, 1)); react("admire") }
- const pickFace = (f: Partial<Look>) => { setLook(l => ({ ...l, ...BLANK, color: l.color, ...f, blush: true })); setGrown(g => Math.max(g, 2)); react("happy") }
+ const pickShape = (shape: string) => { setLook(l => ({ ...l, shape })); setGrown(g => Math.max(g, 2)); react("happy") }
  const startOwn = () => { setMaking(true); setDraft(blank()); setLook(BLANK); setGrown(0) }
  const shown = peek ?? layout ?? "Classic"
  const slide = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : { initial: { opacity: 0, x: 24 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -18 } }
@@ -325,7 +324,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Bubbles lines={["Let's make your own companion.", "Pick a color first, then a face and a name."]} />
       <Reveal after={2}><div className="ob-build">
        <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([hex, label]) => <button key={hex} role="radio" aria-checked={look.color === hex} aria-label={label} title={label} style={{ "--swatch": hex } as CSSProperties} onClick={() => pickColor(hex)} />)}</div></div>
-       {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Face</span><div className="ob-faces" role="radiogroup" aria-label="Face">{FACES.map((f, i) => <button key={i} role="radio" aria-checked={look.eyes === f.eyes && look.mouth === f.mouth} aria-label={"Face " + (i + 1)} onClick={() => pickFace(f)}><FaceSwatch look={{ ...look, ...BLANK, color: look.color, ...f }} size={40} /></button>)}</div></motion.div>}
+       {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Shape</span><div className="ob-faces" role="radiogroup" aria-label="Shape">{SHAPES.map(([k, label]) => <button key={k} role="radio" aria-checked={look.shape === k} aria-label={label} title={label} onClick={() => pickShape(k)}><LookThumb look={{ ...look, shape: k }} /></button>)}</div></motion.div>}
        {grown >= 2 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Name</span>
         <div className="ob-name-box"><input aria-label="Name your companion" placeholder="Their name" maxLength={24} value={draft.name} onChange={e => { setDraft({ ...draft, name: e.target.value }); setGrown(3) }} /></div>
        </motion.div>}

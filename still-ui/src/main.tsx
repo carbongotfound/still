@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.tsx'
 import { Mascot, MascotSheet, MascotStage, type MascotState } from './Mascot'
-import { DEFAULT_LOOK } from './look'
+import { DEFAULT_LOOK, type Look } from './look'
 
 const root = createRoot(document.getElementById('root')!)
 root.render(
@@ -18,8 +18,8 @@ document.addEventListener('still-mascot-sheet', () => {
   root.render(<StrictMode><MascotSheet /><MascotStage /></StrictMode>)
 })
 
-// One big mascot in one state or gesture, posed frame by frame for the GIFs in docs/agentic/mascot (tests/desktop/mascots.py --gifs).
+// A row of big mascots in one state or gesture, posed frame by frame for the GIFs in docs/agentic/mascot (tests/desktop/mascots.py).
 document.addEventListener('still-mascot-reel', e => {
-  const { state = 'idle', gesture = '', size = 320 } = (e as CustomEvent<{ state?: MascotState; gesture?: string; size?: number }>).detail ?? {}
-  root.render(<div className="mascot-reel"><Mascot look={DEFAULT_LOOK} state={state} size={size} gesture={gesture} gestureAt={gesture ? Date.now() : 0} /><MascotStage /></div>)
+  const { state = 'idle', gesture = '', size = 320, looks = [{}] } = (e as CustomEvent<{ state?: MascotState; gesture?: string; size?: number; looks?: Partial<Look>[] }>).detail ?? {}
+  root.render(<div className="mascot-reel">{looks.map((l, i) => <Mascot key={i} look={{ ...DEFAULT_LOOK, ...l }} state={state} size={size} gesture={gesture} gestureAt={gesture ? Date.now() : 0} />)}<MascotStage /></div>)
 })

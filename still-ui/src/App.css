@@ -1048,7 +1048,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-faces { display:flex; flex-wrap:wrap; gap:6px; }
 .ob-faces button { border-radius:50%; transition:transform .2s var(--ease-spring),box-shadow .15s; } .ob-faces button:hover { transform:translateY(-2px); }
 .ob-faces button[aria-checked=true] { box-shadow:0 0 0 2px var(--ob-card),0 0 0 4px var(--ob-accent); }
-.ob-faces canvas { display:block; }
+.ob-faces canvas, .ob-faces img { display:block; } .ob-faces img { width:44px; height:44px; }
 .ob-build-actions { display:flex; gap:8px; padding-top:2px; }
 .ob-name-box { display:flex; flex-direction:column; gap:8px; }
 .ob-name-box input, .ob-name-box textarea { width:100%; padding:11px 14px; border-radius:12px; border:1px solid var(--ob-line); background:var(--ob-card); color:inherit; font-size:15px; outline:none; resize:none; }
