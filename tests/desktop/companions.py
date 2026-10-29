@@ -19,7 +19,6 @@ RUN = ROOT / "artifacts" / ("companions-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 RESULT = {"checks": []}
-REFS = Path("D:/Still/work/refs")
 
 
 def check(ok, name):
@@ -100,7 +99,7 @@ def main():
         home(process)
         shown = text(process)
         check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
-              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Ideas for you" in shown
+              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" in shown
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion, chips and ideas")
         check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Pip anything, or hand over a task…", "The message box asks the active companion")
 
@@ -114,7 +113,7 @@ def main():
         click(process, ".look-colors [aria-label=Raspberry]")
         click(process, ".look-save")
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
-        click_text(process, ".companion-modes button", "Expert")
+        click_text(process, ".companion-modes button", "Thorough")
         click(process, ".companion-save")
         wren = until(lambda: mates().get("Wren"), 10)
         check(wren and '"color":"#d77a8f"' in wren["Look"].replace(" ", "") and wren["Mode"] == "expert" and "researcher" in wren["Job"], "Create a companion: name, job, look and mode are saved")
@@ -132,12 +131,12 @@ def main():
         # The mode menu: companions, the three modes, Advanced.
         open_menu(process, ".home-compose .mode-chip")
         menu = until(lambda: js(process, "document.querySelector('.mode-menu')?.innerText ?? ''"), 5) or ""
-        check(all(w in menu for w in ("Pip", "Wren", "Expert", "Default", "Efficient", "Advanced", "Expert Mode")), "The mode menu lists companions, modes, Advanced and the mode card")
+        check(all(w in menu for w in ("Pip", "Wren", "Quick", "Everyday", "Thorough", "usual setup", "Advanced")), "The mode menu lists companions, the modes with a line on each, and Advanced")
         if "--shots" in sys.argv:
             rpc(process, "capture", name="modes.png")
-        click_text(process, ".mode-menu [role=menuitem]", "Efficient")
-        check(until(lambda: mates().get("Wren", {}).get("Mode") == "efficient", 5), "Picking Efficient saves Wren's mode")
-        check(until(lambda: "Efficient" in js(process, "document.querySelector('.home-compose .mode-chip')?.innerText ?? ''"), 5), "The chip shows the mode")
+        click_text(process, ".mode-menu [role=menuitem]", "Quick")
+        check(until(lambda: mates().get("Wren", {}).get("Mode") == "efficient", 5), "Picking Quick saves Wren's mode")
+        check(until(lambda: "Quick" in js(process, "document.querySelector('.home-compose .mode-chip')?.innerText ?? ''"), 5), "The chip shows the mode")
 
         # Edit: how it talks.
         click(process, ".mate-switch-on")
@@ -149,8 +148,8 @@ def main():
         # The Companions page: a card per companion, then the crew to pick from; memory opens Settings > Memory.
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
-        check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Chat with Wren" in text(process), "The Companions page shows a card per companion")
-        check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Meet the crew" in text(process), "Below them, the crew of six and Create your own")
+        check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Say hi" in text(process), "The Companions page shows a card per companion")
+        check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Meet the crew" in text(process), "Below them, the crew of six and Make your own")
         js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Wren'))?.querySelector('.mate-memory')?.click()")
         check(until(lambda: js(process, "!!document.querySelector('.memory-settings')") and js(process, "document.querySelector('.memory-who [aria-checked=true]')?.innerText.trim()") == "Wren", 5), "What they remember opens Settings > Memory on Wren")
         for fact in ("I prefer peer-reviewed sources.", "I live in Lisbon and pay in euros."):
@@ -197,9 +196,9 @@ def main():
         check("Calm and precise, always with sources." in sent, "So does how Wren talks")
         check("Your name is Wren" in sent and "cites sources" in sent, "Wren's name and job go into the prompt")
         args = json.loads(prompts.read_text().splitlines()[-1])["args"]
-        check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Efficient mode runs another AI app with --effort low and its own model")
+        check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Quick mode runs another AI app with --effort low and its own model")
         reply = until(lambda: "Done, fake reply." in text(process) and text(process), 20) or ""
-        check("Read skill Trip plan" in reply, "The chat shows a Read skill row")
+        check("Loaded skill Trip plan" in reply, "The chat shows a Loaded skill row")
         check(js(process, "!!document.querySelector('.ai-msg.is-user .skill-chip')"), "The user's message shows the skill as a chip")
 
         # Chat History: unread, archive, search, the companion filter.
@@ -286,10 +285,10 @@ def screens():
         send(p, "skillSave", name="Trip plan", description="Lays out a trip day by day, with costs", when="Planning any trip", body="1. Ask where I'm starting from.")
         send(p, "skillSave", name="Price check", description="Compares three stores and shows a table", when="Shopping", body="1. Find three stores.")
         click(p, ".home-rail-item[aria-label=Skills]")
-    shots(EXE, "newtab", "v03", newtab, reference=REFS / "screens" / "hero_newtab.png")
-    shots(EXE, "modes", "v01", modes, reference=REFS / "ui-diagrams" / "modes.png")
-    shots(EXE, "companions", "v01", companions, reference=REFS / "companion-cards" / "card-research-rosa-5933c06f44.webp")
-    shots(EXE, "companion-editor", "v02", editor, reference=REFS / "contact-sheets" / "ad-self-driving-2.jpg")
+    shots(EXE, "newtab", "v03", newtab)
+    shots(EXE, "modes", "v01", modes)
+    shots(EXE, "companions", "v01", companions)
+    shots(EXE, "companion-editor", "v02", editor)
     shots(EXE, "skills", "v01", skills)
 
 

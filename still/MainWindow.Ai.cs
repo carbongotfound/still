@@ -166,8 +166,8 @@ public partial class MainWindow
  internal static void DropUntouchedDefaults(Preferences prefs) =>
   prefs.Companions.RemoveAll(c => DefaultCompanions().Any(d => d.Id == c.Id && d.Name == c.Name && d.Job == c.Job && c.Look.Length == 0 && c.Folder.Length == 0 && c.Skills.Count == 0));
  List<Companion> Companions => Prefs.Companions;
- /// The three modes on the message box. Expert: the strongest model, thinking hard. Efficient: the quickest, thinking
- /// little. Default: the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
+ /// The three modes on the message box. Thorough (expert): the strongest model, thinking hard. Quick (efficient): the
+ /// quickest, thinking little. Everyday (default): the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
  static (string Model, string Effort) ForMode(string ai, string? mode) => mode switch {
   "expert" => (ai == "claude" ? "opus" : "", "high"),
   "efficient" => (ai == "claude" ? "haiku" : "", "low"),
@@ -333,7 +333,7 @@ public partial class MainWindow
     given.InChat = to.Id; given.RunChat = null; given.AgentGroup = false; aiChat = to;
     await SelectTab(given); PublishAiEverywhere(); break;
    }
-   case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Go to chat"
+   case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Open chat"
     aiChat = runChat; aiOpen = true; break;
    case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
     var list = Companions.ToList();
@@ -473,7 +473,7 @@ public partial class MainWindow
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
   var skills = Skill.Invoked(shown);
   if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
-  foreach (var k in skills) Step(chat, "Read skill " + k.Name);
+  foreach (var k in skills) Step(chat, "Loaded skill " + k.Name);
   AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
   string work = cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far

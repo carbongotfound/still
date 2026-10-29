@@ -1,0 +1,7 @@
+SQLitePCLRaw (core, provider.e_sqlite3, lib.e_sqlite3, bundle_e_sqlite3) 2.1.12
+Copyright 2014-2024 SourceGear, LLC.
+Licensed under the Apache License, Version 2.0; see ../Apache-2.0.txt.
+Source: https://github.com/ericsink/SQLitePCL.raw
+
+The bundled e_sqlite3 library is SQLite, which is in the public domain:
+https://sqlite.org/copyright.html

@@ -106,12 +106,14 @@ export function CompanionsPage({ ai, send, onEdit, onChat, onMemory }: { ai: AiS
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
-    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={140} follow /><Pencil className="mate-edit" /></button>
+    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={118} follow /><Pencil className="mate-edit" /></button>
+    <div className="mate-info">
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name} · Your {h.name} plan</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
-    <button className="mate-chat" onClick={() => onChat(c.id)}>Chat with {c.name}</button>
+    <button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
+    </div>
    </article> })}
   </div>
   <h2 className="home-page-sub">Meet the crew</h2>
@@ -173,7 +175,7 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
    {!files.length && <p className="home-empty">No files match.</p>}
    <div className="library-list">{files.map(f => { const chat = chatOf(f.chat); return <div key={f.path} className="history-row">
     <button className="history-open" onClick={() => onOpen(f.path)}><FileIcon path={f.path} /><b>{nameOf(f.path)}</b><small>{chat ? chat.title + " · " : ""}{ago(f.saved)}</small></button>
-    {chat && <button className="history-act" aria-label={"Go to the chat for " + f.name} title="Go to chat" onClick={() => send("chatOpen", { id: chat.id })}><MessageSquare /></button>}
+    {chat && <button className="history-act" aria-label={"Open the chat for " + f.name} title="Open chat" onClick={() => send("chatOpen", { id: chat.id })}><MessageSquare /></button>}
     <button className="history-act" aria-label={"Show " + f.name + " in its folder"} title="Show in folder" onClick={() => send("fileShow", { path: f.path })}><FolderOpen /></button>
     <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => send("fileDelete", { path: f.path })}><Trash2 /></button>
    </div> })}</div>
@@ -182,7 +184,7 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
 }
 
 // Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
-const MODE_NAMES: [Mode, string][] = [["efficient", "Efficient"], ["default", "Default"], ["expert", "Expert"]]
+const MODE_NAMES: [Mode, string][] = [["efficient", "Quick"], ["default", "Everyday"], ["expert", "Thorough"]]
 export function CompanionEditor({ ai, companion, canDelete, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
  const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
  const [styling, setStyling] = useState(false)

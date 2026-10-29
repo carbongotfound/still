@@ -117,7 +117,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const [c, setC] = useState<Companion>(() => first ?? { id: newId(), name: "", face: "", color: "", job: "", mode: "default" })
  const [look, setLook] = useState<Look>(() => first ? lookOf(first) : DEFAULT_LOOK) // a friendly face until one is picked; BLANK is for making your own
  const [picked, setPicked] = useState(!!first) // a companion is saved: kept, picked from the crew, or made
- const [making, setMaking] = useState(false) // "Create your own": it grows a color, a face and a name
+ const [making, setMaking] = useState(false) // "Make your own": it grows a color, a face and a name
  const [grown, setGrown] = useState(first ? 3 : 0)
  const [styling, setStyling] = useState(false)
  const [you, setYou] = useState("")
@@ -213,9 +213,9 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
    <AnimatePresence mode="wait" initial={false}>
     <motion.section key={at + (making ? "-own" : "")} className="ob-talk" {...slide} transition={{ duration: reduce ? .01 : .26, ease: EASE }}>
      {at === "hello" && <Bubbles from={intro} lines={noAi || !ai ? ["Hi! Welcome to Still.", "Still is an open-source browser that AI apps on this computer can work in, right next to your own tabs.", "Let's set a few things up. You can skip any step."]
-      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}, your helper.` : "I'm your helper. Or I will be, once you pick who I am.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra plan.", "Everything stays on your computer. Let's set things up. You can skip any step."]} />}
+      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}, your helper.` : "I don't have a name yet. You'll pick who I am in a minute.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra plan.", "Everything stays on your computer. Let's set things up. You can skip any step."]} />}
      {at === "import" && <>
-      <Bubbles lines={["Moving in from another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
+      <Bubbles lines={["Coming from Chrome, Edge or another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
       <Reveal after={2}><div className="ob-options">
        <button className="ob-option" onClick={onImport}><Download /><span><strong>Bring my stuff over</strong><small>Chrome, Edge, Brave, Opera GX or a saved export. You check it before anything is copied.</small></span></button>
        <button className="ob-option" disabled={isDefault} onClick={() => send("defaultBrowser")}><Globe2 /><span><strong>{isDefault ? "Still opens your links" : "Open my links in Still"}</strong><small>{isDefault ? "Links from other apps open here" : `${MAC ? "macOS" : "Windows"} asks you to confirm`}</small></span>{isDefault && <Check />}</button>

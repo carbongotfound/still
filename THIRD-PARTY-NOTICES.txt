@@ -1,17 +1,58 @@
-Still 1.3 — Copyright 2026 Carbon. Original application code: MIT (see LICENSE).
+Still, Copyright (c) 2026 Carbon. Released under the MIT license (see LICENSE).
 
-Interface: React, shadcn/ui (MIT), Radix, Motion, Sonner, cmdk and related packages.
-Fonts: Geist and Fraunces (SIL Open Font License). Icons: Lucide (ISC).
-Companion mascots: built in code with three.js, React Three Fiber and drei (MIT).
-AI app logos: LobeHub Icons (MIT, Copyright 2023 LobeHub). The Claude, OpenAI and Grok marks
-belong to Anthropic, OpenAI and xAI and only identify their apps.
-Article extraction: Mozilla Readability (Apache 2.0).
-Native host/runtime: .NET 10 and Windows Desktop (licenses included).
-Browser integration: Microsoft WebView2 SDK (Microsoft license and notices included).
-Setup engine: Inno Setup, copyright Jordan Russell and Martijn Laan (license included).
-WebView2 runtime bootstrapper: signed Microsoft binary; its own license applies.
+ORIGINAL WORK
+The companion mascots are Still's own: the 3D models and animations in
+still-ui/public/companion (*.glb, fit.json), the portraits in still-ui/src/assets/companion,
+the faces the app draws on them, and the Blender scripts that build and render them
+(tools/mascot). So are the app icon (still/Assets/still.ico, still.png) and the favicon.
+They contain no third-party models, textures, fonts or art, and they are covered by
+Still's MIT license like the rest of the code.
 
-See Licenses for the retained upstream license texts and package inventory.
-uBlock Origin Lite is downloaded separately from its official upstream release only
-after user review. Its GPL-3.0 license and source are provided by the extension
-publisher: https://github.com/uBlockOrigin/uBOL-home . It is not bundled in Still.
+Still ships no sound files and no AI models. It works through the AI service you
+sign into yourself.
+
+INTERFACE (bundled into the app as still/Shell)
+React, React DOM, scheduler ............... MIT, Meta Platforms, Inc. and affiliates
+Radix UI (radix-ui, @radix-ui/*) .......... MIT, WorkOS
+shadcn/ui components and theme CSS ........ MIT, shadcn
+Tailwind CSS, tw-animate-css .............. MIT, Tailwind Labs and contributors
+class-variance-authority .................. Apache-2.0, Joe Bell
+cn, clsx .................................. MIT
+cmdk, Sonner, next-themes ................. MIT
+Motion (motion, framer-motion, motion-dom, motion-utils) ... MIT, Motion B.V.
+Floating UI, react-remove-scroll, aria-hidden, use-sidecar and helpers ... MIT
+tslib ..................................... 0BSD, Microsoft
+three.js .................................. MIT, three.js authors
+Draco 3D decoder (ships inside three.js) .. Apache-2.0, The Draco Authors (Google)
+
+FONTS
+Geist (via @fontsource-variable/geist) .... SIL Open Font License 1.1, The Geist Project Authors
+Fraunces (via @fontsource-variable/fraunces) ... SIL Open Font License 1.1, The Fraunces Project Authors
+
+ICONS AND MARKS
+Lucide icons (lucide-react) ............... ISC, Lucide Icons and Contributors
+AI app logos .............................. MIT, LobeHub Icons, Copyright 2023 LobeHub
+The Claude, ChatGPT/OpenAI and Grok marks belong to Anthropic, OpenAI and xAI. Still uses
+them only to show which app you're talking to and is not affiliated with or endorsed by them.
+
+WINDOWS APP
+.NET 10 runtime and Windows Desktop ....... MIT, .NET Foundation and Contributors
+System.Security.Cryptography.ProtectedData  MIT, .NET Foundation and Contributors
+Microsoft WebView2 SDK .................... Microsoft license and notices (included)
+Microsoft.Data.Sqlite ..................... MIT, .NET Foundation and Contributors
+SQLitePCLRaw .............................. Apache-2.0, SourceGear, LLC
+SQLite (e_sqlite3) ........................ public domain
+Mozilla Readability ....................... Apache-2.0, Arc90 Inc
+Inno Setup (installer engine) ............. Inno Setup license, Jordan Russell and Martijn Laan
+WebView2 runtime bootstrapper ............. signed Microsoft binary under its own license
+
+MAC APP
+Built with Swift on Apple's WebKit and AppKit, which come with macOS and are not
+redistributed. It bundles the same interface, fonts, icons and Mozilla Readability as above.
+
+NOT BUNDLED
+uBlock Origin Lite is downloaded from its official release only after you choose to add it.
+Its GPL-3.0 license and source come from its publisher: https://github.com/uBlockOrigin/uBOL-home
+
+The Licenses folder holds every license text in full, plus packages.json, the inventory of
+bundled packages with their versions and licenses.

@@ -11,12 +11,12 @@ export type Premade = { id: string; name: string; role: string; pitch: string; j
 const look = (l: Partial<Look>): Look => ({ ...DEFAULT_LOOK, blush: true, ...l })
 
 export const PREMADES: Premade[] = [
- { id: "hazel", name: "Hazel", role: "Research",
-  pitch: "Digs into any question and comes back with answers you can check, every source linked.",
-  job: "A careful researcher. Reads several sources, checks them against each other, says how sure the answer is, and links every claim.",
-  tone: "Curious and precise. Short answers first, then the detail. Never guesses without saying so.",
-  good: ["Comparing sources side by side", "Summing up long reads in a few bullets", "Fact-checking what you've heard"],
-  starters: ["Is it worth buying an air purifier? Compare the top three", "Sum up the latest research on sleep and screens", "Fact-check something I read online"],
+ { id: "hazel", name: "Hazel", role: "Cooking",
+  pitch: "Turns whatever's in your fridge into dinner, with recipes that fit your time, your diet and your skills.",
+  job: "A home cook. Finds well-reviewed recipes for what the user has, scales them for any number of people, suggests swaps, and writes the shopping list.",
+  tone: "Cozy and encouraging, with a little kitchen humor. Gives exact amounts and times, never a vague pinch.",
+  good: ["Dinner from what's in the fridge", "Scaling a recipe up or down", "Shopping lists sorted by aisle"],
+  starters: ["What can I make with eggs, spinach and rice?", "Plan five easy weeknight dinners and a shopping list", "Make this recipe for 8 people instead of 4"],
   look: look({ body: "hazel", color: "#c4a8e6", eyes: "iris", pupil: .2, brows: "thin", mouth: "smile", glasses: "round", hair: "bun", hairColor: "#6b4a35" }) },
  { id: "rio", name: "Rio", role: "Deals",
   pitch: "Hunts down the best price, lines stores up side by side and spots the catch before you pay.",
@@ -32,12 +32,12 @@ export const PREMADES: Premade[] = [
   good: ["Trip plans, day by day", "Event checklists", "Comparing options in one table"],
   starters: ["Plan a weekend away for two", "Make a packing list for a beach trip", "Plan a birthday dinner for six people"],
   look: look({ body: "juno", color: "#7fb39b", eyes: "almond", brows: "straight", mouth: "smile", hair: "bob", hairColor: "#2c2f3a" }) },
- { id: "bram", name: "Bram", role: "Code",
-  pitch: "Reads the docs, explains errors and walks you through tech stuff without the jargon.",
-  job: "A friendly engineer. Explains code and tech plainly, reads documentation, and shows working examples.",
-  tone: "Relaxed and nerdy, with dry jokes. Explains the why, not just the how.",
-  good: ["Explaining error messages", "Finding the right docs page", "Comparing tools and libraries"],
-  starters: ["Explain what an API is, simply", "Compare the best laptops for coding under $1,200", "Help me understand this error message"],
+ { id: "bram", name: "Bram", role: "Movies & music",
+  pitch: "Picks something to watch tonight, finds where it's streaming and makes playlists for any mood.",
+  job: "A film and music buff. Recommends movies, shows and music to match the user's taste, says where to stream them, and builds playlists.",
+  tone: "Laid-back and enthusiastic, with dry jokes. Never spoils an ending unless asked.",
+  good: ["Picking something to watch tonight", "Finding where a movie is streaming", "Playlists for any mood"],
+  starters: ["Pick a movie for tonight, something like Arrival", "Where can I stream the new season of my show?", "Make a playlist for a rainy Sunday"],
   look: look({ body: "bram", color: "#7aa3dc", eyes: "bean", brows: "fluffy", mouth: "smirk", hat: "headphones" }) },
  { id: "wren", name: "Wren", role: "Writing",
   pitch: "Drafts emails, posts and stories in your voice, then tightens them until they shine.",
@@ -93,23 +93,27 @@ export function starters(interests: string[] = [], companion?: { name: string; l
 export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.name, face: "", color: "", job: p.job, tone: p.tone, mode: "default", look: lookKey(p.look) })
 const SILHOUETTE: Look = { ...BLANK, color: "#c4c4ca" }
 
-/// The official companions as cards, then "Create your own". Ones the user already has offer a chat instead.
+/// The crew as profile cards, round portrait first, then "Make your own". Ones the user already has say hi instead.
 export function CrewCards({ have = [], onPick, onOwn, onChat }: { have?: Companion[]; onPick: (p: Premade) => void; onOwn: () => void; onChat?: (id: string) => void }) {
  const [more, setMore] = useState<Premade | null>(null)
  const mine = (p: Premade) => onChat && have.find(c => premadeOf(c) === p)
  const act = (p: Premade) => { const c = mine(p); setMore(null); if (c) onChat!(c.id); else onPick(p) }
  return <div className="crew-grid">
   {PREMADES.map(p => <article key={p.id} className="crew-card" style={{ "--hue": p.look.color } as CSSProperties}>
-   <div className="crew-portrait"><Mascot look={p.look} size={132} follow /><span className="crew-role">{p.role}</span></div>
-   <h3>{p.name}</h3>
-   <p>{p.pitch}</p>
-   <div className="crew-actions"><button className="crew-pick" onClick={() => act(p)}>{mine(p) ? `Chat with ${p.name}` : `Pick ${p.name}`}</button><button className="crew-more" onClick={() => setMore(p)}>Learn more</button></div>
+   <div className="crew-portrait"><Mascot look={p.look} size={118} follow /></div>
+   <div className="crew-info">
+    <h3>{p.name}</h3><span className="crew-role">{p.role}</span>
+    <p>{p.pitch}</p>
+    <div className="crew-actions"><button className="crew-pick" onClick={() => act(p)}>{mine(p) ? "Say hi" : `Pick ${p.name}`}</button><button className="crew-more" onClick={() => setMore(p)}>About {p.name}</button></div>
+   </div>
   </article>)}
   <article className="crew-card is-own">
-   <div className="crew-portrait"><Mascot look={SILHOUETTE} size={132} /></div>
-   <h3>Create your own</h3>
-   <p>Pick a body, a face, a name and a job, and make them all yours.</p>
-   <div className="crew-actions"><button className="crew-pick" onClick={onOwn}>Start from scratch</button></div>
+   <div className="crew-portrait"><Mascot look={SILHOUETTE} size={118} /></div>
+   <div className="crew-info">
+    <h3>Make your own</h3>
+    <p>Pick a body, a face, a name and a job, and make them all yours.</p>
+    <div className="crew-actions"><button className="crew-pick" onClick={onOwn}>Start from scratch</button></div>
+   </div>
   </article>
   {more && <Dialog open onOpenChange={o => { if (!o) setMore(null) }}>
    <DialogContent className="app-dialog crew-dialog" style={{ "--hue": more.look.color } as CSSProperties}>
@@ -120,7 +124,7 @@ export function CrewCards({ have = [], onPick, onOwn, onChat }: { have?: Compani
      <section><h4>How {more.name} talks</h4><p>{more.tone}</p></section>
      <section><h4>Try asking</h4><ul className="crew-asks">{more.starters.map(s => <li key={s}>{s}</li>)}</ul></section>
     </div>
-    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Chat with ${more.name}` : `Pick ${more.name}`}</Button>
+    <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : `Pick ${more.name}`}</Button>
    </DialogContent>
   </Dialog>}
  </div>

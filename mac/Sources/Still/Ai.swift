@@ -101,8 +101,8 @@ func saveAiChats() {
 /// Chats whose run was cut off when Still closed or crashed.
 var interruptedChats: [AiChat] { aiChats.filter { $0.running && !$0.archived && runs[$0.id] == nil } }
 
-/// The three modes on the message box. Expert: the strongest model, thinking hard. Efficient: the quickest, thinking
-/// little. Default: the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
+/// The three modes on the message box. Thorough (expert): the strongest model, thinking hard. Quick (efficient): the
+/// quickest, thinking little. Everyday (default): the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
 func forMode(_ ai: String, _ mode: String?) -> (String, String) {
  switch mode {
  case "expert": return (ai == "claude" ? "opus" : "", "high")
@@ -457,7 +457,7 @@ extension Browser {
    given.inChat = to.id; given.runChat = nil; given.aiGroup = false; given.lastSeen = Date(); v.chat = to
    openChatTab(to.id)?.pageOpen = true // an AI's page opens in its chat
    showChatPage(); publishAiEverywhere()
-  case "agentChat": // the pill's "Go to chat"
+  case "agentChat": // the pill's "Open chat"
    if let run = tabs.first(where: { $0.id == s("id") })?.runChat, let chat = aiChats.first(where: { $0.id == run }) { v.chat = chat; v.open = true }
 
   case "companionSave":
@@ -654,7 +654,7 @@ extension Browser {
   let who = companions.first { $0.id == chat.companion }
   var skills = Skill.invoked(shown)
   if !chat.started { skills += Skill.all.filter { k in who?.skills.contains(k.id) == true && !skills.contains { $0.id == k.id } } }
-  for k in skills { chatStep(chat, "Read skill " + k.name) }
+  for k in skills { chatStep(chat, "Loaded skill " + k.name) }
   aiChats.removeAll { $0 === chat }; aiChats.insert(chat, at: 0); saveAiChats(); publishAiEverywhere()
 
   var isFolder: ObjCBool = false

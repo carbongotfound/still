@@ -64,6 +64,9 @@ Type: filesandordirs; Name: "{app}\de"
 [Files]
 Source: "{#AppExe}"; DestDir: "{app}"; Flags: ignoreversion
 Source: "{#LauncherExe}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\LICENSE"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\THIRD-PARTY-NOTICES.txt"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\Licenses\*"; DestDir: "{app}\Licenses"; Flags: ignoreversion recursesubdirs
 Source: "{#Bootstrapper}"; Flags: dontcopy
 
 [Icons]
@@ -83,7 +86,7 @@ Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still"; ValueType: strin
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\DefaultIcon"; ValueType: string; ValueData: """{app}\Still.exe"",0"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\shell\open\command"; ValueType: string; ValueData: """{app}\Still.exe"""
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationName"; ValueData: "Still"
-Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "The browser you share with your AI."
+Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationDescription"; ValueData: "The open-source agent browser that runs on the AI you already pay for."
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities"; ValueType: string; ValueName: "ApplicationIcon"; ValueData: """{app}\Still.exe"",0"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities\StartMenu"; ValueType: string; ValueName: "StartMenuInternet"; ValueData: "Still"
 Root: HKCU; Subkey: "Software\Clients\StartMenuInternet\Still\Capabilities\URLAssociations"; ValueType: string; ValueName: "http"; ValueData: "StillURL"

@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { ArrowLeft, ArrowUp, BookOpen, Camera, Check, ChevronDown, CircleCheck, Copy, Diamond, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Save, Search, Star, Tag, Zap, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -54,7 +54,7 @@ const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts.
-const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Read skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Loaded skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
  [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // Next steps the AI offers end its answer, one per line starting with ">> ".
@@ -128,32 +128,29 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
  </>
 }
 
-// Who you work with and how hard they think: Expert (the strongest model, thinking hard), Default (the AI app's own
-// defaults) or Efficient (the quickest). Advanced swaps the modes for the model and effort pickers.
-const MODES: [Mode, string, typeof Star, string, number, number][] = [
- ["expert", "Expert", Star, "The strongest model, thinking hard. For tricky research and long jobs.", 100, 38],
- ["default", "Default", Diamond, "Balanced thinking for everyday work.", 74, 62],
- ["efficient", "Efficient", Zap, "Quick and light on your plan. For small, simple jobs.", 46, 100],
+// Who you work with and how hard they think: Quick (the quickest model, thinking little), Everyday (the AI app's own
+// defaults) or Thorough (the strongest model, thinking hard). Advanced swaps the modes for the model and effort pickers.
+const MODES: [Mode, string, LucideIcon, string][] = [
+ ["efficient", "Quick", Rabbit, "Fast answers that go easy on your plan"],
+ ["default", "Everyday", Coffee, "Your AI app's usual setup, right for most things"],
+ ["expert", "Thorough", Brain, "Its strongest model, taking its time on hard jobs"],
 ]
 function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
  const [find, setFind] = useState("")
- const [hover, setHover] = useState<Mode>()
  const mode = companion?.mode ?? "default"
- const shown = MODES.find(m => m[0] === (hover ?? mode)) ?? MODES[1]
  const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
- return <DropdownMenu onOpenChange={o => { if (!o) { setFind(""); setHover(undefined) } }}>
+ return <DropdownMenu onOpenChange={o => { if (!o) setFind("") }}>
   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
   <DropdownMenuContent side="top" align="end" sideOffset={8} className="mode-menu">
    {onCompanion && <>
-    <input className="mode-find" aria-label="Search companions" placeholder="Search companions..." value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} />
+    <input className="mode-find" aria-label="Find a companion" placeholder="Find a companion…" value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} />
     {mates.map(c => <DropdownMenuItem key={c.id} onSelect={() => onCompanion(c.id)}><Face companion={c} size={22} />{c.name}{c.id === companion?.id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
     {!mates.length && <p className="mode-none">No one by that name.</p>}
     <DropdownMenuSeparator />
    </>}
-   {MODES.map(([id, label, Icon]) => <DropdownMenuItem key={id} disabled={!companion} onMouseEnter={() => setHover(id)} onFocus={() => setHover(id)} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }); if (ai.advanced) send("aiAdvanced", { on: false }) }}>
-    <Icon className="mode-icon" />{label}{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
+   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }); if (ai.advanced) send("aiAdvanced", { on: false }) }}>
+    <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
-   <div className="mode-card" aria-hidden><b>{shown[1]} Mode</b><p>{shown[3]}</p><i style={{ "--w": shown[4] + "%" } as CSSProperties}><Star /></i><i style={{ "--w": shown[5] + "%" } as CSSProperties}><Zap /></i></div>
   </DropdownMenuContent>
  </DropdownMenu>
 }
@@ -369,11 +366,11 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     return <div key={i} className="ai-turn">{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {next.length > 0 && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
-     {last && <>{!!ai.worked && <p className="ai-timer">Worked for {clock(ai.worked)}</p>}
+     {last && <>{!!ai.worked && <p className="ai-timer">Took {clock(ai.worked)}</p>}
       <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
     </div>
    })}
-   {busy && !ai.question && <div className="ai-turn">{face(items.length)}<p className="ai-timer">Working for {clock(tick)}</p></div>}
+   {busy && !ai.question && <div className="ai-turn">{face(items.length)}<p className="ai-timer">Working · {clock(tick)}</p></div>}
   </div></div>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
@@ -383,7 +380,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><button aria-label="Don't send" title="Don't send" onClick={() => send("aiUnqueue")}><X /></button></div>}
    <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
-    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Queue a follow-up…") : items.length ? "Ask a follow-up…" : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
+    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {companion && <label className="chat-memory" title={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label>}
     {mode === "panel" && provider && <p className="ai-usage"><Gauge />{["Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
@@ -474,7 +471,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
    <DropdownMenuLabel>Running tasks</DropdownMenuLabel>
    {runs.map(r => { const c = chat(r.id); return <div key={r.id} className="tasks-item">
     <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={waits(r) ? "needs" : "working"} />
-     <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working for " + clock(since(r.started))}</small></span>
+     <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working · " + clock(since(r.started))}</small></span>
      {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
     {tabs.filter(t => t.inChat === r.id).map(t => <div key={t.id} className="tasks-page">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.title || host(t.url)}</span><button onClick={() => send("aiHelpPage", { id: t.id })}>Watch</button><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}

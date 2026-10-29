@@ -7,19 +7,19 @@
 - Switcher at the top (`CompanionSwitch`): the active companion as a pill, the others as faces, a menu for the rest
   and a + for a new one. Running chats live in the toolbar's runner (see `agent.md`).
 - The companion's face at 96 px, then the message box: `/` lists skills, + adds a skill or a link to an open tab,
-  the mode chip picks the companion and Expert / Default / Efficient. The send button wears the companion's hue.
-- Chips: Skills, Companions, Library, Help. "Ideas for you": three cards, the first sums up an open tab.
+  the mode chip picks the companion and Quick / Everyday / Thorough. The send button wears the companion's hue.
+- Chips: Skills, Companions, Library, Help. "Try one of these": three cards, the first sums up an open tab.
 
 ## Modes
 
-The chip's menu: search and pick a companion, then Expert, Default or Efficient, then an Advanced switch.
-A card beside the menu explains the mode under the pointer, with smarts and speed bars.
+The chip's menu: find and pick a companion, then Quick, Everyday or Thorough, each with a line on what it does,
+then an Advanced switch.
 
 | Mode | Claude | Other AI apps |
 |---|---|---|
-| Expert | `--model opus --effort high` | effort high |
-| Default | the app's own defaults | the app's own defaults |
-| Efficient | `--model haiku --effort low` | effort low |
+| Quick (`efficient`) | `--model haiku --effort low` | effort low |
+| Everyday (`default`) | the app's own defaults | the app's own defaults |
+| Thorough (`expert`) | `--model opus --effort high` | effort high |
 
 Advanced swaps the chip for the model and effort pickers (`Prefs.AiAdvanced`).
 
@@ -52,6 +52,5 @@ Not built: the notification bell (there are no notifications yet); searching ins
 Tests: `python tests/desktop/companions.py <exe>` (31 checks, fake AI app, no plan used); `--shots` for the
 screenshots below.
 
-Shots: `compare/newtab-v03*.png` (beside `screens/hero_newtab.png`), `compare/modes-v01*.png` (beside
-`ui-diagrams/modes.png`), `compare/companions-v01*.png`, `compare/companion-editor-v02*.png`, `compare/skills-v01-*.png`,
-`compare/skill-chip-v01.png`, `compare/chats-v01-compare.png` (beside `ui-diagrams/chat-history-modern.png`).
+Shots: `compare/newtab-v03-*.png`, `compare/modes-v01-*.png`, `compare/companions-v01-*.png`, `compare/companion-editor-v02-*.png`,
+`compare/skills-v01-*.png`, `compare/skill-chip-v01.png`, `compare/chats-v01.png`.

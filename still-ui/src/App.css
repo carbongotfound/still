@@ -356,7 +356,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 /* Tabs an AI is using get a bot badge; tabs it opened sit together in the AI group. */
 .tab-letter { position:relative; }
 
-/* Headlines get a soft serif: the one warm, human note in an otherwise quiet UI. */
+/* Headlines get a soft serif: the warm, human note beside the sans-serif interface. */
 .new-tab-page h1, .ai-center h3, .ai-hello h3, [data-slot="dialog-title"] { font-family:var(--font-display); font-variation-settings:"SOFT" 100, "WONK" 0; font-optical-sizing:auto; }
 [data-slot="dialog-title"] { font-weight:480; letter-spacing:-.015em; }
 :root:not(.dark) .selected-tab { box-shadow:0 1px 2px #2a201410,0 0 0 1px #2a20140d; }
@@ -645,16 +645,16 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .page-glow { position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 3px var(--drive),inset 0 0 26px 4px color-mix(in oklab,var(--drive) 50%,transparent);animation:page-glow 2.4s ease-in-out infinite; }
 @keyframes page-glow { 50% { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--drive) 70%,transparent),inset 0 0 18px 2px color-mix(in oklab,var(--drive) 35%,transparent); } }
 /* The pill: the companion at work, then Take over and Stop. It breathes in the companion's hue. */
-.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:5px 5px 5px 8px;border-radius:999px;background:#1d2124;color:#f6f5f2;box-shadow:0 14px 34px -14px #000c,0 0 0 1px #ffffff16;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1),page-pill 2.6s ease-in-out 260ms infinite; }
-.page-control.is-paused { background:#4a3a1c; animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
-@keyframes page-pill { 50% { box-shadow:0 14px 34px -14px #000c,0 0 0 1px #ffffff16,0 0 0 5px color-mix(in oklab,var(--drive,#888) 28%,transparent); } }
+.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:5px 5px 5px 8px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 16%,var(--card));color:var(--foreground);box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border));animation:page-control-in 260ms cubic-bezier(.22,1,.36,1),page-pill 2.6s ease-in-out 260ms infinite; }
+.page-control.is-paused { background:color-mix(in oklab,#e2a33b 24%,var(--card)); animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
+@keyframes page-pill { 50% { box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border)),0 0 0 5px color-mix(in oklab,var(--drive,#888) 28%,transparent); } }
 .page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;padding:0 6px 0 2px;line-height:1.25; }
-.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap; } .page-control-text small { font-size:11.5px;color:#f6f5f2a8;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap; } .page-control-text small { font-size:11.5px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
 .page-control button { display:inline-flex;align-items:center;justify-content:center;gap:5px;height:30px;padding:0 13px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
 .page-control button svg { width:14px;height:14px; }
-.page-take { background:#fff;color:#1d2124; } .page-take:hover { background:#ecebe7; }
-.page-chat { background:#ffffff14;color:#f6f5f2; } .page-chat:hover { background:#ffffff24; }
-.page-stop { width:30px;padding:0 !important;background:#ffffff14;color:#ff6b6f; } .page-stop:hover { background:#e5484d33; }
+.page-take { background:color-mix(in oklab,var(--drive,#888) 42%,var(--card));color:var(--foreground); } .page-take:hover { background:color-mix(in oklab,var(--drive,#888) 58%,var(--card)); }
+.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
+.page-stop { width:30px;padding:0 !important;background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-stop:hover { color:var(--destructive);background:color-mix(in oklab,var(--destructive) 12%,transparent); }
 .page-stop svg { width:12px !important;height:12px !important;fill:currentColor;stroke:none; }
 @keyframes page-control-in { from { opacity:0; } }
 @media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-control.is-paused, .page-tabs i { animation:none; } }
@@ -694,24 +694,20 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mate-switch-more { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; color:var(--muted-foreground); transition:background .15s,color .15s; }
 .mate-switch-more:hover, .mate-switch-more[data-state=open] { background:var(--muted); color:var(--foreground); } .mate-switch-more svg { width:15px; height:15px; }
 
-/* The mode chip and its menu: companions, then Expert / Default / Efficient, and Advanced */
+/* The mode chip and its menu: companions, then Quick / Everyday / Thorough with a line on each, and Advanced */
 .mode-chip { display:flex; align-items:center; gap:6px; height:32px; padding:0 9px 0 5px; border-radius:999px; background:var(--muted); color:var(--foreground); font-size:13px; font-weight:500; transition:background .15s; }
 .mode-chip:hover, .mode-chip[data-state=open] { background:color-mix(in oklab,var(--hue,var(--foreground)) 14%,var(--muted)); }
 .mode-chip > svg { width:13px; height:13px; color:var(--hue,currentColor); } .mode-chip:disabled { opacity:.5; }
-.mode-menu[data-slot=dropdown-menu-content] { width:250px; overflow:visible; padding:6px; border-radius:14px; }
+.mode-menu[data-slot=dropdown-menu-content] { width:272px; overflow:visible; padding:6px; border-radius:14px; }
 .mode-menu [data-slot=dropdown-menu-item] { height:38px; gap:10px; border-radius:10px; font-size:14px; }
 .mode-find { width:100%; height:36px; padding:0 10px; margin-bottom:2px; border:0; outline:0; background:none; font-size:13.5px; color:var(--foreground); }
 .mode-find::placeholder { color:var(--muted-foreground); }
 .mode-check { margin-left:auto; width:17px !important; height:17px !important; color:var(--card) !important; fill:var(--foreground); }
-.mode-icon { width:15px !important; height:15px !important; fill:currentColor; color:var(--foreground) !important; }
+.mode-icon { width:16px !important; height:16px !important; color:var(--foreground) !important; }
+.mode-menu .mode-item[data-slot=dropdown-menu-item] { height:auto; padding-block:7px; }
+.mode-text { display:flex; flex-direction:column; gap:1px; } .mode-text small { font-size:11.5px; line-height:1.35; color:var(--muted-foreground); }
 .mode-none { padding:6px 10px 8px; font-size:12.5px; color:var(--muted-foreground); }
 .mode-advanced { display:flex; align-items:center; justify-content:space-between; padding:10px 8px 6px !important; font-weight:450 !important; color:var(--muted-foreground); }
-.mode-card { position:absolute; left:calc(100% + 8px); bottom:42px; width:224px; padding:13px 14px 14px; border-radius:14px; background:var(--popover); box-shadow:0 10px 34px rgba(15,23,42,.08),0 0 0 1px rgb(0 0 0/.06); pointer-events:none; }
-.mode-card b { display:block; font-size:14px; font-weight:560; } .mode-card p { margin:4px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
-.mode-card i { position:relative; display:block; height:16px; margin-top:6px; border-radius:999px; background:var(--muted); }
-.mode-card i::before { content:""; position:absolute; inset:0 auto 0 0; width:var(--w); border-radius:inherit; background:#5c7a76; transition:width .3s cubic-bezier(.22,1,.36,1); }
-.mode-card i svg { position:absolute; left:6px; top:3px; width:10px; height:10px; color:#fff; fill:#fff; }
-@media (max-width:760px) { .mode-card { display:none; } }
 
 /* Skills in the message box: "/" opens a list, a picked skill shows as a chip */
 .composer-add[data-slot] { color:var(--muted-foreground); } .composer-add[data-slot]:hover { color:var(--foreground); }
@@ -754,16 +750,8 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .history-act { display:grid; place-items:center; width:30px; height:30px; flex:none; border-radius:8px; color:var(--muted-foreground); opacity:0; transition:opacity .15s,background .15s; }
 .history-row:hover .history-act, .history-act:focus-visible, .skill-row .history-act { opacity:1; } .history-act:hover { background:var(--background); color:var(--foreground); } .history-act svg { width:15px; height:15px; }
 .history-row .history-act:last-child { margin-right:8px; }
-.mate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(220px,1fr)); gap:14px; }
-.mate-card { display:flex; flex-direction:column; align-items:flex-start; padding:10px 10px 14px; border-radius:18px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); transition:transform .25s var(--ease-spring),box-shadow .2s; }
-.dark .mate-card { box-shadow:0 0 0 1px var(--border); }
-.mate-card:hover { transform:translateY(-3px); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 14px 30px -16px rgb(0 0 0/.3); }
-.mate-portrait { position:relative; display:grid; place-items:center; width:100%; height:150px; border-radius:12px; background:color-mix(in oklab,var(--hue) 12%,var(--card)); }
-.mate-edit { position:absolute; top:10px; right:10px; width:14px; height:14px; opacity:0; color:var(--muted-foreground); transition:opacity .15s; } .mate-portrait:hover .mate-edit { opacity:1; }
-.mate-card h3 { margin:12px 6px 2px; font-family:var(--font-display); font-size:19px; font-weight:500; }
-.mate-card p { flex:1; margin:0 6px 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; }
-.mate-badge { display:flex; align-items:center; gap:6px; margin:0 6px 12px; font-size:11.5px; color:var(--muted-foreground); }
-.mate-chat { align-self:stretch; height:34px; margin:0 4px; border-radius:999px; background:var(--foreground); color:var(--background); font-size:13px; font-weight:550; transition:opacity .15s; } .mate-chat:hover { opacity:.88; }
+.mate-edit { position:absolute; right:12px; bottom:12px; width:14px; height:14px; opacity:0; color:var(--muted-foreground); transition:opacity .15s; } .mate-portrait:hover .mate-edit { opacity:1; }
+.mate-badge { display:flex; align-items:center; gap:6px; margin:0 0 6px; font-size:11.5px; color:var(--muted-foreground); }
 .home-memory { margin-top:34px; padding:18px; border-radius:16px; border:1px solid var(--border); background:var(--card); }
 .home-memory h2 { margin:0; font-size:15px; font-weight:560; } .home-memory p { margin:4px 0 12px; font-size:13px; color:var(--muted-foreground); }
 .home-memory textarea { width:100%; margin-bottom:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--input); background:var(--background); font-size:13.5px; line-height:1.5; resize:vertical; outline:0; } .home-memory textarea:focus { border-color:var(--ring); }
@@ -1097,7 +1085,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .ob-foot button { color:var(--ob-ink); } .ob-foot .ob-next { background:var(--ob-accent); color:var(--ob-accent-ink); padding:0 16px; } .ob-foot .ob-next:hover { background:var(--ob-accent); opacity:.88; }
 .ob-build-actions button { color:var(--ob-ink); }
 .ob-option.is-big { padding:16px; } .ob-usage { margin-top:4px; } .ob-keep { width:100%; margin-bottom:12px; } .ob-later { align-self:flex-start; }
-.ob .crew-grid { grid-template-columns:repeat(auto-fill,minmax(180px,1fr)); }
+.ob .crew-grid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
 .ob-interview { display:flex; flex-direction:column; gap:12px; min-height:0; }
 .ob-chat { display:flex; flex-direction:column; align-items:flex-start; gap:8px; max-height:min(46vh,460px); overflow-y:auto; padding:2px 2px 6px; scrollbar-width:thin; }
 .ob-bubble.is-you { align-self:flex-end; border-radius:18px; border-top-right-radius:6px; border-color:transparent; background:var(--ob-accent); color:var(--ob-accent-ink); white-space:pre-wrap; }
@@ -1160,28 +1148,28 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .tasks-page img, .tasks-page svg { width:13px; height:13px; flex:none; } .tasks-page span { flex:1; min-width:0; overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .tasks-page button { flex:none; padding:2px 7px; border-radius:6px; font-size:11.5px; color:var(--foreground); } .tasks-page button:hover { background:var(--muted); }
 
-/* The crew: official companions as cards (setup's helper step and the Companions page), then "Create your own" */
-.crew-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:14px; }
-.crew-card { display:flex; flex-direction:column; padding:8px 8px 12px; border-radius:18px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); transition:transform .25s var(--ease-spring),box-shadow .2s; }
-.dark .crew-card { box-shadow:0 0 0 1px var(--border); }
-.crew-card:hover { transform:translateY(-3px); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 14px 30px -16px rgb(0 0 0/.3); }
-.crew-portrait { position:relative; display:grid; place-items:center; height:150px; border-radius:12px; overflow:hidden; background:radial-gradient(circle at 50% 38%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 16%,var(--card))); }
-.crew-role { position:absolute; top:8px; left:8px; padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--card) 84%,transparent); font-size:11px; font-weight:580; color:color-mix(in oklab,var(--hue) 40%,var(--foreground)); }
-.crew-card h3 { margin:12px 6px 2px; font-family:var(--font-display); font-size:19px; font-weight:500; }
-.crew-card p { flex:1; margin:0 6px 12px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
-.crew-actions { display:flex; flex-direction:column; align-items:stretch; gap:2px; margin:0 4px; }
-.crew-pick { height:34px; border-radius:99px; background:var(--foreground); color:var(--background); font-size:13px; font-weight:550; transition:opacity .15s; } .crew-pick:hover { opacity:.88; }
-.crew-more { height:28px; font-size:12.5px; color:var(--muted-foreground); text-decoration:underline; text-underline-offset:3px; text-decoration-color:color-mix(in oklab,currentColor 40%,transparent); } .crew-more:hover { color:var(--foreground); }
-.crew-card.is-own .crew-portrait { background:var(--muted); } .crew-card.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.5; }
-.crew-card.is-own .crew-pick { background:transparent; color:var(--foreground); box-shadow:inset 0 0 0 1px var(--border); }
+/* The crew (setup's helper step and the Companions page) and your own companions: profile cards, a round portrait in
+   the companion's hue beside the name, role, pitch and buttons. "Make your own" is the dashed one. */
+.crew-grid, .mate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+.crew-card, .mate-card { display:flex; gap:14px; padding:14px; border-radius:16px; background:var(--card); border:1px solid var(--border); transition:border-color .2s,background-color .2s; }
+.crew-card:hover, .mate-card:hover { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
+.crew-portrait, .mate-portrait { position:relative; flex:none; display:grid; place-items:center; width:100px; height:100px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
+.crew-info, .mate-info { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; }
+.crew-card h3, .mate-card h3 { margin:2px 0 0; font-family:var(--font-display); font-size:18px; font-weight:500; }
+.crew-role { font-size:10.5px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; color:color-mix(in oklab,var(--hue) 50%,var(--foreground)); }
+.crew-card p, .mate-card p { flex:1; margin:6px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
+.crew-actions { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; }
+.crew-pick, .mate-chat { height:30px; padding:0 14px; border-radius:99px; background:color-mix(in oklab,var(--hue) 32%,var(--card)); color:var(--foreground); font-size:12.5px; font-weight:580; transition:background-color .15s; } .crew-pick:hover, .mate-chat:hover { background:color-mix(in oklab,var(--hue) 46%,var(--card)); }
+.crew-more { font-size:12.5px; color:var(--muted-foreground); } .crew-more:hover { color:var(--foreground); }
+.crew-card.is-own { --hue:var(--muted-foreground); border-style:dashed; } .crew-card.is-own .crew-portrait { background:var(--muted); box-shadow:none; } .crew-card.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.5; }
 .crew-dialog { max-width:440px; } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
-.crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .crew-role { position:static; background:color-mix(in oklab,var(--hue) 24%,transparent); }
+.crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .crew-role { padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--hue) 24%,transparent); }
 .crew-dialog-body { display:flex; flex-direction:column; gap:14px; } .crew-dialog-body h4 { margin:0 0 5px; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
 .crew-dialog-body p, .crew-dialog-body ul { margin:0; font-size:13.5px; line-height:1.5; } .crew-dialog-body ul { padding-left:18px; list-style:disc; }
 .crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
 .crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
-.mate-memory { display:flex; align-items:center; gap:6px; margin:0 6px 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
+.mate-memory { display:flex; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
 /* Settings > Memory */
 .memory-settings { display:flex; flex-direction:column; gap:10px; }
 .memory-who { display:flex; flex-wrap:wrap; gap:6px; }

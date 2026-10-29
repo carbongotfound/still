@@ -1,12 +1,10 @@
 # Takeover on the page
 
-Reference: `screens/hero_split.png` (the dark controller at the bottom of the page) and `walkthrough-seq/`.
-
 An AI works in the user's own tabs in the main window. Still's chat opens its pages as ordinary tabs, in front, with
 the chat in the sidebar. Other AI apps' tabs open in the background in the AI group.
 
-- On the page the AI is driving: a glow in its mascot's color runs around the page, and a dark pill floats at the
-  bottom center: "Controlled by <companion>", the mascot, what it is doing, Take over, Go to chat, Stop.
+- On the page the AI is driving: a glow in its mascot's color runs around the page, and a pill tinted in that color floats at the
+  bottom center: "<companion> is working…", the mascot, what it is doing, Take over, Open chat, Stop.
 - Take over: the AI's running call ends at once (typing stops mid-word) and its next call waits. The pill turns
   amber: "You're in control", "<name> waits for you", Hand back.
 - Go to chat opens that run's chat in the sidebar. Stop ends the run.

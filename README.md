@@ -2,7 +2,7 @@
 
 # still.
 
-**The open-source browser with an AI helper built in.** It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps: no API keys, no credits, no extra subscription. Switch AI any time, even halfway through a task. Other AI apps can use it too, once you say yes. Everything stays on your computer.
+**The open-source agent browser that runs on the AI you already pay for.** Claude, ChatGPT or Grok, through their own apps: no API keys, no credits, no extra subscription. Switch AI anytime, even halfway through a task. Your other AI apps can drive it too, through MCP or the command line, once you say yes. Everything stays on your computer.
 
 [**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**What it does**](#what-you-can-hand-off) · [**Connect your AI**](#connect-your-ai) · [**Install**](#install) · [**Build from source**](#build-from-source)
 
@@ -157,4 +157,8 @@ See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md
 
 ## License
 
-MIT © 2026 Carbon. Third-party components keep their own licenses; see [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt).
+Still is open source under the [MIT license](LICENSE), © 2026 Carbon.
+
+The companion mascots are Still's own: the 3D models (`.glb`) and animations in `still-ui/public/companion`, the Blender scripts in `tools/mascot` that build them, their portraits and faces, and the app icon. They're original work made for Still and covered by the same MIT license.
+
+Everything Still bundles from others keeps its own license, and every one of them allows shipping inside an MIT app: MIT, ISC, Apache-2.0, 0BSD, SIL OFL 1.1, BSD-style or public domain, plus Microsoft's redistributable WebView2 bootstrapper. The full list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Both ship inside the Windows installer and the Mac app. The Claude, ChatGPT and Grok names and logos belong to Anthropic, OpenAI and xAI, and Still isn't affiliated with them.

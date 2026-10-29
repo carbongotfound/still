@@ -197,10 +197,10 @@ try:
         shot(process, "6-live-user")
         time.sleep(4)
         js(process, "document.querySelector('.page-take').click()")
-        send(process, "aiToggle")  # close the sidebar, so Go to chat has to open it
+        send(process, "aiToggle")  # close the sidebar, so Open chat has to open it
         until(lambda: not js(process, "!!document.querySelector('.ai-sidebar')"), 5)
         js(process, "document.querySelector('.page-chat')?.click()")
-        check(until(lambda: js(process, "!!document.querySelector('.ai-sidebar')"), 5), "Live: Go to chat opens the run's chat in the sidebar")
+        check(until(lambda: js(process, "!!document.querySelector('.ai-sidebar')"), 5), "Live: Open chat opens the run's chat in the sidebar")
         done = until(lambda: not js(process, "!!document.querySelector('[aria-label=Stop]')") and "Grace" in (rpc(process, "eval", script="names.innerText") or ""), 180, 1)
         names = rpc(process, "eval", script="names.innerText") or ""
         RESULT["live_names"] = names
