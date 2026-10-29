@@ -149,7 +149,7 @@ def main():
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
         check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Say hi" in text(process), "The Companions page shows a card per companion")
-        check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Meet the crew" in text(process), "Below them, the crew of six and Make your own")
+        check(js(process, "document.querySelectorAll('.crew-card').length") == 8 and "Meet the crew" in text(process), "Below them, the crew of seven and Make your own")
         js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Ines'))?.querySelector('.mate-memory')?.click()")
         check(until(lambda: js(process, "!!document.querySelector('.memory-settings')") and js(process, "document.querySelector('.memory-who [aria-checked=true]')?.innerText.trim()") == "Ines", 5), "What they remember opens Settings > Memory on Ines")
         for fact in ("I prefer peer-reviewed sources.", "I live in Lisbon and pay in euros."):
