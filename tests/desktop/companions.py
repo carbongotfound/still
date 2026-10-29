@@ -105,8 +105,8 @@ def main():
 
         # Create a companion: New companion opens the library, then Make your own.
         click(process, ".mate-switch-more[aria-label='New companion']")
-        until(lambda: js(process, "!!document.querySelector('.library-dialog')"), 5)
-        click_text(process, ".library-row", "Make your own")
+        until(lambda: js(process, "!!document.querySelector('.companion-library')"), 5)
+        click_text(process, ".library-more .role-head", "Make your own")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         type_into(process, ".companion-dialog input[required]", "Ines")
         type_into(process, ".companion-dialog textarea", "A careful researcher who cites sources.")

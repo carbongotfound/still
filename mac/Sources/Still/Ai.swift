@@ -348,7 +348,13 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
  - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
  - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
  - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
- """ + pluginInstructions(who)
+ """ + pluginInstructions(who) + roleSetup(who)
+}
+
+/// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
+func roleSetup(_ who: Companion?) -> String {
+ guard let crew = who?.crew, !crew.isEmpty, let text = try? String(contentsOf: resources.appendingPathComponent("roles/\(crew).md"), encoding: .utf8) else { return "" }
+ return "\nStill's setup for your role follows. Where the user's own instructions above differ, theirs win.\n\n" + text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
 }
 
 /// Reads an install or sign-in process line by line (each line on the main thread) until it exits, for at most 10 minutes.
@@ -492,7 +498,7 @@ extension Browser {
   case "aiUnqueue": if let c = shownChat { runs[c.id]?.queue.removeAll() }
   case "aiSend":
    if setUpAgainAsked(s("text")) && !incognitoWindow { welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
-   let text = tidy(s("text"))
+   var text = tidy(s("text"))
    guard (1...20000).contains(text.count) else { break }
    // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
    // A chat that's still working takes it as a follow-up for when it finishes.
@@ -501,13 +507,18 @@ extension Browser {
    var team = (data["team"] as? [Any] ?? []).compactMap { $0 as? String }.filter { id in companions.contains { $0.id == id } }
    let companion = team.first ?? s("companion")
    team += mentioned(text)
+   // # in the message box attaches open tabs, never a private one: the message links them, and the AI reads them with read_page.
+   let picked = (data["tabs"] as? [Any] ?? []).compactMap { $0 as? String }
+   let attached = Array(browsers.flatMap(\.tabs).filter { picked.contains($0.id) && !$0.isPrivate && !$0.closed }.prefix(8))
+   if !attached.isEmpty { text += "\n\n" + attached.map { "[\($0.title.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")"))](\($0.url))" }.joined(separator: "\n") }
+   let asked = attached.isEmpty ? text : text + "\n\n[Still] The user attached \(attached.count == 1 ? "this tab" : "these tabs"): " + attached.map { "\"\($0.title)\" \($0.url) (tabId \($0.id))" }.joined(separator: "; ") + ". Read each with read_page before you answer."
    if let target { join(target, team) }
    if let target, let working = runs[target.id] {
     if !target.team.isEmpty { target.messages.append(AiMessage("user", text)) } // a team chat shows it now, and whoever's next answers it
     working.queue.append(text); break
    }
    if active?.chatId != nil || b("home") { v.chat = target }
-   runAi(target, text, into: b("home") || active?.chatId != nil ? active : nil, companion: companion, noMemory: b("noMemory"), team: team)
+   runAi(target, asked, shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: companion, noMemory: b("noMemory"), team: team)
   case "aiAnswer": // from the chat, or the running tasks list
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))

@@ -709,7 +709,7 @@ export default function App() {
            : <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>}
            <div className="home-compose"><Composer ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
             placeholder={team.length ? `Give ${andList(team.map(id => companionOf(ai, id)?.name ?? ""))} something to work on together…` : `Ask ${companion.name} anything, or hand over a task…`}
-            onSubmit={text => { send("aiSend", { text, home: true, companion: companion.id, ...(team.length && { team }) }); setTeam([]) }} /></div>
+            onSubmit={(text, tabs) => { send("aiSend", { text, home: true, companion: companion.id, ...(team.length && { team }), ...(tabs.length && { tabs }) }); setTeam([]) }} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>

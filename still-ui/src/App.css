@@ -758,7 +758,9 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-menu { position:absolute; left:8px; right:8px; bottom:calc(100% + 6px); z-index:20; display:flex; flex-direction:column; padding:5px; border-radius:14px; background:var(--popover); box-shadow:0 10px 34px rgba(15,23,42,.1),0 0 0 1px rgb(0 0 0/.07); }
 .skill-menu button { display:flex; align-items:center; gap:9px; height:36px; padding:0 9px; border-radius:9px; font-size:13px; text-align:left; }
 .skill-menu button[aria-selected=true], .skill-menu button:hover { background:var(--muted); }
-.skill-menu svg { width:14px; height:14px; flex:none; color:var(--muted-foreground); } .skill-menu b { font-weight:560; } .skill-menu span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+.skill-menu svg { width:14px; height:14px; flex:none; color:var(--muted-foreground); } .skill-menu b { flex:none; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:560; }
+.skill-menu button > img, .skill-menu button > .mascot, .mention-chip > img, .mention-chip > .mascot { flex:none; width:16px; height:16px; border-radius:4px; } .skill-menu button > .mascot { width:22px; height:22px; }
+.mention-chip > span { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .skill-menu span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 .skill-chips[data-slot] { flex-wrap:wrap; gap:6px; padding:10px 12px 0; }
 .skill-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 8px; border-radius:7px; background:color-mix(in oklab,var(--hue,#5c7a76) 14%,var(--muted)); font-size:12px; font-weight:550; vertical-align:middle; }
 .skill-chip svg { width:12px; height:12px; } .skill-chip button { display:grid; place-items:center; margin-right:-3px; opacity:.6; } .skill-chip button:hover { opacity:1; }
@@ -1072,7 +1074,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-stage.is-wide { --talk:clamp(520px,62vw,1180px); gap:clamp(16px,3vw,56px); }
 .ob-pop { transform-origin:50% 100%; }
 .ob-companion { justify-self:center; display:flex; flex-direction:column; align-items:center; gap:6px; }
-.ob-name { font:500 24px/1.2 var(--font-serif,serif); }
+.ob-name { font:600 24px/1.2 var(--font-ui); letter-spacing:-.02em; }
 .ob-talk { align-self:center; display:flex; flex-direction:column; gap:14px; width:100%; max-height:100%; overflow-y:auto; padding:8px 6px 12px; } /* scrolling clips at the padding edge: the sides hold a picked card's ring and focus outlines, the bottom answers sliding up 10px */
 .ob-bubbles { display:flex; flex-direction:column; align-items:flex-start; gap:8px; }
 .ob-bubble { position:relative; margin:0; padding:11px 15px; border-radius:18px; border-top-left-radius:6px; background:var(--ob-card); border:1px solid var(--ob-line); box-shadow:0 1px 0 rgba(60,45,20,.04),0 6px 18px -10px var(--ob-shadow); font-size:15px; line-height:1.45; max-width:520px; }
@@ -1139,7 +1141,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-foot button { color:var(--ob-ink); } .ob-foot .ob-not-now { font-size:13px; color:var(--ob-soft); padding:6px 10px; border-radius:8px; } .ob-foot .ob-not-now:hover { color:var(--ob-ink); background:var(--ob-hover); } .ob-foot .ob-next { background:var(--ob-accent); color:var(--ob-accent-ink); padding:0 16px; } .ob-foot .ob-next:hover { background:var(--ob-accent); opacity:.88; }
 .ob-build-actions button { color:var(--ob-ink); }
 .ob-option.is-big { padding:16px; } .ob-usage { margin-top:4px; } .ob-keep { width:100%; margin-bottom:12px; }
-.ob .crew-grid { grid-template-columns:repeat(auto-fill,minmax(260px,1fr)); }
 .ob-interview { display:flex; flex-direction:column; gap:12px; min-height:0; }
 .ob-chat { display:flex; flex-direction:column; align-items:flex-start; gap:8px; max-height:min(46vh,460px); overflow-y:auto; padding:2px 2px 6px; }
 .ob-bubble.is-you { align-self:flex-end; border-radius:18px; border-top-right-radius:6px; border-color:transparent; background:var(--ob-accent); color:var(--ob-accent-ink); white-space:pre-wrap; }
@@ -1204,33 +1205,21 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 
 /* The crew (setup's helper step and the Companions page) and your own companions: profile cards, a round portrait in
    the companion's hue beside the name, role, pitch and buttons. "Make your own" is the dashed one. */
-.crew-grid, .mate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
-.crew-card, .mate-card { display:flex; gap:14px; padding:14px; border-radius:16px; background:var(--card); border:1px solid var(--border); transition:border-color .2s,background-color .2s; }
-.crew-card:hover, .mate-card:hover { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
-.crew-portrait, .mate-portrait { position:relative; flex:none; display:grid; place-items:center; width:100px; height:100px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
-.crew-info, .mate-info { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; }
-.crew-card h3, .mate-card h3 { margin:2px 0 0; font-family:var(--font-display); font-size:18px; font-weight:500; }
-.crew-role { font-size:10.5px; font-weight:650; letter-spacing:.07em; text-transform:uppercase; color:color-mix(in oklab,var(--hue) 50%,var(--foreground)); }
-.crew-card p, .mate-card p { flex:1; margin:6px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
-.crew-actions { display:flex; flex-wrap:wrap; align-items:center; gap:4px 12px; }
-.crew-pick, .mate-chat { height:30px; padding:0 14px; border-radius:99px; background:color-mix(in oklab,var(--hue) 32%,var(--card)); color:var(--foreground); font-size:12.5px; font-weight:580; transition:background-color .15s; } .crew-pick:hover, .mate-chat:hover { background:color-mix(in oklab,var(--hue) 46%,var(--card)); }
-.crew-more { font-size:12.5px; color:var(--muted-foreground); } .crew-more:hover { color:var(--foreground); }
-.crew-card.is-own { --hue:var(--muted-foreground); border-style:dashed; } .crew-card.is-own .crew-portrait { background:var(--muted); box-shadow:none; } .crew-card.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.5; }
-.crew-dialog { max-width:440px; } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
-.crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .crew-role { padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--hue) 24%,transparent); }
+.mate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
+.mate-card { display:flex; gap:14px; padding:14px; border-radius:16px; background:var(--card); border:1px solid var(--border); transition:border-color .2s,background-color .2s; }
+.mate-card:hover { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
+.mate-portrait { position:relative; flex:none; display:grid; place-items:center; width:100px; height:100px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
+.mate-info { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; }
+.mate-card h3 { margin:2px 0 0; font-family:var(--font-display); font-size:18px; font-weight:500; }
+.mate-card p { flex:1; margin:6px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
+.mate-chat { height:30px; padding:0 14px; border-radius:99px; background:color-mix(in oklab,var(--hue) 32%,var(--card)); color:var(--foreground); font-size:12.5px; font-weight:580; transition:background-color .15s; } .mate-chat:hover { background:color-mix(in oklab,var(--hue) 46%,var(--card)); }
+.crew-dialog { max-width:440px; --font-display:var(--font-ui); } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
+.crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .role-tag { padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--hue) 24%,transparent); }
 .crew-dialog-body { display:flex; flex-direction:column; gap:14px; } .crew-dialog-body h4 { margin:0 0 5px; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
 .crew-dialog-body p, .crew-dialog-body ul { margin:0; font-size:13.5px; line-height:1.5; } .crew-dialog-body ul { padding-left:18px; list-style:disc; }
 .crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
 .crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
-.crew-grid { padding-top:14px; } .crew-card { position:relative; }
-.crew-bubble { position:absolute; z-index:3; top:-12px; left:78px; max-width:min(230px,calc(100% - 90px)); padding:6px 11px; border-radius:14px 14px 14px 4px; background:var(--popover); color:var(--popover-foreground); border:1px solid color-mix(in oklab,var(--hue) 55%,var(--border)); box-shadow:0 8px 22px -10px rgb(0 0 0 / .4); font-size:12.5px; line-height:1.35; font-weight:560; opacity:0; transform:translateY(5px) scale(.95); transform-origin:0 100%; transition:opacity .15s,transform .22s cubic-bezier(.3,1.4,.5,1); pointer-events:none; }
-.crew-card:hover .crew-bubble, .crew-card:focus-within .crew-bubble { opacity:1; transform:none; }
-@media (prefers-reduced-motion: reduce) { .crew-bubble { transform:none; transition:opacity .15s; } }
-.crew-card p.crew-pitch { flex:none; margin:6px 0 8px; font-size:13px; color:var(--foreground); }
-.crew-will { display:flex; flex-direction:column; gap:4px; margin:0 0 8px; padding:0; list-style:none; font-size:12.5px; line-height:1.4; color:var(--muted-foreground); }
-.crew-will li { position:relative; padding-left:14px; } .crew-will li::before { content:""; position:absolute; left:2px; top:.5em; width:6px; height:6px; border-radius:50%; background:color-mix(in oklab,var(--hue) 70%,var(--foreground)); }
-.crew-card p.crew-uses { display:flex; gap:6px; margin:-4px 0 10px; font-size:11.5px; color:var(--muted-foreground); } .crew-uses svg { flex:none; width:13px; height:13px; margin-top:1px; }
 /* Plugins (Plugins.tsx): name chips, setup's belt and grid, Settings → Plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }
 .plug-chip i { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); font-style:normal; font-weight:700; font-size:12px; }
@@ -1268,8 +1257,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }
 @keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
 .ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
-.crew-card p.crew-learns { display:flex; gap:6px; margin:0 0 10px; font-size:11.5px; } .crew-learns svg { flex:none; width:13px; height:13px; margin-top:1px; color:color-mix(in oklab,var(--hue) 60%,var(--foreground)); }
-.crew-hired { display:inline-flex; align-items:center; gap:4px; font-size:12.5px; font-weight:580; color:color-mix(in oklab,var(--hue) 45%,var(--foreground)); } .crew-hired svg { width:14px; height:14px; }
 .crew-asks b { display:block; margin-bottom:2px; font-size:12.5px; font-weight:620; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
 .mate-memory { display:flex; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
@@ -1358,9 +1345,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-sound:hover { color:var(--ob-ink); background:var(--ob-hover); } .ob-sound:disabled { opacity:.5; }
 
 /* Picking companions in setup: any number of the crew and your own, each card toggles; then the main one */
-.crew-card.is-picked { border-color:color-mix(in oklab,var(--hue) 80%,var(--border)); background:color-mix(in oklab,var(--hue) 10%,var(--card)); box-shadow:0 0 0 1px color-mix(in oklab,var(--hue) 80%,var(--border)); }
-.crew-pick[aria-pressed] { display:inline-flex; align-items:center; gap:5px; } .crew-pick svg { width:14px; height:14px; }
-.crew-pick[aria-pressed=true] { background:color-mix(in oklab,var(--hue) 62%,var(--card)); }
 .ob-mains { grid-template-columns:repeat(auto-fill,minmax(150px,1fr)); }
 .ob-mains button { align-items:center; padding:14px 14px 16px; text-align:center; }
 .ob-mains-face { display:grid; place-items:center; width:72px; height:72px; margin-bottom:4px; border-radius:50%; background:color-mix(in oklab,var(--hue) 26%,var(--ob-card)); }
@@ -1411,28 +1395,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
 .profile-add[data-slot=button] { border-radius:99px; }
 /* "New companion": Still's library, then make your own or paste one. */
-.library-dialog[data-slot=dialog-content] { max-width:min(800px, calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow-y:auto; scrollbar-width:thin; gap:16px; }
-.library-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(320px,1fr)); gap:10px; }
-.library-card { display:flex; align-items:center; gap:8px; padding:10px 14px 10px 10px; border:1px solid var(--border); border-radius:18px; background:var(--card); transition:border-color .2s,background-color .2s; }
-.library-card:hover, .library-card:focus-within { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
-.library-open { display:flex; flex:1; min-width:0; align-items:center; gap:14px; border-radius:12px; text-align:left; cursor:pointer; outline:none; }
-.library-card:has(.library-open:focus-visible) { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent); }
-.library-portrait { flex:none; display:grid; place-items:center; width:72px; height:72px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
-.library-portrait.is-own { width:52px; height:52px; background:var(--muted); box-shadow:none; color:var(--muted-foreground); } .library-portrait.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.5; } .library-portrait.is-own > svg { width:20px; height:20px; }
-.library-text { display:flex; flex:1; min-width:0; flex-direction:column; align-items:flex-start; gap:3px; }
-.library-text b { font-family:var(--font-display); font-size:17px; font-weight:500; }
-.library-text small { padding:1px 8px; border-radius:99px; font-size:11.5px; background:color-mix(in oklab,var(--hue) 22%,transparent); }
-.library-text > span { margin-top:3px; font-size:12.5px; line-height:1.4; color:var(--muted-foreground); }
-.library-add[data-slot=button] { flex:none; border-radius:99px; }
-.library-added { flex:none; display:flex; align-items:center; gap:4px; height:28px; padding:0 10px; border-radius:99px; background:var(--muted); font-size:12.5px; color:var(--muted-foreground); } .library-added svg { width:14px; height:14px; }
-.library-card.is-added .library-portrait { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 30%,var(--card)); }
-.library-more { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:10px; padding-top:16px; border-top:1px solid var(--border); }
-.library-row { --hue:var(--muted-foreground); display:flex; align-items:center; gap:12px; padding:10px 14px 10px 10px; border:1px dashed var(--border); border-radius:18px; text-align:left; cursor:pointer; outline:none; }
-.library-row:hover, .library-row:focus-visible { background:var(--muted); }
-.library-row.is-paste { cursor:default; } .library-row.is-paste .library-text { align-items:stretch; }
-.library-row textarea { margin-top:6px; padding:8px 10px; border:1px solid var(--input); border-radius:10px; background:var(--background); font:inherit; font-size:13px; resize:none; outline:none; }
-.library-row textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
-.library-bad { color:var(--destructive); font-size:12px; }
 .profile-routine-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .profile-routine-row input[type=time] { width:120px; } .profile-routine-row [type=submit] { margin-left:auto; }
 .profile-days { display:flex; gap:4px; }
 .profile-days button { width:32px; height:32px; border-radius:50%; background:var(--muted); font-size:12px; font-weight:600; color:var(--muted-foreground); cursor:pointer; }
@@ -1440,3 +1402,48 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-open { cursor:pointer; border-radius:999px; } .profile-open:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
 .profile-open > .mascot { transition:transform .18s cubic-bezier(.2,.8,.2,1); } .profile-open:hover > .mascot { transform:translateY(-2px) scale(1.04); }
 @media (prefers-reduced-motion: reduce) { .profile-panel, .profile-scrim { animation:none; } .profile-open > .mascot { transition:none; } }
+
+/* Still's companions as cards, in the library and in setup: a faint tint of the companion's color with a border in it,
+   its mascot whole on a soft glow of the color (it waves when you point at the card), the name, the role in small caps
+   and what to expect. Add or Hire is a ghost button that takes the color on hover; Added and Hired are a soft check. */
+:root { --font-ui:"Geist Variable",ui-sans-serif,system-ui,sans-serif; --soft:#71717a; } .dark { --soft:#a1a1aa; }
+.role-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:16px; }
+.role-card { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"head act" "list list"; align-items:center; align-content:start; gap:14px 12px; padding:20px; border-radius:18px; border:1px solid color-mix(in oklab,var(--hue) 20%,transparent); background:color-mix(in oklab,var(--hue) 6%,var(--card)); font-family:var(--font-ui); transition:transform .25s var(--ease-spring,ease),border-color .2s,background-color .2s,box-shadow .25s; }
+.role-card:hover, .role-card:focus-within { transform:translateY(-2px); border-color:color-mix(in oklab,var(--hue) 50%,transparent); box-shadow:0 12px 28px -18px color-mix(in oklab,var(--hue) 70%,transparent); }
+.role-card.is-on { background:color-mix(in oklab,var(--hue) 11%,var(--card)); border-color:color-mix(in oklab,var(--hue) 38%,transparent); }
+.role-card.is-own { border-style:dashed; border-color:color-mix(in oklab,var(--muted-foreground) 45%,transparent); background:transparent; } .role-card.is-own .mascot { filter:grayscale(1) contrast(.9); opacity:.55; }
+.role-head { grid-area:head; display:flex; align-items:center; gap:14px; min-width:0; margin:-4px; padding:4px; border-radius:16px; text-align:left; outline:none; }
+button.role-head { cursor:pointer; } button.role-head:focus-visible { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent); }
+.role-glow { flex:none; display:grid; place-items:center; width:88px; height:88px; margin:-8px; border-radius:50%; background:radial-gradient(closest-side,color-mix(in oklab,var(--hue) 32%,transparent),color-mix(in oklab,var(--hue) 10%,transparent) 62%,transparent); color:var(--soft); }
+.role-glow > svg { width:24px; height:24px; }
+.role-name { display:flex; min-width:0; flex-direction:column; gap:3px; }
+.role-title { font-size:18px; font-weight:600; letter-spacing:-.02em; line-height:1.25; color:var(--foreground); }
+.role-tag { font-size:13px; font-weight:600; font-variant-caps:all-small-caps; letter-spacing:.06em; line-height:1.2; color:color-mix(in oklab,var(--hue) 72%,var(--foreground)); }
+.role-card.is-own .role-tag, .library-paste .role-tag { color:var(--soft); }
+.role-act { grid-area:act; display:flex; align-items:center; gap:6px; }
+.role-expect { grid-area:list; display:flex; min-width:0; flex-direction:column; gap:6px; }
+.role-expect h4 { margin:0; font-size:12px; font-weight:500; letter-spacing:.01em; color:var(--soft); }
+.role-expect ul { display:flex; flex-direction:column; gap:2px; margin:0; padding:0; list-style:none; }
+.role-expect li, .role-expect p { margin:0; font-size:14px; line-height:1.5; color:var(--soft); }
+.role-expect li { position:relative; padding-left:18px; } .role-expect li::before { content:""; position:absolute; left:3px; top:.62em; width:6px; height:6px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,transparent); }
+.role-btn { display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 13px 0 11px; border-radius:99px; border:1px solid color-mix(in oklab,var(--foreground) 14%,transparent); background:transparent; color:var(--foreground); font:500 13px var(--font-ui); transition:background-color .15s,border-color .15s,color .15s; }
+.role-btn:hover, .role-btn:focus-visible { border-color:color-mix(in oklab,var(--hue) 55%,transparent); background:color-mix(in oklab,var(--hue) 14%,transparent); color:color-mix(in oklab,var(--hue) 62%,var(--foreground)); outline:none; }
+.role-done, .role-btn[aria-pressed=true] { border-color:transparent; background:color-mix(in oklab,var(--hue) 14%,transparent); color:color-mix(in oklab,var(--hue) 72%,var(--foreground)); }
+.role-done { display:inline-flex; align-items:center; gap:5px; height:32px; padding:0 12px 0 10px; border-radius:99px; font:500 13px var(--font-ui); }
+.role-btn svg, .role-done svg { width:15px; height:15px; }
+.role-bubble { position:absolute; z-index:3; top:-14px; left:86px; max-width:min(240px,calc(100% - 100px)); padding:6px 11px; border-radius:14px 14px 14px 4px; background:var(--popover); color:var(--popover-foreground); border:1px solid color-mix(in oklab,var(--hue) 45%,var(--border)); box-shadow:0 8px 22px -10px rgb(0 0 0 / .35); font-size:13px; line-height:1.35; font-weight:500; opacity:0; transform:translateY(5px) scale(.95); transform-origin:0 100%; transition:opacity .15s,transform .22s cubic-bezier(.3,1.4,.5,1); pointer-events:none; }
+.role-card:hover .role-bubble, .role-card:focus-within .role-bubble { opacity:1; transform:none; }
+@media (prefers-reduced-motion: reduce) { .role-card, .role-card:hover, .role-card:focus-within { transform:none; } .role-bubble { transform:none; transition:opacity .15s; } }
+.crew-grid { padding-top:14px; }
+/* The library dialog: one UI typeface, more room, a softer backdrop. */
+.companion-library[data-slot=dialog-content] { --font-display:var(--font-ui); width:min(820px,calc(100vw - 32px)); max-width:min(820px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; gap:22px; padding:28px; border-radius:24px; font-family:var(--font-ui); }
+.companion-library [data-slot=dialog-header] { gap:6px; }
+.companion-library [data-slot=dialog-title], .crew-dialog [data-slot=dialog-title] { font-family:var(--font-ui); font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
+.companion-library [data-slot=dialog-description] { font-size:14px; line-height:1.5; color:var(--soft); }
+[data-slot=dialog-overlay]:has(~ .companion-library) { background:rgb(0 0 0 / .28); backdrop-filter:blur(3px); }
+.library-more { padding-top:22px; border-top:1px solid var(--border); }
+.library-paste textarea { margin-top:4px; padding:9px 11px; border:1px solid var(--input); border-radius:12px; background:var(--background); font:14px/1.5 var(--font-ui); resize:none; outline:none; }
+.library-paste textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
+.library-bad { color:var(--destructive); font-size:13px; }
+/* Setup speaks in the same typeface as the rest of Still's UI. */
+.welcome.ob { --font-display:var(--font-ui); }

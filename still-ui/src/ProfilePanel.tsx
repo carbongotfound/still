@@ -100,7 +100,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
        <textarea rows={5} maxLength={1000} value={c.job} placeholder={`What ${c.name || "they"} does for you inside Still. For example: "Find me the best price before I buy anything, and show me where."`} onChange={e => save({ ...c, job: e.target.value }, true)} /></label>
       <label className="profile-field"><span>How {label} talks</span>
        <textarea rows={2} maxLength={600} value={c.tone ?? ""} placeholder="For example: upbeat and quick, with short answers and a joke now and then." onChange={e => save({ ...c, tone: e.target.value }, true)} /></label>
-      {preview && premade && <section className="profile-section"><h4>What {c.name.trim() || premade.name} does for you</h4><ul className="profile-will">{premade.will.map(w => <li key={w}>{w}</li>)}</ul></section>}
+      {preview && premade && <section className="profile-section"><h4>What to expect</h4><ul className="profile-will">{premade.expect.map(w => <li key={w}>{w}</li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="skills">
       <p className="profile-lead">Skills {label} reads at the start of every chat. You can also call any skill with /its-name in a message.</p>

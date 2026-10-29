@@ -531,12 +531,15 @@ public partial class MainWindow
   await Task.Delay(250);
   while (t.Loading && DateTime.UtcNow < until) await Task.Delay(100);
  }
- static string WebUrl(string input, string engine)
+ /// What an agent may open: web pages, and files inside its companion's working folder (a builder tests what it made there).
+ static string WebUrl(string input, string engine, string folder = "")
  {
   var url = ResolveAddress(input, engine);
-  if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages.");
+  if (Uri.TryCreate(url, UriKind.Absolute, out var u) && u.IsFile && folder.Length > 0 && Path.GetFullPath(u.LocalPath).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return u.AbsoluteUri;
+  if (u == null || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages" + (folder.Length > 0 ? ", and files in your working folder." : "."));
   return url;
  }
+ string WorkFolder(string who) => Companions.FirstOrDefault(c => c.Id == runs.GetValueOrDefault(who)?.Chat.Companion)?.Folder ?? "";
  // ---- The permission layer ----
  // Every call is read, navigate, interact or sensitive: buying, sending, deleting, a form that posts, a password or
  // payment field, or anything on a site the user marked sensitive. Settings say, per site, action and companion,
@@ -572,7 +575,7 @@ public partial class MainWindow
   if (action.Length == 0) return null;
   string site, what, why = "";
   try {
-   if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Open " + site; }
+   if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); what = "Open " + site; }
    else if (tool == "read_url") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Read " + site; }
    else if (tool == "web_search") { site = Host(SearchUrl("x")); what = "Search for “" + Clip(S(args, "query"), 60) + "”"; }
    else {
@@ -756,11 +759,11 @@ public partial class MainWindow
    case "read_url": return await ReadUrl(who, args);
    case "open_tab": {
     bool background = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False ? bg.GetBoolean() : runs.ContainsKey(who);
-    var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine), background); await WaitLoaded(tab);
+    var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who)), background); await WaitLoaded(tab);
     Did(who, "Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {
-    var (w, t, core) = await AgentPage(who, args); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine)); await WaitLoaded(t);
+    var (w, t, core) = await AgentPage(who, args); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); await WaitLoaded(t);
     Did(who, "Went to " + Host(t.Url)); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
    }
    case "switch_tab": {

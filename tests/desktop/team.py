@@ -1,17 +1,21 @@
 """Team chat: several companions in one thread. Handoffs become cards (waiting, on it, done, stopped), @Name asks a
 teammate, the user can jump in or stop the team at any point, the team pauses after 8 turns on its own, notes one
 companion keeps in the chat reach the rest, and each companion keeps its own memory and its own AI session.
+Mentions in the message box: # attaches an open tab (never a private one) for the AI to read, @ brings a companion in;
+both are chips that x or Backspace removes, and the pickers work with arrows, Enter and Esc.
 
 No AI plan is used: a fake agent app plays every companion. It finds who it is in the prompt ("You're Glint, ...") and
 says that companion's next line from plan.json ({name: [{text, sleep, remember}]}). Every run goes to prompts.jsonl.
 
 Run: python tests/desktop/team.py artifacts/Still-QA/Still.exe [OUTDIR]  (OUTDIR: a screenshot of the finished thread)
 """
+import http.server
 import json
 from pathlib import Path
 import shutil
 import sys
 import textwrap
+import threading
 import time
 import uuid
 
@@ -126,6 +130,43 @@ def type_and_send(text):
     js(P, "document.activeElement.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))")
 
 
+def type_in(text):
+    """Types into the message box without sending."""
+    js(P, f"""(() => {{ const e = document.querySelector('.chat-view textarea, .home-compose textarea'); e.focus();
+        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, {json.dumps(text)}); e.setSelectionRange(e.value.length, e.value.length); e.dispatchEvent(new Event('input', {{ bubbles: true }})) }})()""")
+    time.sleep(.25)
+
+
+def key(name, caret=None):
+    js(P, f"""(() => {{ const e = document.querySelector('.chat-view textarea, .home-compose textarea'); e.focus(); {f'e.setSelectionRange({caret}, {caret});' if caret is not None else ''}
+        e.dispatchEvent(new KeyboardEvent('keydown', {{ key: {json.dumps(name)}, bubbles: true, cancelable: true }})) }})()""")
+    time.sleep(.25)
+
+
+def picker():
+    """The open picker: its label and each option's text."""
+    return json.loads(js(P, "JSON.stringify((m => m ? [m.getAttribute('aria-label'), [...m.querySelectorAll('[role=option]')].map(o => o.querySelector(':scope > b').innerText + ' · ' + o.querySelector(':scope > span:last-child').innerText)] : null)(document.querySelector('.chat-view .skill-menu, .home-compose .skill-menu')))") or "null")
+
+
+def chips():
+    return json.loads(js(P, "JSON.stringify([...document.querySelectorAll('.chat-view .mention-chip, .home-compose .mention-chip')].map(c => c.innerText.trim()))") or "[]")
+
+
+def pages():
+    """Two pages to attach: a review, and one that will sit in a private tab."""
+    class Page(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            title = "Desk lamp review" if "review" in self.path else "Secret plans"
+            body = f"<!doctype html><title>{title}</title><h1>{title}</h1><p>Warm 2700K light, no glare.</p>".encode()
+            self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+        def log_message(self, *a):
+            pass
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Page)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    return f"http://127.0.0.1:{server.server_port}"
+
+
 def setup(theme="Light"):
     BIN.mkdir(parents=True)
     (PROFILE / "agents").mkdir(parents=True)
@@ -184,6 +225,10 @@ def main():
         check(cards == ["Write a two-line launch pitch around glare, warmth and price.", "Check the pitch's claims against two reviews."], f"A card holds what was handed over ({cards})")
         runs = {p["name"]: p for p in prompts()}
         check("[Team chat] You're Glint" in runs["Glint"]["prompt"] and "Zest (" in runs["Glint"]["prompt"] and "Noon (" in runs["Glint"]["prompt"], "Each companion is told who's on the team")
+        firsts = {}
+        for r in prompts(): firsts.setdefault(r["name"], r["prompt"])
+        check("# Your role: Researcher" in firsts["Glint"] and "Cite every factual claim" in firsts["Glint"] and "# Your role: Deal closer" in firsts["Zest"] and "# Your role: Chief of staff" in firsts["Noon"]
+              and "# Your role: Researcher" not in firsts["Zest"], "Each starts with its own role setup: method, tools and quality rules")
         check("Glint handed this to you: Write a two-line launch pitch" in runs["Zest"]["prompt"] and "Glint: People ask three things" in runs["Zest"]["prompt"],
               "The one taking a handoff gets the task and what was said")
         check("What the team noted in this chat:" in runs["Noon"]["prompt"] and "The lamp launches in March" in runs["Noon"]["prompt"], "What Glint remembered in the chat reaches the team")
@@ -261,6 +306,74 @@ def main():
         loop = new_chat("Keep passing it.", team=["glint", "zest"])
         check(until(lambda: not chat(loop).get("Running") and chat(loop)["Messages"][-1]["Text"] == "The team paused after 8 turns. Reply to keep them going.", 40), "The team pauses after 8 turns")
         check(len(prompts()) - ran == 8, f"after taking 8 turns ({len(prompts()) - ran})")
+
+        # Mentions: # lists the open tabs (never a private one) and attaches one as a chip; the AI is told to read it.
+        site = pages()
+        send(P, "new", url=site + "/review")
+        send(P, "new", url=site + "/secret", private=True)
+        until(lambda: sum(t.get("Title") in ("Desk lamp review", "Secret plans") for t in rpc(P)["tabs"]) == 2, 10)
+        secret = next(t["Id"] for t in rpc(P)["tabs"] if t.get("Private"))
+        plan({"Noon": [{"text": "Hello."}, {"text": "Read it: the review likes the warm light."}, {"text": "I can only see the one you shared."}], "Zest": [{"text": "Warm light sells. I'd lead with it."}]})
+        talk = new_chat("Hi Noon.", companion="noon")
+        settled(talk, 1)
+        type_in("Sum up #")
+        got = picker()
+        check(got and got[0] == "Tabs" and any("Desk lamp review" in o for o in got[1]) and not any("Secret" in o for o in got[1]), f"# lists the open tabs, never a private one ({got})")
+        type_in("Sum up #lamp")
+        got = picker()
+        check(got and len(got[1]) == 1 and got[1][0].startswith("Desk lamp review"), f"Typing after # filters the tabs ({got})")
+        time.sleep(.6)
+        rpc(P, "capture", name="mentions-tabs.png")
+        key("Enter")
+        check(chips() == ["Desk lamp review"] and js(P, "document.querySelector('.chat-view textarea').value") == "Sum up " and not picker(), "Enter attaches it as a chip and takes #lamp out of the text")
+        key("Backspace", 0)
+        check(chips() == [], "Backspace at the start of the box removes the last chip")
+        type_in("Sum up #lamp")
+        key("Tab")
+        check(chips() == ["Desk lamp review"], "Tab picks too")
+        type_in("Sum up this review.")
+        key("Enter")
+        check(settled(talk, 2), "Noon answers")
+        c = chat(talk)
+        asked = [m["Text"] for m in c["Messages"] if m["Role"] == "user"][-1]
+        check(asked == f"Sum up this review.\n\n[Desk lamp review]({site}/review)", f"The message shows the tab as a link ({asked!r})")
+        last = prompts()[-1]["prompt"]
+        check(f'[Still] The user attached this tab: "Desk lamp review" {site}/review (tabId ' in last and "Read each with read_page" in last, "The AI is told which tab it is and to read it")
+        check(chips() == [], "Sending clears the chips")
+
+        # A private tab can't be attached, even by asking Still directly.
+        send(P, "aiSend", text="And this one?", tabs=[secret])
+        check(settled(talk, 3), "Noon answers again")
+        check("Secret plans" not in json.dumps(chat(talk)["Messages"]) and "Secret plans" not in prompts()[-1]["prompt"] and "/secret" not in prompts()[-1]["prompt"], "A private tab is never attached")
+
+        # @ lists companions with their role; Esc closes it, arrows move, Enter picks; x removes a chip; sending brings it in.
+        type_in("What do you think @")
+        got = picker()
+        check(got and got[0] == "Companions" and "Zest · Deal closer" in got[1] and "Glint · Researcher" in got[1], f"@ lists companions with their role ({got})")
+        time.sleep(.6)
+        rpc(P, "capture", name="mentions-companions.png")
+        key("Escape")
+        check(not picker() and js(P, "document.querySelector('.chat-view textarea').value") == "What do you think @", "Esc closes the picker and keeps the text")
+        type_in("What do you think @ma")
+        key("Enter")
+        check(chips() == ["@Mallow"], "Enter picks the companion as a chip")
+        js(P, "document.querySelector('.chat-view .mention-chip button[aria-label=\"Remove Mallow\"]').click()")
+        time.sleep(.2)
+        check(chips() == [], "x removes it")
+        type_in("What do you think @")
+        names = [o.split(" · ")[0] for o in picker()[1]]
+        key("ArrowDown")
+        key("Enter")
+        check(chips() == ["@" + names[1]], f"Arrows move through the list ({chips()})")
+        key("Backspace", 0)
+        type_in("What do you think @zest")
+        key("Enter")
+        type_in("is this a good pitch?")
+        key("Enter")
+        check(settled(talk, 4), "Zest answers")
+        c = chat(talk)
+        check(c.get("Team") == ["noon", "zest"] and said(c)[-1] == "zest", f"@Zest brings Zest in, and Zest answers ({c.get('Team')}, {said(c)})")
+        check([m["Text"] for m in c["Messages"] if m["Role"] == "user"][-1] == "@Zest is this a good pitch?", "The message names who it's for")
 
         errors = js(P, "JSON.stringify(window.__errors || [])")
         check(errors in (None, "[]"), f"No script errors ({errors})")
