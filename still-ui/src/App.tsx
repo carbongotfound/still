@@ -31,6 +31,7 @@ import { cn, MAC } from "@/lib/utils"
 import "./app.css"
 import { rankSuggestions, type AddressPick } from "./suggestions"
 import { BrowserTools } from "./BrowserTools"
+import { SaveLoginBar } from "./Passwords"
 import { Welcome } from "./Welcome"
 import { Tour } from "./Tour"
 import type { ToolData } from "./BrowserTools"
@@ -58,7 +59,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number; newTab?:string; interests?:string[] }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number; newTab?:string; interests?:string[] }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -388,8 +389,6 @@ export default function App() {
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
- const [shownLogin, setShownLogin] = useState<State["loginOffer"]>()
- useEffect(() => { if (state.loginOffer) setShownLogin(state.loginOffer) }, [state.loginOffer])
  const working = state.agent?.pending ? undefined : state.agent
  // The page in view, beside a chat or in its own tab, and whether an AI is driving it right now.
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
@@ -624,11 +623,7 @@ export default function App() {
       <Button variant="ghost" size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: false })}>Block</Button>
       <Button size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: true })}>Allow</Button>
      </div></div>
-     <div className={cn("permission-wrap", state.loginOffer && "is-open")}><div className="permission-bar" role="alertdialog" aria-label="Save password" aria-hidden={!state.loginOffer}>
-      <KeyRound /><span>{shownLogin?.update ? "Update" : "Save"} password for <b>{shownLogin?.username || "this login"}</b> on {shownLogin?.origin.replace(/^https?:\/\//, "")}?</span>
-      <Button variant="ghost" size="sm" disabled={!state.loginOffer} onClick={() => send("loginDismiss")}>Not now</Button>
-      <Button size="sm" disabled={!state.loginOffer} onClick={() => state.loginOffer && send("loginAccept", { id: state.loginOffer.id, username: state.loginOffer.username })}>{shownLogin?.update ? "Update" : "Save"}</Button>
-     </div></div>
+     <SaveLoginBar offer={state.loginOffer} send={send} />
      <div className="page-row">
      {chatTab && ai && <section className={cn("chat-pane", (split ? splitInfo : info) && "has-info")} style={split ? { width: `${Math.round(chatShare * 100)}%` } : undefined}>
       {split && <div className="chat-divider" role="separator" aria-label="Resize the chat" aria-orientation="vertical" aria-valuenow={Math.round(chatShare * 100)} tabIndex={0}
@@ -943,7 +938,7 @@ function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<S
   <div className="page-glow" data-kind={kind} style={hue} aria-hidden />
   <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label={agent.paused ? who.name + " is waiting for you" : who.name + " is working"}>
    <Face companion={who} size={24} mood={agent.paused ? "listening" : "working"} />
-   <span className="page-control-text"><b>{agent.paused ? "You're in control" : who.name + " is working…"}</b>{!agent.paused && agent.action && <small>{agent.action}</small>}</span>
+   <span className="page-control-text"><b>{agent.paused ? agent.signIn ? "Sign in, then hand it back" : "You're in control" : who.name + " is working…"}</b>{agent.paused && agent.signIn ? <small>{who.name} never sees your password</small> : !agent.paused && agent.action && <small>{agent.action}</small>}</span>
    <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand />{agent.paused ? "Hand back" : "Take over"}</button>
    {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Open chat</button>}
    <button className="page-stop" aria-label="Stop" title="Stop" onClick={() => send("agentStop", { key: agent.key })}><Square /></button>

@@ -35,12 +35,15 @@ public partial class MainWindow
    Add(browser.Item1,Path.Combine(root,"Default"));
    foreach(var dir in Directory.EnumerateDirectories(root,"Profile *").Take(30))Add(browser.Item1+" · "+Path.GetFileName(dir),dir);
   }
+  // Firefox names its profile folders like "x1y2z3.default-release".
+  string firefox=Path.Combine(roaming,"Mozilla","Firefox","Profiles");
+  if(Directory.Exists(firefox))foreach(var dir in Directory.EnumerateDirectories(firefox).Where(d=>File.Exists(Path.Combine(d,"places.sqlite"))).Take(30)){string name=Path.GetFileName(dir);Add("Firefox · "+name[(name.IndexOf('.')+1)..],dir);}
  }
  void ChooseExternalProfile()
  {
   if(externalImportBusy)return;
   _=Dispatcher.BeginInvoke(async()=>{
-   var picker=new OpenFolderDialog{Title="Choose an Opera GX or Chromium profile folder"};
+   var picker=new OpenFolderDialog{Title="Choose a browser profile folder"};
    if(picker.ShowDialog(this)==true)await PrepareExternalProfile(picker.FolderName,Path.GetFileName(picker.FolderName));
   });
  }
