@@ -652,9 +652,9 @@ def main():
         send(process, "new")
         until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 10)
         js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
-        send(process, "aiSend", text="REMEMBER: Loves maple syrup pancakes forever", home=True, companion="pip")
+        send(process, "aiSend", text="REMEMBER: Loves maple syrup pancakes forever", home=True, companion="mallow")
         said = until(lambda: results.exists() and json.loads(results.read_text(encoding="utf-8").splitlines()[0]), 30) or {}
-        memory = PROFILE / "companions" / "pip" / "memory.json"
+        memory = PROFILE / "companions" / "mallow" / "memory.json"
         check(said.get("error") and "saved passwords" in said.get("text", "") and (not memory.exists() or "pancakes" not in memory.read_text(encoding="utf-8")),
               "A companion can't remember a saved password")
         errors = rpc(process).get("shellErrors")

@@ -5,7 +5,7 @@ import type { Look } from "./look"
 import { loadEngine, Mascot } from "./Mascot"
 import { play, type Playing } from "./sound"
 
-// Still's intro, about five seconds, in step with sounds/intro.ogg and the companion's "wake" clip (tools/mascot): the
+// Still's intro, about five seconds, in step with sounds/intro.ogg and the companion's "wake" gesture (Mascot.tsx): the
 // window is dark and the companion asleep; a spark drifts in and lands in its chest at 1.0 s; it wakes, stretches and
 // gives a little shake; from 3.0 s light blooms out of it and fills the window with the theme's own background; Still's
 // name comes into focus below it, and it turns to wave at you. Plain CSS on one clock (App.css, "The intro"), no video.

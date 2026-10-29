@@ -120,7 +120,7 @@ extension Browser {
   You are \(who?.name ?? "the user's companion"), the companion in Still, a web browser with AI built in. \(who.map { $0.job.isEmpty ? "" : "The user picked you as: " + $0.job } ?? "")
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
-  what they mostly use the browser for, the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
+  what their work involves (research, email, planning, sales, hiring, marketing, support, code and so on), the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
 
   Reply with ONLY one JSON object and nothing else:
   {"say": "a short, warm reaction to their answer (or hello)", "question": "your next question", "options": ["2 to 4 short answers they can tap"]}
@@ -129,7 +129,7 @@ extension Browser {
   When you know enough, or they ask you to finish, reply instead with:
   {"say": "one line wrapping up", "done": true, "settings": {
    "name": "what they want to be called, or empty",
-   "interests": ["up to 6 short topics they care about"],
+   "interests": ["up to 6 short areas of their work, like research, sales or hiring"],
    "layout": "Classic" (tabs across the top) or "Modern" (tabs down the side) or "",
    "theme": "Light", "Dark", "System" or "",
    "search": "Google", "Bing", "DuckDuckGo" or "",
@@ -220,10 +220,10 @@ extension Browser {
    var facts = Array(texts("memories", 8, 200).flatMap { $0.replacingOccurrences(of: #"(?<=[.!?])\s+(?=\p{Lu})"#, with: "\n", options: .regularExpression).split(separator: "\n").map { sentence($0) } }.filter { $0.count > 2 }.prefix(8))
    let name = str("name", 40)
    if !name.isEmpty { facts.insert("Likes to be called " + name + ".", at: 0) }
-   if !interests.isEmpty { facts.append("Into " + interests.joined(separator: ", ").lowercased() + ".") }
+   if !interests.isEmpty { facts.append("Works on " + interests.joined(separator: ", ").lowercased() + ".") }
    var ids = [who.id]
    for id in setupTalk?.also ?? [] where !ids.contains(id) && companions.contains(where: { $0.id == id }) { ids.append(id) }
-   let kept = ids.flatMap { id in facts.enumerated().compactMap { i, f in CompanionMemory.remember(id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Into ") ? "interests" : "").map { (id, $0) } } }
+   let kept = ids.flatMap { id in facts.enumerated().compactMap { i, f in CompanionMemory.remember(id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Works on ") ? "interests" : "").map { (id, $0) } } }
    let mine = kept.filter { $0.0 == who.id }.map(\.1)
    if !mine.isEmpty { change("memory", "I'll remember", mine.map(\.text).joined(separator: "\n")) { for (id, f) in kept { CompanionMemory.forget(id, f.id) } } }
   }

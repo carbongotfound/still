@@ -162,7 +162,17 @@ public partial class MainWindow
  /// don't live on in the source. A companion with one may have been named by Still rather than the user.
  static readonly HashSet<uint> OldNames = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x422bb03e, 0x4c12a741, 0x4dae4233, 0x5540dda6, 0x6ab98305, 0x6b68e403, 0x6cf7bb37, 0x71d1513f, 0x78472df1,
   0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444];
- internal static bool OldName(string name) { uint h = 2166136261; foreach (char ch in name.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return OldNames.Contains(h); }
+ static uint Fnv(string s) { uint h = 2166136261; foreach (char ch in s.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return h; }
+ internal static bool OldName(string name) => OldNames.Contains(Fnv(name));
+ /// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
+ static readonly Dictionary<uint, (string Role, string Name)> MovedCrew = new() { [327684010u] = ("sleuth", "Glint"), [235257612u] = ("closer", "Zest"),
+  [3817335319u] = ("scout", "Bloom"), [2393765392u] = ("chief", "Noon"), [389508247u] = ("chief", "Noon"), [2625268281u] = ("hype", "Fizz"), [56376696u] = ("builder", "Rivet") };
+ /// A companion hired from an old role moves to the role that took over, and takes its new name unless the user renamed it.
+ internal static void MoveOldCrew(Preferences prefs)
+ {
+  foreach (var c in prefs.Companions)
+   if (c.Crew.Length > 0 && MovedCrew.TryGetValue(Fnv(c.Crew), out var to)) { if (Fnv(c.Name) == Fnv(c.Crew)) c.Name = to.Name; c.Crew = to.Role; }
+ }
  static readonly string[] OldJobs = [
   "An all-round helper: researches, compares options and gets things done on the web.",
   "A careful researcher: reads several sources, checks the facts and cites them.",

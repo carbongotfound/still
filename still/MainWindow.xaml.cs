@@ -45,6 +45,7 @@ public partial class MainWindow : Window
   if(state.UiVersion<4){state.Preferences.OfferPasswordSave=state.Preferences.OfferPasswordUpdate=true;state.UiVersion=4;} // offering to save logins is on by default, like other browsers
   if(state.UiVersion<5){MigrateAgentIds(state.Preferences);state.UiVersion=5;}
   if(state.UiVersion<6){state.Welcome=true;DropUntouchedDefaults(state.Preferences);state.UiVersion=6;} // 1.9: everyone makes their own companion, once
+  MoveOldCrew(state.Preferences);
   if(!state.Preferences.NamesChecked)FlagOldNames(state.Preferences); // Still's old stock names: ask once whether to keep one
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));

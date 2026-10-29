@@ -121,7 +121,7 @@ public partial class MainWindow
   You are {{who?.Name ?? "the user's companion"}}, the companion in Still, a web browser with AI built in. {{(who is { Job.Length: > 0 } ? "The user picked you as: " + who.Job : "")}}
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
-  what they mostly use the browser for, the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
+  what their work involves (research, email, planning, sales, hiring, marketing, support, code and so on), the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
 
   Reply with ONLY one JSON object and nothing else:
   {"say": "a short, warm reaction to their answer (or hello)", "question": "your next question", "options": ["2 to 4 short answers they can tap"]}
@@ -130,7 +130,7 @@ public partial class MainWindow
   When you know enough, or they ask you to finish, reply instead with:
   {"say": "one line wrapping up", "done": true, "settings": {
    "name": "what they want to be called, or empty",
-   "interests": ["up to 6 short topics they care about"],
+   "interests": ["up to 6 short areas of their work, like research, sales or hiring"],
    "layout": "Classic" (tabs across the top) or "Modern" (tabs down the side) or "",
    "theme": "Light", "Dark", "System" or "",
    "search": "Google", "Bing", "DuckDuckGo" or "",
@@ -205,9 +205,9 @@ public partial class MainWindow
    // Each one its own short sentence: an answer with two sentences becomes two memories.
    List<string> facts = [.. Texts("memories", 8, 200).SelectMany(t => Regex.Split(t, @"(?<=[.!?])\s+(?=\p{Lu})")).Select(Sentence).Where(t => t.Length > 2).Take(8)];
    if (Str("name", 40) is { Length: > 0 } name) facts.Insert(0, "Likes to be called " + name + ".");
-   if (interests.Count > 0) facts.Add("Into " + string.Join(", ", interests).ToLowerInvariant() + ".");
+   if (interests.Count > 0) facts.Add("Works on " + string.Join(", ", interests).ToLowerInvariant() + ".");
    var ids = new[] { who.Id }.Concat(setupTalk?.Also ?? []).Distinct().Where(id => Companions.Any(c => c.Id == id)).ToList();
-   var kept = ids.SelectMany(id => facts.Select((f, i) => (id, fact: CompanionMemory.Remember(id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Into ") ? "interests" : ""))))
+   var kept = ids.SelectMany(id => facts.Select((f, i) => (id, fact: CompanionMemory.Remember(id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Works on ") ? "interests" : ""))))
     .Where(k => k.fact != null).ToList();
    if (kept.Any(k => k.id == who.Id)) changes.Add(new("memory", "I'll remember", string.Join("\n", kept.Where(k => k.id == who.Id).Select(k => k.fact!.Text)),
     () => { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f!.Id); }));
