@@ -370,7 +370,7 @@ function loop(state: string, t: number, mood: string, prop: string): Pose {
  return p
 }
 
-const DUR: Record<string, number> = { wave: 2.2, wake: 2.3, drop: 1.6, pitch: 1.9, hired: 1.3, pop: .8, happy: 1.15, admire: 1.3, done: 1.4 }
+export const DUR: Record<string, number> = { wave: 2.2, wake: 2.3, drop: 1.6, pitch: 1.9, hired: 1.3, pop: .8, happy: 1.15, admire: 1.3, done: 1.4 }
 /// A gesture at time g since it began. Gestures start and end on the state's loop, blended.
 function gesture(name: string, g: number, base: Pose, mood: string, prop: string): Pose {
  const p = { ...base }, e = ENERGY[mood] ?? 1, left = HOLD[prop] === "hand" // a nub that's holding something doesn't wave

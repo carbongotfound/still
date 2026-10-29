@@ -85,7 +85,6 @@ def gallery(theme):
 REEL = [("idle", "idle", ""), ("happy", "idle", "happy"), ("thinking", "thinking", ""), ("working", "working", ""), ("pointing", "pointing", ""),
         ("needs-you", "needs", ""), ("done", "done", ""), ("sad", "error", ""), ("talking", "talking", ""), ("wave", "idle", "wave"),
         ("admire", "idle", "admire"), ("pop", "idle", "pop")]
-CLIPS = {"idle": "idle", "thinking": "think", "working": "work", "pointing": "point", "needs": "needs", "done": "done", "error": "sad", "talking": "talk"}
 
 
 def gifs():
@@ -98,14 +97,14 @@ def gifs():
         js(process, "document.documentElement.dataset.mascotFreeze = '0'; document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: { state: 'idle' } }))")
         until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
         chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
-        js(process, f"import({json.dumps(chunk)}).then(m => {{ const c = new m.Companion(); window.__clips = Object.fromEntries(Object.entries(c.actions).map(([k, a]) => [k, a.getClip().duration])); c.dispose() }})")
+        js(process, f"import({json.dumps(chunk)}).then(m => {{ window.__clips = m.DUR }})")
         clips = until(lambda: js(process, "window.__clips && JSON.stringify(window.__clips)"), 10)
         clips = json.loads(clips)
         made = 0
         for name, state, gesture in REEL:
             js(process, f"document.dispatchEvent(new CustomEvent('still-mascot-reel', {{ detail: {{ state: {json.dumps(state)}, gesture: {json.dumps(gesture)} }} }}))")
             until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 10)
-            seconds = clips.get(gesture or CLIPS[state], 2)
+            seconds = clips.get(gesture or state, 4)  # a gesture plays once; the loops are four seconds
             frames, out = [], profile / name
             out.mkdir()
             for i in range(int(seconds * 20)):
@@ -134,8 +133,7 @@ def fallbacks():
         js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: { state: 'idle' } }))")
         until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
         chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
-        look = json.dumps({"color": "#8fb8e8", "shape": "round", "head": 1, "ears": 0, "eyes": "dot", "eyeGap": 0, "eyeY": 0, "eyeSize": 0, "pupil": 0, "brows": "none", "browGap": 0,
-                           "browY": 0, "browSize": 0, "browTilt": 0, "mouth": "smile", "mouthY": 0, "mouthSize": 0, "blush": True, "hair": "", "hairColor": "#6b4a35", "hat": ""})  # look.ts: DEFAULT_LOOK
+        look = json.dumps({"color": "#8cc3ee", "shape": "bean", "prop": "", "accessory": ""})  # look.ts: DEFAULT_LOOK
         js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust'), head: m.picture({look}, 'idle', 96, 'head') }})")
         until(lambda: js(process, "!!window.__pics"), 10)
         folder = ROOT / "still-ui" / "src" / "assets" / "companion"
