@@ -101,12 +101,12 @@ def main():
         check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
               and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" in shown
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion, chips and ideas")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Pip anything, or hand over a task…", "The message box asks the active companion")
+        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Nadia anything, or hand over a task…", "The message box asks the active companion")
 
         # Create a companion.
         click(process, ".mate-switch-more[aria-label='New companion']")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        type_into(process, ".companion-dialog input[required]", "Wren")
+        type_into(process, ".companion-dialog input[required]", "Ines")
         type_into(process, ".companion-dialog textarea", "A careful researcher who cites sources.")
         click_text(process, ".companion-look button", "Customize")  # the look editor: Raspberry
         until(lambda: js(process, "!!document.querySelector('.look-dialog .look-colors')"), 8)
@@ -115,27 +115,27 @@ def main():
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
         click_text(process, ".companion-modes button", "Thorough")
         click(process, ".companion-save")
-        wren = until(lambda: mates().get("Wren"), 10)
-        check(wren and '"color":"#d77a8f"' in wren["Look"].replace(" ", "") and wren["Mode"] == "expert" and "researcher" in wren["Job"], "Create a companion: name, job, look and mode are saved")
-        check(until(lambda: js(process, "!!document.querySelector('.mate-switch-face[aria-label=Wren]')"), 5), "The new companion is in the switcher")
+        ines = until(lambda: mates().get("Ines"), 10)
+        check(ines and '"color":"#d77a8f"' in ines["Look"].replace(" ", "") and ines["Mode"] == "expert" and "researcher" in ines["Job"], "Create a companion: name, job, look and mode are saved")
+        check(until(lambda: js(process, "!!document.querySelector('.mate-switch-face[aria-label=Ines]')"), 5), "The new companion is in the switcher")
 
         # Switching companions changes the accent right away.
         hue = lambda: js(process, "getComputedStyle(document.querySelector('.home-compose .ai-send')).backgroundColor")
         type_into(process, ".home-compose textarea", "hello")  # an empty box greys out the send button
         before = hue()
-        click(process, f".mate-switch-face[aria-label=Wren]")
-        check(until(lambda: hue() == "rgb(215, 122, 143)", 5) and before != "rgb(215, 122, 143)", f"Switching to Wren turns the send button raspberry ({hue()})")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Wren anything, or hand over a task…", "The message box now asks Wren")
+        click(process, f".mate-switch-face[aria-label=Ines]")
+        check(until(lambda: hue() == "rgb(215, 122, 143)", 5) and before != "rgb(215, 122, 143)", f"Switching to Ines turns the send button raspberry ({hue()})")
+        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Ines anything, or hand over a task…", "The message box now asks Ines")
         type_into(process, ".home-compose textarea", "")
 
         # The mode menu: companions, the three modes, Advanced.
         open_menu(process, ".home-compose .mode-chip")
         menu = until(lambda: js(process, "document.querySelector('.mode-menu')?.innerText ?? ''"), 5) or ""
-        check(all(w in menu for w in ("Pip", "Wren", "Quick", "Everyday", "Thorough", "usual setup", "Advanced")), "The mode menu lists companions, the modes with a line on each, and Advanced")
+        check(all(w in menu for w in ("Nadia", "Ines", "Quick", "Everyday", "Thorough", "usual setup", "Advanced")), "The mode menu lists companions, the modes with a line on each, and Advanced")
         if "--shots" in sys.argv:
             rpc(process, "capture", name="modes.png")
         click_text(process, ".mode-menu [role=menuitem]", "Quick")
-        check(until(lambda: mates().get("Wren", {}).get("Mode") == "efficient", 5), "Picking Quick saves Wren's mode")
+        check(until(lambda: mates().get("Ines", {}).get("Mode") == "efficient", 5), "Picking Quick saves Ines's mode")
         check(until(lambda: "Quick" in js(process, "document.querySelector('.home-compose .mode-chip')?.innerText ?? ''"), 5), "The chip shows the mode")
 
         # Edit: how it talks.
@@ -143,27 +143,27 @@ def main():
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         type_into(process, ".companion-dialog textarea[placeholder^='For example: upbeat']", "Calm and precise, always with sources.")
         click(process, ".companion-save")
-        check(until(lambda: mates().get("Wren", {}).get("Tone") == "Calm and precise, always with sources.", 5), "Edit: how Wren talks is saved")
+        check(until(lambda: mates().get("Ines", {}).get("Tone") == "Calm and precise, always with sources.", 5), "Edit: how Ines talks is saved")
 
         # The Companions page: a card per companion, then the crew to pick from; memory opens Settings > Memory.
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
         check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Say hi" in text(process), "The Companions page shows a card per companion")
-        check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Meet the crew" in text(process), "Below them, the crew of six and Make your own")
-        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Wren'))?.querySelector('.mate-memory')?.click()")
-        check(until(lambda: js(process, "!!document.querySelector('.memory-settings')") and js(process, "document.querySelector('.memory-who [aria-checked=true]')?.innerText.trim()") == "Wren", 5), "What they remember opens Settings > Memory on Wren")
+        check(js(process, "document.querySelectorAll('.crew-card').length") == 8 and "Meet the crew" in text(process), "Below them, the crew of seven and Make your own")
+        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Ines'))?.querySelector('.mate-memory')?.click()")
+        check(until(lambda: js(process, "!!document.querySelector('.memory-settings')") and js(process, "document.querySelector('.memory-who [aria-checked=true]')?.innerText.trim()") == "Ines", 5), "What they remember opens Settings > Memory on Ines")
         for fact in ("I prefer peer-reviewed sources.", "I live in Lisbon and pay in euros."):
             type_into(process, ".memory-add input", fact)
             click(process, ".memory-add button[type=submit]")
             time.sleep(.4)
-        wren_id = mates().get("Wren", {}).get("Id", "")
+        wren_id = mates().get("Ines", {}).get("Id", "")
         file = PROFILE / "companions" / wren_id / "memory.json"
-        check(until(lambda: file.exists() and "Lisbon" in file.read_text(encoding="utf-8") and "peer-reviewed" in file.read_text(encoding="utf-8"), 5), "Facts added on the Memory page are saved to Wren's memory.json")
+        check(until(lambda: file.exists() and "Lisbon" in file.read_text(encoding="utf-8") and "peer-reviewed" in file.read_text(encoding="utf-8"), 5), "Facts added on the Memory page are saved to Ines's memory.json")
         check(until(lambda: js(process, "document.querySelectorAll('.memory-row').length") == 2, 5), "and listed there")
-        click_text(process, ".memory-who button", "Pip")
+        click_text(process, ".memory-who button", "Nadia")
         type_into(process, ".memory-add input", "My sister Maya lives in Porto.")
         click(process, ".memory-add button[type=submit]")
-        check(until(lambda: (PROFILE / "companions" / "pip" / "memory.json").exists(), 5) and "Lisbon" not in (PROFILE / "companions" / "pip" / "memory.json").read_text(encoding="utf-8"), "Each companion keeps its own memory")
+        check(until(lambda: (PROFILE / "companions" / "nadia" / "memory.json").exists(), 5) and "Lisbon" not in (PROFILE / "companions" / "nadia" / "memory.json").read_text(encoding="utf-8"), "Each companion keeps its own memory")
         js(process, "document.activeElement?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")  # closes Settings
         until(lambda: not js(process, "!!document.querySelector('.memory-settings')"), 5)
 
@@ -192,9 +192,9 @@ def main():
         prompts = BIN / "prompts.jsonl"
         sent = until(lambda: prompts.exists() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
-        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "peer-reviewed" in sent and "Maya" not in sent, "Wren's memory goes into the first prompt, and not Pip's")
-        check("Calm and precise, always with sources." in sent, "So does how Wren talks")
-        check("Your name is Wren" in sent and "cites sources" in sent, "Wren's name and job go into the prompt")
+        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "peer-reviewed" in sent and "Maya" not in sent, "Ines's memory goes into the first prompt, and not Nadia's")
+        check("Calm and precise, always with sources." in sent, "So does how Ines talks")
+        check("Your name is Ines" in sent and "cites sources" in sent, "Ines's name and job go into the prompt")
         args = json.loads(prompts.read_text().splitlines()[-1])["args"]
         check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Quick mode runs another AI app with --effort low and its own model")
         reply = until(lambda: "Done, fake reply." in text(process) and text(process), 20) or ""
@@ -232,10 +232,10 @@ def main():
         # Delete a companion.
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
-        click(process, ".mate-portrait[aria-label='Edit Wren']")
+        click(process, ".mate-portrait[aria-label='Edit Ines']")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
         click_text(process, ".companion-dialog button", "Delete")
-        check(until(lambda: "Wren" not in mates(), 5), "Delete removes the companion")
+        check(until(lambda: "Ines" not in mates(), 5), "Delete removes the companion")
         check(until(lambda: not file.exists(), 5), "and its memory file")
         check("Codex" not in text(process), "No Codex on screen")
     finally:
@@ -251,8 +251,8 @@ def main():
         home(process)
         click(process, ".home-rail-item[aria-label=Companions]")
         until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 10)
-        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Pip'))?.querySelector('.mate-memory')?.click()")
-        check(until(lambda: "Maya lives in Porto" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), 10), "Pip's memory is still there after a restart")
+        js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Nadia'))?.querySelector('.mate-memory')?.click()")
+        check(until(lambda: "Maya lives in Porto" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), 10), "Nadia's memory is still there after a restart")
         check(len(state()["Preferences"]["Companions"]) == 4, "The crew is saved")
     finally:
         rpc(process, "quit")
@@ -266,8 +266,8 @@ def screens():
         time.sleep(.5)
     def hue(p):
         newtab(p)
-        send(p, "companionSave", name="Wren", face="", color="berry", job="A careful researcher: reads several sources and cites them.", mode="expert")
-        until(lambda: js(p, "!!document.querySelector('.mate-switch-face[aria-label=Wren]')"), 5)
+        send(p, "companionSave", name="Ines", face="", color="berry", job="A careful researcher: reads several sources and cites them.", mode="expert")
+        until(lambda: js(p, "!!document.querySelector('.mate-switch-face[aria-label=Ines]')"), 5)
     def modes(p):
         newtab(p)
         type_into(p, ".home-compose textarea", "Help me plan a three-day trip to Lisbon in May")
@@ -279,7 +279,7 @@ def screens():
     def editor(p):
         companions(p)
         time.sleep(.3)
-        click(p, ".mate-portrait[aria-label='Edit Wren']")
+        click(p, ".mate-portrait[aria-label='Edit Ines']")
     def skills(p):
         newtab(p)
         send(p, "skillSave", name="Trip plan", description="Lays out a trip day by day, with costs", when="Planning any trip", body="1. Ask where I'm starting from.")

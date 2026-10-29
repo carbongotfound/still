@@ -13,10 +13,8 @@ intro      the welcome intro, 5.2 s, timed to the UI (seconds from the start): 0
 whoosh     a step changing
 click      a button press
 pop        picking something
-chirp      a typing bubble
 swap       swapping a part in the look editor
 surprise   "Surprise me"
-blip-1..4  the companion talking: tiny voiced syllables (bo, ba, bi, bu), no words
 jingle     the end of the welcome flow
 """
 import os, subprocess, tempfile
@@ -198,12 +196,6 @@ def pop():
     return finish((sine(f, t) + .15 * sine(2 * f, t)) * fade(t, .001, .1), .02)
 
 
-def chirp():
-    t = at(.09)
-    f = note("A6") + (note("D7") - note("A6")) * (1 - np.exp(-t / .02))
-    return finish(sine(f, t) * fade(t, .006, .09), .01)
-
-
 def swap():
     t = at(.15)
     flick = band(hiss(60, .15), 1200 * 3.5 ** np.minimum(1, t / .06), 2) * fade(t, .002, .05)
@@ -221,24 +213,6 @@ def surprise():
     for i in range(7):
         place(out, .22 + .04 * i + .02 * rng.random(), ring(note(rng.choice(["D7", "E7", "F#7", "A7"])), .2, [(1, 1, .12)]), .1 - .01 * i)
     return finish(room(out, .6, .2), .08)
-
-
-VOWELS = {"o": (450, 800, 2830), "a": (800, 1200, 2500), "i": (300, 2300, 3000), "u": (325, 700, 2530)}  # grown-up formants, Hz
-
-
-def blip(vowel, pitch, dur):
-    """A syllable that means nothing, "b" and a vowel: harmonics of a voice at pitch, shaped by the vowel's formants
-    (30 % higher, for a small creature), which open from closed lips over the first 25 ms while the pitch lifts and falls."""
-    t = at(dur)
-    f0 = note(pitch) * (1 + .05 * np.sin(np.pi * t / dur) - .06 * t / dur)
-    phase = 2 * np.pi * np.cumsum(f0) / SR
-    lips = .55 + .45 * np.minimum(1, t / .025)
-    out = np.zeros_like(t)
-    for k in range(1, int(6000 / note(pitch)) + 1):
-        shape = sum(level / (1 + ((k * f0 - 1.3 * formant * lips) / width) ** 2)
-                    for formant, level, width in zip(VOWELS[vowel], (1, .5, .25), (110, 140, 200)))
-        out += (shape + .02) / k ** .5 * np.sin(k * phase)
-    return finish(out * np.minimum(1, t / .008) * np.minimum(1, (dur - t) / .03) ** 1.5, .005)
 
 
 def jingle():
@@ -260,11 +234,8 @@ SOUNDS = {  # name: (how it's made, momentary loudness at its loudest in LUFS, t
     "whoosh": (whoosh, -31, -9, 64),
     "click": (click, -36, -9, 48),
     "pop": (pop, -31, -9, 48),
-    "chirp": (chirp, -31, -9, 48),
     "swap": (swap, -31, -9, 48),
     "surprise": (surprise, -27, -9, 48),
-    **{f"blip-{i + 1}": (lambda v=v, p=p, d=d: blip(v, p, d), -30, -9, 48)
-       for i, (v, p, d) in enumerate((("o", "E4", .085), ("a", "F#4", .1), ("i", "A4", .07), ("u", "D4", .11)))},
 }
 
 # ITU-R BS.1770 K-weighting at 48 kHz: a high shelf, then a highpass

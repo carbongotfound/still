@@ -224,7 +224,7 @@ def home(process):
     js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
 
 
-def ask(process, words, companion="pip"):
+def ask(process, words, companion="nadia"):
     home(process)
     send(process, "aiSend", text=words, home=True, companion=companion)
 
@@ -304,10 +304,10 @@ def laptops(process):
     chat = chats().get(f"LAPTOPS {SITE}", {})
     check(page and page["InChat"] == chat.get("Id") and len(strip(process)) == mine + 1, "Its page opens as a background tab of the chat, and your tabs stay as they were")
     check(js(process, "!!document.querySelector('.page-column.is-split .chat-pane') && !!document.querySelector('.page-column.is-split .page-pane')"), "The chat splits to show its page on the right")
-    check(until(lambda: "Pip is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "The pill says who's working")
+    check(until(lambda: "Nadia is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "The pill says who's working")
     check(js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')") == "Take over|Stop", "The pill offers Take over and Stop")
     cursor = rpc(process, "eval", tab=page["Id"], world="still", script="(() => { const h = window[Symbol.for('still.cursor')]; return h ? h[Symbol.for('still.cursor')].tag.textContent : '' })()")
-    check(cursor == "Pip", "The AI's cursor shows in the page with its name")
+    check(cursor == "Nadia", "The AI's cursor shows in the page with its name")
     check(rpc(process, "eval", tab=page["Id"], script="document.querySelector('#q').value") == "laptop", "Typing reached the search field")
     check(rpc(process, "eval", tab=page["Id"], script="location.search") == "?max=800", "The click went through to the page")
     time.sleep(.6)
@@ -355,9 +355,9 @@ def laptops(process):
 
 def parallel(process):
     """Two companions at work at once: the panel, take over one, stop one."""
-    ask(process, f"SLOW {SITE}/slow-a 60", "pip")
+    ask(process, f"SLOW {SITE}/slow-a 60", "nadia")
     until(lambda: slow("slow-a"), 20)
-    ask(process, f"SLOW {SITE}/slow-b 60", "hazel")
+    ask(process, f"SLOW {SITE}/slow-b 60", "kenji")
     until(lambda: slow("slow-b"), 20)
     check(until(lambda: running(process) == 2, 10), "Two chats run at once")
     check(not any("slow-" in t["Url"] for t in strip(process)) and js(process, "document.querySelectorAll('.tab-agent').length") == 0, "Neither page joins your tab strip")
@@ -370,42 +370,42 @@ def parallel(process):
     escape(process)
     until(lambda: not js(process, "!!document.querySelector('.tasks-menu')"), 3)
 
-    # Take over Hazel's page (in front): Hazel waits, Pip keeps going.
+    # Take over Kenji's page (in front): Kenji waits, Nadia keeps going.
     b = next(t for t in tabs(process) if "slow-b" in t["Url"])
-    check(rpc(process)["activeId"] == next(t["Id"] for t in tabs(process) if t["ChatId"] == b["InChat"]) and "Hazel" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""),
-          "Hazel's chat is in front, with her page and pill beside it")
+    check(rpc(process)["activeId"] == next(t["Id"] for t in tabs(process) if t["ChatId"] == b["InChat"]) and "Kenji" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""),
+          "Kenji's chat is in front, with their page and pill beside it")
     click(process, ".page-take")
-    check(until(lambda: "You're in control" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "Take over hands you Hazel's page")
+    check(until(lambda: "You're in control" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "Take over hands you Kenji's page")
     took = time.time()
     time.sleep(2.5)
-    check(sum(1 for e in slow("slow-a") if e["ok"] and e["t"] > took) >= 3, "Pip keeps working while you drive Hazel's page")
-    check(not any(e["ok"] and e["t"] > took + .5 for e in slow("slow-b")), "Hazel waits while you drive")
+    check(sum(1 for e in slow("slow-a") if e["ok"] and e["t"] > took) >= 3, "Nadia keeps working while you drive Kenji's page")
+    check(not any(e["ok"] and e["t"] > took + .5 for e in slow("slow-b")), "Kenji waits while you drive")
     click(process, ".page-take")
     back = time.time()
-    check(until(lambda: any(e["ok"] and e["t"] > back for e in slow("slow-b")), 5), "Hand back: Hazel carries on")
+    check(until(lambda: any(e["ok"] and e["t"] > back for e in slow("slow-b")), 5), "Hand back: Kenji carries on")
 
-    # Stop Hazel from the pill: only Hazel stops and lets go of her tab.
+    # Stop Kenji from the pill: only Kenji stops and lets go of their tab.
     click(process, ".page-stop")
     stopped = time.time()
     check(until(lambda: running(process) == 1, 10), "Stop ends that chat's run only")
-    check(until(lambda: not js(process, "!!document.querySelector('.page-control')"), 5), "Stop lets go of Hazel's page")
+    check(until(lambda: not js(process, "!!document.querySelector('.page-control')"), 5), "Stop lets go of Kenji's page")
     time.sleep(1.5)
-    check(sum(1 for e in slow("slow-a") if e["ok"] and e["t"] > stopped) >= 2, "Pip is still at work")
+    check(sum(1 for e in slow("slow-a") if e["ok"] and e["t"] > stopped) >= 2, "Nadia is still at work")
 
-    # Watch Pip's page, then move it into your tabs: Pip keeps working there.
+    # Watch Nadia's page, then move it into your tabs: Nadia keeps working there.
     a = next(t for t in tabs(process) if "slow-a" in t["Url"])
     send(process, "aiHelpPage", id=a["Id"])
-    until(lambda: "Pip" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5)
+    until(lambda: "Nadia" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5)
     before = len(strip(process))
     click(process, ".page-mine")
     moved = until(lambda: next((t for t in tabs(process) if t["Id"] == a["Id"] and not t["InChat"]), None), 5)
-    check(moved and rpc(process)["activeId"] == a["Id"] and len(strip(process)) == before + 1, "Move to my tabs puts Pip's page in your tab strip, in front")
-    check(until(lambda: "Pip is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or "")
-                and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Pip keeps working there, with the pill and its mark on the tab")
+    check(moved and rpc(process)["activeId"] == a["Id"] and len(strip(process)) == before + 1, "Move to my tabs puts Nadia's page in your tab strip, in front")
+    check(until(lambda: "Nadia is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or "")
+                and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Nadia keeps working there, with the pill and its mark on the tab")
     time.sleep(.5)
     capture(process, "mine-v01")
     click(process, ".page-stop")
-    check(until(lambda: running(process) == 0 and js(process, "document.querySelectorAll('.tab-agent').length") == 0, 10), "Stopping Pip too leaves no agent tabs")
+    check(until(lambda: running(process) == 0 and js(process, "document.querySelectorAll('.tab-agent').length") == 0, 10), "Stopping Nadia too leaves no agent tabs")
 
 
 def lookup(process):
@@ -435,9 +435,9 @@ def hand_over(process):
     tab = until(lambda: next((t for t in tabs(process) if t["Url"].endswith("/reviews/best") and not t["InChat"] and not t["Loading"]), None), 15)
     before = len(strip(process))
     js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
-    send(process, "tabHand", id=tab["Id"], companion="pip")
+    send(process, "tabHand", id=tab["Id"], companion="nadia")
     given = until(lambda: next((t for t in tabs(process) if t["Id"] == tab["Id"] and t["InChat"]), None), 5)
-    check(given and len(strip(process)) == before, "Hand to Pip moves the tab into a chat (the chat takes its place in the strip)")
+    check(given and len(strip(process)) == before, "Hand to Nadia moves the tab into a chat (the chat takes its place in the strip)")
     check(until(lambda: js(process, "!!document.querySelector('.page-column.is-split .page-pane')"), 5) and "Best laptops" in (js(process, "document.querySelector('.page-nav-url')?.innerText ?? ''") or ""),
           "The chat opens with your page beside it")
     click(process, ".page-mine")

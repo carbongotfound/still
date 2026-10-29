@@ -6,7 +6,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiLogo } from "./AiLogo"
-import { NAMES, Face, hueOf, type Companion, type Mode } from "./Buddy"
+import { Face, hueOf, type Companion, type Mode } from "./Buddy"
 import { lookKey, surprise } from "./look"
 import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
@@ -16,8 +16,8 @@ import { CrewCards, fromPremade } from "./crew"
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
 export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
 type Send = (op: string, payload?: Record<string, unknown>) => void
-const pick = <T,>(list: T[]) => list[Math.floor(Math.random() * list.length)]
-export const randomCompanion = (): Companion => ({ id: "", name: pick(NAMES), face: "", color: "", job: "", mode: "default", look: lookKey(surprise()) })
+/// A new companion: a surprise look, and the user names them.
+export const randomCompanion = (): Companion => ({ id: "", name: "", face: "", color: "", job: "", mode: "default", look: lookKey(surprise()) })
 
 export function HomeRail({ view, setView, profile, onSettings }: { view: HomeView; setView: (v: HomeView) => void; profile: string; onSettings: () => void }) {
  const item = (v: HomeView, label: string, Icon: typeof Users) => <button className="home-rail-item" aria-label={label} title={label} aria-current={view === v ? "page" : undefined} onClick={() => setView(v)}><Icon /></button>
@@ -181,6 +181,23 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
    </div> })}</div>
   </>}
  </section>
+}
+
+/// Once after an update: a companion that still has a name Still used to hand out asks whether to keep it.
+export function RenameAsk({ companion, onSave }: { companion: Companion; onSave: (c: Companion) => void }) {
+ const [name, setName] = useState("")
+ const keep = () => onSave(companion)
+ return <Dialog open onOpenChange={o => { if (!o) keep() }}>
+  <DialogContent className="app-dialog rename-dialog" style={{ "--hue": hueOf(companion) } as CSSProperties}>
+   <DialogHeader><DialogTitle>Give {companion.name} a new name?</DialogTitle>
+    <DialogDescription>Still picked the name {companion.name} in an earlier version. You can choose your own, or keep it.</DialogDescription></DialogHeader>
+   <form className="companion-form" onSubmit={e => { e.preventDefault(); if (name.trim()) onSave({ ...companion, name: name.trim() }) }}>
+    <div className="companion-preview"><Face companion={companion} size={96} follow /></div>
+    <label><span>New name</span><Input autoFocus maxLength={24} value={name} onChange={e => setName(e.target.value)} /></label>
+    <div className="companion-actions"><Button type="button" variant="ghost" className="rename-keep" onClick={keep}>Keep {companion.name}</Button><Button type="submit" className="rename-save" disabled={!name.trim()}>Rename</Button></div>
+   </form>
+  </DialogContent>
+ </Dialog>
 }
 
 // Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.

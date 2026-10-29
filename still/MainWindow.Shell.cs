@@ -173,7 +173,7 @@ public partial class MainWindow
      case "bookmark": ToggleBookmark(tabs.FirstOrDefault(t=>t.Id==S("id")));break;
      case "reader": CloseSheet(false);await ToggleReader();break;
      case "hide": CloseSheet(false);await PickHidden();break;
-     case "pip": CloseSheet(false);await PictureInPicture();break;
+     case "pictureInPicture": CloseSheet(false);await PictureInPicture();break;
      case "find": FindInput.Text=S("text");await FindText();break;
      case "unhide":
       if(active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var page)){state.Hidden.Remove(page.Host);privateHidden.Remove(page.Host);foreach(var t in tabs.Where(t=>t.View?.CoreWebView2!=null))await InstallHiddenRules(t);SaveLater();active.View?.CoreWebView2?.Reload();}break;

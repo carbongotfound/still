@@ -49,6 +49,8 @@ public sealed class Companion
  public List<string> Skills { get; set; } = []; // skills it reads at the start of every chat
  public string Folder { get; set; } = ""; // a working folder: its AI app may read and write files there, and nowhere else
  public string Tone { get; set; } = ""; // its personality and how it talks, in the user's words or setup's
+ public string Crew { get; set; } = ""; // the crew member it was picked from (crew.tsx), "" = made by the user
+ public bool AskName { get; set; } // it still has a name Still used to hand out: the user is asked once whether to keep it
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -156,15 +158,27 @@ public partial class MainWindow
   foreach (var w in Windows) w.PublishAi();
  }
 
- static List<Companion> DefaultCompanions() => [
-  new() { Id = "pip", Name = "Pip", Job = "An all-round helper: researches, compares options and gets things done on the web." },
-  new() { Id = "hazel", Name = "Hazel", Job = "A careful researcher: reads several sources, checks the facts and cites them." },
-  new() { Id = "rio", Name = "Rio", Job = "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking." },
-  new() { Id = "juno", Name = "Juno", Job = "An organizer: handles email, calendars, documents and online busywork." },
+ /// The names Still used to hand out (its old crew and stock names), as FNV-1a hashes of the lowercase name so they
+ /// don't live on in the source. A companion with one may have been named by Still rather than the user.
+ static readonly HashSet<uint> OldNames = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x422bb03e, 0x4c12a741, 0x4dae4233, 0x5540dda6, 0x6ab98305, 0x6b68e403, 0x6cf7bb37, 0x71d1513f, 0x78472df1,
+  0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444];
+ internal static bool OldName(string name) { uint h = 2166136261; foreach (char ch in name.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return OldNames.Contains(h); }
+ static readonly string[] OldJobs = [
+  "An all-round helper: researches, compares options and gets things done on the web.",
+  "A careful researcher: reads several sources, checks the facts and cites them.",
+  "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking.",
+  "An organizer: handles email, calendars, documents and online busywork.",
  ];
- /// Before 1.9 everyone got these four. Setup makes your own now, so the ones nobody changed go.
+ /// Before 1.9 everyone got four companions with these jobs. Setup makes your own now, so the ones nobody changed go.
  internal static void DropUntouchedDefaults(Preferences prefs) =>
-  prefs.Companions.RemoveAll(c => DefaultCompanions().Any(d => d.Id == c.Id && d.Name == c.Name && d.Job == c.Job && c.Look.Length == 0 && c.Folder.Length == 0 && c.Skills.Count == 0));
+  prefs.Companions.RemoveAll(c => OldJobs.Contains(c.Job) && c.Id == c.Name.ToLowerInvariant() && OldName(c.Name) && c.Look.Length == 0 && c.Folder.Length == 0 && c.Skills.Count == 0);
+ /// Once: a companion that wasn't picked from the crew and still has an old stock name asks whether to keep it. Ones
+ /// picked from today's crew carry Crew, and a name the user typed that isn't an old one is never touched.
+ internal static void FlagOldNames(Preferences prefs)
+ {
+  foreach (var c in prefs.Companions) if (c.Crew.Length == 0 && OldName(c.Name)) c.AskName = true;
+  prefs.NamesChecked = true;
+ }
  List<Companion> Companions => Prefs.Companions;
  /// The three modes on the message box. Thorough (expert): the strongest model, thinking hard. Quick (efficient): the
  /// quickest, thinking little. Everyday (default): the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
@@ -237,7 +251,7 @@ public partial class MainWindow
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder,
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName,
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
 
@@ -347,6 +361,8 @@ public partial class MainWindow
     if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
     if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
     if (data.TryGetProperty("tone", out _)) c.Tone = S("tone").Trim() is var tone && tone.Length > 600 ? tone[..600] : tone;
+    if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
+    c.AskName = false; // saved, renamed or kept: it's the user's name now
     Prefs.Companions = list; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break; }
    case "companionDelete" when Companions.Count > 1 && Companions.FirstOrDefault(x => x.Id == S("id")) is { } gone:
@@ -418,6 +434,7 @@ public partial class MainWindow
 
  static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n" + (who.Tone.Length > 0 ? $"Your personality and how you talk: {who.Tone}\n" : "") + "\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
+  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   {(folder.Length > 0 ? $"You may read and write files in the user's working folder {folder}, and nowhere else. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
 
   How to work:

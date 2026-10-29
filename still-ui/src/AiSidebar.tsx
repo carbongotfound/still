@@ -8,6 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { CollisionBoundary } from "@/components/ui/collision"
+import { fadeTop } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -354,7 +355,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const openLink = (url: string) => send("new", { url })
 
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
-  {setup ?? <div className="ai-log" ref={log}><div className="chat-column">
+  {setup ?? <div className="ai-log" ref={log} onScroll={fadeTop}><div className="chat-column">
    {!items.length && (mode === "tab" ? <div className="chat-hello">
     <Face companion={companion} size={168} follow gesture="wave" gestureAt={1} className="chat-hello-face" />
     <h3>{you ? `Hi ${you}! What are we working on?` : `Hi, I'm ${name}. What are we working on?`}</h3>
