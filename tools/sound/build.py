@@ -1,4 +1,4 @@
-"""Makes the welcome flow's sounds. Every one is synthesized here from sines, harmonics and filtered noise: nothing is
+"""Makes the welcome flow's two sounds. Every one is synthesized here from sines, harmonics and filtered noise: nothing is
 sampled or downloaded, so they're Still's own work under its MIT license.
 
 Run: python tools/sound/build.py   (numpy, scipy, and ffmpeg built with libopus on PATH)
@@ -10,12 +10,9 @@ intro      the welcome intro, 5.2 s, timed to the UI (seconds from the start): 0
            notes that gathers, 1.00 the companion powers on (a low, warm thum), 1.40 and 1.55 its eyes open, 1.80 to
            2.60 it stretches (a rising hum), 2.60 to 3.00 a little shake (four rattles), 3.00 to 3.80 the light blooms
            (fullest at 3.60) and rings out to the end, 3.85 a two-note chime as the wordmark lands
-whoosh     a step changing
-click      a button press
-pop        picking something
-swap       swapping a part in the look editor
-surprise   "Surprise me"
 jingle     the end of the welcome flow
+
+That's all: setup's steps, buttons, picks and the look editor make no sound, and companions never do.
 """
 import os, subprocess, tempfile
 import numpy as np
@@ -176,45 +173,6 @@ def intro():
     return finish(room(out, 1.8, .3), .5)
 
 
-def whoosh():
-    t = at(.35)
-    p = t / .35
-    fc = 450 * 4.5 ** np.sin(np.pi * p)
-    x = band(hiss(40, .35), fc, 1.4) + .4 * band(hiss(41, .35), 2 * fc, 2)
-    return finish(x * p ** 1.2 * (1 - p) ** 2, .03)
-
-
-def click():
-    t = at(.04)
-    tick = band(hiss(50, .04), 3800, 1.2) * fade(t, .0003, .004)
-    return finish(ring(note("D6"), .04, [(1, 1, .025), (2.4, .35, .01)], .0005) + .5 * tick, .01)
-
-
-def pop():
-    t = at(.12)
-    f = note("D4") * 3 ** np.minimum(1, t / .045)
-    return finish((sine(f, t) + .15 * sine(2 * f, t)) * fade(t, .001, .1), .02)
-
-
-def swap():
-    t = at(.15)
-    flick = band(hiss(60, .15), 1200 * 3.5 ** np.minimum(1, t / .06), 2) * fade(t, .002, .05)
-    f = note("E5") * (note("A5") / note("E5")) ** np.minimum(1, t / .025)
-    return finish((sine(f, t) + .25 * sine(2 * f, t)) * fade(t, .002, .12) + .5 * flick, .02)
-
-
-def surprise():
-    out = np.zeros(round(.7 * SR))
-    for i, n in enumerate(("D5", "F#5", "A5", "D6", "F#6")):
-        place(out, .05 * i, glock(note(n), .5, .35), .4)
-    t = at(.3)
-    place(out, 0, band(hiss(70, .3), 900 * (5000 / 900) ** (t / .3), 1.5) * np.sin(np.pi * t / .3), .15)
-    rng = np.random.default_rng(7)
-    for i in range(7):
-        place(out, .22 + .04 * i + .02 * rng.random(), ring(note(rng.choice(["D7", "E7", "F#7", "A7"])), .2, [(1, 1, .12)]), .1 - .01 * i)
-    return finish(room(out, .6, .2), .08)
-
-
 def jingle():
     out = np.zeros(round(1.4 * SR))
     for i, n in enumerate(("A4", "D5", "F#5", "A5")):
@@ -229,13 +187,8 @@ def jingle():
 
 
 SOUNDS = {  # name: (how it's made, momentary loudness at its loudest in LUFS, true-peak ceiling in dBTP, Opus kbps)
-    "intro": (intro, -21, -3, 64),
-    "jingle": (jingle, -22, -3, 64),
-    "whoosh": (whoosh, -31, -9, 64),
-    "click": (click, -36, -9, 48),
-    "pop": (pop, -31, -9, 48),
-    "swap": (swap, -31, -9, 48),
-    "surprise": (surprise, -27, -9, 48),
+    "intro": (intro, -27, -9, 64),
+    "jingle": (jingle, -28, -9, 64),
 }
 
 # ITU-R BS.1770 K-weighting at 48 kHz: a high shelf, then a highpass
