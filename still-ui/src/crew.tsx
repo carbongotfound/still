@@ -243,7 +243,7 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
   {made.map(c => <RoleCard key={c.id} className={cn("crew-card", on(c.id) && "is-picked")} hue={lookOf(c).color} look={lookOf(c)} name={c.name} role="Made by you" line={c.job || "All yours. Give them a job any time on the Companions page."} on={on(c.id)}>
    {hire(c.id, c.name, () => onMade?.(c.id))}
   </RoleCard>)}
-  <RoleCard className="crew-card" own hue="var(--muted-foreground)" look={BLANK} name="Make your own" role="Any job" expect={OWN_EXPECT} open={onOwn} label="Make your own">
+  <RoleCard className="crew-card" own compact hue="var(--muted-foreground)" look={BLANK} name="Make your own" role="Any job" expect={OWN_EXPECT} open={onOwn} label="Make your own">
    <button className="role-btn crew-pick" onClick={onOwn}><Plus />Make</button>
   </RoleCard>
   {more && <Dialog open onOpenChange={o => { if (!o) setMore(null) }}>

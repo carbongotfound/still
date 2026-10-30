@@ -977,7 +977,7 @@ extension Browser {
    let started = try await cli.start(exe, request)
    run = started; me.run = started
    if me.stopped { started.cancel() }
-   var named = !shown.isEmpty // a kickoff (no message of the user's) is named from the companion's hello, once it's written
+   var named = !kickoffs.contains(chat.id) // a kickoff (no message of the user's) is named from the companion's hello, once it's written
    for await e in started.events() {
     if applyEvent(chat, cli, e) { said = true }
     if !named { if case .message = e {} else if let hello = chat.messages.first(where: { $0.role == "assistant" }) { named = true; nameFromHello(chat, hello.text) } }
