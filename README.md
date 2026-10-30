@@ -2,163 +2,187 @@
 
 # still.
 
-**The open-source agent browser that runs on the AI you already pay for.** Claude, ChatGPT or Grok, through their own apps: no API keys, no credits, no extra subscription. Switch AI anytime, even halfway through a task. Your other AI apps can drive it too, through MCP or the command line, once you say yes. Everything stays on your computer.
+**An open-source agent browser that works with the Claude, ChatGPT and Grok CLIs you're already signed into. No API keys.**
 
-[**⬇ Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**⬇ Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**What it does**](#what-you-can-hand-off) · [**Connect your AI**](#connect-your-ai) · [**Install**](#install) · [**Build from source**](#build-from-source)
+[**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**Features**](#features) · [**Install**](#install) · [**Connect your AI**](#connect-your-ai) · [**Contributing**](#contributing)
 
 [![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
-[![Downloads](https://img.shields.io/github/downloads/carbongotfound/still/total)](https://github.com/carbongotfound/still/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![macOS 12+](https://img.shields.io/badge/macOS-12%2B-111111)
+[![Good first issues](https://img.shields.io/github/issues/carbongotfound/still/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/carbongotfound/still/labels/good%20first%20issue)
 
 </div>
 
-<p align="center"><img src="docs/demo.gif" alt="Still: typing an address, switching tabs, finding a tab with Ctrl K, light theme and settings" width="900"></p>
+<!-- LAUNCH FILM -->
+<!-- The 2.0 launch film goes here, between the pitch and the first screenshot: an embed or a linked thumbnail. -->
 
-> **Free and open source.** MIT licensed, built on Microsoft Edge WebView2 and .NET 10 on Windows and on WebKit and Swift on Mac. Your bookmarks, history, passwords and sessions stay on your computer.
+<p align="center"><img src="docs/screenshots/home.png" alt="Still's new tab: Maya, the companion you work with, with the rest of the team behind her and the message box below" width="900"></p>
 
-> **Not code-signed yet.** On Windows, SmartScreen may warn on first launch: choose **More info → Run anyway**. On Mac, right-click Still and choose **Open** the first time. Or [build it yourself](#build-from-source).
-
-## Why Still?
-
-Your AI can plan a trip, compare products and draft an application, but then you're the one copying links out of a chat and clicking through twenty tabs. Still gives it a real browser to do that part: it opens its own tabs, reads pages, clicks, types, picks dates, answers pop-ups and uploads files, and tells you what it found.
-
-You stay in charge. Each AI app asks before it starts, a bar shows what it's doing with a **Stop** button, and private tabs, saved passwords and cookies are never shown to it. If you've stepped away, it can ask you in its own chat instead of waiting at the browser.
-
-And it's a good browser without the AI: fast, with ads and trackers blocked (YouTube ads too), your old browser imported in one click, and nothing on screen but the page.
-
-## What you can hand off
-
-- *"Find three flights to Tokyo under $900 next week and leave them open for me."*
-- *"Compare these four laptops on battery life and price."*
-- *"Fill in this job application from my CV."*
-- *"Read my open tabs and tell me what each one says."*
-- *"Check the order status on these three shops."*
-
-Type it into the address bar and choose **Ask AI**, press <kbd>Ctrl Shift A</kbd>, or ask from Claude Code, Claude Desktop, Cursor or another MCP app.
+Still is a real browser with a team of AI companions built in. Hire the ones you need, give them a task, and they work in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They run on the Claude, ChatGPT or Grok app you already use, signed in to your own plan, so there's nothing new to pay for and no key to paste. Everything stays on your computer.
 
 ## Features
 
-**For your AI**
+### Companions you hire
 
-- **Works with the AI you have.** Chat in Still with the Claude, ChatGPT or Grok app on your PC, signed in to your own account. Or connect any MCP app.
-- **Its own tabs.** Agents work in background tabs grouped under *AI*, so your tab never changes under you. Several agents can work at once.
-- **Handles real sites.** Shadow DOM, iframes, dropdowns, date fields, rich text editors, file uploads, pop-up windows and alert, confirm and prompt dialogs.
-- **Cheap on tokens.** Pages come back as short numbered lines, not screenshots. `find` searches a whole page for a fraction of the cost, and ids stay valid between reads.
-- **Asks when you're away.** If you aren't at the computer, the agent asks you in its chat, then Still checks your answer with a one-time code.
+Six companions come ready to hire. Each one owns a part of your work and has its own skills, memory, routines and way of talking.
 
-**For you**
+| | Role | What to expect |
+|---|---|---|
+| **Jonah** | Sales | A one-page brief before every sales call, lead lists that fit who you sell to, follow-ups in your voice sent only on your OK |
+| **Talia** | Growth | The biggest leak in your funnel with the number, small experiments ranked with one metric each, ready-to-run copy launched only on your OK |
+| **Nora** | Planner | Tomorrow planned tonight with the most important thing first, a two-minute brief before each meeting, what's waiting on you with replies drafted |
+| **Leo** | Marketing | One idea turned into posts for every platform, launch posts and newsletters in your voice, drafts only: nothing posts without you |
+| **Ivan** | Engineer | Small tools and pages built and tested in Still, bug reports with steps to reproduce, specs with acceptance checks from messy feedback |
+| **Maya** | Research | Deep research with cited sources, options compared side by side, claims fact-checked before you share them |
+| **Make your own** | Any job | Pick its look, name, job, way of talking, AI and skills, and give it a prop to hold |
 
-- **One-click import from Chrome, Edge, Brave, Opera GX and Vivaldi** (Windows). Bookmarks, history, saved passwords and **signed-in sessions** come across, so you stay logged in.
-- **Built-in blocking.** Ads and trackers are blocked. On YouTube, ads are stripped before the page sees them, and anything that slips through is muted and skipped.
-- **Chrome Web Store extensions (Windows).** Open an extension in the store and press **Add to Still**. You review its permissions first.
-- **Password vault (Windows).** Encrypted with Windows DPAPI and filled in only on the exact site it belongs to. Nothing is synced anywhere.
-- **Memory saver.** Idle background tabs sleep after a minute and wake with their page state; media, calls and downloads stay awake.
-- **Keyboard first.** <kbd>Ctrl L</kbd> address bar, <kbd>Ctrl K</kbd> find any tab, <kbd>Ctrl Shift T</kbd> reopen a closed tab, <kbd>F11</kbd> real full screen.
-- **And the rest.** Profiles, private tabs, bookmarks bar and Speed Dial, reader mode, "hide an element", picture-in-picture, find in page, dark, light and system themes, and your default browser if you want it.
+<p align="center"><img src="docs/screenshots/library.png" alt="Hire a companion: each card shows the character, its role, what to expect, Hire or Hired, and View profile" width="900"></p>
 
-## Connect your AI
+- **Hiring.** *Hire a companion* opens the library. Each card shows the character, its role and what to expect. **View profile** shows its full instructions before you hire. Hired companions show **Hired**.
+- **A first chat in its own words.** A new hire opens its first chat by itself: it greets you, says what it will do first, starts on real work with its tools, and asks at most one question.
+- **Profiles you can edit.** Click any companion to open its profile: look, instructions, skills and plugins, routines, files, memory and model. Everything saves as you type.
+- **Routines.** "Do this at 9:00 on weekdays." Each of the six comes with a starter routine that stays off until you turn it on.
+- **Companions work together.** A companion can ask a teammate for help and wait for the answer, or hand work over. You see who asked whom and the reply.
+- **Share a companion.** Share copies its look, name and instructions (never its memory or files), and anyone can paste it into their library.
 
-Turn on *Settings → Let other AI apps use Still* (or do it during setup). Then:
+### The message box
 
-**Claude Code**
+<p align="center"><img src="docs/screenshots/composer.png" alt="The message box with a tab attached with #, two files dropped in, and the @ list of companions open" width="900"></p>
+
+- **`#` attaches a tab.** Type `#` to list your open tabs, pick one, and the companion reads that page. Private tabs never appear and can't be attached.
+- **`@` pulls in a companion.** Type `@` to bring a teammate into the task. The companion you're talking to asks them and works with the answer.
+- **Drag and drop files.** Drop files on the message box, paste an image, or choose **+ > Add files**. Up to 10 files a message (10 MB each, images up to 5 MB). Text, code, PDFs and images all work, with every AI.
+- **`/` runs a skill.** Type `/` to pick one of your skills.
+- **Automatic chat titles.** A new chat names itself from its first message, using your AI's quickest model. Pick another model or turn it off in **Settings > Models**.
+
+### Skills & plugins
+
+<p align="center"><img src="docs/screenshots/skills.png" alt="Skills & plugins: one search, an All, Skills and Plugins filter, each skill with a chip per companion" width="900"></p>
+
+- **Skills** are Markdown files with a short header: a name, what it does, and when to use it. Give a skill to any companion with one click, or run it with `/`.
+- **Plugins** connect your apps (Gmail, Slack, Notion, GitHub and many more) through [Composio](https://composio.dev) with **your own** project API key. Plugins stay off until you paste a key. Still keeps it in Windows DPAPI or the macOS Keychain, never in a file an AI can read.
+- **Reads are free, writes ask first.** Anything that sends, posts, deletes, pays or changes data waits for your OK.
+- The **Plugins** button under the new tab's message box shows the apps you've connected and opens Skills & plugins.
+
+### Memory
+
+- Each companion has its own memory, kept on your computer as plain JSON and used only in that companion's chats.
+- See, add, edit and forget what each one remembers in **Settings > Companions > What they remember**.
+- Passwords, codes, keys, card and account numbers, form text the AI typed and anything from a private tab are never stored.
+- Set a chat to **no memory** and nothing from it is kept.
+
+### You stay in charge
+
+<p align="center"><img src="docs/screenshots/permissions.png" alt="The Permissions button on a Wikipedia page: Allow, Ask or Block for camera, microphone, location and more" width="900"></p>
+
+- **Per-site permissions.** The Permissions button sets Allow, Ask or Block for each site: camera, microphone, location, notifications, clipboard, pop-ups, automatic downloads, sound, screen sharing, MIDI and USB.
+- **AI permissions.** Every action an AI takes is a read, a navigation, an interaction or a sensitive step. Set rules per site and per companion: always, once per chat, or every time.
+- **Sensitive steps wait.** Buying, sending, deleting, posting forms and payment fields always show an 8 second countdown you can cancel, even when allowed.
+- **Watch, take over or stop.** A colored cursor shows where the companion clicks. **Take over** pauses it while you drive, and **Stop** ends the run.
+- **Asks when you're away.** If you've stepped away, the companion asks in its chat instead of waiting at the browser.
+
+### A full browser
+
+- Tabs, groups, split view, multiple windows, private windows and profiles, with Classic (tabs on top) or Modern (tabs on the side) layouts.
+- Ads and trackers blocked, YouTube ads included.
+- One-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox, signed-in sessions included (Windows). Safari bookmarks and history on the Mac.
+- A password manager encrypted with Windows DPAPI or the macOS Keychain, filled only on the exact site it belongs to.
+- Chrome Web Store extensions (Windows), reader mode, picture-in-picture, a memory saver for idle tabs, and light and dark themes.
+
+### Use Still from other AI apps
+
+Turn on **Settings > Models > Let other AI apps use Still** and Claude Code, Claude Desktop, Cursor or any MCP app can drive it. Each app asks once before it starts.
 
 ```powershell
 claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" --mcp
 ```
 
-**Claude Desktop, Cursor and other MCP apps**
-
 ```json
 { "mcpServers": { "still": { "command": "C:\\Users\\<you>\\AppData\\Local\\Programs\\Still\\Still.exe", "args": ["--mcp"] } } }
 ```
 
-The welcome screen copies both of these with your real path filled in, and Settings has **Copy config**.
+Settings has **Copy config** with your real path filled in. Agents without MCP can run one step at a time: `Still.exe --cli open_tab url=example.com`, `Still.exe --cli read_page`, `Still.exe --cli help`.
 
-**Terminal agents without MCP** run one command per step:
-
-```powershell
-Still.exe --cli open_tab url=example.com
-Still.exe --cli read_page                       # title, url, numbered elements, page text
-Still.exe --cli find text="Sign in"             # matching elements and lines, from anywhere on the page
-Still.exe --cli click id=7
-Still.exe --cli type id=13 text="hello" submit=true
-Still.exe --cli help                            # every tool
-```
-
-`read_page` gives each clickable or typeable element a short numbered line:
-
-```
-[7] link "Reserved Domains" → /domains/reserved
-[13] textbox "Email" =me@x.com
-[14] select "Country" =Canada {Canada|France}
-[15] checkbox "Remember me" ☐
-```
-
-Tools: `list_tabs`, `open_tab`, `navigate`, `switch_tab`, `close_tab`, `go_back`, `go_forward`, `reload`, `read_page`, `find`, `click`, `type`, `press_key`, `scroll`, `wait_for`, `handle_dialog`, `upload_file`, `screenshot` and `list_profiles`.
+<table>
+<tr>
+<td width="50%"><img src="docs/screenshots/profile.png" alt="Maya's profile: her live character, instructions, skills, routines, files, memory and model"></td>
+<td width="50%"><img src="docs/screenshots/settings.png" alt="Settings, Models page: chat titles and AI models"></td>
+</tr>
+<tr>
+<td align="center">A companion's profile</td>
+<td align="center">Settings</td>
+</tr>
+</table>
 
 ## Install
 
 ### Windows
 
-1. Download **`Still-Setup-x64.exe`** from the [latest release](https://github.com/carbongotfound/still/releases/latest) and run it. No admin rights are needed.
-2. Still installs as a normal Windows app with a Start Menu entry. Installing a newer setup updates it in place and keeps your data, and Still updates itself after that.
-3. To make Still your default browser, choose **Settings → Make default**.
+1. Download [**Still-Setup-x64.exe**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) and run it. No admin rights needed.
+2. Still isn't code-signed yet, so SmartScreen may warn the first time. Choose **More info > Run anyway**.
+3. Setup walks you through importing your old browser, picking your AI and hiring your first companions.
 
-Prefer portable? Download the single **`Still.exe`** and run it.
+Still updates itself after that. Prefer a portable copy? Download `Still.exe` from the [latest release](https://github.com/carbongotfound/still/releases/latest).
 
-Requires Windows 10/11 x64 and the [Microsoft Edge WebView2 Runtime](https://developer.microsoft.com/microsoft-edge/webview2/). Windows 11 already has it, and setup installs it if it's missing.
+### macOS
 
-### Mac
+1. Download [**Still-mac.dmg**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg), open it and drag **Still** to **Applications**. It runs natively on Apple silicon and Intel.
+2. Still isn't notarized yet, so the first time, right-click Still and choose **Open**. On macOS 15, open it once, then choose **Open Anyway** in **System Settings > Privacy & Security**.
 
-1. Download **`Still-mac.dmg`** from the [latest release](https://github.com/carbongotfound/still/releases/latest), open it and drag **Still** onto **Applications**. It runs natively on Apple silicon and Intel Macs with macOS 12 or later. (Prefer a zip? `Still-mac.zip` holds the same app.)
-2. Still isn't notarized yet, so the first time, right-click Still and choose **Open** (on macOS 15, open it once, then choose **Open Anyway** in System Settings → Privacy & Security).
-3. To make Still your default browser, choose **Settings → Make default**.
+### Requirements
 
-Still for Mac runs the same interface on Apple's WebKit: your companions and AI chats, split view, background tabs, MCP and the command line with the same tools and approval prompts, plus tabs, groups, private windows, profiles, passwords in your Keychain, importing, history, bookmarks, downloads, themes and the same blocking. Extensions and in-app updates are Windows-only for now; on Mac, Still tells you when a new release is out. Shortcuts use <kbd>⌘</kbd> in place of <kbd>Ctrl</kbd>. More in [mac/README.md](mac/README.md).
+- **Windows** 10 (1809 or later) or 11, x64. Setup installs the Microsoft Edge WebView2 Runtime if it's missing.
+- **macOS** 12 or later.
+- **An AI app** for the companions: Claude Code, ChatGPT's CLI from OpenAI, or Grok Build, signed in to your own account. Setup can install and sign in for you. Still works as a browser without one.
 
-## Shortcuts
+## Connect your AI
 
-| Action | Shortcut |
-|---|---|
-| Address / search / ask AI | <kbd>Ctrl L</kbd> |
-| Ask AI | <kbd>Ctrl Shift A</kbd> |
-| Find an open tab | <kbd>Ctrl K</kbd> |
-| New / close tab | <kbd>Ctrl T</kbd> / <kbd>Ctrl W</kbd> |
-| Reopen closed tab | <kbd>Ctrl Shift T</kbd> |
-| Private tab | <kbd>Ctrl Shift N</kbd> |
-| Bookmark page | <kbd>Ctrl D</kbd> |
-| Reader mode | <kbd>Ctrl Shift R</kbd> |
-| Full screen | <kbd>F11</kbd> |
-| Settings | <kbd>Ctrl ,</kbd> |
+Still runs the AI's own command-line app in the background, signed in to your plan. It never asks for an API key, never reads the app's login, and removes API-key settings from each run so nothing is billed to an API account.
 
-## How it's built
+| AI | What Still runs | How it connects |
+|---|---|---|
+| **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. **Sign in with Anthropic** opens Claude's own sign-in. |
+| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
+| **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
 
-- **Engine:** on Windows, Microsoft Edge WebView2 (Chromium) in a native **WPF / .NET 10** window. On Mac, Apple WebKit in a native **AppKit / Swift** window ([`mac/`](mac)), built on GitHub Actions.
-- **Interface:** React, [shadcn/ui](https://ui.shadcn.com), Radix, Motion and the Geist font, all packaged locally. No web server and no CDN calls.
-- **Privacy:** no Still account and no analytics. The only background request is a check of GitHub for a newer release. Your data stays in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on Mac.
+The buttons are on each AI's tile in setup and in the chat's AI picker. If the app is already installed and signed in, Still finds it. Switch AI anytime, even halfway through a chat: the chat moves over with its history.
+
+## Privacy
+
+- **No telemetry.** No Still account, no analytics. The only request Still makes on its own is a check of GitHub for a newer release.
+- **Agents never see private tabs, saved passwords or cookies.** Fields that hold saved logins read as hidden. When a companion reaches a sign-in page it pauses and asks you to sign in, then carries on.
+- **Private tabs never save passwords, history or form data.**
+- **Your data stays local** in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on the Mac.
+- **Plugins are opt-in.** They talk to Composio only after you paste your own key, and only for the apps you connect.
 
 ## Build from source
 
-Requires the .NET 10 SDK and Node 22.12+.
+**Windows** needs the [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0) (10.0.401 or a later patch) and Node 22.12 or newer.
 
 ```powershell
 git clone https://github.com/carbongotfound/still
 cd still
-./build.ps1          # builds the UI, then publishes a single Still.exe to artifacts/Still
+./build.ps1              # UI tests, lint and build, then a self-contained Still.exe in artifacts/Still
+./build.ps1 -Installer   # also builds the installer (needs Inno Setup 7's ISCC.exe on your PATH)
 ```
 
-On a Mac with Xcode 15 or newer, `sh mac/build.sh` builds `mac/build/Still.app`, `Still-<version>.dmg` and `Still-mac.zip` from the same interface.
+**macOS** needs Xcode 15 or newer. `sh mac/build.sh` builds `mac/build/Still.app`, a `.dmg` and `Still-mac.zip` from the same interface.
+
+More detail, including how to run the tests, is in [CONTRIBUTING.md](CONTRIBUTING.md).
+
+## Contributing
+
+First-time contributors are welcome. Pick one of the [good first issues](https://github.com/carbongotfound/still/labels/good%20first%20issue), or [open an issue](https://github.com/carbongotfound/still/issues/new/choose) with a bug or an idea. [CONTRIBUTING.md](CONTRIBUTING.md) covers setting up, running the tests, how the code is laid out, and adding a companion, skill or plugin. Everyone taking part follows the [Code of Conduct](CODE_OF_CONDUCT.md).
+
+[FEATURES.md](FEATURES.md) maps every feature to the code that runs it.
 
 ## Security
 
-See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md). Still has had an internal code review but no independent third-party audit yet, so please report vulnerabilities privately.
+See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md). Still has had internal code reviews but no independent audit yet, so please report vulnerabilities privately rather than in a public issue.
 
 ## License
 
 Still is open source under the [MIT license](LICENSE), © 2026 Carbon.
 
-The companions are Still's own: the blobs, their gestures and their props are built in code with three.js (`still-ui/src/companion3d.ts`, `Mascot.tsx` and `look.ts`), and so is the app icon. They're original work made for Still and covered by the same MIT license. So are the two sounds in `still-ui/public/sounds` (the intro and the end-of-setup jingle): `tools/sound` makes both in code from sine waves and noise, with nothing sampled or downloaded.
-
-Everything Still bundles from others keeps its own license, and every one of them allows shipping inside an MIT app: MIT, ISC, Apache-2.0, 0BSD, SIL OFL 1.1, BSD-style or public domain, plus Microsoft's redistributable WebView2 bootstrapper. The full list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Both ship inside the Windows installer and the Mac app. The Claude, ChatGPT and Grok names and logos belong to Anthropic, OpenAI and xAI, and Still isn't affiliated with them.
+The companions, their animations and props, the app icon and the two setup sounds are original work made for Still and covered by the same license. Everything Still bundles from others keeps its own license: the list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Claude, ChatGPT and Grok and their logos belong to Anthropic, OpenAI and xAI. Still isn't affiliated with them.

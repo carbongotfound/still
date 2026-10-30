@@ -173,7 +173,11 @@ public partial class MainWindow
   try {
    Directory.CreateDirectory(AiFolder); string file = Path.Combine(AiFolder, "chats.json");
    File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(AiChats.Take(200)));
-   File.Move(file + ".tmp", file, true);
+   // A reader holding chats.json (a virus scanner, the search indexer) refuses the swap for a moment: a lost save can leave a
+   // stopped chat marked running, which the next launch picks up again.
+   for (int tries = 1; ; tries++)
+    try { File.Move(file + ".tmp", file, true); break; }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException && tries < 5) { Thread.Sleep(20 * tries); }
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
 

@@ -1,0 +1,59 @@
+name: Bug report
+description: Something in Still doesn't work the way it should.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting. Please never paste passwords, cookies, API keys or private browsing data here. For a security problem, see SECURITY.md instead of opening a public issue.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what you expected instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open a new tab
+        2. Type # and pick a tab
+        3. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Still version
+      description: Settings > About shows it.
+      placeholder: "2.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - macOS
+    validations:
+      required: true
+  - type: dropdown
+    id: ai
+    attributes:
+      label: AI app
+      description: Which AI the companion was running on, if any.
+      options:
+        - Not AI related
+        - Claude
+        - ChatGPT
+        - Grok
+        - Another app through MCP or the command line
+  - type: textarea
+    id: extra
+    attributes:
+      label: Screenshots or anything else
+      description: Screenshots help a lot. Blur anything personal first.
