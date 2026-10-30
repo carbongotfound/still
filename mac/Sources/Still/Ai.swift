@@ -13,14 +13,15 @@ final class Companion {
  var skills: [String] = [] // skills it reads at the start of every chat
  var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
  var routines: [Routine] = [] // what it does on a schedule (Routines.swift)
+ var instructions = "" // the user's edit of its role's instructions (Assets/roles), "" = Still's own
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
-  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []
+  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions")
   routines = (d["Routines"] as? [[String: Any]] ?? []).map(Routine.init)
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions] }
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -365,6 +366,7 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
 
 /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
 func roleSetup(_ who: Companion?) -> String {
+ if let who, !who.instructions.isEmpty { return "\nYour instructions for your role follow, as the user edited them. Where the user's own instructions above differ, theirs win.\n\n" + who.instructions.replacingOccurrences(of: "\r\n", with: "\n") + "\n" }
  guard let crew = who?.crew, !crew.isEmpty, let text = try? String(contentsOf: resources.appendingPathComponent("roles/\(crew).md"), encoding: .utf8) else { return "" }
  return "\nStill's setup for your role follows. Where the user's own instructions above differ, theirs win.\n\n" + text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines) + "\n"
 }
@@ -435,6 +437,7 @@ extension Browser {
   if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
   if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
+  if data["instructions"] != nil { c.instructions = String(s("instructions").trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000)) }
   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
   c.askName = false // saved, renamed or kept: it's the user's name now
   storeCompanions()
@@ -1016,7 +1019,7 @@ extension Browser {
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
-   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "routines": c.routines.map(\.shell),
+   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
    "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "from": $0.from.map { $0 as Any } ?? NSNull(), "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }
