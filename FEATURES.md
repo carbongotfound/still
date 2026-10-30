@@ -36,7 +36,10 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Upload card**: a site's file picker opens a card of recent matching files, copied image first; picker intercepted via CDP (`MainWindow.FilePaste.cs`, `UploadCard.tsx`).
 - ✅ **Draft keeper**: text typed into a box survives a surprise reload; a chip offers it back for 6 h (`MainWindow.Drafts.cs`).
 - ✅ **Audio follows the default output**: on a Windows output switch, playing media reopens on the new device; 1.5 s poll (`MainWindow.Audio.cs`).
-- ✅ **Memory saver**: background tabs sleep after 1 min, unload after 5; media and downloads stay awake, pinned and typed-in tabs only sleep (`MainWindow.Memory.cs`).
+- ✅ **Tabs keep their state**: switching hides a tab's page, never reloads or unloads it, so scroll, typed text, sound and page state stay (`SelectTab`, Mac `select`); `tests/desktop/tabkeep.py`.
+- ✅ **Memory saver**: background tabs sleep after 1 min (state kept); only under real memory pressure (Windows 90% RAM in use, a macOS memory-pressure warning) does an untouched one unload, and it reloads where it was scrolled to; media, downloads, pinned and typed-in tabs never unload (`MainWindow.Memory.cs`, Mac `sleepIdleTabs`).
+- ✅ **Message box drafts**: each chat keeps what you were typing, also after closing the chat or Still; the new tab page's box keeps it while Still runs; each chat comes back where you'd scrolled (`Composer` `draft`, `AiSidebar.tsx`).
+- ✅ **Tab strip and bookmarks bar**: the selected tab fits inside the strip, the bookmarks bar has its own solid background; no overlap in either theme at any width or display scale (`App.css`); `tests/desktop/tabstrip.py`.
 - ✅ **Error and crash pages**: one page per load failure ("you're offline" etc.); renderer crash shows in place, no auto-reload (`ErrorPages.cs`, `MainWindow.xaml.cs`).
 - ✅ **Engine crash recovery**: if the engine's main process dies, Still saves tabs and restarts once (`App.xaml.cs`).
 - ✅ **Themes**: Light, Dark, System (Preferences `Theme`).

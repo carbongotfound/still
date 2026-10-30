@@ -244,6 +244,7 @@ public partial class MainWindow : Window
   foreach (var t in tabs) if (t.View != null && t != pair) t.View.Visibility = Visibility.Hidden;
   var leaving=active; if(leaving!=null)leaving.LastActive=DateTime.UtcNow;
   active = tab;tab.LastActive=DateTime.UtcNow;
+  if(tab.View!=null)tab.RestoreScroll=0; // still loaded: it shows exactly as it was left
   if(tab.View?.CoreWebView2 is {IsSuspended:true} sleeping)sleeping.Resume(); // instant: page state was kept
   ApplyMemoryPolicy();
   StartPage.Visibility = tab.Url.Length == 0 ? Visibility.Visible : Visibility.Collapsed;

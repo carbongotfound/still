@@ -95,6 +95,7 @@ public partial class MainWindow
        // Answers the Windows Hello prompt for tests (allow, deny or none: not set up), and where an export is written.
        if (op == "osAuth") { if (doc.RootElement.TryGetProperty("answer", out var a)) { qaAuthAnswer = a.GetString() ?? "deny"; verifiedUntil = default; } if (doc.RootElement.TryGetProperty("exportPath", out var x)) qaExportPath = x.GetString() ?? ""; return JsonSerializer.Serialize(new { asks = qaAuthAsks, answer = qaAuthAnswer }); }
        if (op == "quit") { Close(); return "{\"ok\":true}"; }
+       if (op == "memoryPressure") { qaPressure = true; try { await ReduceBackgroundMemory(); } finally { qaPressure = false; } return "{\"ok\":true}"; }
        return "{\"error\":\"unknown operation or no page\"}";
       } catch (Exception ex) { return JsonSerializer.Serialize(new { error = ex.Message }); }
      }));

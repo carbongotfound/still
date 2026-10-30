@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
+import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -213,16 +213,25 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
+// What the user was typing: a chat's draft is kept on disk, so it's still there after closing the chat or Still;
+// a new tab page's lasts while Still runs. Sending or emptying the box forgets it.
+const drafts = (key: string) => key.startsWith("chat.") ? localStorage : sessionStorage
+const readDraft = (key?: string) => { try { return key && drafts(key).getItem("still.draft." + key) || "" } catch { return "" } }
+const keepDraft = (key: string | undefined, v: string) => { if (key) try { if (v) drafts(key).setItem("still.draft." + key, v); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
+// Where each chat was scrolled to while Still runs; none = at the newest message.
+const scrolls = new Map<string, number>()
+
 // The message box. / picks a skill, # attaches an open tab (never a private one) and @ brings in a companion; tabs and
 // companions sit above the text as chips that x or Backspace at the start removes. Arrows, Enter or Tab and Esc work the pickers.
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs }: { ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
- const [text, setTextState] = useState("")
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+ const [text, setTextState] = useState(() => readDraft(draft))
+ useEffect(() => setTextState(readDraft(draft)), [draft])
  const [pick, setPick] = useState(0)
  const [chips, setChips] = useState<{ tab?: TabRef; mate?: Companion }[]>([])
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const box = useRef<HTMLTextAreaElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
- const setText = (v: string) => { setTextState(v); setPick(0); setShut(null); onTyping?.(!!v.trim()) }
+ const setText = (v: string) => { setTextState(v); keepDraft(draft, v); setPick(0); setShut(null); onTyping?.(!!v.trim()) }
  const attached = chips.flatMap(c => c.tab ? [c.tab.id] : [])
  const message = [...chips.flatMap(c => c.mate ? ["@" + c.mate.name] : []), text.trim()].join(" ").trim()
  const submit = () => { if (!message || disabled) return; onSubmit(message, attached); setText(""); setChips([]) }
@@ -358,7 +367,15 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const started = ai.runs?.find(r => r.id === ai.chatId)?.started
  const [typing, setTyping] = useState(false)
  const mood = useRunMood(ai, typing)
- useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [ai.messages.length, busy, !!ai.question])
+ const back = useRef(ai.chatId ? scrolls.get(ai.chatId) : undefined) // coming back to this chat: where the user left it
+ useLayoutEffect(() => {
+  const el = log.current; if (!el) return
+  if (back.current != null) { el.scrollTop = back.current; back.current = undefined } else el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
+ }, [ai.messages.length, busy, !!ai.question])
+ const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
+  fadeTop(e); const el = e.currentTarget
+  if (ai.chatId) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
+ }
  // Timed from when the run started, so it reads right after switching chats.
  useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
  // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
@@ -394,7 +411,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const openLink = (url: string) => send("new", { url })
 
  return <section className="chat-view" data-mode={mode} aria-label={team.length ? "Team chat" : "Chat with " + name}>
-  {setup ?? <div className="ai-log" ref={log} onScroll={fadeTop}><div className="chat-column">
+  {setup ?? <div className="ai-log" ref={log} onScroll={keepScroll}><div className="chat-column">
    {!items.length && (mode === "tab" ? <div className="chat-hello">
     <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
     <h3>{you ? `Hi ${you}! What are we working on?` : `Hi, I'm ${name}. What are we working on?`}</h3>
@@ -441,7 +458,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    {team.length > 0 && <TeamBar ai={ai} team={team} mood={mood} />}
-   <Composer ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
+   <Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={team.length ? (busy ? "Jump in…" : "Reply to the team…") : busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
