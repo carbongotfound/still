@@ -12,6 +12,7 @@ import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade, fromShared } from "./crew"
+import { PluginsSection, Who } from "./Plugins"
 import { toast } from "sonner"
 
 // The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
@@ -28,7 +29,7 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
   {item("chats", "Chats", MessageSquare)}
   {item("library", "Library", Library)}
   {item("companions", "Companions", Users)}
-  {item("skills", "Skills", BookOpen)}
+  {item("skills", "Skills & plugins", BookOpen)}
   <span className="home-rail-gap" />
   <button className="home-rail-item" aria-label="Settings" title="Settings" onClick={onSettings}><Settings2 /></button>
   <span className="chat-side-avatar" title={profile}>{(profile[0] ?? "S").toUpperCase()}</span>
@@ -132,18 +133,30 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onMemory }: {
  </section>
 }
 
+/// Skills & plugins: one place for what companions can follow (skills) and the apps they can work in (plugins, through
+/// Composio), each turned on for the companions you pick. One search for both, and a filter.
 export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
  const [editing, setEditing] = useState<Skill | null>(null)
- const skills = ai.skills ?? []
- return <section className="home-page" aria-label="Skills">
-  <header className="home-page-head"><h1>Skills</h1><Button className="home-new" onClick={() => setEditing({ id: "", name: "", description: "", when: "", body: "" })}><Plus />New skill</Button></header>
-  <p className="home-page-lead">A skill is a short how-to your companions follow, like how you like a trip plan laid out. Type / in a message to use one, or give it to a companion so they always have it.</p>
-  {!skills.length && <p className="home-empty">No skills yet. Make your first one.</p>}
-  <div className="skill-list">{skills.map(k => <div key={k.id} className="skill-row">
-   <span className="skill-icon"><BookOpen /></span>
-   <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.description && " · " + k.description}</small></button>
-   <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>
-  </div>)}</div>
+ const [find, setFind] = useState("")
+ const [only, setOnly] = useState<"" | "skills" | "plugins">("")
+ const q = find.trim().toLowerCase()
+ const skills = (ai.skills ?? []).filter(k => `${k.name} ${k.id} ${k.description}`.toLowerCase().includes(q))
+ const chip = (key: typeof only, label: string) => <button className="history-chip" aria-pressed={only === key} onClick={() => setOnly(key)}>{label}</button>
+ return <section className="home-page" aria-label="Skills & plugins">
+  <header className="home-page-head"><h1>Skills & plugins</h1><Button className="home-new" onClick={() => setEditing({ id: "", name: "", description: "", when: "", body: "" })}><Plus />New skill</Button></header>
+  <p className="home-page-lead">Skills are short how-tos your companions follow: type / in a message to use one. Plugins let them work in your apps, like Gmail and Slack. Pick who can use each.</p>
+  <label className="history-find"><Search /><input aria-label="Search skills and plugins" placeholder="Search skills and apps..." value={find} onChange={e => setFind(e.target.value)} /></label>
+  <div className="history-chips" role="group" aria-label="Show">{chip("", "All")}{chip("skills", "Skills")}{chip("plugins", "Plugins")}</div>
+  {only !== "plugins" && <section className="skills-part" aria-label="Skills"><h2 className="home-page-sub">Skills</h2>
+   {!skills.length && <p className="home-empty">{q ? "No skills match." : "No skills yet. Make your first one."}</p>}
+   <div className="skill-list">{skills.map(k => <div key={k.id} className="skill-row">
+    <span className="skill-icon"><BookOpen /></span>
+    <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.description && " · " + k.description}</small></button>
+    <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />
+    <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>
+   </div>)}</div>
+  </section>}
+  {only !== "skills" && <section className="skills-part" aria-label="Plugins"><h2 className="home-page-sub">Plugins</h2><PluginsSection ai={ai} send={send} query={find} /></section>}
   {editing && <SkillEditor skill={editing} onClose={() => setEditing(null)} onSave={k => { send("skillSave", k); setEditing(null) }} />}
  </section>
 }

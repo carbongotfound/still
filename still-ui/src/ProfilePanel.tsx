@@ -18,7 +18,7 @@ import type { AiState } from "./AiSidebar"
 
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A companion's profile, opened from its mascot: everything about it on tabs, saved as you change it.
-const TABS = [["general", "General"], ["skills", "Skills"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["plugins", "Plugins"], ["model", "Model"]] as const
+const TABS = [["general", "General"], ["skills", "Skills & plugins"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["model", "Model"]] as const
 const MODES: [Mode, string, string][] = [["efficient", "Quick", "Short and fast. Good for lookups and small jobs."], ["default", "Everyday", "The right depth for most things."], ["expert", "Thorough", "Takes longer and checks more. For research and big tasks."]]
 const DAYS = ["S", "M", "T", "W", "T", "F", "S"], DAY_NAMES = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const WEEKDAYS = [1, 2, 3, 4, 5]
@@ -30,8 +30,8 @@ const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name:
 /// `preview`: a companion from the library, not added yet. Changes stay here until Add, and only the tabs that make
 /// sense before hiring show.
 const PREVIEW_TABS = ["general", "skills", "routines", "model"]
-export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, onOpenFile, onPlugins, onSkills }: {
- ai: AiState; id: string; preview?: Companion; send: Send; onPick: (id: string) => void; onClose: () => void; onAdd?: (c: Companion) => void; onOpenFile: (path: string) => void; onPlugins: () => void; onSkills: () => void
+export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, onOpenFile, onSkills }: {
+ ai: AiState; id: string; preview?: Companion; send: Send; onPick: (id: string) => void; onClose: () => void; onAdd?: (c: Companion) => void; onOpenFile: (path: string) => void; onSkills: () => void
 }) {
  const saved = preview ?? ai.companions?.find(c => c.id === id)
  const [c, setC] = useState(saved)
@@ -103,11 +103,22 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
       {preview && premade && <section className="profile-section"><h4>What to expect</h4><ul className="profile-will">{premade.expect.map(w => <li key={w}>{w}</li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="skills">
+      <section className="profile-section"><h4>Skills</h4>
       <p className="profile-lead">Skills {label} reads at the start of every chat. You can also call any skill with /its-name in a message.</p>
       {(ai.skills ?? []).length ? <ul className="profile-list">{ai.skills!.map(k => { const on = !!c.skills?.includes(k.id); return <li key={k.id}>
        <div><b>{k.name}</b><small>{k.description}</small></div>
        <Switch checked={on} aria-label={`${k.name} for ${c.name}`} onCheckedChange={v => save({ ...c, skills: v ? [...(c.skills ?? []), k.id] : (c.skills ?? []).filter(x => x !== k.id) })} />
-      </li> })}</ul> : <Empty text="No skills yet. Write one on the Skills page, then turn it on here." action="Open Skills" onAction={onSkills} />}
+      </li> })}</ul> : <Empty text="No skills yet. Write one in Skills & plugins, then turn it on here." action="Open Skills & plugins" onAction={onSkills} />}
+      </section>
+      {!preview && <section className="profile-section is-plugins"><h4>Plugins</h4>
+      {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={onSkills} />
+       : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading is free. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
+        <ul className="profile-list">{plugins!.connected.map(p => { const on = !saved.pluginsOff?.includes(p.slug); return <li key={p.id}>
+         <PluginChip slug={p.slug} name={p.name} />
+         <Switch checked={on} aria-label={`${p.name} for ${c.name}`} onCheckedChange={v => send("pluginToggle", { companion: c.id, slug: p.slug, on: v })} />
+        </li> })}</ul></>
+       : <Empty text="No apps connected yet." action="Connect an app" onAction={onSkills} />}
+      </section>}
      </TabsContent>
      <TabsContent value="routines">
       <p className="profile-lead">Things {label} does on a schedule, each in a new chat, while Still is open. Anything that sends, posts or changes data still asks you first.</p>
@@ -131,15 +142,6 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
       </section>
      </TabsContent>
      <TabsContent value="memory"><MemorySettings companions={[saved]} send={send} /></TabsContent>
-     <TabsContent value="plugins">
-      {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={onPlugins} />
-       : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading is free. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
-        <ul className="profile-list">{plugins!.connected.map(p => { const on = !saved.pluginsOff?.includes(p.slug); return <li key={p.id}>
-         <PluginChip slug={p.slug} name={p.name} />
-         <Switch checked={on} aria-label={`${p.name} for ${c.name}`} onCheckedChange={v => send("pluginToggle", { companion: c.id, slug: p.slug, on: v })} />
-        </li> })}</ul></>
-       : <Empty text="No apps connected yet." action="Connect an app" onAction={onPlugins} />}
-     </TabsContent>
      <TabsContent value="model">
       <label className="profile-field"><span>Runs on</span><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
        <option value="">Your AI{harness && !c.ai ? ` (${harness.name})` : ""}</option>
