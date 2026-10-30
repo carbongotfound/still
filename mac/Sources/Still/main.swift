@@ -299,7 +299,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
    "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "isDefaultBrowser": isDefaultBrowser,
-   "tabLayout": pref("TabLayout", "Classic"), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
+   "tabLayout": pref("TabLayout", "Classic"), "chatTitles": pref("ChatTitles", ""), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
    "sidebarWidth": pref("SidebarWidth", 248.0)
   ]
   let tabList: [[String: Any]] = tabs.map { tab in
@@ -485,6 +485,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    prefs["AgentsEnabled"] = value == "true"
    if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
   case "askInChat": prefs["AgentsAskInChat"] = value == "true"
+  case "chatTitles": if value.count < 200 && (value.isEmpty || value == "off" || value.contains("/")) { prefs["ChatTitles"] = value }
   default: toast(unavailable); return
   }
   saveLater()

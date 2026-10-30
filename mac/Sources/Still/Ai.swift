@@ -151,6 +151,39 @@ func forMode(_ ai: String, _ mode: String?) -> (String, String) {
  }
 }
 
+/// Names a new chat from its first message, on the model picked in Settings (Chat titles): the quickest one of the
+/// chat's AI unless the user chose another. Off, in a private window, or if the AI doesn't answer, the chat keeps its
+/// first message as its title.
+@MainActor func nameChat(_ chat: AiChat, _ first: String) async {
+ let picked = store.prefs["ChatTitles"] as? String ?? ""
+ if picked == "off" || chat.noMemory { return }
+ let was = chat.title // renamed meanwhile: the user's name stays
+ if isQa && picked.isEmpty && qaEnv("STILL_QA_TITLES") == nil { return } // tests' fake AIs answer anything: only the tests about titles ask for them
+ let pick = picked.split(separator: "/", maxSplits: 1).map(String.init)
+ let chosen = pick.count == 2 ? aiClis.first { $0.id == pick[0] && findCli($0.command) != nil } : nil
+ guard let cli = chosen ?? aiClis.first(where: { $0.id == chat.harness }), let exe = findCli(cli.command) else { return }
+ var (model, effort) = chosen != nil ? (pick[1], "") : forMode(cli.id, "efficient")
+ if !(aiModels[cli.id] ?? []).contains(where: { $0.id == model }) { model = ""; effort = "" }
+ let prompt = "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + clipped(first, 2000)
+ var mcp = ["--mcp", "--no-tools", "--as", cli.name, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
+ if isQa { mcp.insert("--qa", at: 1) }
+ let r = RunRequest(prompt: prompt, model: model, effort: effort, folder: (aiFolder as NSString).appendingPathComponent("titles"), mcp: mcp, session: cli.namesSession ? UUID().uuidString.lowercased() : nil, resume: false)
+ var said = ""
+ do {
+  let run = try await cli.start(exe, r)
+  let limit = DispatchWorkItem { run.cancel() }
+  DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: limit)
+  for await e in run.events() { if case .message(let m, let join) = e { said += (join ?? "\n") + m } }
+  limit.cancel()
+ } catch { NSLog("Still: chat title: \(error)") }
+ try? FileManager.default.removeItem(atPath: r.promptFile)
+ let title = said.split(separator: "\n").map { String($0).replacingOccurrences(of: #"^(?i:title)\s*:"#, with: "", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "\"'*#“”. ").union(.whitespaces)) }.first { !$0.isEmpty } ?? ""
+ if title.isEmpty || chat.title != was || !aiChats.contains(where: { $0 === chat }) { return }
+ chat.title = clipped(title, 60); saveAiChats()
+ for browser in browsers { for tab in browser.tabs where tab.chatId == chat.id { tab.title = chat.title }; browser.publishAi() }
+ saveAllLater(); publishEverywhere()
+}
+
 /// Stops a chat's run: its question and approval cards get their answer, and its AI app ends.
 func stopRun(_ r: ChatRun) {
  r.question?.answer.set("The user pressed Stop."); r.question = nil
@@ -852,6 +885,7 @@ extension Browser {
    v.chat = chat
    aiChats.insert(chat, at: 0); saveAiChats()
    if let into, !into.closed { into.chatId = chat.id; into.title = chat.title; saveLater() }
+   if asker == nil { let first = shown ?? text; Task { await nameChat(chat, first) } }
    return chat
   }()
   if chat.harness.isEmpty { chat.harness = companions.first(where: { $0.id == chat.companion }).map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "") }

@@ -261,7 +261,7 @@ public partial class MainWindow
   if (key == Key.Escape && recent != null) { await PickRecent(null); return; }
   if (key == Key.Escape) {
    ShellSend(new{kind="escape"});
-   if (panel.Length > 0) CloseSheet();
+   if (panel.Length > 0) { if (!shellReady) CloseSheet(); } // the shell closes it, unless an open dropdown or the settings search uses this Escape
    else if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}
    else if (FindBar.Visibility == Visibility.Visible) FindBar.Visibility = Visibility.Collapsed;
    else if (active?.View?.CoreWebView2 is { } escCore) await escCore.RunAsync("if(window.__stillCancelPicker)window.__stillCancelPicker();if(document.fullscreenElement)document.exitFullscreen();");

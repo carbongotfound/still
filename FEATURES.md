@@ -167,7 +167,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **remember / recall / forget tools**: Still's own chat only; recall ranks by shared words, core facts, then newest.
 - ✅ **Never stored**: passwords, codes, keys, card/account numbers, form input the AI typed, anything from private tabs.
 - ✅ **Past chats**: each finished chat is kept as a short memory; long memory keeps the 60 latest.
-- ✅ **Memory page**: Settings → Memory: view, add, edit, forget, clear per companion (`Memory.tsx`).
+- ✅ **Memory page**: Settings → Companions → What they remember: view, add, edit, forget, clear per companion (`Memory.tsx`).
 
 ## Plugins (Composio)
 
@@ -196,7 +196,9 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Settings
 
-- ✅ **Settings page**: Ctrl+, : theme, search, new tab, layout, restore tabs, sounds, downloads, blocking, tracking, memory saver, autofill, passwords, AI, permissions, memory, profiles, import.
+- ✅ **Settings page**: Ctrl+, : a left nav (General, Appearance, Companions, Models, Skills & plugins, Privacy & permissions, Shortcuts, About; Companions and Skills & plugins only with an AI) and one page of grouped cards at a time, each setting with a line of help; everything saves as you change it, with no Save buttons. Old page names (ai, memory, plugins, permissions, extensions, advanced) open their new page (`App.tsx` `SETTING_PAGES`, `OLD_PAGES`; tests/desktop/settings.py)
+- ✅ **Settings search**: the box above the nav finds any setting by its name or a word about it (dark → Theme, logins → Passwords, and every shortcut); Enter or a click opens its page and lights the row up; Escape clears it first (`SETTINGS_FIND`)
+- ✅ **Chat titles**: Settings → Models picks what names a new chat from its first message: the quickest model of the chat's AI (default), any model of the installed AIs grouped by AI, or Off (use first message). One short run in the background; quotes, "Title:" and a full stop are dropped; private windows keep the first message. Test builds only name by default with `STILL_QA_TITLES` (`NameChat`, `Ai.swift` `nameChat`, Preferences `ChatTitles`; tests/desktop/settings.py). Mac typechecked only
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
 - ✅ **About**: version, release notes, check for updates, replay the intro.
@@ -229,6 +231,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - Extensions don't exist on Mac; Mac can't import cookies, so sign-ins don't carry over.
 - Not code-signed (Windows SmartScreen) or notarized (Mac); no independent security audit.
+- Chat titles is tested with a fake agent; a live title run (Claude) and the Mac build haven't been checked.
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.
 - Agents can't read cross-origin frames or closed shadow roots.
 - Companions changing themselves (`selfact`, uncommitted) and the intro rebuilt for the blobs (`intro12`) aren't in the build yet.

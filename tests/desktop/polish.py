@@ -167,11 +167,11 @@ def screens(process, theme):
     found.append(audit(process, "home", theme))
     send(process, "select", id="page")
     send(process, "openPanel", name="settings", value="")
-    until(lambda: js(process, "!!document.querySelector('.settings-tabs')"), 5)
-    pages = js(process, "JSON.stringify([...document.querySelectorAll('.settings-tabs [role=tab]')].map(t => t.innerText.trim()))")
+    until(lambda: js(process, "!!document.querySelector('.set-shell')"), 5)
+    pages = js(process, "JSON.stringify([...document.querySelectorAll('.set-nav-item')].map(t => t.innerText.trim()))")
     for i, page in enumerate(json.loads(pages)):
-        js(process, f"document.querySelectorAll('.settings-tabs [role=tab]')[{i}].dispatchEvent(new MouseEvent('mousedown', {{bubbles: true, button: 0}}))")
-        until(lambda: js(process, f"document.querySelectorAll('.settings-tabs [role=tab]')[{i}].getAttribute('data-state') === 'active'"), 3)
+        js(process, f"document.querySelectorAll('.set-nav-item')[{i}].click()")
+        until(lambda: js(process, f"document.querySelectorAll('.set-nav-item')[{i}].getAttribute('aria-current') === 'page'"), 3)
         found.append(audit(process, "settings-" + page.lower().replace(" & ", "-").replace(" ", "-"), theme))
     close(process)
     for pane in ("history", "shortcuts"):
