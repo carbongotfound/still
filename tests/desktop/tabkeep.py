@@ -70,7 +70,7 @@ def type_shell(p, selector, words):
 
 BOX = "textarea[aria-label=Message]"
 LOG = ".ai-log"
-chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started": True, "Companion": "glint",
+chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started": True, "Companion": "maya",
           "Messages": [{"Role": "user" if k % 2 == 0 else "assistant", "Text": f"Line {k} of chat {i}. " * 12} for k in range(40)]} for i in (1, 2)]
 (PROFILE / "ai").mkdir(parents=True)
 (PROFILE / "ai" / "chats.json").write_text(json.dumps(chats))

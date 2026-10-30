@@ -1,7 +1,7 @@
 """Setup on a fresh profile, the tour, Run setup again, "Set me up with <name>", and the look editor.
 
 A fresh profile starts with the intro (skipped with Space) and no companions. The steps of the Quick setup are walked
-like a person would: pick an AI, pick Glint from the crew and make your own companion too (a color, a face, a name), pick
+like a person would: pick an AI, pick Maya from the crew and make your own companion too (a color, a face, a name), pick
 the main one, say who you are, pick interests, keep the Classic layout, try the permission card, and start the first
 task. Setup can't finish with no companion, and the last one can't be deleted. Quick setup runs no AI at all. The task runs on a fake AI app (a manifest in Still's agents folder): it
 searches, opens a page beside the chat and reads it for a while. The whole run is recorded with ffmpeg, frames taken
@@ -120,11 +120,11 @@ FAKE = textwrap.dedent(r'''
         reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Baking", "Wholesale"], "layout": "", "theme": "Dark",
             "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
             "tone": "Keep it short and cheerful.", "memories": ["Runs a small bakery that sells to cafes.", "uses Gmail and Shopify all day. Has  two cats"],
-            "hire": ["scout", "researcher", "nobody"],
+            "hire": ["growth", "research", "nobody"],
             "companions": [{"id": talk["lead"], "instructions": "Keep my wholesale orders on track and tell me when a cafe is late to pay.", "memories": ["Bakes sourdough for six cafes."]},
-                           {"id": "scout", "instructions": "Find me a second baker who can start at 5am.", "memories": ["Hiring a second baker for early shifts."]},
+                           {"id": "growth", "instructions": "Find me a second baker who can start at 5am.", "memories": ["Hiring a second baker for early shifts."]},
                            {"id": "nobody", "instructions": "Not on the team, so this goes nowhere."}],
-            "routines": [{"id": "scout", "text": "Check new applicants for the baker job and pick the best three.", "time": "08:30", "days": [1, 2, 3, 4, 5]}],
+            "routines": [{"id": "growth", "text": "Check new applicants for the baker job and pick the best three.", "time": "08:30", "days": [1, 2, 3, 4, 5]}],
             "first": "Find three flour suppliers near me with next-day delivery."}}))
         sys.exit(0)
     server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
@@ -425,7 +425,7 @@ def setup(process):
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 8, 4)
         rpc(process, "capture", name="pick-none.png")
         crew = js(process, "[...document.querySelectorAll('.crew-card .role-title')].map(h => h.innerText.trim())") or []
-        check(crew == ["Zest", "Bloom", "Noon", "Fizz", "Mallow", "Rivet", "Glint", "Make your own"], f"Step 4: seven roles to hire, then Make your own ({', '.join(crew)})")
+        check(crew == ["Jonah", "Talia", "Nora", "Leo", "Ivan", "Maya", "Make your own"], f"Step 4: six roles to hire, then Make your own ({', '.join(crew)})")
         check(js(process, """[...document.querySelectorAll('.crew-card')].every(c => c.querySelector('.role-tag')?.innerText && c.querySelector('.role-expect h4')?.innerText === 'What to expect'
               && c.querySelectorAll('.role-expect li').length === 3 && ['Hire', 'Make'].includes(c.querySelector('.crew-pick')?.innerText.trim()))"""),
               "Each card has its role, three things to expect and Hire, like the library's")
@@ -439,9 +439,9 @@ def setup(process):
         click(process, ".ob-skip-all")
         check(until(lambda: "Hire at least one companion first" in talk_text(process), 3) and js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), "Skip setup asks for a companion first")
         time.sleep(.8)
-        click(process, ".crew-pick[aria-label='Hire Glint']")
-        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked .role-title')?.innerText.trim() == 'Glint'"), 3)
-              and js(process, "document.querySelector('.crew-card.is-picked .crew-pick')?.innerText.trim()") == "Hired", "Hiring Glint turns its button into Hired and lets you continue")
+        click(process, ".crew-pick[aria-label='Hire Maya']")
+        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked .role-title')?.innerText.trim() == 'Maya'"), 3)
+              and js(process, "document.querySelector('.crew-card.is-picked .crew-pick')?.innerText.trim()") == "Hired", "Hiring Maya turns its button into Hired and lets you continue")
         time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Make your own")
         check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
@@ -459,18 +459,18 @@ def setup(process):
         time.sleep(.6)
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
         click(process, ".ob-next")
-        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Glint,Miso", 3)
-        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Glint, and setup adds a step to pick the main one")
+        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Maya,Miso", 3)
+        check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Maya, and setup adds a step to pick the main one")
         time.sleep(1.2)
         next_step(process)  # -> main
         mains = js(process, "[...document.querySelectorAll('.ob-mains [role=radio] strong')].map(s => s.innerText.trim())") or []
-        check(mains == ["Glint", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick who leads ({mains})")
+        check(mains == ["Maya", "Miso"] and js(process, "document.querySelector('.ob-next').disabled"), f"Then you pick who leads ({mains})")
         click_text(process, ".ob-mains [role=radio]", "Miso")
         time.sleep(1)
         next_step(process)  # -> tools
         tools(process)
         not_now(process)  # Skip -> how
-        check(until(lambda: companions() == ["Miso", "Glint"], 5), f"Both are added, Miso first as the main one ({companions()})")
+        check(until(lambda: companions() == ["Miso", "Maya"], 5), f"Both are added, Miso first as the main one ({companions()})")
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
         check(look.get("color") == "#8cc3ee" and look.get("shape") == "tall" and mate.get("Job") == "Plans my trips and keeps receipts in order.", "Step 4 saves your companion's name, color, shape and job")
@@ -491,10 +491,10 @@ def setup(process):
         next_step(process)  # -> layout
         facts = until(lambda: [f["Text"] for f in memory("Miso")] if len(memory("Miso")) >= 2 else None, 5) or []
         check("Likes to be called Sam." in facts and "Works on research, sales, hiring." in facts, f"Your name and interests are Miso's first memories ({facts})")
-        theirs = [f["Text"] for f in memory("Glint")]
-        check("Likes to be called Sam." in theirs and "Works on research, sales, hiring." in theirs, f"Glint remembers them too ({theirs})")
-        glint = next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Glint"), {})
-        check(glint.get("Crew") == "researcher" and not glint.get("AskName"), "A companion hired for a role remembers which one it is")
+        theirs = [f["Text"] for f in memory("Maya")]
+        check("Likes to be called Sam." in theirs and "Works on research, sales, hiring." in theirs, f"Maya remembers them too ({theirs})")
+        maya = next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Maya"), {})
+        check(maya.get("Crew") == "research" and not maya.get("AskName"), "A companion hired for a role remembers which one it is")
         check(js(process, "document.querySelector('.ob-layouts [aria-checked=true]')?.innerText ?? ''").startswith("Classic"), "Step 7: Classic tabs are the default")
         time.sleep(.8)
         next_step(process)  # -> charge
@@ -654,7 +654,7 @@ def interview(process):
         send(process, "welcomeAgain", talk=True)
         check(until(lambda: "What do you work on these days?" in talk_text(process), 20), "Set me up again opens straight into Miso's questions")
         first = sent()[talked]
-        check("- scout: Bloom, Scout, Hiring" in first and "- researcher:" not in first and "Glint, Researcher" in first,
+        check("- growth: Talia, Growth, Signups and retention" in first and "- research:" not in first and "Maya, Research" in first,
               "It knows Still's companions, and which ones are already on the team")
         options = js(process, "[...document.querySelectorAll('.ob-interview .ob-chips button')].map(b => b.innerText.trim())") or []
         check(options == ["I run a small bakery", "Research", "Sales"], f"Its question comes with answers to tap ({options})")
@@ -678,27 +678,27 @@ def interview(process):
         click_text(process, ".ob-interview-foot button", "That's enough")
         check(until(lambda: js(process, "document.querySelectorAll('.ob-summary li').length") >= 10, 20), "\"That's enough\" ends it, and it sets Still up from what it heard")
         rows = js(process, "[...document.querySelectorAll('.ob-summary section')].map(s => s.querySelector('h4').textContent.trim() + ': ' + [...s.querySelectorAll('li b')].map(b => b.innerText.trim()).join(' | '))") or []
-        check(rows == ["Your team: New on your team | Your team will remember | What I'll focus on | I'll also remember | What Bloom will focus on | Bloom will also remember | Bloom's routine, off for now",
+        check(rows == ["Your team: New on your team | Your team will remember | What I'll focus on | I'll also remember | What Talia will focus on | Talia will also remember | Talia's routine, off for now",
                        "Your Still: Theme | Pinned | When I work in tabs | How I talk | Ideas about", "First up: First, I'll help with"], f"The summary groups what it set up ({rows})")
         told = (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Your team will remember'))?.querySelector('small')?.innerText") or "").split("\n")
         check(len(told) >= 2 and all(t[:1].isupper() and t.endswith(".") and t.count(". ") == 0 for t in told), f"Each memory is its own short sentence, on its own line ({told})")
         time.sleep(1.5)
         rpc(process, "capture", name="interview-summary.png")
-        prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Baking", "Wholesale"] and "Bloom" in companions(p) and p, 5) or {}  # saved a moment later
+        prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Baking", "Wholesale"] and "Talia" in companions(p) and p, 5) or {}  # saved a moment later
         check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
         check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
-        check(sorted(companions(prefs)) == ["Bloom", "Glint", "Miso"], f"It hired Bloom from the library, and not Glint twice ({companions(prefs)})")
+        check(sorted(companions(prefs)) == ["Maya", "Miso", "Talia"], f"It hired Talia from the library, and not Maya twice ({companions(prefs)})")
         mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
-        bloom = next((c for c in prefs.get("Companions", []) if c["Name"] == "Bloom"), {})
-        check(mate.get("Job", "").endswith("For me: Keep my wholesale orders on track and tell me when a cafe is late to pay.") and bloom.get("Job", "").endswith("For me: Find me a second baker who can start at 5am."),
+        talia = next((c for c in prefs.get("Companions", []) if c["Name"] == "Talia"), {})
+        check(mate.get("Job", "").endswith("For me: Keep my wholesale orders on track and tell me when a cafe is late to pay.") and talia.get("Job", "").endswith("For me: Find me a second baker who can start at 5am."),
               "Each companion's instructions get a paragraph about the user")
-        check(bloom.get("Crew") == "scout" and len(bloom.get("Routines", [])) == 2 and not any(r["On"] for r in bloom["Routines"])
-              and any(r["Time"] == "08:30" and r["Days"] == [1, 2, 3, 4, 5] for r in bloom["Routines"]), f"Bloom's routines, its own and the new one, start off ({bloom.get('Routines')})")
-        facts, glint, bloom_facts = [f["Text"] for f in memory("Miso")], [f["Text"] for f in memory("Glint")], [f["Text"] for f in memory("Bloom")]
+        check(talia.get("Crew") == "growth" and len(talia.get("Routines", [])) == 2 and not any(r["On"] for r in talia["Routines"])
+              and any(r["Time"] == "08:30" and r["Days"] == [1, 2, 3, 4, 5] for r in talia["Routines"]), f"Talia's routines, its own and the new one, start off ({talia.get('Routines')})")
+        facts, maya, bloom_facts = [f["Text"] for f in memory("Miso")], [f["Text"] for f in memory("Maya")], [f["Text"] for f in memory("Talia")]
         check(mate.get("Tone") == "Keep it short and cheerful." and "Runs a small bakery that sells to cafes." in facts and "Uses Gmail and Shopify all day." in facts and "Has two cats." in facts
               and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts and "Bakes sourdough for six cafes." in facts, f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
-        check("Has two cats." in glint and "Bakes sourdough for six cafes." not in glint and "Has two cats." in bloom_facts and "Hiring a second baker for early shifts." in bloom_facts,
-              f"The whole team learns about the user, and each one what's just for it ({glint}, {bloom_facts})")
+        check("Has two cats." in maya and "Bakes sourdough for six cafes." not in maya and "Has two cats." in bloom_facts and "Hiring a second baker for early shifts." in bloom_facts,
+              f"The whole team learns about the user, and each one what's just for it ({maya}, {bloom_facts})")
 
         def edit(label, text):
             js(process, f"[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith({json.dumps(label)}))?.querySelector('button')?.click()")
@@ -716,9 +716,9 @@ def interview(process):
         js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
         check(until(lambda: rpc(process).get("theme") == "System" and "Undone" in (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.innerText") or ""), 5),
               "Undo puts the theme back")
-        bloom_dir = PROFILE / "companions" / bloom.get("Id", "-")
+        bloom_dir = PROFILE / "companions" / talia.get("Id", "-")
         js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('New on your team'))?.querySelector('button')?.click()")
-        check(until(lambda: "Bloom" not in companions() and not bloom_dir.exists(), 5) and until(lambda: js(process, "[...document.querySelectorAll('.ob-summary li')].filter(l => /Bloom/.test(l.innerText) && l.classList.contains('is-undone')).length") == 4, 3),
+        check(until(lambda: "Talia" not in companions() and not bloom_dir.exists(), 5) and until(lambda: js(process, "[...document.querySelectorAll('.ob-summary li')].filter(l => /Talia/.test(l.innerText) && l.classList.contains('is-undone')).length") == 4, 3),
               "Undoing a hire lets that companion go, with everything setup gave it")
         js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('First,'))?.querySelectorAll('button')[1]?.click()")  # no first task: the next suite wants no chat running
         time.sleep(2)
@@ -744,16 +744,16 @@ def looks(process):
     until(lambda: js(process, "!!document.querySelector('.home-rail')"), 10)
     click(process, ".home-rail-item[aria-label=Companions]")
     until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 2, 10)
-    for name in ("Glint", "Miso"):
+    for name in ("Maya", "Miso"):
         click(process, f".mate-portrait[aria-label='Edit {name}']")
         until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
         js(process, "document.querySelector('.profile-head [aria-label=More]')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))")
         until(lambda: js(process, "!!document.querySelector('[role=menuitem][data-variant=destructive]')"), 3)
         click(process, "[role=menuitem][data-variant=destructive]")
         until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-content]')"), 3)
-        if name == "Glint":
+        if name == "Maya":
             click(process, "[data-slot=alert-dialog-action]")
-            check(until(lambda: companions() == ["Miso"], 5), "Deleting Glint works while Miso is there")
+            check(until(lambda: companions() == ["Miso"], 5), "Deleting Maya works while Miso is there")
             until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
             continue
         note = js(process, "document.querySelector('[data-slot=alert-dialog-content]')?.innerText") or ""
@@ -823,14 +823,14 @@ def shots():
                 shutil.copy(profile / f"{name}-{theme.lower()}.png", out / f"{name}-{theme.lower()}.png")
         time.sleep(1.5)
         shoot("pick-0")
-        click(process, ".crew-pick[aria-label='Hire Glint']")
+        click(process, ".crew-pick[aria-label='Hire Maya']")
         shoot("pick-1")
-        for name in ("Zest", "Fizz"):
+        for name in ("Jonah", "Leo"):
             click(process, f".crew-pick[aria-label='Hire {name}']")
             time.sleep(.3)
         shoot("pick-3")
         next_step(process)
-        click_text(process, ".ob-mains [role=radio]", "Zest")
+        click_text(process, ".ob-mains [role=radio]", "Jonah")
         shoot("pick-main")
         next_step(process)  # -> tools
         shoot("tools")

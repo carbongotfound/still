@@ -76,9 +76,33 @@ let oldNames: Set<UInt32> = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x4
   0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444]
 func fnv(_ s: String) -> UInt32 { tidy(s).lowercased().utf8.reduce(2166136261) { ($0 ^ UInt32($1)) &* 16777619 } }
 func oldName(_ name: String) -> Bool { oldNames.contains(fnv(name)) }
-/// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
-let movedCrew: [UInt32: (role: String, name: String)] = [327684010: ("researcher", "Glint"), 235257612: ("closer", "Zest"), 3817335319: ("scout", "Bloom"),
-  2393765392: ("chief", "Noon"), 389508247: ("chief", "Noon"), 2625268281: ("marketer", "Fizz"), 56376696: ("builder", "Rivet")]
+/// The roles before the blobs and before the six had people's names (their ids hashed the same way), and the role that
+/// took over each, with its name. The fixer's work went to the planner.
+let movedCrew: [UInt32: (role: String, name: String)] = [327684010: ("research", "Maya"), 235257612: ("sales", "Jonah"), 3817335319: ("growth", "Talia"),
+  2393765392: ("planner", "Nora"), 389508247: ("planner", "Nora"), 2625268281: ("marketing", "Leo"), 56376696: ("engineer", "Ivan"),
+  0xf5ee6083: ("sales", "Jonah"), 0xc322ad05: ("growth", "Talia"), 0xd18a3a92: ("planner", "Nora"), 0xcee7c10a: ("marketing", "Leo"),
+  0xe4350540: ("engineer", "Ivan"), 0x6df6fa7b: ("research", "Maya"), fixer: ("planner", "Nora")]
+let fixer: UInt32 = 0xc5f5784f
+/// What the six were called before they had people's names, so an @mention or a handoff by the old name still finds them.
+let formerNames: [UInt32: String] = [0x7271fe9f: "sales", 0xe4ee9edc: "growth", 0x88ab4733: "planner", 0x418c07d1: "planner", 0xa7bec5ec: "marketing",
+  0x4860da37: "engineer", 0x7e526a4f: "research"]
+/// The library's jobs and personalities from before the renames (hashed), and each role's now (crew.tsx), for companions hired back then.
+let oldCrewJobs: Set<UInt32> = [0x31b4df6a, 0xf832af65, 0x7256db08, 0xfeedd6eb, 0x5b7368a5, 0x40d3e149, 0x1b090d4c]
+let oldCrewTones: Set<UInt32> = [0xd75824d2, 0xc3ea17aa, 0x88c57c82, 0xeeac15be, 0x81223d6c, 0xe44ba5bd, 0xce35abaf]
+let crewJobs: [String: (job: String, tone: String)] = [
+ "sales": ("Sales for the user. Learns what the user sells and to whom, researches leads and companies from public information, preps a one-page brief before each call, drafts outreach and follow-ups in the user's voice, and keeps a simple pipeline table with a next step and a date for every deal. Never sends, books or posts anything without asking first, and never makes up a number.",
+  "Bold and upbeat. Talks in next steps and dates, and gets straight to what moves the deal."),
+ "growth": ("Growth for the user's product. Finds where people drop off between visiting, signing up, getting value and paying, plans small experiments with one metric each, drafts the copy and emails they need, and tracks what worked. Never launches, sends or changes anything live without asking, and never uses tricks that mislead people.",
+  "Curious and upbeat. Talks in numbers and bets, and celebrates small wins."),
+ "planner": ("A planner for the user's days and projects. Plans tomorrow with the important things first, briefs the user before meetings, keeps a short list of what's waiting on them and drafts the replies, and turns projects into checklists with owners and dates. Works in the user's own calendar and mail in Still's tabs when asked. Asks before sending, accepting, declining or changing anything.",
+  "Composed and organized. Short lists, clear priorities and one next step at a time."),
+ "marketing": ("Marketing for the user's posts, launches and newsletters. Learns the user's voice from examples, turns one idea into posts sized for each platform, and drafts launch posts, newsletters and landing page copy. Drafts only: shows every draft and never posts, schedules or sends anything itself.",
+  "Energetic and punchy. Big on hooks, short sentences and a clear call to action."),
+ "engineer": ("An engineer for the user's code and product. Builds small web tools and pages in the working folder and runs them in a tab to test them, tests web releases like a careful user, files clear bug reports with steps to reproduce, turns feedback into short specs with acceptance checks, and reads docs and code to explain how things work. Never says something works before running it, and never submits or deploys anything without asking.",
+  "Practical and dry. Steps, evidence and no fluff."),
+ "research": ("Research for the user. Digs into topics, compares sources and writes short briefs with a citation for every claim. Answers hard questions from solid sources, compares tools, vendors and options in one table, checks whether claims hold up, and looks into the user's market and competitors when asked. Says plainly when something is uncertain or the sources disagree.",
+  "Precise and direct. Leads with the answer, then the evidence, and flags weak sources."),
+]
 /// The first match of pattern in text, or its group.
 func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
  guard let rx = try? NSRegularExpression(pattern: pattern), let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let r = Range(m.range(at: group), in: text) else { return nil }
@@ -266,9 +290,15 @@ func askInChat(_ who: String, _ args: [String: Any], _ done: @escaping (String) 
 
 /// The companions a message @mentions (of among, when given), in the order it names them.
 func mentioned(_ text: String, among: [String]? = nil) -> [String] {
- companions.filter { among?.contains($0.id) != false }.compactMap { c -> (String, String.Index)? in
-  text.range(of: #"(?<![\w.@])@"# + NSRegularExpression.escapedPattern(for: c.name) + #"(?!\w)"#, options: [.regularExpression, .caseInsensitive]).map { (c.id, $0.lowerBound) }
+ let ns = text as NSString, old = (try? NSRegularExpression(pattern: #"(?<![\w.@])@(\w+)"#))?.matches(in: text, range: NSRange(location: 0, length: ns.length)) ?? []
+ return companions.filter { among?.contains($0.id) != false }.compactMap { c -> (String, Int)? in
+  if let r = text.range(of: #"(?<![\w.@])@"# + NSRegularExpression.escapedPattern(for: c.name) + #"(?!\w)"#, options: [.regularExpression, .caseInsensitive]) { return (c.id, NSRange(r, in: text).location) }
+  return old.first { formerNames[fnv(ns.substring(with: $0.range(at: 1)))] != nil && named(ns.substring(with: $0.range(at: 1))) === c }.map { (c.id, $0.range.location) }
  }.sorted { $0.1 < $1.1 }.map(\.0)
+}
+/// The companion called name, or the official one that used to be called it.
+func named(_ name: String) -> Companion? {
+ companions.first { $0.name.lowercased() == tidy(name).lowercased() } ?? formerNames[fnv(name)].flatMap { role in companions.first { $0.crew == role } }
 }
 
 /// Companions message each other (Windows: MainWindow.Ai.cs, Exchange): ask_companion waits for the reply, tell_companion
@@ -416,6 +446,35 @@ extension Browser {
   try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
  }
  func storeCompanions() { prefs["Companions"] = companions.map(\.dict); saveLater() }
+ /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.
+ @MainActor func offerRoutine(_ who: String, _ args: [String: Any]) async -> String {
+  guard let r = runs[who], let me = companions.first(where: { $0.id == r.chat.companion }) else { return agentFail("Only Still's companions have routines.") }
+  let text = clipped(tidy(argText(args, "text")), 600), time = tidy(argText(args, "time"))
+  let days = Array(Set((args["days"] as? [Any] ?? []).compactMap { $0 as? Int }.filter { (0...6).contains($0) })).sorted()
+  guard !text.isEmpty, time.range(of: #"^([01]\d|2[0-3]):[0-5]\d$"#, options: .regularExpression) != nil, !days.isEmpty else { return agentFail("Pass what to do, a time as HH:mm and at least one day (0 = Sunday).") }
+  let said = await withCheckedContinuation { done in
+   askInChat(who, ["question": "Should I make this a routine? \(routineDays(days)) at \(time): \(text)", "options": ["Yes, add it", "Not now"]]) { done.resume(returning: $0) }
+  }
+  let answer = ((try? JSONSerialization.jsonObject(with: Data(said.utf8))) as? [String: Any]).flatMap { ($0["result"] as? [String: Any])?["answer"] as? String } ?? ""
+  guard answer.range(of: #"^\s*(yes|sure|ok|okay|please)\b"#, options: [.regularExpression, .caseInsensitive]) != nil else {
+   return agentOk(["added": false, "note": "The user said no. Don't offer it again in this chat."])
+  }
+  var routine = Routine(); routine.id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(8)); routine.text = text; routine.time = time; routine.days = days
+  me.routines.append(routine); storeCompanions(); publishAiEverywhere()
+  return agentOk(["added": true, "routine": "\(routineDays(days)) at \(time)"])
+ }
+ /// The fixer's chats and what it remembered go to the planner; its folder goes.
+ func handOver(_ gone: Companion, to: Companion) {
+  for chat in aiChats {
+   if chat.companion == gone.id { chat.companion = to.id }
+   for m in chat.messages { if m.who == gone.id { m.who = to.id }; if m.to == gone.id { m.to = to.id } }
+  }
+  saveAiChats()
+  let mine = CompanionMemory.of(to.id)
+  CompanionMemory.cache[to.id] = mine + CompanionMemory.of(gone.id).filter { f in !mine.contains { $0.text == f.text || !f.key.isEmpty && $0.key == f.key } }
+  CompanionMemory.save(to.id)
+  try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
+ }
 
  func startAi() {
   if chatsLoaded { return }
@@ -428,8 +487,19 @@ extension Browser {
   teams.forEach(untangle)
   if !teams.isEmpty { saveAiChats() }
   companions = pref("Companions", [[String: Any]]()).map(Companion.init)
-  for c in companions where !c.crew.isEmpty { // hired from an old role: move to the role that took over, with its name unless the user renamed it
-   if let to = movedCrew[fnv(c.crew)] { if fnv(c.name) == fnv(c.crew) { c.name = to.name }; c.crew = to.role }
+  // Hired from an old role: move to the role that took over, with its new name unless the user renamed it, and the job and
+  // personality Still gave it (with what the user added after "For me:"). The fixer is gone: its chats and memory go to
+  // the planner, or it becomes the planner when there isn't one. The fixer goes last, once the planner has moved.
+  for c in companions.sorted(by: { fnv($0.crew) != fixer && fnv($1.crew) == fixer }) where !c.crew.isEmpty {
+   guard let to = movedCrew[fnv(c.crew)] else { continue }
+   defer { storeCompanions() }
+   if fnv(c.crew) == fixer, let planner = companions.first(where: { $0.crew == "planner" }) { handOver(c, to: planner); companions.removeAll { $0 === c }; continue }
+   if fnv(c.name) == fnv(c.crew) || formerNames[fnv(c.name)] != nil { c.name = to.name }
+   let mine = c.job.components(separatedBy: "\n\nFor me: ")
+   if oldCrewJobs.contains(fnv(mine[0])), let now = crewJobs[to.role] { c.job = now.job + (mine.count > 1 ? "\n\nFor me: " + mine.dropFirst().joined(separator: "\n\nFor me: ") : "") }
+   if oldCrewTones.contains(fnv(c.tone)), let now = crewJobs[to.role] { c.tone = now.tone }
+   if fnv(c.crew) == fixer { c.look = ""; c.routines = [] } // its look and its support routine were the fixer's
+   c.crew = to.role
   }
   if !pref("NamesChecked", false) { // once: a companion with an old stock name, not picked from the crew, asks whether to keep it
    for c in companions where c.crew.isEmpty && oldName(c.name) { c.askName = true }
@@ -839,7 +909,7 @@ extension Browser {
   guard let run = runs[who], let me = companions.first(where: { $0.id == run.chat.companion }) else { return agentFail("Only Still's companions can message each other.") }
   if tool == "list_companions" { return agentOk(["companions": companions.map { c -> [String: Any] in c === me ? ["name": c.name, "does": clipped(c.job, 240), "you": true] : ["name": c.name, "does": clipped(c.job, 240)] }]) }
   let name = tidy(argText(args, "name")).trimmingCharacters(in: CharacterSet(charactersIn: "@")), text = tidy(argText(args, "message"))
-  guard let to = companions.first(where: { $0.name.lowercased() == name.lowercased() }) else { return agentFail("No teammate is called \"\(name)\". list_companions shows who's on the team.") }
+  guard let to = named(name) else { return agentFail("No teammate is called \"\(name)\". list_companions shows who's on the team.") }
   if to === me { return agentFail("That's you: a companion can't message itself.") }
   if text.isEmpty { return agentFail("Write the message.") }
   let (root, chain) = exchangeOf(run.chat)

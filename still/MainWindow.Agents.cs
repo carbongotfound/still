@@ -734,6 +734,7 @@ public partial class MainWindow
  {
   switch (tool) {
    case "ask_user": return await AskInChat(who, args);
+   case "offer_routine": return await OfferRoutine(who, args);
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
    case "plugin_tools" or "use_plugin": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget": return Remembering(who, tool, args);
