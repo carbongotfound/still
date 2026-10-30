@@ -322,8 +322,8 @@ def laptops(process):
     bad = next((c for c in calls() if c["tool"] == "save_file" and "evil" in json.dumps(c["args"])), {})
     check(bad and not bad["ok"] and not list(PROFILE.rglob("*.exe")), "save_file refuses other file types and paths outside its folder")
     steps = js(process, "document.querySelector('.chat-pane .ai-steps-group')?.innerText ?? ''") or ""
-    check("more actions" in steps and js(process, "document.querySelectorAll('.chat-pane .ai-steps-state.is-done').length > 0")
-          and js(process, "document.querySelectorAll('.chat-pane .ai-steps-group .ai-steps-icons > *').length >= 2"), "Steps collapse into one row with stacked icons and a check when done")
+    check(re.search(r"\+ \d+ more", steps) and js(process, "document.querySelectorAll('.chat-pane .ai-steps-state.is-done').length > 0")
+          and js(process, "document.querySelectorAll('.chat-pane details.ai-steps-group > summary .ai-step-icon').length > 0"), "Steps collapse into one row with the latest step, a count and a check when done")
 
     # The chat's details list its files; the viewer opens beside the chat: a sortable grid with a sticky header.
     send(process, "chatPage", on=False)
