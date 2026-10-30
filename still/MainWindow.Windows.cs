@@ -16,6 +16,12 @@ public partial class MainWindow
  static readonly string sharedPrivateProfile = "Private" + Guid.NewGuid().ToString("N");
  internal readonly string WindowId = Guid.NewGuid().ToString("N");
  bool secondary, incognito;
+ // A window Still opens itself for a sign-in (Composio's key page, an app's sign-in). It's never saved, and it closes
+ // with the last normal window.
+ internal bool temporary;
+ // Normal windows closed while another stayed open, for a few seconds: closing them all, one by one or with the
+ // taskbar's Close all windows, brings every one back.
+ static readonly List<(DateTime At, BrowserTab[] Tabs)> closedWindows = [];
 
  // A separate window where every tab is private (not saved, isolated InPrivate session).
  internal static void OpenIncognito()
@@ -59,11 +65,33 @@ public partial class MainWindow
  object WindowsData() => Windows.Where(w => w != this && !w.closing).Select(w => new { id = w.WindowId, name = "Window " + w.WindowNumber, title = w.active?.Title ?? "" });
 
  // Every open window's tabs are saved together; closing a window drops its tabs, as in Chrome.
+ // The session: each normal window's tabs, numbered by window; never private tabs or a temporary window's. With only
+ // temporary windows left it stays as it was.
+ bool Unsaved => temporary || incognito; // nothing of these windows is ever saved: they never replace the session
  IEnumerable<BrowserTab> SavedTabs()
  {
-  var live = Windows.Where(w => !w.closing).ToList();
-  if (live.Count == 0) live = [this];
-  return live.SelectMany(w => w.tabs).Where(t => !t.Private);
+  var live = Windows.Where(w => !w.closing && !w.Unsaved).Select(w => w.tabs.ToArray()).ToList();
+  if (live.Count == 0) {
+   if (Unsaved) return state.Tabs;
+   // ponytail: "closed in the last 15 s" stands in for a quit signal; closing windows slower than that keeps only the last
+   live = [.. closedWindows.Where(c => DateTime.UtcNow - c.At < TimeSpan.FromSeconds(15)).Select(c => c.Tabs), tabs.ToArray()];
+  }
+  var saved = live.Select(w => w.Where(t => !t.Private).ToArray()).Where(w => w.Length > 0).ToList();
+  for (int i = 0; i < saved.Count; i++) foreach (var t in saved[i]) t.Window = i;
+  return saved.SelectMany(w => w);
+ }
+
+ bool Restorable(BrowserTab t) => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned);
+ IEnumerable<IGrouping<int, BrowserTab>> RestoredWindows() => state.Tabs.Where(Restorable).GroupBy(t => t.Window).OrderBy(g => g.Key);
+
+ // The other windows from last time, each with its own tabs (the first one's are the main window's).
+ void RestoreOtherWindows()
+ {
+  foreach (var saved in RestoredWindows().Skip(1)) {
+   var w = new MainWindow(saved.First(), null);
+   w.tabs.AddRange(saved.Skip(1));
+   w.Show();
+  }
  }
 
  async Task MoveTab(BrowserTab tab, MainWindow? target, Point? screenPoint)

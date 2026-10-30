@@ -67,6 +67,8 @@ def shot(process, name):
 
 user32 = ctypes.windll.user32
 user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4))  # physical pixels, like the windows themselves
+user32.ChildWindowFromPointEx.argtypes = [wt.HWND, wt.POINT, wt.UINT]
+user32.ChildWindowFromPointEx.restype = wt.HWND
 
 
 def main_window(pid):
@@ -84,15 +86,11 @@ def main_window(pid):
 
 
 def host_at(process, x, y):
-    """The child window of Still's main window under a point given in interface (CSS) pixels."""
+    """The child window of Still's main window under a point given in interface (CSS) pixels, by its window regions;
+    another app's window over Still (a full-screen lock, say) doesn't count."""
     top = main_window(process.pid)
-    origin = wt.POINT(0, 0)
-    user32.ClientToScreen(top, ctypes.byref(origin))
     scale = js(process, "devicePixelRatio")
-    hit = user32.WindowFromPoint(wt.POINT(int(origin.x + x * scale), int(origin.y + y * scale)))
-    while hit and user32.GetParent(hit) and user32.GetParent(hit) != top:
-        hit = user32.GetParent(hit)
-    return hit
+    return user32.ChildWindowFromPointEx(top, wt.POINT(int(x * scale), int(y * scale)), 1)  # CWP_SKIPINVISIBLE
 
 
 def rect(process, selector):

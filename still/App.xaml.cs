@@ -53,7 +53,7 @@ public partial class App : Application
   StartupMetrics.Mark("profile-ready");
   // Accept links before constructing the window. Dispatcher callbacks wait until it is ready.
   Action<string> open = url => Dispatcher.BeginInvoke(() => {
-   if ((Still.MainWindow.LastActive ?? MainWindow as Still.MainWindow) is { } target) target.OpenFromOutside(url);
+   if ((Still.MainWindow.Windows.Exists(w => w.IsVisible) ? Still.MainWindow.Home : MainWindow as Still.MainWindow) is { } target) target.OpenFromOutside(url); // a normal window, never a sign-in one
   });
   linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
   if (!e.Args.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);

@@ -168,6 +168,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  // Windows (Windows.swift)
  let windowId = newId()
  let secondary: Bool, incognito: Bool
+ let temporary: Bool // a sign-in window Still opened itself (Composio's key page, an app's sign-in): never saved, closes with the last normal window
  var closing = false
  lazy var privateStore = WKWebsiteDataStore.nonPersistent() // this window's private tabs share one throwaway session
  // Split view, the recent tabs switcher and page holes (Tabs.swift)
@@ -197,9 +198,10 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var dark: Bool { window.effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua }
 
  /// The main window, or with moved a window for a tab dragged out, or an incognito window where every tab is private.
- init(moving moved: Tab? = nil, at point: NSPoint? = nil, incognito: Bool = false) {
+ init(moving moved: Tab? = nil, at point: NSPoint? = nil, incognito: Bool = false, temporary: Bool = false) {
   secondary = moved != nil || incognito
   self.incognito = incognito
+  self.temporary = temporary
   super.init()
   browsers.append(self)
   window.titleVisibility = .hidden
@@ -251,22 +253,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  // MARK: State
 
- /// The main window's tabs from the saved state (the store itself loads once, in loadStore).
+ /// The main window's tabs from the saved state: the first saved window's (the store itself loads once, in loadStore).
  func load() {
-  if pref("RestoreTabs", true) {
-   for item in savedState["Tabs"] as? [[String: Any]] ?? [] {
-    let tab = Tab()
-    tab.id = item["Id"] as? String ?? tab.id
-    tab.title = item["Title"] as? String ?? "New tab"
-    tab.url = item["Url"] as? String ?? ""
-    tab.pinned = item["Pinned"] as? Bool ?? false
-    tab.group = item["Group"] as? String ?? ""
-    tab.chatId = item["ChatId"] as? String
-    tab.inChat = item["InChat"] as? String
-    tab.favicon = item["Favicon"] as? String ?? ""
-    tabs.append(tab)
-   }
-  }
+  tabs = savedWindows().first ?? []
   if !tabs.contains(where: { $0.inChat == nil }) { tabs.append(Tab()) }
   select(tabs.first { $0.id == savedState["ActiveId"] as? String && $0.inChat == nil } ?? tabs.first { $0.inChat == nil }!)
  }
@@ -1113,11 +1102,13 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func windowWillClose(_ notification: Notification) {
   closing = true
   saveAll()
+  if !temporary && !incognito { closedWindows.append((at: Date(), tabs: tabs)) }
   for tab in tabs { unload(tab) }
   recentTimer?.invalidate()
   shell.configuration.userContentController.removeScriptMessageHandler(forName: "still")
   browsers.removeAll { $0 === self }
   if lastActiveBrowser === self { lastActiveBrowser = nil }
+  if !temporary && browsers.allSatisfy(\.temporary) { for browser in browsers { browser.window.close() } } // a sign-in window doesn't outlive the browser (an incognito window keeps it open)
   publishEverywhere() // the other windows' window lists
  }
  func fullScreenChanged() {
@@ -1175,6 +1166,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   Profiles.holdRunningLock()
   loadStore()
   let browser = Browser()
+  restoreOtherWindows()
+  browser.window.makeKeyAndOrderFront(nil) // the main window, with last time's active tab, in front
   started = true
   if PluginKey.exists { Task { @MainActor in await browser.refreshPlugins() } }
   NSApp.mainMenu = menu()
@@ -1185,7 +1178,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
  }
 
  func application(_ application: NSApplication, open urls: [URL]) {
-  guard started, let browser = current else { pending += urls; return }
+  guard started, let browser = homeBrowser else { pending += urls; return } // a normal window, never a sign-in one
   for url in urls { browser.newTab(url.absoluteString, prompt: false) }
   browser.window.makeKeyAndOrderFront(nil)
  }

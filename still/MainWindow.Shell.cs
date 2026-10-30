@@ -242,7 +242,7 @@ public partial class MainWindow
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
      case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "aiAdvanced" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "chatNoMemory" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach":await HandleAi(op,data);break;
-     case "pluginKey" or "pluginLink" or "pluginKeyRemove" or "pluginRefresh" or "pluginSearch" or "pluginConnect" or "pluginDisconnect" or "pluginToggle":await HandlePlugins(op,data);break;
+     case "pluginKey" or "pluginLink" or "pluginKeyRemove" or "pluginRefresh" or "pluginLogos" or "pluginConnect" or "pluginDisconnect" or "pluginToggle":await HandlePlugins(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
     ShellPublish();

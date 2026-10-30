@@ -23,6 +23,8 @@ Still is a real browser with a team of AI companions built in. Hire the ones you
 
 ## Features
 
+The highlights are below. [FEATURES.md](FEATURES.md) lists everything Still does.
+
 ### Companions you hire
 
 Six companions come ready to hire. Each one owns a part of your work and has its own skills, memory, routines and way of talking.
@@ -39,56 +41,40 @@ Six companions come ready to hire. Each one owns a part of your work and has its
 
 <p align="center"><img src="docs/screenshots/library.png" alt="Hire a companion: each card shows the character, its role, what to expect, Hire or Hired, and View profile" width="900"></p>
 
-- **Hiring.** *Hire a companion* opens the library. Each card shows the character, its role and what to expect. **View profile** shows its full instructions before you hire. Hired companions show **Hired**.
-- **A first chat in its own words.** A new hire opens its first chat by itself: it greets you, says what it will do first, starts on real work with its tools, and asks at most one question.
-- **Profiles you can edit.** Click any companion to open its profile: look, instructions, skills and plugins, routines, files, memory and model. Everything saves as you type.
-- **Routines.** "Do this at 9:00 on weekdays." Each of the six comes with a starter routine that stays off until you turn it on.
-- **Companions work together.** A companion can ask a teammate for help and wait for the answer, or hand work over. You see who asked whom and the reply.
-- **Share a companion.** Share copies its look, name and instructions (never its memory or files), and anyone can paste it into their library.
+- **Hire in one click.** Each card shows the character, its role and what to expect. **View profile** shows its full instructions before you hire.
+- **They get to work.** A new hire opens its first chat by itself, says what it will do first and starts on real work.
+- **Yours to shape.** Edit a companion's look, instructions, skills, routines, files and model. Its memory stays on your computer, and you can see, edit and forget anything it keeps.
+- **They work together.** A companion can ask a teammate for help or hand work over, and you see who asked whom.
 
 ### The message box
 
 <p align="center"><img src="docs/screenshots/composer.png" alt="The message box with a tab attached with #, two files dropped in, and the @ list of companions open" width="900"></p>
 
-- **`#` attaches a tab.** Type `#` to list your open tabs, pick one, and the companion reads that page. Private tabs never appear and can't be attached.
-- **`@` pulls in a companion.** Type `@` to bring a teammate into the task. The companion you're talking to asks them and works with the answer.
-- **Drag and drop files.** Drop files on the message box, paste an image, or choose **+ > Add files**. Up to 10 files a message (10 MB each, images up to 5 MB). Text, code, PDFs and images all work, with every AI.
-- **`/` runs a skill.** Type `/` to pick one of your skills.
-- **Automatic chat titles.** A new chat names itself from its first message, using your AI's quickest model. Pick another model or turn it off in **Settings > Models**.
+- **`#` attaches a tab** and the companion reads that page. Private tabs never appear.
+- **`@` pulls in a teammate**, and **`/` runs one of your skills**.
+- **Drop in files.** Text, code, PDFs and images, up to 10 a message, with every AI.
 
-### Skills & plugins
+### Plugins
 
-<p align="center"><img src="docs/screenshots/skills.png" alt="Skills & plugins: one search, an All, Skills and Plugins filter, each skill with a chip per companion" width="900"></p>
+<p align="center"><img src="docs/screenshots/plugins.png" alt="The Plugins page: connected apps at the top, one search for apps and skills, category chips, then Recommended apps two across, each with its logo and Connect or a Connected check" width="900"></p>
 
-- **Skills** are Markdown files with a short header: a name, what it does, and when to use it. Give a skill to any companion with one click, or run it with `/`.
-- **Plugins** connect your apps (Gmail, Slack, Notion, GitHub and many more) through [Composio](https://composio.dev) with **your own** project API key. Plugins stay off until you paste a key. Still keeps it in Windows DPAPI or the macOS Keychain, never in a file an AI can read.
-- **Reads are free, writes ask first.** Anything that sends, posts, deletes, pays or changes data waits for your OK.
-- The **Plugins** button under the new tab's message box shows the apps you've connected and opens Skills & plugins.
-
-### Memory
-
-- Each companion has its own memory, kept on your computer as plain JSON and used only in that companion's chats.
-- See, add, edit and forget what each one remembers in **Settings > Companions > What they remember**.
-- Passwords, codes, keys, card and account numbers, form text the AI typed and anything from a private tab are never stored.
-- Set a chat to **no memory** and nothing from it is kept.
+- **Hundreds of apps.** Gmail, Slack, Notion, GitHub and the rest of [Composio](https://composio.dev)'s catalog, connected with **your own** Composio API key. Still keeps the key in Windows DPAPI or the macOS Keychain and only ever shows its last four characters.
+- **Light on tokens.** Companions don't carry every app's tools. They look up what's connected and load one app's actions only when a task needs it.
+- **Reads go ahead, writes ask first.** Anything that sends, posts, deletes, pays or changes data waits for your OK. If a companion needs an app you haven't connected, it asks you to connect it.
 
 ### You stay in charge
 
 <p align="center"><img src="docs/screenshots/permissions.png" alt="The Permissions button on a Wikipedia page: Allow, Ask or Block for camera, microphone, location and more" width="900"></p>
 
-- **Per-site permissions.** The Permissions button sets Allow, Ask or Block for each site: camera, microphone, location, notifications, clipboard, pop-ups, automatic downloads, sound, screen sharing, MIDI and USB.
-- **AI permissions.** Every action an AI takes is a read, a navigation, an interaction or a sensitive step. Set rules per site and per companion: always, once per chat, or every time.
-- **Sensitive steps wait.** Buying, sending, deleting, posting forms and payment fields always show an 8 second countdown you can cancel, even when allowed.
+- **Per-site permissions.** Allow, Ask or Block camera, microphone, location, notifications and more, site by site.
+- **AI permissions.** Set rules per site and per companion. Buying, sending, deleting and payment fields always wait on an 8 second countdown you can cancel.
 - **Watch, take over or stop.** A colored cursor shows where the companion clicks. **Take over** pauses it while you drive, and **Stop** ends the run.
-- **Asks when you're away.** If you've stepped away, the companion asks in its chat instead of waiting at the browser.
 
 ### A full browser
 
-- Tabs, groups, split view, multiple windows, private windows and profiles, with Classic (tabs on top) or Modern (tabs on the side) layouts.
-- Ads and trackers blocked, YouTube ads included.
-- One-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox, signed-in sessions included (Windows). Safari bookmarks and history on the Mac.
-- A password manager encrypted with Windows DPAPI or the macOS Keychain, filled only on the exact site it belongs to.
-- Chrome Web Store extensions (Windows), reader mode, picture-in-picture, a memory saver for idle tabs, and light and dark themes.
+- Tabs, groups, split view, private windows and profiles, with tabs on top or on the side.
+- Ads and trackers blocked, YouTube ads included, and one-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox.
+- A password manager encrypted with Windows DPAPI or the macOS Keychain. Companions never see saved passwords.
 
 ### Use Still from other AI apps
 
@@ -98,11 +84,7 @@ Turn on **Settings > Models > Let other AI apps use Still** and Claude Code, Cla
 claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" --mcp
 ```
 
-```json
-{ "mcpServers": { "still": { "command": "C:\\Users\\<you>\\AppData\\Local\\Programs\\Still\\Still.exe", "args": ["--mcp"] } } }
-```
-
-Settings has **Copy config** with your real path filled in. Agents without MCP can run one step at a time: `Still.exe --cli open_tab url=example.com`, `Still.exe --cli read_page`, `Still.exe --cli help`.
+Settings has **Copy config** with your real path filled in, and `Still.exe --cli help` lists the one-step commands for agents without MCP.
 
 <table>
 <tr>
@@ -154,7 +136,7 @@ The buttons are on each AI's tile in setup and in the chat's AI picker. If the a
 - **Agents never see private tabs, saved passwords or cookies.** Fields that hold saved logins read as hidden. When a companion reaches a sign-in page it pauses and asks you to sign in, then carries on.
 - **Private tabs never save passwords, history or form data.**
 - **Your data stays local** in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on the Mac.
-- **Plugins are opt-in.** They talk to Composio only after you paste your own key, and only for the apps you connect.
+- **Plugins are opt-in.** Still talks to Composio only after you paste your own key: to list its apps and their logos, and to work in the apps you connect.
 
 ## Build from source
 

@@ -19,7 +19,7 @@ final class Store {
  var hidden: [String: [String]] = [:] // elements hidden on a site, by host
 }
 let store = Store()
-/// state.json as read at launch: the main window restores its tabs from it.
+/// state.json as read at launch: the windows restore their tabs from it. saveAll keeps its Tabs and ActiveId current.
 var savedState: [String: Any] = [:]
 var blockingRules: WKContentRuleList?
 weak var lastActiveBrowser: Browser?
@@ -49,21 +49,66 @@ func loadStore() {
  }
 }
 
+/// The saved tabs by window, first window first: the main window takes the first, each other one opens its own window.
+/// An older state.json without "Window" is one window.
+func savedWindows() -> [[Tab]] {
+ guard store.prefs["RestoreTabs"] as? Bool ?? true else { return [] }
+ let rows = Dictionary(grouping: savedState["Tabs"] as? [[String: Any]] ?? []) { $0["Window"] as? Int ?? 0 }
+ return rows.keys.sorted().map { key in rows[key]!.map { item in
+  let tab = Tab()
+  tab.id = item["Id"] as? String ?? tab.id
+  tab.title = item["Title"] as? String ?? "New tab"
+  tab.url = item["Url"] as? String ?? ""
+  tab.pinned = item["Pinned"] as? Bool ?? false
+  tab.group = item["Group"] as? String ?? ""
+  tab.chatId = item["ChatId"] as? String
+  tab.inChat = item["InChat"] as? String
+  tab.favicon = item["Favicon"] as? String ?? ""
+  return tab
+ } }
+}
+
+/// The other windows from last time, each with its own tabs (the first one's are the main window's).
+func restoreOtherWindows() {
+ for saved in savedWindows().dropFirst() {
+  let first = saved.first { $0.inChat == nil } ?? Tab()
+  Browser(moving: first).tabs += saved.filter { $0 !== first }
+ }
+}
+
+/// Normal windows (not temporary or incognito) closed while another stayed open, for a few seconds: closing them all, one
+/// by one or with Option-click on the close button, brings every one back.
+var closedWindows: [(at: Date, tabs: [Tab])] = []
+
 /// Every open window's tabs are saved together; closing a window drops its tabs, as in Chrome.
+/// The session: each normal window's tabs, numbered by window; never private tabs, a temporary window's or an incognito
+/// one's. With only temporary or incognito windows left, or none as Still quits after its last window, it stays as it
+/// was. Cmd+Q closes no window first, so every one is saved then.
 func saveAll() {
- var live = browsers.filter { !$0.closing }
- if live.isEmpty { live = browsers } // the last window closing keeps its tabs for next time
- let all = live.flatMap(\.tabs)
- store.groups.removeAll { group in !all.contains { $0.group == group.id } }
- let main = live.first { !$0.secondary } ?? live.first
- let state: [String: Any] = [
-  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "ActiveId": main?.active?.id ?? "",
-  "Tabs": all.filter { !$0.isPrivate }.map { tab -> [String: Any] in
-   var row: [String: Any] = ["Id": tab.id, "Title": tab.title, "Url": tab.url, "Pinned": tab.pinned, "Group": tab.group, "Favicon": tab.favicon]
+ let normal = browsers.filter { !$0.temporary && !$0.incognito }
+ var live = normal.filter { !$0.closing }
+ var windows = live.map(\.tabs)
+ if live.isEmpty, let last = normal.first { // the last normal window is closing
+  // ponytail: "closed in the last 15 s" stands in for a quit signal; closing windows slower than that keeps only the last
+  windows = closedWindows.filter { $0.at.timeIntervalSinceNow > -15 }.map(\.tabs) + [last.tabs]
+  live = [last]
+ }
+ if !live.isEmpty {
+  let kept = windows.map { $0.filter { !$0.isPrivate } }.filter { !$0.isEmpty }
+  let rows: [[String: Any]] = kept.enumerated().flatMap { window, tabs in tabs.map { tab -> [String: Any] in
+   var row: [String: Any] = ["Id": tab.id, "Title": tab.title, "Url": tab.url, "Pinned": tab.pinned, "Group": tab.group, "Favicon": tab.favicon, "Window": window]
    if let chat = tab.chatId { row["ChatId"] = chat }
    if let chat = tab.inChat { row["InChat"] = chat }
    return row
-  },
+  } }
+  savedState["Tabs"] = rows
+  savedState["ActiveId"] = (live.first { !$0.secondary } ?? live.first)?.active?.id ?? ""
+ }
+ let rows = savedState["Tabs"] as? [[String: Any]] ?? [], open = browsers.filter { !$0.closing }.flatMap(\.tabs)
+ store.groups.removeAll { group in !open.contains { $0.group == group.id } && !rows.contains { $0["Group"] as? String == group.id } }
+ let state: [String: Any] = [
+  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "ActiveId": savedState["ActiveId"] ?? "",
+  "Tabs": rows,
   "Groups": store.groups.map { ["Id": $0.id, "Name": $0.name, "Color": $0.color, "Collapsed": $0.collapsed] },
   "AddressPicks": store.picks, "Hidden": store.hidden
  ]

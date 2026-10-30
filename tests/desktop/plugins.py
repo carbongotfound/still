@@ -1,28 +1,35 @@
 """Plugins through Composio, against a local stand-in for Composio's API (STILL_QA_COMPOSIO points test builds at it).
 A fake AI app plays a companion that uses them.
 
-  NOPLUG       looks for Gmail's tools and runs one, with no key
-  READMAIL     finds Gmail's tools, then reads mail (a read: no card)
+  NOPLUG       loads Gmail's actions and runs one, with no key
+  READMAIL     lists what's connected, loads Gmail's actions, then reads mail (a read: no card)
+  FINDAPPS     looks apps up by name and category, asks for an app that doesn't exist and runs another app's action
   SENDMAIL     sends an email (a write: a card, Deny or Allow once)
   SLACK        posts in Slack, which isn't connected (a card that connects it, then the write's card)
   PEEK         writes down its environment and Still's tool list, looking for the key
   WEB <site>   opens a page (the browser still works when Composio doesn't)
 
 The stand-in answers like Composio's v3.1 API: x-api-key takes a project key (ak_) and nothing else, so the Connect key
-(ck_) that Composio's For You page hands out gets a 401, as it does there; lists come paged ({items, next_cursor, ...});
-errors are { error: { message, code, slug, status, ... } }; connected accounts don't echo user_id back.
+(ck_) that Composio's For You page hands out gets a 401, as it does there; lists come paged ({items, next_cursor, ...}),
+the catalog over two pages; errors are { error: { message, code, slug, status, ... } }; connected accounts don't echo
+user_id back; logos come from their own addresses, one with no image type and one missing.
 
-Checks: plugins live in Skills & plugins (Settings only links there, a companion's profile has no Plugins tab); with no
-key the plugin list still loads, every app marked Needs a key, under a step that says where the key comes from (Platform
-→ Settings → Project Settings → API Keys, ak_) and where to paste it; a Connect key (ck_) is named as the wrong kind and
-never sent or kept; off with no key and nothing else breaks; a bad key isn't kept; a good one is kept encrypted (DPAPI on
+Checks: the Plugins page (Skills & plugins on the home's rail) is titled Plugins with what's connected at the top, one
+search for apps and skills, category chips with the rest under More, Recommended first and then a section per category
+with View all, apps two across with their logo, name and Connect (or a Connected check), no description. With no key
+the apps still show and Connect goes to the key field, which says where the key comes from (Platform → Settings →
+Project Settings → API Keys, ak_); a Connect key (ck_) is named as the wrong kind and never sent or kept; off with no
+key and nothing else breaks, not even a logo is fetched; a bad key isn't kept; a good one is kept encrypted (DPAPI on
 Windows, the Keychain on the Mac) and never reaches a file in the clear, the interface, an agent, its tools or its
-environment; with a key the list loads from Composio, and an error says why instead of an empty list; the Composio
-connect flow: Connect opens Composio's sign-in in a Still window, which closes when it's done, and a connect Composio
-refuses shows on that app; reads go ahead, writes ask (Deny or Allow once, nothing else); per-companion switches, on the
-page and in the profile; a missing app offers a button that connects it; Composio down; Disconnect; Remove key. Then
-setup's Connect your tools step with a key: the belt turns into a grid, a tap connects Gmail, and Jonah, who works in it,
-bounces and says so.
+environment. Composio's whole catalog loads page by page and is cached, logos too, fetched without the key; an error
+says why and the saved list stays. The Composio connect flow: Connect opens Composio's sign-in in a Still window, which
+closes when it's done, and a connect Composio refuses shows on that app. Companions get four small lookups and no app's
+actions until they ask for one app: list_connected_plugins (names only), find_plugins, get_plugin_tools,
+run_plugin_action; reads go ahead, writes ask (Deny or Allow once, nothing else); per-companion switches under the
+Connected check and in the profile; a missing app gets a card that connects it; Composio down; Disconnect. Settings
+shows the key only as set with its last four characters: Change checks a new key before it replaces the old one, and
+Delete turns plugins off. Then setup's Connect your tools step with a key: the belt turns into a grid, a tap connects
+Gmail, and Jonah, who works in it, bounces and says so.
 
 Run: python tests/desktop/plugins.py artifacts/Still-QA/Still.exe
 """
@@ -47,9 +54,10 @@ PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 RESULT = {"checks": []}
 KEY = "ak_test_" + uuid.uuid4().hex  # a project key nobody else knows: it's looked for everywhere it mustn't be
+KEY2 = "ak_next_" + uuid.uuid4().hex  # the key it's changed to in Settings
 WRONG = "ak_wrong_" + uuid.uuid4().hex[:12]  # a key Composio refuses
 CONSUMER = "ck_" + uuid.uuid4().hex[:22]  # what Composio's For You → Sessions & API Key page shows: for its MCP endpoint, not the API
-MOCK = {"down": False, "broken": False, "refuse_config": False, "accounts": {}, "configs": {}, "executed": [], "deleted": [], "seen": [], "pages": []}
+MOCK = {"down": False, "broken": False, "refuse_config": False, "accounts": {}, "configs": {}, "executed": [], "deleted": [], "seen": [], "pages": [], "catalog": []}
 
 
 def check(ok, name):
@@ -57,11 +65,18 @@ def check(ok, name):
     print(("PASS " if ok else "FAIL ") + name, flush=True)
 
 
-KIT = lambda slug, name, about, managed=("OAUTH2",): {"slug": slug, "name": name, "type": "native", "auth_schemes": ["OAUTH2"], "composio_managed_auth_schemes": list(managed),
-    "is_local_toolkit": False, "no_auth": False, "auth_guide_url": None, "deprecated": {"toolkitId": "tk_" + slug},
-    "meta": {"description": about, "logo": f"https://logos.composio.dev/api/{slug}", "categories": [], "tools_count": 20, "triggers_count": 2, "version": "20260101_00", "app_url": None, "created_at": "2025-01-01", "updated_at": "2026-01-01"}}
-TOOLKITS = [KIT("gmail", "Gmail", "Read, send and organize your email."), KIT("googlecalendar", "Google Calendar", "Events, invites and free time."),
-            KIT("slack", "Slack", "Channels and messages."), KIT("selfhosted", "Self Hosted Thing", "Needs your own developer app.", ())]
+CATS = lambda *names: [{"id": n.lower().replace(" ", "-"), "name": n} for n in names]
+KIT = lambda slug, name, cats, managed=("OAUTH2",), no_auth=False: {"slug": slug, "name": name, "type": "native", "auth_schemes": ["OAUTH2"], "composio_managed_auth_schemes": list(managed),
+    "is_local_toolkit": False, "no_auth": no_auth, "auth_guide_url": None, "deprecated": {"toolkitId": "tk_" + slug},
+    "meta": {"description": "What " + name + " does.", "logo": "", "categories": CATS(*cats), "tools_count": 20, "triggers_count": 2, "version": "20260101_00", "app_url": None, "created_at": "2025-01-01", "updated_at": "2026-01-01"}}
+TOOLKITS = [KIT("gmail", "Gmail", ["Communication"]), KIT("googlecalendar", "Google Calendar", ["Productivity"]), KIT("slack", "Slack", ["Communication"]),
+            KIT("selfhosted", "Self Hosted Thing", ["Developer tools"], ()), KIT("notion", "Notion", ["Productivity"]), KIT("github", "GitHub", ["Developer tools"]),
+            KIT("linear", "Linear", ["Productivity", "Developer tools"]), KIT("figma", "Figma", ["Design"]), KIT("stripe", "Stripe", ["Finance"]), KIT("hubspot", "HubSpot", ["CRM"]),
+            KIT("asana", "Asana", ["Productivity"]), KIT("trello", "Trello", ["Productivity"]), KIT("canva", "Canva", ["Design"]), KIT("quickbooks", "QuickBooks", ["Finance", "Accounting"]),
+            KIT("mailchimp", "Mailchimp", ["Marketing"]), KIT("zendesk", "Zendesk", ["Support"]), KIT("clickup", "ClickUp", ["Productivity"]), KIT("weather", "Weather", [], no_auth=True),
+            KIT("discord", "Discord", ["Communication"]), KIT("airtable", "Airtable", ["Productivity"]), KIT("xero", "Xero", ["Accounting"]), KIT("intercom", "Intercom", ["Support"])]
+FIRST_PAGE = 12
+LOGO = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 10 10"><rect width="10" height="10" rx="2" fill="#d33"/></svg>'
 PAGE = lambda items: {"items": items, "next_cursor": None, "total_pages": 1, "current_page": 1, "total_items": len(items)}  # how v3.1 lists come
 ERR = lambda status, message, slug: {"error": {"message": message, "code": status * 10, "slug": slug, "status": status, "request_id": str(uuid.uuid4()), "suggested_fix": ""}}
 SEEN = lambda account: {k: v for k, v in account.items() if not k.startswith("_")}  # user_id is kept, not sent back (deprecated in v3.1)
@@ -86,8 +101,10 @@ class Composio(http.server.BaseHTTPRequestHandler):
         q = {k: v[0] for k, v in urllib.parse.parse_qs(url.query).items()}
         body = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
         parts = url.path.strip("/").split("/")
-        if parts[0] in ("oauth", "page"):  # pages a browser opens: Composio's sign-in, and a plain page
+        if parts[0] in ("oauth", "page", "logos"):  # what a browser opens: Composio's sign-in, a plain page, and logos
             MOCK["pages"].append({"path": url.path, "key": self.headers.get("x-api-key")})
+            if parts[0] == "logos":  # Stripe's is missing, and GitHub's doesn't say it's an image
+                return self.send(404, "Not found", "text/plain") if parts[1] == "stripe" else self.send(200, LOGO, "application/octet-stream" if parts[1] == "github" else "image/svg+xml")
             if parts[0] == "page":
                 return self.send(200, "<!doctype html><title>A page</title><p>Still works.", "text/html")
             account = MOCK["accounts"].get(parts[1])
@@ -100,7 +117,7 @@ class Composio(http.server.BaseHTTPRequestHandler):
         MOCK["seen"].append({"method": method, "path": url.path, "key": key})
         if not key:
             return self.send(401, ERR(401, "No authentication provided", "Auth_NoAuthProvided"))
-        if key != KEY:  # Composio's API only takes a project key here: a Connect (ck_) or personal (uak_) key is refused too
+        if key not in (KEY, KEY2):  # Composio's API only takes a project key here: a Connect (ck_) or personal (uak_) key is refused too
             return self.send(401, ERR(401, "Invalid API key", "Auth_InvalidApiKey"))
         if MOCK["down"]:
             return self.send(503, ERR(503, "Service unavailable", "Internal_ServiceUnavailable"))
@@ -108,8 +125,10 @@ class Composio(http.server.BaseHTTPRequestHandler):
         if path == ["toolkits"]:
             if MOCK["broken"]:
                 return self.send(400, ERR(400, "Invalid value for sort_by", "Request_InvalidQuery"))
-            s = q.get("search", "").lower()
-            return self.send(200, PAGE([t for t in TOOLKITS if s in (t["name"] + " " + t["slug"] + " " + t["meta"]["description"]).lower()]))
+            MOCK["catalog"].append(q.get("cursor", ""))
+            kits = [{**t, "meta": {**t["meta"], "logo": f"{SITE}/logos/{t['slug']}"}} for t in TOOLKITS]
+            later = q.get("cursor") == "page2"
+            return self.send(200, {"items": kits[FIRST_PAGE:] if later else kits[:FIRST_PAGE], "next_cursor": None if later else "page2", "total_pages": 2, "current_page": 2 if later else 1, "total_items": len(kits)})
         if path == ["auth_configs"] and method == "GET":
             return self.send(200, PAGE([c for c in MOCK["configs"].values() if c["toolkit"]["slug"] in q.get("toolkit_slug", "").split(",")]))
         if path == ["auth_configs"] and method == "POST":
@@ -189,15 +208,21 @@ FAKE = textwrap.dedent(r'''
         return ok
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
     if "NOPLUG" in tag:
-        call("plugin_tools", plugin="gmail")
-        call("use_plugin", tool="GMAIL_FETCH_EMAILS", arguments={})
+        call("get_plugin_tools", plugin="gmail")
+        call("run_plugin_action", plugin="gmail", action="GMAIL_FETCH_EMAILS", args={})
     elif "READMAIL" in tag:
-        call("plugin_tools", plugin="gmail", query="emails")
-        call("use_plugin", tool="GMAIL_FETCH_EMAILS", arguments={"query": "is:unread"})
+        call("list_connected_plugins")
+        call("get_plugin_tools", plugin="Gmail", query="emails")
+        call("run_plugin_action", plugin="Gmail", action="GMAIL_FETCH_EMAILS", args={"query": "is:unread"})
+    elif "FINDAPPS" in tag:
+        call("find_plugins", query="cal")
+        call("find_plugins", category="finance")
+        call("get_plugin_tools", plugin="Nothing Real")
+        call("run_plugin_action", plugin="Slack", action="GMAIL_SEND_EMAIL", args={"to": "x@example.com"})
     elif "SENDMAIL" in tag:
-        call("use_plugin", tool="GMAIL_SEND_EMAIL", arguments={"to": "sam@example.com", "subject": "Lunch on Friday", "body": "Still on for nora?"})
+        call("run_plugin_action", plugin="gmail", action="GMAIL_SEND_EMAIL", args={"to": "sam@example.com", "subject": "Lunch on Friday", "body": "Still on for nora?"})
     elif "SLACK" in tag:
-        call("use_plugin", tool="SLACK_SEND_MESSAGE", arguments={"channel": "#general", "text": "Shipping today"})
+        call("run_plugin_action", plugin="Slack", action="SLACK_SEND_MESSAGE", args={"channel": "#general", "text": "Shipping today"})
     elif "PEEK" in tag:
         log({"chat": tag, "tool": "env", "ok": True, "text": json.dumps(dict(os.environ)) + "\n" + prompt + "\n" + " ".join(args), "t": time.time()})
         log({"chat": tag, "tool": "tools/list", "ok": True, "text": json.dumps(request("tools/list", {})["result"]), "t": time.time()})
@@ -245,7 +270,7 @@ def type_into(process, selector, value):
 
 
 def page_text(process):
-    return js(process, "document.querySelector('.plug-settings')?.innerText ?? ''") or ""
+    return js(process, "document.querySelector('.plug-page')?.innerText ?? ''") or ""
 
 
 def turned_off(companion):
@@ -262,15 +287,27 @@ def open_plugins(process):
     send(process, "new")
     until(lambda: count() > before and js(process, "!!document.querySelector('.home-rail')"), 20)
     time.sleep(.3)
-    return until(lambda: js(process, """document.querySelector(".home-page[aria-label='Skills & plugins'] .plug-settings") ? true
+    return until(lambda: js(process, """document.querySelector(".home-page.plug-page[aria-label='Skills & plugins']") ? true
      : (document.querySelector(".home-rail-item[aria-label='Skills & plugins']")?.click(), false)"""), 15)
 
 
-SEARCH = ".home-page input[aria-label='Search skills and plugins']"
+SEARCH = ".plug-page input[aria-label='Search apps and skills']"
 
 
-def apps(process, which="is-found"):
-    return js(process, f"[...document.querySelectorAll('.plug-list.{which} li')].map(l => l.querySelector('.plug-chip').lastChild.textContent + ': ' + (l.querySelector('.plug-on')?.innerText.trim() ?? ''))") or []
+def tiles(process, group=""):
+    """Each app on the page (or in one section) as "Name: what its button says"."""
+    scope = f".plug-group[aria-label='{group}']" if group else ".plug-page"
+    return js(process, f"[...document.querySelectorAll(\"{scope} .plug-tile\")].map(t => t.querySelector('.plug-name').innerText + ': ' + t.querySelector('button')?.innerText.trim())") or []
+
+
+def head(process):
+    return js(process, "document.querySelector('.plug-count')?.lastChild?.textContent.trim()") or ""  # past the logos
+
+
+def manage(process, slug):
+    """A connected app's check: it opens who can use it, and Disconnect."""
+    js(process, f"document.querySelector(\".plug-tile[data-slug={slug}] .plug-done\")?.click()")
+    return until(lambda: js(process, "!!document.querySelector('.plug-manage')"), 5)
 
 
 def close_panel(process):
@@ -278,7 +315,7 @@ def close_panel(process):
     until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 
 
-def paste_key(process, key, scope=".plug-settings"):
+def paste_key(process, key, scope=".plug-page"):
     type_into(process, scope + " input[aria-label='Composio API key']", key)
     time.sleep(.2)
     js(process, f"document.querySelector('{scope} .plug-key button[type=submit]')?.click()")
@@ -299,7 +336,7 @@ def nowhere(profile=None):
             raw = f.read_bytes() if f.is_file() else b""
         except OSError:
             continue
-        if KEY.encode() in raw or KEY.encode("utf-16-le") in raw:
+        if any(k.encode() in raw or k.encode("utf-16-le") in raw for k in (KEY, KEY2)):
             hits.append(str(f.relative_to(profile or PROFILE)))
     return hits
 
@@ -339,6 +376,7 @@ def main():
         keys(process)
         connect(process)
         reads_and_writes(process)
+        finds(process)
         missing(process)
         stack(process)
         secret(process)
@@ -363,7 +401,7 @@ def home_stack(process, capture=""):
 
 
 def stack(process):
-    """Five apps connected: three tiles and +2; the button opens Skills & plugins on its plugins."""
+    """Five apps connected: three logos and +2; the button opens the Plugins page."""
     user = next(iter(MOCK["accounts"].values()))["_user"]
     extra = {f"ca_x{i}": {"id": f"ca_x{i}", "status": "ACTIVE", "status_reason": None, "is_disabled": False, "toolkit": {"slug": slug}, "_user": user,
                           "auth_config": {"id": "ac_" + slug, "auth_scheme": "OAUTH2", "is_composio_managed": True, "is_disabled": False}, "word_id": None, "alias": None}
@@ -371,53 +409,56 @@ def stack(process):
     MOCK["accounts"].update(extra)
     send(process, "pluginRefresh")
     home_stack(process)
-    until(lambda: js(process, "document.querySelectorAll('.home-chips .plug-stack i').length") == 4, 10)
-    label, tiles, last = home_stack(process, "plugins-stack.png")
-    check(len(tiles) == 4 and tiles[-1] == "+2" and tiles[0] == "G" and last, f"Five apps connected: three tiles, then +2, at the right end of the home row ({tiles})")
+    until(lambda: js(process, "document.querySelectorAll('.home-chips .plug-stack i').length") == 4 and js(process, "!!document.querySelector('.home-chips .plug-stack i.is-image img')"), 10)
+    label, tiles_, last = home_stack(process, "plugins-stack.png")
+    check(len(tiles_) == 4 and tiles_[-1] == "+2" and js(process, "document.querySelectorAll('.home-chips .plug-stack i.is-image img').length") == 3 and last,
+          f"Five apps connected: three logos, then +2, at the right end of the home row ({tiles_})")
     check(label.startswith("Plugins: Gmail, Slack") and label.endswith(" connected"), f"and it names them for screen readers ({label!r})")
     js(process, "document.querySelector('.home-chips .home-plugins').click()")
-    check(until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins'] .plug-settings\") && !document.querySelector('.skills-part[aria-label=Skills]') && [...document.querySelectorAll('.home-page .history-chip')].find(b => b.innerText.trim() === 'Plugins')?.getAttribute('aria-pressed') === 'true'"), 10),
-          "It opens Skills & plugins showing plugins")
+    check(until(lambda: js(process, "!!document.querySelector('.home-page.plug-page')") and head(process) == "5 connected", 10), "It opens the Plugins page, which says 5 connected")
+    js(process, "document.querySelector('.plug-count').click()")
+    check(until(lambda: [t.split(":")[0] for t in tiles(process, "Connected")] == ["Gmail", "Slack", "Notion", "GitHub", "Linear"], 5), "and the count shows what's connected")
     for cid in extra:
         MOCK["accounts"].pop(cid)
     send(process, "pluginRefresh")
-    until(lambda: js(process, "document.querySelectorAll('.plug-section .plug-list:not(.is-found) li').length") == 2, 10)
+    until(lambda: head(process) == "2 connected", 10)
 
 
 def no_key(process):
-    label, tiles, last = home_stack(process, "plugins-stack-empty.png")
-    check(label == "Plugins: none connected yet" and tiles == ["icon"] and last, f"With nothing connected, the home row ends with Plugins and a plain plug ({label!r}, {tiles})")
+    label, tiles_, last = home_stack(process, "plugins-stack-empty.png")
+    check(label == "Plugins: none connected yet" and tiles_ == ["icon"] and last, f"With nothing connected, the home row ends with Plugins and a plain plug ({label!r}, {tiles_})")
     check(open_plugins(process), "Plugins live in Skills & plugins, on the home's rail")
     words = page_text(process)
-    check(js(process, "document.querySelector(\".plug-settings input[aria-label='Composio API key']\")?.type") == "password", "With no key, it asks for your Composio API key, right there")
+    check(js(process, "document.querySelector('.plug-page h1')?.innerText") == "Plugins" and head(process) == "None connected", f"The page is titled Plugins, with what's connected at the top ({head(process)!r})")
+    check(js(process, "document.querySelector(\".plug-page input[aria-label='Composio API key']\")?.type") == "password", "With no key, it asks for your Composio API key, right there")
     check(all(w in words for w in ("Get a key", "Platform", "Settings → Project Settings → API Keys", "ak_")), "The connect step says where the key comes from: Composio's Platform, Settings → Project Settings → API Keys, the one that starts with ak_")
     check("third-party service" in words and "pricing" not in words.lower(), "It says Composio is a third party, with no pricing in Still's words")
-    listed = apps(process, "is-preview")
-    check(len(listed) == 24 and all(a.endswith(": Needs a key") for a in listed), f"Plugin list loads with no key: every app, marked Needs a key, not an empty list ({len(listed)})")
+    listed = tiles(process)
+    check(len(listed) == 24 and all(t.endswith(": Connect") for t in listed), f"With no key the apps still show, each with Connect ({len(listed)})")
+    check(not js(process, "!!document.querySelector('.plug-tile small, .plug-tile p')"), "Tiles have no description under the name")
+    js(process, "document.querySelector('.plug-tile[data-slug=gmail] .plug-go')?.click()")
+    check(until(lambda: js(process, "document.activeElement?.getAttribute('aria-label')") == "Composio API key", 3), "Connect with no key takes you to the key field")
     type_into(process, SEARCH, "sla")
-    check(until(lambda: apps(process, "is-preview") == ["Slack: Needs a key"], 5), "One search finds apps too")
+    check(until(lambda: tiles(process) == ["Slack: Connect"], 5), "One search finds apps too")
     type_into(process, SEARCH, "")
-    js(process, "[...document.querySelectorAll('.home-page .history-chip')].find(b => b.innerText.trim() === 'Skills')?.click()")
-    check(until(lambda: not js(process, "!!document.querySelector('.plug-settings')") and js(process, "!!document.querySelector('.skills-part[aria-label=Skills]')"), 5), "The Skills filter shows only skills")
-    js(process, "[...document.querySelectorAll('.home-page .history-chip')].find(b => b.innerText.trim() === 'Plugins')?.click()")
-    check(until(lambda: js(process, "!!document.querySelector('.plug-settings') && !document.querySelector('.skills-part[aria-label=Skills]')"), 5), "and Plugins only plugins")
     send(process, "openPanel", name="settings", value="plugins")
     until(lambda: js(process, "!!document.querySelector('.set-shell')"), 10)
-    card = until(lambda: js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.innerText"), 5)
-    check(card and not js(process, "!!document.querySelector('.set-main .plug-settings')"), "Settings → Skills & plugins is only a card that opens Skills & plugins")
+    check(until(lambda: "Not set" in (js(process, "document.querySelector('.set-main #set-composio')?.innerText") or ""), 5)
+          and js(process, "!!document.querySelector(\".set-main #set-composio input[aria-label='Composio API key']\")"), "Settings → Skills & plugins has the Composio key: not set, with a field to add it")
     js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.click()")
-    check(until(lambda: not js(process, "!!document.querySelector('.set-shell')") and js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins'] .plug-settings\")"), 10), "and it does")
+    check(until(lambda: not js(process, "!!document.querySelector('.set-shell')") and js(process, "!!document.querySelector('.home-page.plug-page')"), 10), "and a button that opens the Plugins page")
     ask(process, "NOPLUG")
     idle(process)
     done = until(lambda: len(calls("NOPLUG")) == 2 and calls("NOPLUG"), 20) or calls("NOPLUG")  # the run's first chat can start late
     check(len(done) == 2 and not any(c["ok"] for c in done) and all("Skills & plugins" in c["text"] for c in done), "Without a key, plugin tools say plugins are off and where to turn them on")
-    check(not MOCK["seen"], "Without a key, Still never calls Composio")
+    check(not MOCK["seen"] and not MOCK["pages"], "Without a key, Still never calls Composio, not even for a logo")
     ask(process, "WEB " + SITE)
     idle(process)
     check([c["ok"] for c in calls("WEB " + SITE)] == [True], "Everything else works as usual")
 
 
 def keys(process):
+    send(process, "skillSave", name="Weekly report", description="Turns this week's numbers into a one-page summary", when="Reporting", body="1. Collect the numbers.")
     open_plugins(process)
     paste_key(process, CONSUMER)
     check(until(lambda: "Connect key (ck_…)" in page_text(process) and "starts with ak_" in page_text(process), 10), "A Connect key (ck_), what Composio's For You page shows, is named as the wrong kind, with the right one")
@@ -426,36 +467,63 @@ def keys(process):
     check(until(lambda: "didn't accept that key" in page_text(process), 10), "A key Composio refuses says so")
     check(not key_file().exists(), "and isn't kept")
     paste_key(process, KEY)
-    check(until(lambda: "Add an app" in page_text(process), 10), "A good key turns plugins on")
+    check(until(lambda: len(tiles(process, "Recommended")) == 8 and not js(process, "!!document.querySelector(\".plug-page input[aria-label='Composio API key']\")"), 10), "A good key turns plugins on")
     check(key_file().exists(), "It's kept encrypted, " + ("in the Keychain (a test file here)" if MAC else "with DPAPI, like saved passwords"))
-    check(not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY)}) || JSON.stringify(window.__stillState ?? {{}}).includes({json.dumps(KEY)})")
-          and js(process, "document.querySelector(\".plug-settings input[aria-label='Composio API key']\")") is None, "The field empties, and the interface never gets the key back")
-    found = until(lambda: apps(process), 10) or []
-    check(found == ["Gmail: Needs sign-in", "Google Calendar: Needs sign-in", "Slack: Needs sign-in"], f"Plugin list loads with a key: what Composio signs in to itself, from its paged list, each Needs sign-in ({found})")
+    check(not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY[-8:])}) || JSON.stringify(window.__stillState ?? {{}}).includes({json.dumps(KEY[-8:])})")
+          and KEY[-4:] in page_text(process), "The field empties, and the interface only ever gets the key's last four characters")
+    catalog = PROFILE / "plugin-catalog.json"
+    saved = until(lambda: catalog.exists() and catalog.read_text(encoding="utf-8"), 10) or "{}"
+    check(len(json.loads(saved).get("apps", [])) == len(TOOLKITS) and MOCK["catalog"][-2:] == ["", "page2"] and KEY not in saved,
+          f"Composio's whole catalog loads page by page and is kept on this computer, without the key ({MOCK['catalog']})")
+    rec = tiles(process, "Recommended")
+    check([t.split(":")[0] for t in rec] == ["Gmail", "Google Calendar", "Slack", "Notion", "GitHub", "Linear", "Figma", "Stripe"] and all(t.endswith(": Connect") for t in rec),
+          f"Recommended comes first: the most used apps Composio signs in to itself, each with Connect ({rec})")
+    layout = js(process, """(() => { const t = [...document.querySelectorAll(".plug-group[aria-label='Recommended'] .plug-tile")].map(e => e.getBoundingClientRect())
+     return [getComputedStyle(document.querySelector('.plug-tiles')).gridTemplateColumns.split(' ').length, Math.abs(t[0].top - t[1].top) < 2, t[2].top > t[0].top + 10] })()""")
+    check(layout == [2, True, True], f"Apps sit two across ({layout})")
+    chips = js(process, "[...document.querySelectorAll('.plug-page .history-chips .history-chip')].map(b => b.innerText.trim())") or []
+    check(chips == ["All", "Productivity", "Communication", "Design", "Developer tools", "Finance", "Marketing", "More"], f"Category chips: All, the main categories, the rest under More ({chips})")
+    groups = js(process, "[...document.querySelectorAll('.plug-page .plug-group')].map(g => g.getAttribute('aria-label') + ':' + g.querySelectorAll('.plug-tile').length)") or []
+    check(groups[:3] == ["Recommended:8", "Skills:0", "Productivity:4"] and groups[-1] == "Other:1" and len(groups) == 12, f"Then the skills, and a section per category with up to four apps ({groups})")
+    check(until(lambda: js(process, "(i => !!i && i.src.startsWith('data:image/svg+xml') && i.naturalWidth > 0)(document.querySelector('.plug-tile[data-slug=gmail] .plug-logo img'))"), 10), "Each app shows its logo from Composio's catalog")
+    check(until(lambda: js(process, "!!document.querySelector('.plug-tile[data-slug=github] .plug-logo img')"), 5), "even when its server doesn't say it's an image")
+    check(js(process, "document.querySelector('.plug-tile[data-slug=stripe] .plug-logo')?.innerText") == "S", "A logo that doesn't load keeps the app's initial")
+    fetched = [p for p in MOCK["pages"] if p["path"].startswith("/logos/")]
+    check(fetched and not any(p["key"] for p in fetched) and (PROFILE / "Cache" / "PluginLogos" / "gmail").exists(), "Logos come without the key and stay on this computer")
+    js(process, "document.querySelector(\".plug-group[aria-label='Productivity'] .plug-all\")?.click()")
+    check(until(lambda: len(tiles(process, "Productivity")) == 7 and js(process, "[...document.querySelectorAll('.history-chip')].find(b => b.innerText.trim() === 'Productivity')?.getAttribute('aria-pressed')") == "true", 5),
+          "View all shows the whole category, with its chip on")
+    js(process, "[...document.querySelectorAll('.history-chip')].find(b => b.innerText.trim() === 'More')?.click()")
+    js(process, "[...document.querySelectorAll('.history-chip')].find(b => b.innerText.trim() === 'Accounting')?.click()")
+    check(until(lambda: tiles(process, "Accounting") == ["QuickBooks: Connect", "Xero: Connect"], 5), "More has the rest of the categories")
+    js(process, "[...document.querySelectorAll('.history-chip')].find(b => b.innerText.trim() === 'All')?.click()")
     type_into(process, SEARCH, "cal")
-    check(until(lambda: apps(process) == ["Google Calendar: Needs sign-in"], 5), "Search finds an app")
-    MOCK["broken"] = True
-    type_into(process, SEARCH, "slack")
-    check(until(lambda: "Invalid value for sort_by" in page_text(process), 5) and "Loading apps" not in page_text(process), "When Composio can't list apps, it says why instead of an empty list")
-    MOCK["broken"] = False
+    check(until(lambda: tiles(process, "Apps") == ["Google Calendar: Connect"], 5), "Search finds an app")
+    type_into(process, SEARCH, "weekly")
+    check(until(lambda: "Weekly report" in (js(process, "document.querySelector(\".plug-group[aria-label='Skills']\")?.innerText") or "") and "No apps match" in page_text(process), 5), "and skills")
     type_into(process, SEARCH, "")
-    until(lambda: js(process, "document.querySelectorAll('.plug-list.is-found li').length") == 3 and "Invalid value" not in page_text(process), 5)
+    MOCK["broken"] = True
+    send(process, "pluginRefresh", force=True)
+    check(until(lambda: "Invalid value for sort_by" in page_text(process), 5) and len(tiles(process, "Recommended")) == 8, "When Composio can't list its apps, it says why, and the saved list stays")
+    MOCK["broken"] = False
+    send(process, "pluginRefresh", force=True)
+    until(lambda: "Invalid value" not in page_text(process), 5)
 
 
 def connect(process):
     """The Composio connect flow."""
     MOCK["refuse_config"] = True
-    js(process, "[...document.querySelectorAll('.plug-list.is-found li')].find(l => l.innerText.includes('Google Calendar'))?.querySelector('button')?.click()")
-    check(until(lambda: "Google Calendar: Didn't connect" in apps(process) and "Google Calendar didn't connect: Composio managed auth isn't available" in page_text(process), 10), "Composio connect flow: a connect Composio refuses shows on that app, with Composio's reason")
+    js(process, "document.querySelector('.plug-tile[data-slug=googlecalendar] .plug-go')?.click()")
+    check(until(lambda: "Google Calendar: Try again" in tiles(process, "Recommended") and "Google Calendar didn't connect: Composio managed auth isn't available" in page_text(process), 10), "Composio connect flow: a connect Composio refuses shows on that app, with Composio's reason")
     MOCK["refuse_config"] = False
-    js(process, "[...document.querySelectorAll('.plug-list.is-found li')].find(l => l.innerText.includes('Gmail'))?.querySelector('button')?.click()")
+    js(process, "document.querySelector('.plug-tile[data-slug=gmail] .plug-go')?.click()")
     sign_in(process, "Gmail")
-    check(until(lambda: js(process, "document.querySelector('.plug-section .plug-list:not(.is-found) .plug-chip')?.lastChild.textContent") == "Gmail" and "Gmail: Connected" in apps(process, "is-found")
-                and "didn't connect" not in page_text(process), 10), "Composio connect flow: Gmail ends up Connected, at the top and in the list")
+    check(until(lambda: "Gmail: Connected" in tiles(process, "Recommended") and head(process) == "1 connected" and "didn't connect" not in page_text(process), 10), "Composio connect flow: Gmail shows a Connected check, and the top says 1 connected")
     account = next(iter(MOCK["accounts"].values()))
     check(account["_user"].startswith("still-") and MOCK["configs"].get("ac_gmail", {}).get("is_composio_managed"), "It uses Composio's own sign-in, for this profile's own user")
-    who = js(process, "[...document.querySelectorAll('.plug-settings .plug-who button')].map(b => b.innerText.trim() + ':' + b.getAttribute('aria-pressed'))") or []
-    check(who[:2] == ["Maya:true", "Nora:true"], f"Each companion can use it, with a switch each ({who})")
+    manage(process, "gmail")
+    who = js(process, "[...document.querySelectorAll('.plug-manage .plug-who button')].map(b => b.innerText.trim() + ':' + b.getAttribute('aria-pressed'))") or []
+    check(who[:2] == ["Maya:true", "Nora:true"], f"The Connected check opens who can use it, a switch per companion ({who})")
     send(process, "new")
     until(lambda: js(process, "!!document.querySelector('.home-face')"), 10)
     time.sleep(.4)
@@ -474,11 +542,13 @@ def reads_and_writes(process):
     ask(process, "READMAIL")
     idle(process)
     done = calls("READMAIL")
-    listed = json.loads(done[0]["text"]) if done and done[0]["ok"] else []
-    tools = {t["tool"]: t["asksFirst"] for t in (listed[0]["tools"] if listed else [])}
-    check(tools == {"GMAIL_FETCH_EMAILS": False, "GMAIL_SEND_EMAIL": True}, f"plugin_tools lists Gmail's tools and which ones ask first ({tools})")
+    named = json.loads(done[0]["text"]) if done and done[0]["ok"] else None
+    check(named == ["Gmail"], f"list_connected_plugins gives only the names of what's connected ({named})")
+    listed = json.loads(done[1]["text"]) if len(done) > 1 and done[1]["ok"] else {}
+    actions = {t["action"]: t["asksFirst"] for t in listed.get("actions", [])}
+    check(actions == {"GMAIL_FETCH_EMAILS": False, "GMAIL_SEND_EMAIL": True} and listed.get("plugin") == "Gmail", f"get_plugin_tools loads Gmail's actions, by its name, and which ones ask first ({actions})")
     ran = [e for e in MOCK["executed"] if e["tool"] == "GMAIL_FETCH_EMAILS"]
-    check(len(done) == 2 and done[1]["ok"] and "Contract signed" in done[1]["text"] and ran and ran[0]["arguments"] == {"query": "is:unread"}, "Reading mail goes ahead, no card, and the companion gets the mail")
+    check(len(done) == 3 and done[2]["ok"] and "Contract signed" in done[2]["text"] and ran and ran[0]["arguments"] == {"query": "is:unread"}, "Reading mail goes ahead, no card, and the companion gets the mail")
     check(ran and ran[0]["connected_account_id"] == next(iter(MOCK["accounts"])) and ran[0]["user_id"].startswith("still-"), "It runs on the Gmail account you connected")
 
     ask(process, "SENDMAIL")
@@ -501,8 +571,9 @@ def reads_and_writes(process):
     idle(process)
 
     open_plugins(process)
-    js(process, "document.querySelector('.plug-settings .plug-who button')?.click()")  # Maya
-    until(lambda: js(process, "document.querySelector('.plug-settings .plug-who button')?.getAttribute('aria-pressed')") == "false", 5)
+    manage(process, "gmail")
+    js(process, "document.querySelector('.plug-manage .plug-who button')?.click()")  # Maya
+    until(lambda: js(process, "document.querySelector('.plug-manage .plug-who button')?.getAttribute('aria-pressed')") == "false", 5)
     close_panel(process)
     check(until(lambda: "gmail" in turned_off("maya"), 5), "Turning Gmail off for Maya is saved")
     before = len(MOCK["executed"])
@@ -510,9 +581,22 @@ def reads_and_writes(process):
     idle(process)
     check(calls("READMAIL")[-1]["ok"] is False and "turned Gmail off for you" in calls("READMAIL")[-1]["text"] and len(MOCK["executed"]) == before, "Then Maya can't use Gmail, and is told why")
     open_plugins(process)
-    js(process, "document.querySelector('.plug-settings .plug-who button')?.click()")
-    until(lambda: js(process, "document.querySelector('.plug-settings .plug-who button')?.getAttribute('aria-pressed')") == "true", 5)
+    manage(process, "gmail")
+    js(process, "document.querySelector('.plug-manage .plug-who button')?.click()")
+    until(lambda: js(process, "document.querySelector('.plug-manage .plug-who button')?.getAttribute('aria-pressed')") == "true", 5)
     close_panel(process)
+
+
+def finds(process):
+    ask(process, "FINDAPPS")
+    idle(process)
+    done = calls("FINDAPPS")
+    got = [json.loads(c["text"]) if c["ok"] else c["text"] for c in done]
+    check(len(got) == 4 and got[0] == {"apps": [{"name": "Google Calendar", "categories": ["Productivity"], "connected": False}], "more": 0}, f"find_plugins finds an app by name: its name, categories and whether it's connected ({got[:1]})")
+    check(len(got) == 4 and [a["name"] for a in got[1]["apps"]] == ["Stripe", "QuickBooks"], f"and by category ({got[1:2]})")
+    check(len(done) == 4 and not done[2]["ok"] and "find_plugins" in done[2]["text"], "An app that doesn't exist sends the companion to find_plugins")
+    check(len(done) == 4 and not done[3]["ok"] and "no action called GMAIL_SEND_EMAIL" in done[3]["text"] and not cards(process) and not [e for e in MOCK["executed"] if e["tool"] == "GMAIL_SEND_EMAIL" and e["arguments"].get("to") == "x@example.com"],
+          "Another app's action isn't run under the wrong app, and no card comes up")
 
 
 def missing(process):
@@ -540,11 +624,13 @@ def secret(process):
     seen = calls("PEEK")
     check(len(seen) == 2 and KEY not in seen[0]["text"], "The key isn't in the AI app's environment, arguments or instructions")
     listed = [t["name"] for t in json.loads(seen[1]["text"]).get("tools", [])] if len(seen) == 2 else []
-    check("plugin_tools" in listed and "use_plugin" in listed and KEY not in seen[1]["text"], "Companions get plugin_tools and use_plugin, and no tool hands out the key")
+    check({"list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action"} <= set(listed) and "plugin_tools" not in listed and "use_plugin" not in listed and KEY not in seen[1]["text"],
+          "Companions get list_connected_plugins, find_plugins, get_plugin_tools and run_plugin_action, and no tool hands out the key")
+    check(len(seen) == 2 and "GMAIL_FETCH_EMAILS" not in seen[0]["text"] and "GMAIL_FETCH_EMAILS" not in seen[1]["text"], "No app's actions are in a companion's instructions or tool list until it asks for that app")
     every = [json.loads(line) for line in (BIN / "calls.jsonl").read_text(encoding="utf-8").splitlines() if line.endswith("}")]
     check(not any(KEY in c["text"] for c in every), "No tool result ever has the key")
     check(not nowhere(), f"The key isn't in any file in the profile in the clear ({nowhere()})")
-    check(all(s["key"] in (KEY, WRONG) for s in MOCK["seen"] if s["key"]) and not any(p["key"] for p in MOCK["pages"]), "It only ever goes to Composio's API, never to a page, and a Connect key never goes anywhere")
+    check(all(s["key"] in (KEY, WRONG, KEY2) for s in MOCK["seen"] if s["key"]) and not any(p["key"] for p in MOCK["pages"]), "It only ever goes to Composio's API, never to a page, and a Connect key never goes anywhere")
 
 
 def down(process):
@@ -563,11 +649,29 @@ def down(process):
 
 def disconnect(process):
     open_plugins(process)
-    js(process, "document.querySelector('.plug-settings .plug-list:not(.is-found) li > button:last-child')?.click()")  # Disconnect, on the first app
-    check(until(lambda: len(MOCK["deleted"]) == 1 and js(process, "document.querySelectorAll('.plug-section .plug-list:not(.is-found) li').length") == 1, 10), "Disconnect removes the account at Composio and from the list")
-    js(process, "[...document.querySelectorAll('.plug-settings button')].find(b => b.innerText.trim() === 'Remove key')?.click()")
-    check(until(lambda: not key_file().exists() and js(process, "!!document.querySelector(\".plug-settings input[aria-label='Composio API key']\")"), 10), "Remove key forgets it and turns plugins off")
+    manage(process, "gmail")
+    js(process, "[...document.querySelectorAll('.plug-manage button')].find(b => b.innerText.trim() === 'Disconnect')?.click()")
+    check(until(lambda: len(MOCK["deleted"]) == 1 and head(process) == "1 connected", 10), "Disconnect removes the account at Composio and from the page")
+    send(process, "openPanel", name="settings", value="skills")
+    row = lambda: js(process, "document.querySelector('.set-main #set-composio')?.innerText") or ""
+    check(until(lambda: "ending in" in row() and KEY[-4:] in row(), 10) and not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY[-8:])})"),
+          "Settings shows the key only as set, with its last four characters")
+    js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Change')?.click()")
+    until(lambda: js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 5)
+    paste_key(process, WRONG, ".set-main #set-composio")
+    check(until(lambda: "didn't accept that key" in row(), 10) and key_file().exists() and KEY[-4:] in row(), "Change: a key Composio refuses doesn't replace the one that works")
+    paste_key(process, KEY2, ".set-main #set-composio")
+    check(until(lambda: KEY2[-4:] in row() and not js(process, "!!document.querySelector('#set-composio input')"), 10) and until(lambda: MOCK["seen"][-1]["key"] == KEY2, 5),
+          "and a good one does: Composio gets the new key from then on")
+    js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete')?.click()")
+    check(until(lambda: "Delete the key?" in row(), 5) and key_file().exists(), "Delete asks first")
+    js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete key')?.click()")
+    check(until(lambda: not key_file().exists() and "Not set" in row() and js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 10),
+          "Delete forgets the key, and Settings offers the field again")
+    check(len(MOCK["deleted"]) == 1 and not nowhere(), "Your apps stay connected in your Composio account, and no key is left in any file")
     close_panel(process)
+    open_plugins(process)
+    check(until(lambda: head(process) == "None connected" and js(process, "!!document.querySelector(\".plug-page input[aria-label='Composio API key']\")"), 10), "Plugins are off: nothing connected, and the page asks for a key")
     ask(process, "NOPLUG")
     idle(process)
     check(not any(c["ok"] for c in calls("NOPLUG")), "and companions are back to plugins off")

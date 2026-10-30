@@ -47,7 +47,7 @@ public partial class MainWindow
  // Ends an agent's running call early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
  static readonly Dictionary<string, TaskCompletionSource<string>> agentInterrupts = new(StringComparer.OrdinalIgnoreCase);
  static bool agentServerStarted;
- static MainWindow Home => LastActive is { closing: false } w ? w : Windows.First(w => !w.closing);
+ internal static MainWindow Home => LastActive is { closing: false, temporary: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
 
  // Any number of agents at once: each connection gets its own pipe instance, and calls run side by side.
  internal static void StartAgentServer(string instance)
@@ -119,7 +119,7 @@ public partial class MainWindow
    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
    if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
    var working = RunTool(who, tool, args, quick);
-   int limit = tool switch { "ask_user" or "use_plugin" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
+   int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
    string result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
@@ -742,7 +742,7 @@ public partial class MainWindow
    case "ask_user": return await AskInChat(who, args);
    case "offer_routine": return await OfferRoutine(who, args);
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
-   case "plugin_tools" or "use_plugin": return await PluginTool(who, tool, args);
+   case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget": return Remembering(who, tool, args);
    case "save_file": {
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");

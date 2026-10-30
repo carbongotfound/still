@@ -388,7 +388,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 :root:not(.dark) .selected-tab { box-shadow:0 1px 2px #2a201410,0 0 0 1px #2a20140d; }
 
 /* AI: the face, the brand marks, the AI's own tabs */
-.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 7px; gap:7px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
+.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 0; gap:1px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
 .ai-pill.is-open[data-slot="button"], .ai-pill.is-open[data-slot="button"]:hover { background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); }
 .ai-logo { display:inline-grid; place-items:center; flex:none; line-height:1; }
 .ai-logo.is-letter { border-radius:50%; box-shadow:inset 0 0 0 1.25px color-mix(in oklab,currentColor 35%,transparent); font-weight:650; color:var(--muted-foreground); }
@@ -1346,6 +1346,36 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .skills-part .home-page-sub { margin-top:28px; } .skills-part .plug-list.is-found { max-height:none; }
 .skill-row .plug-who { flex:none; max-width:45%; justify-content:flex-end; }
 .ob .plug-chip, .ob .plug-pick { background:var(--ob-card); border-color:var(--ob-line); } .ob .plug-pick .plug-chip { background:none; }
+/* A logo from Composio's catalog sits on white, like an app icon, so dark marks read in the dark theme too. */
+.plug-logo img { width:72%; height:72%; object-fit:contain; } .plug-chip i.is-image, .plug-stack i.is-image { background:#fff; }
+/* The Plugins page: the title with the connected apps, chips, then two-across tiles grouped by category. */
+.plug-page .home-page-head { margin-bottom:16px; }
+.plug-count { display:inline-flex; align-items:center; gap:9px; height:34px; padding:0 12px 0 7px; border-radius:999px; font-size:13px; color:var(--muted-foreground); transition:background .15s,color .15s; }
+.plug-count:hover, .plug-count[aria-pressed=true] { background:var(--muted); color:var(--foreground); } .plug-count .plug-stack i { width:24px; height:24px; margin-left:-7px; }
+.plug-count .plug-stack i:first-child { margin-left:0; } .plug-count .plug-stack svg { width:12px; height:12px; }
+.history-chip > svg.rotate-180 { transform:rotate(180deg); }
+.plug-group { margin-top:26px; } .plug-group-head { display:flex; align-items:baseline; gap:12px; margin-bottom:10px; }
+.plug-group-head h2 { flex:1; margin:0; font-size:15px; font-weight:600; letter-spacing:-.005em; }
+.plug-all { font-size:12.5px; color:var(--muted-foreground); } .plug-all:hover { color:var(--foreground); text-decoration:underline; text-underline-offset:3px; }
+.plug-tiles { list-style:none; margin:0; padding:0; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.plug-tile { display:flex; align-items:center; gap:12px; min-height:58px; padding:9px 10px; border-radius:14px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06); }
+.dark .plug-tile { box-shadow:0 0 0 1px var(--border); } .plug-tile.is-on { box-shadow:0 0 0 1px color-mix(in oklab,var(--primary) 40%,var(--border)); }
+.plug-tile .plug-logo { display:grid; place-items:center; flex:none; width:38px; height:38px; border-radius:10px; overflow:hidden; font-style:normal; font-weight:700; font-size:15px;
+ background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); }
+.plug-tile .plug-logo.is-image { background:#fff; box-shadow:inset 0 0 0 1px rgb(0 0 0/.06); }
+.plug-name { flex:1; min-width:0; font-size:14px; font-weight:500; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; } .plug-go { flex:none; }
+.plug-done { flex:none; display:inline-flex; align-items:center; gap:5px; height:28px; padding:0 10px; border-radius:8px; font-size:12.5px; color:var(--muted-foreground); }
+.plug-done:hover, .plug-done[aria-expanded=true] { background:var(--muted); color:var(--foreground); } .plug-done svg { width:14px; height:14px; color:var(--primary); }
+.plug-manage { grid-column:1/-1; display:flex; flex-wrap:wrap; align-items:center; gap:10px; padding:8px 10px 8px 14px; border-radius:14px; background:var(--secondary); } .plug-manage .plug-who { flex:1; }
+.plug-page .plug-connect { margin-top:18px; } .plug-page > .plug-down, .plug-page > .plug-error { margin-top:14px; }
+.plug-foot { margin-top:30px; } .plug-foot + .plug-note { margin-top:4px; }
+.plug-end { padding:1px 6px; border-radius:6px; background:var(--muted); font-size:11.5px; letter-spacing:.04em; }
+.skills-empty { padding:6px 2px; font-size:13px; } .skills-empty .plug-all { margin-left:4px; }
+@media (max-width:560px) { .plug-tiles { grid-template-columns:1fr; } }
+/* Settings: the Composio key, shown only as set with its last four characters. */
+.setting-row.is-stacked { display:grid; gap:12px; } .plug-keyline { display:flex; align-items:center; gap:24px; } .plug-keyline > div:first-child { flex:1; min-width:0; }
+.plug-keyacts { display:flex; gap:8px; flex:none; } .plug-cancel { justify-self:start; }
+.plug-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; border-radius:12px; background:var(--secondary); } .plug-confirm p { flex:1 1 260px; margin:0; font-size:12px; line-height:1.5; }
 .ob-team { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 14px; padding-top:30px; }
 .ob-team-mate { position:relative; display:grid; justify-items:center; }
 .ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }

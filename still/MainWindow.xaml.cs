@@ -50,7 +50,7 @@ public partial class MainWindow : Window
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));
   if (App.IsQa) Prefs.DownloadFolder = Path.Combine(App.DataRoot, "Downloads");
-  if (!secondary) tabs.AddRange(state.Tabs.Where(t => !string.IsNullOrEmpty(t.Id) && (Prefs.RestoreTabs || t.Pinned)));
+  if (!secondary) tabs.AddRange(RestoredWindows().FirstOrDefault() ?? Enumerable.Empty<BrowserTab>());
   saveTimer.Tick += (_, _) => { saveTimer.Stop(); App.Breadcrumb = "saving tabs"; Save(); App.Breadcrumb = "idle, last: saving tabs"; };
   memoryTimer.Tick += async (_, _) => { App.Breadcrumb = "memory saver"; await ReduceBackgroundMemory(); App.Breadcrumb = "idle, last: memory saver"; };
   memoryTimer.Start();
@@ -61,6 +61,7 @@ public partial class MainWindow : Window
   SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); WatchRoutines(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    StartupMetrics.Mark("window-loaded");
+   if (!secondary) RestoreOtherWindows();
    Task firstPage;
    try {
     // InitializeShell attaches the native page host before its first await. Start both controllers
@@ -88,7 +89,8 @@ public partial class MainWindow : Window
    closing = true; saveTimer.Stop(); memoryTimer.Stop(); Hide(); // disappear at once; tearing down the pages can take a moment
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
    else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
-   Save(); foreach (var tab in tabs) { tab.Closed = true; tab.View?.Dispose(); }
+   Save(); if (!Unsaved) closedWindows.Add((DateTime.UtcNow, tabs.ToArray()));
+   foreach (var tab in tabs) { tab.Closed = true; tab.View?.Dispose(); }
    managementView?.Dispose();shellView?.Dispose();snapshotCapture=null;snapshotCore=null;loginOffer=null;importBatch=null;ClearOwnedPasswordClipboard();
   };
   SizeChanged += (_, _) => { Sheet.Width = Math.Max(320, Math.Min(550, ContentArea.ActualWidth - 40)); Sheet.MaxHeight = Math.Max(250, PageArea.ActualHeight - 60); };
@@ -99,6 +101,7 @@ public partial class MainWindow : Window
    Windows.Remove(this); if (LastActive == this) LastActive = Windows.LastOrDefault();
    // Keep the app alive in the remaining windows and save without this window's tabs.
    if (Windows.Count > 0) { if (Application.Current.MainWindow == this) Application.Current.MainWindow = Windows[0]; Windows[0].Save(); }
+   if (!temporary && Windows.All(w => w.temporary)) foreach (var w in Windows.ToList()) w.Close(); // a sign-in window doesn't outlive the browser
   };
  }
  public string? LaunchUrl { get; init; }
@@ -129,10 +132,10 @@ public partial class MainWindow : Window
  void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
  internal void Save()
  {
-  state.Groups.RemoveAll(g => !Windows.Any(w => w.tabs.Any(t => t.Group == g.Id)));
   state.Tabs = SavedTabs().ToList();
-  var main = Windows.FirstOrDefault(w => !w.closing) ?? this;
-  state.ActiveId = main.active?.Private == false ? main.active.Id : state.Tabs.FirstOrDefault()?.Id;
+  state.Groups.RemoveAll(g => !Windows.Any(w => w.tabs.Any(t => t.Group == g.Id)) && !state.Tabs.Any(t => t.Group == g.Id));
+  var main = Windows.FirstOrDefault(w => !w.closing && !w.Unsaved) ?? this;
+  if (!main.Unsaved) state.ActiveId = main.active?.Private == false ? main.active.Id : state.Tabs.FirstOrDefault()?.Id;
   store.Save(state);
  }
  void Toast(string message) { if(shellReady){ShellSend(new{kind="toast",message});return;} ToastText.Text = message; ToastBar.Visibility = Visibility.Visible; toastTimer.Stop(); toastTimer.Start(); }

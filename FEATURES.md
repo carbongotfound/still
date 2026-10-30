@@ -1,6 +1,6 @@
 # Still: feature map
 
-Everything Still has today, read from the code. ✅ shipped in 2.0.0 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
+Everything Still has today, read from the code. ✅ shipped in 2.0.1 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
 Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React interface both hosts load, `mac/Sources/Still/` = Mac host (AppKit, WebKit).
 
 **Rule:** any commit that adds, changes or removes a feature updates this file in the same commit.
@@ -8,7 +8,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 ## Browser and tabs
 
 - ✅ **Tabs**: open, close, pin, duplicate, mute, reorder, sleep; saved in `state.json` (`Models.cs` `SavedState`, written via `.tmp` then `.bak` swap).
-- ✅ **Restore tabs**: reopens last session's tabs on start; Preferences `RestoreTabs`.
+- ✅ **Restore tabs**: reopens last session's tabs on start, every normal window with its own tabs (each tab saved with its `Window`); windows closed one after another within 15 seconds of the last all come back; never private tabs or a temporary window's; Preferences `RestoreTabs` (`SavedTabs`, `RestoreOtherWindows`; Mac `saveAll`, `restoreOtherWindows`, built but not run; tests/desktop/session.py).
 - ✅ **Reopen closed tab**: Ctrl+Shift+T, plus a recently closed list (`recent`/`recentPick` in `MainWindow.Shell.cs`).
 - ✅ **Recent-tab switcher**: Ctrl+Tab flips to the last tab; holding Ctrl shows an MRU list (`MainWindow.Tabs.cs` `SwitchRecent`).
 - ✅ **Cycle tabs**: Ctrl+Alt+Left/Right moves through tabs in strip order (`CycleTabs`).
@@ -17,6 +17,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Split view**: two tabs side by side in one window, resizable, swappable; one pair per window (`StartSplit`). Swap sides, 50/50 and Separate tabs are in a split tab's right-click menu.
 - ✅ **Tab layout**: Classic (tabs on top) or Modern (resizable left sidebar); Preferences `TabLayout`, `SidebarWidth`.
 - ✅ **Multiple windows**: one process, shared history/bookmarks/settings; each window owns its tabs (`MainWindow.Windows.cs`).
+- ✅ **Temporary sign-in windows**: windows Still opens itself for a sign-in (Composio's Get a key page, an app's Composio sign-in) are temporary: never saved to the session, closed with the last normal window, and never given links from other apps or a companion's tabs; with only temporary or private windows left the saved session stays as it was (`temporary`, `Unsaved`, `Home`).
 - ✅ **Move tabs between windows**: drag out (setting "Drag tabs into their own window", off by default) or Move to; live page moves without reload.
 - ✅ **Private window**: every tab InPrivate and unsaved; Ctrl+Shift+N (`OpenIncognito`).
 - ✅ **Address bar**: search or URL; local history/bookmark suggestions, learned typed→picked ranking (`suggestions.ts`, `AddressPick`); never fetches icons or sends keystrokes.
@@ -99,8 +100,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Replies**: Markdown renderer (no HTML injection), copyable draft cards, next-step suggestions from `>>` lines (`Markdown.tsx`).
 - ✅ **Step cards**: the companion's avatar sits left of a turn's first line, once per turn, its name only as the avatar's tooltip, and every card and paragraph lines up right of it; each run of actions is one card: icon tile, bold verb and muted target (a site shows as its host, the full address on hover), a check, "+ N more" opens the list (`AiSidebar.tsx` `Step`).
 - ✅ **Skills**: Markdown files with front matter in the profile's skills folder; invoke as `/id` or give to a companion (`MainWindow.Ai.cs` `Skill`).
-- ✅ **Skills & plugins page**: the home rail's Skills is now Skills & plugins: one search for skills and apps, an All / Skills / Plugins filter, each skill with a chip per companion that gives it to them, then the plugins section (`Home.tsx` `SkillsPage`, `Plugins.tsx` `PluginsSection`).
-- ✅ **Plugins on the home row**: the row under the new tab's message box ends with Plugins: the connected apps as overlapping tiles (their initial on their color; up to four, or three and +N) or a dashed plug when none are, and a label that names them; it opens Skills & plugins showing plugins (`PluginStack`, `SkillsPage` `start`; tests/desktop/plugins.py)
+- ✅ **Skills & plugins page**: the home rail's Skills & plugins opens the Plugins page; your skills sit after Recommended, each with a chip per companion that gives it to them, and the page's one search finds skills and apps (`Home.tsx` `SkillsPage`, `Plugins.tsx` `PluginsPage`).
+- ✅ **Plugins on the home row**: the row under the new tab's message box ends with Plugins: the connected apps' logos overlapping (their initial on their color until a logo loads; up to four, or three and +N) or a dashed plug when none are, and a label that names them; it opens the Plugins page (`PluginStack`; tests/desktop/plugins.py).
 - ✅ **Library**: files the AI saved with `save_file`, one folder per chat; built-in viewer with CSV grid and Markdown (`Files.tsx`).
 - ✅ **Set me up again**: typing it reopens setup's interview.
 
@@ -177,7 +178,12 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - ✅ **Plugins**: your apps through Composio with your own project API key (ak_…), stored with DPAPI/Keychain; reads go ahead, writes ask first (`MainWindow.Plugins.cs`, `Plugins.swift`).
 - ✅ **Key kind check**: a Composio Connect key (ck_…, what Composio's For You page shows) or personal key (uak_…) is named as the wrong kind, with where the project key is; it's never sent or kept (`NotProjectKey`).
-- ✅ **Plugins in Skills & plugins**: no key: a connect step (Get a key, then Platform → Settings → Project Settings → API Keys, paste the ak_ key) over the app list, each Needs a key; with a key: Connected (who can use each, Disconnect) and Add an app, each Needs sign-in, Connected or Didn't connect; Composio's own error words instead of an empty list or endless Loading; a key Composio stops accepting says so. Settings → Plugins is only a card that opens the page (`Plugins.tsx`, `App.tsx`).
+- ✅ **Plugins page**: a Plugins title with the connected apps' logos and "N connected" (a filter for them), one search for apps and skills, category chips (All, the main categories, the rest under More), then Recommended (the most used apps Composio signs in to itself), your skills and a section per category with up to four apps and View all. Apps sit two across (one on a narrow window) with their logo, name and Connect, or a Connected check that opens who can use it and Disconnect; no descriptions. With no key the apps still show, a connect step (Get a key, then Platform → Settings → Project Settings → API Keys, paste the ak_ key) sits on top, and Connect goes to the key field; Composio's own error words, and a key Composio stops accepting says so (`Plugins.tsx` `PluginsPage`, `App.css` `.plug-*`).
+- ✅ **Composio's catalog**: every app Composio has (name, logo, categories, how it signs in) loads at runtime, page by page, most used first, and is cached in `plugin-catalog.json` for a day; Composio's long category names are shortened for chips (Collaboration & Communication is Communication, Developer Tools & DevOps is Code). No app is hand-built (`LoadPluginCatalog`, `Plugins.swift`).
+- ✅ **App logos**: fetched once from the catalog's address without the key, only while a key is set, up to 300 KB, kept as data: images in `Cache/PluginLogos` (the interface loads nothing from the web); one that doesn't load keeps the app's initial (`SendPluginLogos`).
+- ✅ **Composio connect flow**: Connect uses the user's own auth config for the app, or makes a Composio-managed one, then opens Composio's sign-in in a Still window that closes once the app is connected; a connect Composio refuses shows on that app with its reason (`ConnectPlugin`).
+- ✅ **Plugin tools for companions**: four small lookups instead of every app's tools: list_connected_plugins (names only), find_plugins (by name or category: names, categories, connected), get_plugin_tools (one app's actions, loaded only when asked), run_plugin_action (checks the action belongs to that app). An app that isn't connected gets a card that asks you to connect it (`PluginTool`, `McpServer.cs`, `Agents.swift`).
+- ✅ **Composio key in Settings**: Settings → Skills & plugins shows the key only as set with its last four characters; Change checks a new key with Composio before it replaces the old one, and Delete (after a confirm) forgets it and turns plugins off, leaving your apps connected in your Composio account. No API, companion or the interface can read a saved key back (`PluginKeySetting`, `pluginKey`, `pluginKeyRemove`).
 - ✅ **Setup step**: "Connect your tools" setup step; Connect cards for unlinked apps.
 
 ## Extensions (Windows only)
@@ -206,7 +212,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Chat titles**: Settings → Models picks what names a new chat from its first message: the quickest model of the chat's AI (default), any model of the installed AIs grouped by AI, or Off (use first message). One short run in the background; quotes, "Title:" and a full stop are dropped; private windows keep the first message. Test builds only name by default with `STILL_QA_TITLES` (`NameChat`, `Ai.swift` `nameChat`, Preferences `ChatTitles`; tests/desktop/settings.py). Mac typechecked only
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
-- ✅ **About**: version (2.0.0, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
+- ✅ **About**: version (2.0.1, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
 - ✅ **Address-bar notice**: a notice ends when the page or tab changes.
 
 ## Updates and install
@@ -247,7 +253,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Maya's shut lids show a thin lower lid edge and small hooks at the corners in close-up (no eye showing through); her decimated body shows faint vertical shading streaks at 3D sizes.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - The kickoff is tested with a fake agent and one live Claude run.
-- Plugins need a Composio project API key (ak_); For You's Connect key (ck_) and its MCP endpoint aren't supported. Plugins are tested against a stand-in shaped like Composio's v3.1 API, not live Composio; the Mac is typechecked, not run.
+- Plugins need a Composio project API key (ak_); For You's Connect key (ck_) and its MCP endpoint aren't supported. Plugins, the catalog and logos are tested against a stand-in shaped like Composio's v3.1 API, not live Composio; the Mac builds but isn't run. The short category names follow Composio's categories as of 2026-10-30; a new category shows under its first word.
 - An app whose Composio account expires drops out of Connected instead of showing Needs sign-in: Still only lists ACTIVE accounts.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
 - Dropped: the Chromium port (`chromium`), the animal mascots (`characters-app`) and the first three.js blob pass (`blobs`, replaced by the rigged companions), all unmerged.

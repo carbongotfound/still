@@ -94,10 +94,10 @@ func askToSignIn(_ who: String, _ browser: Browser, _ tab: Tab, _ site: String) 
  publishEverywhere(); browser.toast(me.label + " needs you to sign in to " + site + ". It never sees your password.")
 }
 
-/// The window agent calls land in: the one used last.
+/// The window agent calls and links from other apps land in: the one used last, never a sign-in window.
 var homeBrowser: Browser? {
- if let last = lastActiveBrowser, browsers.contains(where: { $0 === last }) { return last }
- return browsers.first
+ if let last = lastActiveBrowser, !last.temporary, browsers.contains(where: { $0 === last }) { return last }
+ return browsers.first { !$0.temporary } ?? browsers.first
 }
 func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
  for browser in browsers { if let tab = browser.tabs.first(where: { $0.id == id }) { return (browser, tab) } }
@@ -512,7 +512,7 @@ extension Browser {
   }
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
-  let limit: Double = tool == "ask_user" || tool == "use_plugin" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
+  let limit: Double = tool == "ask_user" || tool == "run_plugin_action" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
   switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
   case .done(let reply): return reply ?? agentFail("Failed.")
   case .interrupted(let reply): return reply
@@ -800,7 +800,7 @@ extension Browser {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
    case "offer_routine": return await offerRoutine(who, args)
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
-   case "plugin_tools", "use_plugin": return await pluginTool(who, tool, args)
+   case "list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget": return memoryTool(who, tool, args)
    case "save_file":
     let reply = saveFile(who, args)
@@ -1279,10 +1279,13 @@ enum Mcp {
   tool("tell_companion", "Hand work over to a teammate without waiting: they do it in their own chat, where the user sees it. Give them everything they need to do it.",
        [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you")], ["name", "message"]),
   // The user's own apps (Gmail, Calendar, Slack…) through Composio, once they connect them (Plugins.swift).
-  tool("plugin_tools", "Find tools in the user's connected apps (plugins), like Gmail, Google Calendar, Slack or Notion: each tool's name, what it does, its inputs and whether it asks the user first. Leave plugin empty to search every app connected for you.",
-       [str("plugin", "One app, like gmail or googlecalendar (optional)"), str("query", "A few words about what you want to do (optional)")], []),
-  tool("use_plugin", "Run a tool from plugin_tools in one of the user's apps. Reading goes ahead; anything that sends, posts, deletes, pays or changes data waits for the user's OK. If the app isn't connected, Still offers the user a button to connect it.",
-       [str("tool", "The tool's name from plugin_tools, like GMAIL_FETCH_EMAILS"), ("arguments", ["type": "object", "description": "The tool's inputs, as plugin_tools describes them"] as [String: Any])], ["tool"])
+  tool("list_connected_plugins", "Names of the user's apps (plugins) connected for you, like Gmail or Slack. Names only: get_plugin_tools loads one app's actions.", [], []),
+  tool("find_plugins", "Look up apps Still can connect through Composio, by name or category: each one's name, categories and whether it's connected for you.",
+       [str("query", "Words in the app's name (optional)"), str("category", "A category, like Productivity, Communication or Finance (optional)")], []),
+  tool("get_plugin_tools", "Load one app's actions, only when you need that app: each action's name, what it does, its inputs and whether it asks the user first.",
+       [str("plugin", "The app, like Gmail or Google Calendar"), str("query", "Words to narrow a long list, like send email (optional)")], ["plugin"]),
+  tool("run_plugin_action", "Run one action from get_plugin_tools. Reading goes ahead; anything that sends, posts, deletes, pays or changes data waits for the user's OK. If the app isn't connected, Still asks the user to connect it: don't guess.",
+       [str("plugin", "The app, like Gmail"), str("action", "The action's name from get_plugin_tools, like GMAIL_SEND_EMAIL"), ("args", ["type": "object", "description": "The action's inputs, as get_plugin_tools describes them"] as [String: Any])], ["plugin", "action"])
  ]
  static let listProfilesTool = tool("list_profiles", "List Still's profiles (separate logins, cookies and tabs) and which are open. Pass a name as `profile` to any other tool, or \"temp\" for a clean temporary window.", [], [])
  static let profileProp = str("profile", "Still profile name from list_profiles (optional; defaults to the launch profile). A closed profile is opened. \"temp\" opens a separate temporary window with no cookies, logins or history, deleted after it closes.")
