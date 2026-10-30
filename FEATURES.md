@@ -14,7 +14,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Cycle tabs**: Ctrl+Alt+Left/Right moves through tabs in strip order (`CycleTabs`).
 - ✅ **Find a tab**: Ctrl+K sheet filters open tabs (`MainWindow.Panels.cs`).
 - ✅ **Tab groups**: named, colored, collapsible; members stay adjacent in the strip (`MainWindow.Tabs.cs`, `TabGroup`).
-- ✅ **Split view**: two tabs side by side in one window, resizable, swappable; one pair per window (`StartSplit`).
+- ✅ **Split view**: two tabs side by side in one window, resizable, swappable; one pair per window (`StartSplit`). Swap sides, 50/50 and Separate tabs are in a split tab's right-click menu.
 - ✅ **Tab layout**: Classic (tabs on top) or Modern (resizable left sidebar); Preferences `TabLayout`, `SidebarWidth`.
 - ✅ **Multiple windows**: one process, shared history/bookmarks/settings; each window owns its tabs (`MainWindow.Windows.cs`).
 - ✅ **Move tabs between windows**: drag out (setting "Drag tabs into their own window", off by default) or Move to; live page moves without reload.
@@ -32,6 +32,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Pop-ups**: sized `window.open` gets a small window titled with its site; unrequested pop-ups blocked, allow per site (`MainWindow.Popups.cs`).
 - ✅ **App links**: discord:, mailto: etc. ask in the permission bar, remember Allow per site+app, refuse abusable schemes (`MainWindow.AppLinks.cs`).
 - ✅ **Site permissions**: camera/mic/location etc. asked in Still's own bar; denied after 90 s unanswered (`MainWindow.Permissions.cs`).
+- ✅ **Permissions button**: in the toolbar where split view's button was: Allow, Ask or Block per site for camera, microphone, location, notifications, clipboard, pop-ups, automatic downloads, autoplay and sound, screen sharing, MIDI and USB; applied at once and kept (a private window's only until it closes); Reset; a link to all site settings; a dot while the page has the camera, mic or location on (`SitePermissions.tsx`, `MainWindow.Permissions.cs`, Mac `Tools.swift`).
 - ✅ **Page dialogs**: alert/confirm/prompt shown inside Still, not as Windows dialogs (`dialogAnswer`).
 - ✅ **Upload card**: a site's file picker opens a card of recent matching files, copied image first; picker intercepted via CDP (`MainWindow.FilePaste.cs`, `UploadCard.tsx`).
 - ✅ **Draft keeper**: text typed into a box survives a surprise reload; a chip offers it back for 6 h (`MainWindow.Drafts.cs`).
@@ -222,6 +223,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Companions changing themselves (`selfact`, uncommitted) and the intro rebuilt for the blobs (`intro12`) aren't in the build yet.
 - Companions messaging each other is tested with a fake agent, not live. On the Mac it's typechecked, not run; an ask there waits by checking the run every quarter second.
 - The Mac has no working folders yet, so its builder can't open what it made.
+- Permissions button: a camera used inside a frame doesn't light the dot (Windows); screen sharing's Allow still asks like Ask. On the Mac (typechecked, not run) location, notifications, clipboard, screen sharing, MIDI and USB show as not available, pop-ups' Allow can't override WebKit's blocker, and Block on automatic downloads cancels a second download within 10 seconds.
 - Glint's glass eye cap shows through its shut lid mid-blink, in Blender too (the model), and the app's lighting is paler than the Cycles renders.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.

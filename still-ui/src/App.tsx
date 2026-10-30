@@ -7,6 +7,7 @@ import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, i
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { PluginsSettings } from "./Plugins"
+import { SitePermissions } from "./SitePermissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
@@ -41,7 +42,7 @@ import { Welcome } from "./Welcome"
 import { Tour } from "./Tour"
 import type { ToolData } from "./BrowserTools"
 
-type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
+type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; inUse?: string; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
 type Group = { id: string; name: string; color: string; collapsed: boolean }
 const splittable = (t?: Tab) => !!t?.url && !t.chatId && !t.inChat
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
@@ -232,6 +233,13 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
     <ContextMenuItem onSelect={() => send("duplicate", { id: tab.id })}><Copy />Duplicate</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("mute", { id: tab.id })}><VolumeX />{tab.muted ? "Unmute" : "Mute"}</ContextMenuItem>
     <ContextMenuItem onSelect={() => send("sleep", { id: tab.id })}><MoonStar />Put to sleep</ContextMenuItem>
+    {state.split && (state.split.left === tab.id || state.split.right === tab.id) && <>
+     <ContextMenuSeparator />
+     <ContextMenuItem onSelect={() => send("splitSwap")}><ArrowLeftRight />Swap sides</ContextMenuItem>
+     <ContextMenuItem disabled={Math.abs(state.split.ratio - .5) < .01} onSelect={() => send("splitRatio", { ratio: .5 })}><Columns2 />Resize to 50/50</ContextMenuItem>
+     <ContextMenuItem onSelect={() => send("splitEnd")}><SeparatorVertical />Separate tabs</ContextMenuItem>
+     <ContextMenuSeparator />
+    </>}
     {splittable(tab) && !selected && splittable(state.tabs.find(t => t.id === state.activeId)) && <ContextMenuItem onSelect={() => send("split", { id: tab.id })}><Columns2 />Open in split view</ContextMenuItem>}
     {ai && !state.noAi && splittable(tab) && !tab.isPrivate && <ContextMenuItem onSelect={() => send("tabHand", { id: tab.id, chat: state.tabs.find(t => t.id === state.activeId)?.chatId ?? (ai.open ? ai.chatId : undefined), companion: companionOf(ai)?.id })}><Hand />Hand to {companionOf(ai)?.name ?? "your companion"}</ContextMenuItem>}
     {!tab.pinned && !tab.inChat && <>
@@ -506,15 +514,7 @@ export default function App() {
      <IconButton label={active?.loading ? "Stop loading" : "Reload"} caption={active?.loading?"Stop":"Reload"} onClick={() => send("reload")}>{active?.loading ? <X /> : <RotateCw />}</IconButton>
     </nav>
     {state.incognito && <span className="incognito-badge"><LockKeyhole />Incognito</span>}
-    {!chatTab && (pair || splittable(active)) && <DropdownMenu onOpenChange={setContext}><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className={cn("split-button", pair && "is-on")} aria-label={pair ? "Split view options" : "Split view"} title={pair ? "Split view" : "Split view: open your last tab beside this one"} onClick={e => { if (!pair) { e.preventDefault(); send("split") } }}><Columns2 /></Button></DropdownMenuTrigger>
-     {pair && <DropdownMenuContent align="start" sideOffset={8} className="w-52">
-      <DropdownMenuItem onSelect={() => send("splitSwap")}><ArrowLeftRight />Swap sides</DropdownMenuItem>
-      <DropdownMenuItem disabled={Math.abs(pair.ratio - .5) < .01} onSelect={() => send("splitRatio", { ratio: .5 })}><Columns2 />Resize to 50/50</DropdownMenuItem>
-      <DropdownMenuSeparator />
-      {(["left", "right"] as const).map(side => <DropdownMenuItem key={side} onSelect={() => send("closeTab", { id: pair[side] })}><X />Close {side}<DropdownMenuShortcut className="split-close-title">{state.tabs.find(t => t.id === pair[side])?.title}</DropdownMenuShortcut></DropdownMenuItem>)}
-      <DropdownMenuSeparator />
-      <DropdownMenuItem onSelect={() => send("splitEnd")}><SeparatorVertical />Separate tabs</DropdownMenuItem>
-     </DropdownMenuContent>}</DropdownMenu>}
+    {!chatTab && /^https?:/.test(active?.url ?? "") && <SitePermissions origin={new URL(active!.url).origin} inUse={active!.inUse ?? ""} data={toolData.site ?? {}} send={send} onOpenChange={setContext} onSettings={() => open("security")} />}
     <ContextMenu onOpenChange={setContext}><ContextMenuTrigger asChild>
     <div className={cn("address-bar", pane === "address" && "is-editing", chatTab && pane !== "address" && "is-chat")} onMouseDown={e => { if (e.target === e.currentTarget) { e.preventDefault(); addressRef.current?.focus() } }}>
      {active?.isPrivate ? <LockKeyhole /> : active?.secure ? <Shield /> : <Search />}

@@ -32,6 +32,9 @@ public sealed class BrowserTab
  [JsonIgnore] public bool Reader { get; set; }
  [JsonIgnore] public int Blocked { get; set; }
  [JsonIgnore] public string? HideScriptId { get; set; }
+ [JsonIgnore] public string? UsbScriptId { get; set; } // hides USB, HID and serial from sites where they're blocked
+ [JsonIgnore] public string InUse { get; set; } = ""; // what the page has on now: camera, mic, location (the Permissions button's dot)
+ [JsonIgnore] public bool RuleMuted { get; set; } // muted because its site's sound is blocked, not by the user
  [JsonIgnore] public string? HideToken { get; set; }
  [JsonIgnore] public DateTime HideExpires { get; set; }
  [JsonIgnore] public DateTime LastActive { get; set; } = DateTime.UtcNow;
@@ -98,7 +101,8 @@ public sealed class Preferences
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
  public List<string> UnblockedHosts { get; set; } = [];
  public List<string> AllowedAppLinks { get; set; } = [];
- public List<string> AllowedPopups { get; set; } = [];
+ public List<string> AllowedPopups { get; set; } = []; // hosts, from before SitePermissions: an Allow for pop-ups
+ public Dictionary<string, Dictionary<string, string>> SitePermissions { get; set; } = []; // origin → Popups, Autoplay, ScreenShare or Usb → Allow or Deny
  public List<string> ApprovedAgents { get; set; } = [];
  public List<SitePermission> Permissions { get; set; } = []; // on top of the defaults: read and navigate always, interact once per chat, sensitive every time
  public List<string> SensitiveSites { get; set; } = []; // every click or keystroke there counts as sensitive
