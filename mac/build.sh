@@ -23,6 +23,7 @@ cp "$bin" "$app/Contents/MacOS/Still"
 cp -R "$repo/still/Shell" "$resources/Shell"
 cp "$repo/still/Assets/Readability.js" "$repo/still/Assets/LoginObserver.js" "$resources/"
 cp -R "$repo/still/Assets/roles" "$resources/roles"
+cp "$repo/still/Assets/setup.md" "$resources/setup.md"
 cp "$repo/LICENSE" "$repo/THIRD-PARTY-NOTICES.txt" "$resources/"
 cp -R "$repo/Licenses" "$resources/Licenses"
 

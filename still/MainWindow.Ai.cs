@@ -386,27 +386,11 @@ public partial class MainWindow
    }
    case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Open chat"
     aiChat = runChat; aiOpen = true; break;
-   case "companionSave" when S("name").Trim() is { Length: > 0 } name: {
-    var list = Companions.ToList();
-    var c = list.FirstOrDefault(x => x.Id == S("id"));
-    if (c == null) list.Add(c = new() { Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
-    c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
-    if (data.TryGetProperty("look", out _)) c.Look = S("look") is { Length: <= 2000 } lk && lk.StartsWith('{') ? lk : "";
-    c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
-    if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
-    if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
-    if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
-    if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
-    if (data.TryGetProperty("tone", out _)) c.Tone = S("tone").Trim() is var tone && tone.Length > 600 ? tone[..600] : tone;
-    if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
-    if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
-    c.AskName = false; // saved, renamed or kept: it's the user's name now
-    Prefs.Companions = list; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
-    break; }
+   case "companionSave" when S("name").Trim().Length > 0:
+    SaveCompanion(data); foreach (var w in Windows) if (w != this) w.PublishAi();
+    break;
    case "companionDelete" when Companions.Count > 1 && Companions.FirstOrDefault(x => x.Id == S("id")) is { } gone:
-    Prefs.Companions = Companions.Where(x => x != gone).ToList(); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
-    try { if (Path.Combine(App.DataRoot, "companions", gone.Id) is var dir && Directory.Exists(dir)) Directory.Delete(dir, true); CompanionMemory.Drop(gone.Id); }
-    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+    DropCompanion(gone);
     break;
    case "companionMain" when Companions.FirstOrDefault(x => x.Id == S("id")) is { } main: // setup's main pick: it runs new chats
     Prefs.Companions = [main, .. Companions.Where(x => x != main)]; SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
@@ -705,6 +689,37 @@ public partial class MainWindow
  static bool aiSetupCancelled;
  static string aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "";
  string aiPending = ""; // asked before the AI was ready: runs once setup finishes
+ /// Adds a companion, or saves the changes to one: the profile panel, the library and setup's hires. Returns it.
+ Companion SaveCompanion(JsonElement data)
+ {
+  string S(string k) => data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+  var name = S("name").Trim();
+  var list = Companions.ToList();
+  var c = list.FirstOrDefault(x => x.Id == S("id"));
+  if (c == null) list.Add(c = new() { Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
+  c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
+  if (data.TryGetProperty("look", out _)) c.Look = S("look") is { Length: <= 2000 } lk && lk.StartsWith('{') ? lk : "";
+  c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
+  if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
+  if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
+  if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
+  if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
+  if (data.TryGetProperty("tone", out _)) c.Tone = S("tone").Trim() is var tone && tone.Length > 600 ? tone[..600] : tone;
+  if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
+  if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
+  c.AskName = false; // saved, renamed or kept: it's the user's name now
+  Prefs.Companions = list; SaveLater();
+  return c;
+ }
+
+ /// Lets a companion go, its folder and memory with it.
+ void DropCompanion(Companion gone)
+ {
+  Prefs.Companions = Companions.Where(x => x != gone).ToList(); SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();
+  try { if (Path.Combine(App.DataRoot, "companions", gone.Id) is var dir && Directory.Exists(dir)) Directory.Delete(dir, true); CompanionMemory.Drop(gone.Id); }
+  catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+ }
+
  static void PublishAiEverywhere() { foreach (var w in Windows) w.PublishAi(); }
 
  /// Asks each AI app whether it's signed in. These are local checks that use none of the user's AI usage.

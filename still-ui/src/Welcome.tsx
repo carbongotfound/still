@@ -1,6 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, useReducedMotion, type TargetAndTransition, type Transition } from "motion/react"
-import { ArrowLeft, ArrowUp, Bot, Check, CornerDownLeft, Dices, Download, Globe2, MessageCircle, Monitor, Moon, Palette, Sun, Undo2, Volume2, VolumeX, Zap } from "lucide-react"
+import { ArrowLeft, ArrowUp, Bot, Check, CornerDownLeft, Dices, Download, Globe2, MessageCircle, Monitor, Moon, Palette, Pencil, SkipForward, Sun, Undo2, Volume2, VolumeX, Zap } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
@@ -74,21 +74,26 @@ function LayoutPreview({ modern }: { modern: boolean }) {
  </LayoutGroup></div>
 }
 
-type Setup = { busy: boolean; error: string; done: boolean; turns: { role: string; text: string; options?: string[] }[]; changes: { key: string; label: string; value: string; undone: boolean }[] } | null
-/// "Set it up with <name>": the companion's questions and the user's answers, then what it changed, each with an undo.
-/// The other companions picked in setup (`also`) remember the same things.
-function Interview({ who, also, send, onQuick, onDone }: { who: Companion; also: string[]; send: Send; onQuick: () => void; onDone: (done: boolean) => void }) {
+type Change = { key: string; label: string; value: string; undone: boolean; editable?: boolean }
+type Setup = { busy: boolean; error: string; done: boolean; turns: { role: string; text: string; options?: string[] }[]; changes: Change[] } | null
+const SKIP = "(skip)", ENOUGH = "That's enough, set me up with what you know."
+/// "Set it up with <name>": the companion gets to know the user, one follow-up at a time, until they say that's enough;
+/// any question can be skipped. Then what it set up, in groups, each with an undo, and the wording ones editable.
+/// Still's library goes along, so it can add the companions that fit their work.
+function Interview({ who, send, onQuick, onDone }: { who: Companion; send: Send; onQuick: () => void; onDone: (done: boolean, first: string) => void }) {
  const [s, setS] = useState<Setup>(null)
  const [text, setText] = useState("")
+ const [editing, setEditing] = useState<[string, string] | null>(null) // the change being reworded: key, text
  const log = useRef<HTMLDivElement>(null)
  useEffect(() => {
   const got = (e: MessageEvent) => { if (e.data?.kind === "setup") setS(e.data.data) }
   window.chrome?.webview?.addEventListener("message", got)
-  send("setupStart", { companion: who.id, also })
+  send("setupStart", { companion: who.id, library: PREMADES.map(p => ({ ...fromPremade(p), role: p.role, area: p.area })) })
   return () => window.chrome?.webview?.removeEventListener("message", got)
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [s?.turns.length, s?.busy, s?.done])
- useEffect(() => onDone(!!s?.done), [s?.done]) // eslint-disable-line react-hooks/exhaustive-deps
+ const first = s?.changes.find(c => c.key === "first" && !c.undone)?.value ?? ""
+ useEffect(() => onDone(!!s?.done, first), [s?.done, first]) // eslint-disable-line react-hooks/exhaustive-deps
  const waiting = !s || s.busy
  const last = s?.turns.at(-1)
  const answer = (t: string) => { if (!t.trim() || waiting) return; send("setupAnswer", { text: t.trim() }); setText("") }
@@ -96,24 +101,43 @@ function Interview({ who, also, send, onQuick, onDone }: { who: Companion; also:
   <input aria-label={placeholder} placeholder={placeholder} maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
   <Button type="submit" size="icon-sm" aria-label="Send" disabled={!text.trim() || waiting}><ArrowUp /></Button>
  </form>
- return <div className="ob-interview">
+ const row = (c: Change) => <li key={c.key} className={cn(c.undone && "is-undone")}>
+  {editing?.[0] === c.key ? <form className="ob-edit" onSubmit={e => { e.preventDefault(); if (editing[1].trim()) send("setupEdit", { key: c.key, value: editing[1].trim() }); setEditing(null) }}>
+   <b>{c.label}</b>
+   <textarea autoFocus aria-label={c.label} rows={Math.min(6, Math.max(2, editing[1].split("\n").length + 1))} maxLength={1000} value={editing[1]} onChange={e => setEditing([c.key, e.target.value])} />
+   <div><Button type="submit" size="sm" disabled={!editing[1].trim()}>Save</Button><Button type="button" variant="ghost" size="sm" onClick={() => setEditing(null)}>Cancel</Button></div>
+  </form> : <>
+   <span><b>{c.label}</b><small>{c.value}</small></span>
+   {c.undone ? <em>Undone</em> : <>
+    {c.editable && <button onClick={() => setEditing([c.key, c.value])}><Pencil />Edit</button>}
+    <button onClick={() => send("setupUndo", { key: c.key })}><Undo2 />Undo</button>
+   </>}
+  </>}
+ </li>
+ const groups = s ? ([["Your team", (k: string) => /^(hire|focus|memory|routine)\b/.test(k)], ["Your Still", (k: string) => !/^(hire|focus|memory|routine|first)\b/.test(k)], ["First up", (k: string) => k === "first"]] as const)
+  .map(([title, has]) => [title, s.changes.filter(c => has(c.key))] as const).filter(([, list]) => list.length) : []
+ return <div className={cn("ob-interview", s?.done && "is-done")}>
   <div className="ob-chat" ref={log} aria-live="polite" onScroll={fadeTop}>
-   {s?.turns.map((t, i) => <motion.p key={i} className={cn("ob-bubble", t.role === "user" && "is-you")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease: EASE }}>{t.text}</motion.p>)}
+   {s?.turns.map((t, i) => <motion.p key={i} className={cn("ob-bubble", t.role === "user" && "is-you", t.text === SKIP && "is-skip")} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .25, ease: EASE }}>
+    {t.role === "user" && t.text === SKIP ? "Skipped" : t.role === "user" && t.text === ENOUGH ? "That's enough" : t.text}</motion.p>)}
    {waiting && !s?.error && <p className="ob-bubble is-typing" aria-label={`${who.name} is typing`}><i /><i /><i /></p>}
   </div>
   {s?.error ? <div className="ob-fallback"><p>{s.error} No problem, the quick setup takes a minute.</p><Button size="sm" onClick={onQuick}><Zap />Do the quick setup</Button></div>
    : s?.done ? <motion.div className="ob-summary" initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: .3, ease: EASE }}>
-    <h3>Here's what I set up</h3>
-    {s.changes.length ? <ul>{s.changes.map(c => <li key={c.key} className={cn(c.undone && "is-undone")}>
-     <span><b>{c.label}</b><small>{c.value}</small></span>
-     {c.undone ? <em>Undone</em> : <button onClick={() => send("setupUndo", { key: c.key })}><Undo2 />Undo</button>}
-    </li>)}</ul> : <p className="ob-note">Nothing needed changing, so everything stays as it was.</p>}
-    <div className="ob-summary-foot">{s.changes.some(c => !c.undone) && <Button variant="ghost" size="sm" onClick={() => send("setupUndo", { key: "" })}><Undo2 />Undo everything</Button>}</div>
+    <h3>Here's what I set up for you</h3>
+    {groups.length ? groups.map(([title, list]) => <section key={title}><h4>{title}</h4><ul>{list.map(row)}</ul></section>)
+     : <p className="ob-note">Nothing needed changing, so everything stays as it was.</p>}
+    <div className="ob-summary-foot">{s.changes.some(c => !c.undone) && <Button variant="ghost" size="sm" onClick={() => send("setupUndo", { key: "" })}><Undo2 />Undo everything</Button>}
+     <small>You can change any of it later in each companion's profile and in Settings.</small></div>
     {say(`Tell ${who.name} what to change`)}
    </motion.div>
    : <>
     {last?.role !== "user" && !!last?.options?.length && <div className="ob-chips">{last.options.map(o => <button key={o} disabled={waiting} onClick={() => answer(o)}>{o}</button>)}</div>}
     {say("Type your answer")}
+    {!!s?.turns.length && <div className="ob-interview-foot">
+     <button disabled={waiting} onClick={() => answer(SKIP)}><SkipForward />Skip this one</button>
+     <button disabled={waiting || s.turns.length < 2} onClick={() => answer(ENOUGH)}><Check />That's enough, set me up</button>
+    </div>}
    </>}
  </div>
 }
@@ -153,6 +177,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  const [allowed, setAllowed] = useState<"" | "yes" | "no">("")
  const [tried, setTried] = useState(false) // brought their stuff over, or made Still open their links
  const [talked, setTalked] = useState(false) // the interview is done
+ const [firstUp, setFirstUp] = useState("") // what the interview heard they want help with first
  const [hadIntro] = useState(() => !again && !seenIntro()) // once, on the first run; About can replay it
  const [introOn, setIntroOn] = useState(hadIntro)
  const [introAt, setIntroAt] = useState<{ x: number; y: number }>()
@@ -265,7 +290,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   if (at === "main") send("companionMain", { id: lead!.id })
   if (at === "you" || at === "interests") remember()
   if (at === "start") { const text = typed.trim() || task; finish(text && !isNo(text) ? text : undefined); return }
-  if (step >= flow.length - 1) { finish(); return }
+  if (step >= flow.length - 1) { finish(at === "talk" && firstUp || undefined); return }
+  if (at === "talk" && firstUp && !task && !typed.trim()) setTyped(firstUp)
   go(step + 1)
  }
  const skip = () => { if (step >= flow.length - 1) finish(); else go(step + 1) }
@@ -366,12 +392,12 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
       <Bubbles lines={[`Hi, I'm ${name}.`, "How do you want to set things up?"]} />
       <Reveal after={2}><div className="ob-options">
        <button className="ob-option is-big" disabled={!aiReady} onClick={() => { setHow("talk"); go(step + 1) }}><MessageCircle /><span><strong>Set it up with {name}</strong>
-        <small>I ask you a few questions, then set up your tabs, theme, start sites, search, how hands-on to be and how to talk to you. You check every change.</small>
-        <small className="ob-usage">Uses a little of your {harness?.name ?? "AI"} plan, about as much as one short chat (5 to 8 quick messages).</small></span></button>
+        <small>I get to know you: your work, goals, tools, schedule and how you like answers. Then I set Still up around you: the right companions, what each one focuses on and remembers, routines to try and your settings. Skip any question, stop when you like, and check every change.</small>
+        <small className="ob-usage">Uses a little of your {harness?.name ?? "AI"} plan, about as much as one short chat (a dozen quick messages or so).</small></span></button>
        <button className="ob-option is-big" onClick={() => { setHow("quick"); go(step + 1) }}><Zap /><span><strong>Quick setup</strong><small>Tap through a few choices yourself. Uses no AI at all.</small></span></button>
       </div>{!aiReady && <p className="ob-note">Connect your AI on the earlier step to set things up with {name}.</p>}</Reveal>
      </>}
-     {at === "talk" && <Interview who={c} also={chosen.map(x => x.id).filter(id => id !== c.id)} send={send} onQuick={() => { setHow("quick"); if (again) setStep(0) }} onDone={setTalked} />}
+     {at === "talk" && <Interview who={c} send={send} onQuick={() => { setHow("quick"); if (again) setStep(0) }} onDone={(done, first) => { setTalked(done); setFirstUp(first) }} />}
      {at === "you" && <>
       <Bubbles lines={["First, a little about you.", "What should I call you?"]} />
       <Reveal after={2}><div className="ob-name-box"><input autoFocus aria-label="Your name" placeholder="Your first name" maxLength={40} value={you} onChange={e => setYou(e.target.value)} /></div>

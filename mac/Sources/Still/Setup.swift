@@ -1,22 +1,29 @@
-// "Set it up with <name>": a short interview run by the user's own AI app (a few small messages on their plan), then
-// the settings it picked, each with an undo. Quick setup never comes here and never runs an AI (ported from MainWindow.Setup.cs).
+// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
+// what they say until it knows them, then sets Still up around them (setup.md): settings, companions from Still's
+// library, what each companion focuses on and remembers, and starter routines, off. Every change keeps an undo, and the
+// text ones can be reworded in the summary. Quick setup never comes here and never runs an AI (ported from MainWindow.Setup.cs).
 import AppKit
 
 final class SetupTalk {
  let companion: String
+ let library: [[String: Any]] // Still's companions as the welcome hires them, with their role and area
  var session: String?
  var started = false, busy = false, done = false
  var error = ""
  var turns: [[String: Any]] = [] // what was said, for the welcome to show: { role, text, options }
  var changes: [SetupChange] = []
- var also: [String] = [] // the other companions picked in setup: they learn the same things
- init(_ companion: String) { self.companion = companion }
+ init(_ companion: String, _ library: [[String: Any]]) { self.companion = companion; self.library = library }
 }
 final class SetupChange {
- let key: String, label: String, value: String
+ let key: String, label: String
+ let owner: String // the companion it's for: a companion setup hired takes what it gave it along when it goes
+ var value: String
  let undo: () -> Void
+ let edit: ((String) -> String?)? // puts the user's own wording in: what's shown after, or nil if none of it is kept
  var undone = false
- init(_ key: String, _ label: String, _ value: String, _ undo: @escaping () -> Void) { self.key = key; self.label = label; self.value = value; self.undo = undo }
+ init(_ key: String, _ label: String, _ value: String, owner: String, edit: ((String) -> String?)?, _ undo: @escaping () -> Void) {
+  self.key = key; self.label = label; self.value = value; self.owner = owner; self.edit = edit; self.undo = undo
+ }
 }
 var setupTalk: SetupTalk?
 var welcomeTalk = false // setup opens straight into the interview ("set me up again")
@@ -26,8 +33,14 @@ func setUpAgainAsked(_ text: String) -> Bool { setUpAgain.firstMatch(in: text, r
 
 func publishSetup() {
  let data: Any = setupTalk.map { s in ["busy": s.busy, "error": s.error, "done": s.done, "turns": s.turns,
-  "changes": s.changes.map { ["key": $0.key, "label": $0.label, "value": $0.value, "undone": $0.undone] }] as [String: Any] } ?? NSNull()
+  "changes": s.changes.map { ["key": $0.key, "label": $0.label, "value": $0.value, "undone": $0.undone, "editable": $0.edit != nil] }] as [String: Any] } ?? NSNull()
  for browser in browsers { browser.send(["kind": "setup", "data": data]) }
+}
+
+/// Takes a change back. A companion setup hired goes with everything setup gave it.
+func undoSetup(_ s: SetupTalk, _ c: SetupChange) {
+ c.undo(); c.undone = true
+ if c.key.hasPrefix("hire:") { for x in s.changes where x.owner == c.owner { x.undone = true } }
 }
 
 /// The JSON object in a reply, from its first { to its last }.
@@ -36,20 +49,30 @@ func parseObject(_ text: String) -> [String: Any]? {
  return jsonObject(String(text[a...b]))
 }
 
+/// Routine days as the profile panel shows them.
+func routineDays(_ d: [Int]) -> String {
+ d.count == 7 ? "Every day" : d == [1, 2, 3, 4, 5] ? "Weekdays" : d == [0, 6] ? "Weekends" : d.map { ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"][$0] }.joined(separator: ", ")
+}
+
 extension Browser {
  func handleSetup(_ op: String, _ data: [String: Any]) {
   func s(_ k: String) -> String { data[k] as? String ?? "" }
   switch op {
   case "setupStart":
-   setupTalk = SetupTalk(s("companion")); setupTalk?.also = (data["also"] as? [Any])?.compactMap { $0 as? String } ?? []; welcomeTalk = false
+   setupTalk = SetupTalk(s("companion"), (data["library"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []); welcomeTalk = false
    Task { await setupAsk("Start now: say hello in one line and ask your first question.", "") }
   case "setupAnswer":
    let answer = tidy(s("text"))
    if setupTalk?.busy == false, (1...2000).contains(answer.count) { Task { await setupAsk(answer, answer) } }
   case "setupUndo":
    guard let talk = setupTalk else { break }
-   for c in talk.changes where !c.undone && (s("key").isEmpty || c.key == s("key")) { c.undo(); c.undone = true }
-   saveLater(); publishEverywhere(); publishAiEverywhere(); publishSetup()
+   for c in talk.changes where !c.undone && (s("key").isEmpty || c.key == s("key")) { undoSetup(talk, c) }
+   storeCompanions(); publishEverywhere(); publishAiEverywhere(); publishSetup()
+  case "setupEdit":
+   let value = tidy(s("value"))
+   guard let c = setupTalk?.changes.first(where: { $0.key == s("key") && !$0.undone && $0.edit != nil }), (1...1000).contains(value.count) else { break }
+   if let shown = c.edit?(value) { c.value = shown } else { c.undone = true; toast("That looks like a password or a code, so it isn't kept.") }
+   storeCompanions(); publishEverywhere(); publishAiEverywhere(); publishSetup()
   default: setupTalk = nil; publishSetup() // setupEnd
   }
  }
@@ -62,7 +85,7 @@ extension Browser {
   if !shown.isEmpty { s.turns.append(["role": "user", "text": shown]) }
   guard let cli, let exe = findCli(cli.command) else { s.error = "No AI app is set up yet."; publishSetup(); return }
   s.busy = true; s.error = ""; publishSetup()
-  let prompt = (s.started ? "" : setupPrompt(who, cli) + "\n\n") + text, folder = (aiFolder as NSString).appendingPathComponent("setup")
+  let prompt = (s.started ? "" : setupPrompt(who, cli, s) + "\n\n") + text, folder = (aiFolder as NSString).appendingPathComponent("setup")
   var mcp = ["--mcp", "--no-tools", "--as", cli.name, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
   if isQa { mcp.insert("--qa", at: 1) }
   var (model, effort) = forMode(cli.id, "efficient") // the quickest model: setup is small talk
@@ -94,11 +117,11 @@ extension Browser {
    let reply = parseObject(said)
    func str(_ k: String) -> String { tidy(reply?[k] as? String ?? "") }
    if AgentStream.isTrue(reply?["done"]), let settings = reply?["settings"] as? [String: Any] {
-    for c in s.changes where !c.undone { c.undo() } // a second round (the user asked for a change) starts from where they were
+    for c in s.changes where !c.undone { undoSetup(s, c) } // a second round (the user asked for a change) starts from where they were
     s.changes.removeAll(); s.done = true
     setupApply(settings, who)
-    s.turns.append(["role": "ai", "text": str("say").isEmpty ? "All set. Here's what I changed." : str("say")])
-    saveLater(); publishEverywhere(); publishAiEverywhere()
+    s.turns.append(["role": "ai", "text": str("say").isEmpty ? "All set. Here's what I set up for you." : str("say")])
+    storeCompanions(); publishEverywhere(); publishAiEverywhere()
    } else {
     let options = (reply?["options"] as? [Any] ?? []).map { tidy($0 as? String ?? "") }.filter { (1...80).contains($0.count) }.prefix(4)
     let line = reply == nil ? tidy(said) : [str("say"), str("question")].filter { !$0.isEmpty }.joined(separator: "\n")
@@ -115,34 +138,20 @@ extension Browser {
   guard let first = t.first else { return t }
   return first.uppercased() + String(t.dropFirst()) + (".!?".contains(t.last!) ? "" : ".")
  }
- func setupPrompt(_ who: Companion?, _ cli: AgentAdapter) -> String {
-  """
-  You are \(who?.name ?? "the user's companion"), the companion in Still, a web browser with AI built in. \(who.map { $0.job.isEmpty ? "" : "The user picked you as: " + $0.job } ?? "")
-  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
-  You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
-  what their work involves (research, email, planning, sales, hiring, marketing, support, code and so on), the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
-
-  Reply with ONLY one JSON object and nothing else:
-  {"say": "a short, warm reaction to their answer (or hello)", "question": "your next question", "options": ["2 to 4 short answers they can tap"]}
-  Write plainly, in second person, no em dashes. Don't call Still quiet, calm or minimal.
-
-  When you know enough, or they ask you to finish, reply instead with:
-  {"say": "one line wrapping up", "done": true, "settings": {
-   "name": "what they want to be called, or empty",
-   "interests": ["up to 6 short areas of their work, like research, sales or hiring"],
-   "layout": "Classic" (tabs across the top) or "Modern" (tabs down the side) or "",
-   "theme": "Light", "Dark", "System" or "",
-   "search": "Google", "Bing", "DuckDuckGo" or "",
-   "pinned": [{"title": "Site", "url": "https://..."}] (up to 4 sites they use all day, kept as pinned tabs),
-   "sites": [{"title": "Site", "url": "https://..."}] (up to 8 sites for their new tab page),
-   "newTab": "companion" (you and ideas on the new tab page) or "sites" (search and their sites) or "",
-   "agent": "careful" (ask before every click), "balanced" (ask once per site in a chat) or "hands-off" (just do it) or "",
-   "tone": "how they want you to talk, one or two short sentences addressed to you, like 'Keep answers short and skip the small talk.'",
-   "memories": ["facts worth remembering about them, each one short sentence"]} }
-  Use "" or [] for anything they didn't say: Still leaves those as they are. Buying, sending and deleting always ask, whatever they pick.
-
-  Still right now: tabs \(pref("TabLayout", "Classic") == "Modern" ? "down the side" : "across the top"), theme \(pref("Theme", "System")), search \(pref("SearchEngine", "Google")). They're using \(cli.name).
-  """
+ func setupPrompt(_ who: Companion?, _ cli: AgentAdapter, _ talk: SetupTalk) -> String {
+  func field(_ x: [String: Any], _ k: String) -> String { x[k] as? String ?? "" }
+  func role(_ c: Companion) -> String {
+   if !c.crew.isEmpty, let x = talk.library.first(where: { field($0, "crew") == c.crew }) { return field(x, "role") }
+   return c.job.count > 100 ? String(c.job.prefix(100)) + "..." : c.job.isEmpty ? "their own companion" : c.job
+  }
+  let free = talk.library.filter { x in !companions.contains { $0.crew == field(x, "crew") } }.map { "- \(field($0, "crew")): \(field($0, "name")), \(field($0, "role")), \(field($0, "area"))" }
+  return ((try? String(contentsOf: resources.appendingPathComponent("setup.md"), encoding: .utf8)) ?? "")
+   .replacingOccurrences(of: "{{name}}", with: who?.name ?? "the user's companion")
+   .replacingOccurrences(of: "{{picked}}", with: who.map { $0.job.isEmpty ? "" : "The user picked you as: " + $0.job } ?? "")
+   .replacingOccurrences(of: "{{team}}", with: companions.map { "- \($0.id): \($0.name), \(role($0))" }.joined(separator: "\n"))
+   .replacingOccurrences(of: "{{library}}", with: free.isEmpty ? "(none, they have them all)" : free.joined(separator: "\n"))
+   .replacingOccurrences(of: "{{now}}", with: "tabs \(pref("TabLayout", "Classic") == "Modern" ? "down the side" : "across the top"), theme \(pref("Theme", "System")), search \(pref("SearchEngine", "Google"))")
+   .replacingOccurrences(of: "{{cli}}", with: cli.name)
  }
 
  /// How often the AI asks before clicking and typing, for every site and companion (Windows: SetPermission("", "interact", "", mode)).
@@ -156,8 +165,10 @@ extension Browser {
  /// Applies what the interview settled on. Each change keeps its own undo; anything invalid is left out.
  func setupApply(_ st: [String: Any], _ who: Companion?) {
   guard let talk = setupTalk else { return }
-  func change(_ key: String, _ label: String, _ value: String, _ undo: @escaping () -> Void) { talk.changes.append(SetupChange(key, label, value, undo)) }
-  func str(_ k: String, _ max: Int = 200) -> String { String(tidy(st[k] as? String ?? "").prefix(max)) }
+  func change(_ key: String, _ label: String, _ value: String, owner: String = "", edit: ((String) -> String?)? = nil, _ undo: @escaping () -> Void) {
+   talk.changes.append(SetupChange(key, label, value, owner: owner, edit: edit, undo))
+  }
+  func str(_ k: String, _ max: Int = 200, _ o: [String: Any]? = nil) -> String { String(tidy((o ?? st)[k] as? String ?? "").prefix(max)) }
   func sites(_ k: String, _ max: Int) -> [(title: String, url: String)] {
    var hosts = Set<String>()
    return Array((st[k] as? [Any] ?? []).compactMap { $0 as? [String: Any] }
@@ -166,7 +177,25 @@ extension Browser {
     .map { (title: (1...40).contains($0.title.count) ? $0.title : hostName($0.url), url: $0.url) }
     .filter { hosts.insert(hostName($0.url)).inserted }.prefix(max))
   }
-  func texts(_ k: String, _ max: Int, _ len: Int) -> [String] { Array((st[k] as? [Any] ?? []).map { tidy($0 as? String ?? "") }.filter { $0.count > 1 && $0.count <= len }.prefix(max)) }
+  func texts(_ k: String, _ max: Int, _ len: Int, _ o: [String: Any]? = nil) -> [String] { Array(((o ?? st)[k] as? [Any] ?? []).map { tidy($0 as? String ?? "") }.filter { $0.count > 1 && $0.count <= len }.prefix(max)) }
+  // Each one its own short sentence: an answer with two sentences becomes two memories.
+  func sentences(_ lines: [String]) -> [String] {
+   Array(lines.flatMap { $0.replacingOccurrences(of: #"\n+|(?<=[.!?])\s+(?=\p{Lu})"#, with: "\n", options: .regularExpression).split(separator: "\n").map { sentence($0) } }.filter { $0.count > 2 }.prefix(8))
+  }
+  // What it learned goes into memory, like anything else a companion remembers: undo forgets it, and an edit swaps the
+  // user's lines in. The summary shows what the first companion keeps.
+  func remember(_ key: String, _ label: String, _ to: [Companion], _ lines: [String], owner: String = "") {
+   func keep(_ lines: [String]) -> [(String, Fact)] {
+    to.filter { c in companions.contains { $0 === c } }.flatMap { c in lines.compactMap { f in
+     CompanionMemory.remember(c.id, f, "preference", "", f.hasPrefix("Likes to be called ") ? "name" : f.hasPrefix("Works on ") ? "interests" : "").map { (c.id, $0) } } }
+   }
+   var kept = keep(lines)
+   func shown() -> String { kept.filter { $0.0 == to[0].id }.map(\.1.text).joined(separator: "\n") }
+   func forget() { for (id, f) in kept { CompanionMemory.forget(id, f.id) } }
+   if kept.contains(where: { $0.0 == to[0].id }) {
+    change(key, label, shown(), owner: owner, edit: { text in forget(); kept = keep(sentences([text])); return kept.isEmpty ? nil : shown() }) { forget() }
+   }
+  }
   let theme = { [self] (t: String) in prefs["Theme"] = t; for browser in browsers { browser.applyTheme() } }
 
   if ["Classic", "Modern"].contains(str("layout")) && str("layout") != pref("TabLayout", "Classic") {
@@ -206,26 +235,53 @@ extension Browser {
    change("agent", "When I work in tabs", level == "careful" ? "I ask before every click" : level == "hands-off" ? "I just do it, but always ask before buying, sending or deleting" : "I ask once per site in each chat") { [self] in setInteractPermission(old) }
   }
   if let who, str("tone", 600).count > 3, str("tone", 600) != who.tone {
-   let old = who.tone; who.tone = str("tone", 600); storeCompanions()
-   change("tone", "How I talk", who.tone) { [self] in who.tone = old; storeCompanions() }
+   let old = who.tone; who.tone = str("tone", 600)
+   change("tone", "How I talk", who.tone, edit: { t in who.tone = String(t.prefix(600)); return who.tone }) { who.tone = old }
   }
   let interests = texts("interests", 6, 40)
   if !interests.isEmpty {
    let old = pref("Interests", [String]()); prefs["Interests"] = interests
    change("interests", "Ideas about", interests.joined(separator: ", ")) { [self] in prefs["Interests"] = old }
   }
+
+  // Companions from Still's library whose work matches theirs, hired as the library hires them: routine off.
+  var hired: [String: Companion] = [:]
+  for crew in texts("hire", 3, 24) where !companions.contains(where: { $0.crew == crew }) {
+   guard let entry = talk.library.first(where: { $0["crew"] as? String == crew }) else { continue }
+   let c = saveCompanion(entry); hired[crew] = c
+   change("hire:" + crew, "New on your team", "\(c.name), \(entry["role"] as? String ?? "") · \(entry["area"] as? String ?? "")", owner: c.id) { [self] in dropCompanion(c) }
+  }
+  func find(_ id: String) -> Companion? { hired[id] ?? companions.first { $0.id == id } ?? companions.first { !id.isEmpty && $0.crew == id } }
+  func whose(_ c: Companion, _ mine: String, _ theirs: String) -> String { c === who ? mine : theirs.replacingOccurrences(of: "{0}", with: c.name) }
+
   if let who {
-   // What it learned goes into the companion's memory, like anything else it remembers.
-   // Each one its own short sentence: an answer with two sentences becomes two memories.
-   var facts = Array(texts("memories", 8, 200).flatMap { $0.replacingOccurrences(of: #"(?<=[.!?])\s+(?=\p{Lu})"#, with: "\n", options: .regularExpression).split(separator: "\n").map { sentence($0) } }.filter { $0.count > 2 }.prefix(8))
+   var facts = sentences(texts("memories", 8, 200))
    let name = str("name", 40)
    if !name.isEmpty { facts.insert("Likes to be called " + name + ".", at: 0) }
    if !interests.isEmpty { facts.append("Works on " + interests.joined(separator: ", ").lowercased() + ".") }
-   var ids = [who.id]
-   for id in setupTalk?.also ?? [] where !ids.contains(id) && companions.contains(where: { $0.id == id }) { ids.append(id) }
-   let kept = ids.flatMap { id in facts.enumerated().compactMap { i, f in CompanionMemory.remember(id, f, "preference", "", i == 0 && !name.isEmpty ? "name" : f.hasPrefix("Works on ") ? "interests" : "").map { (id, $0) } } }
-   let mine = kept.filter { $0.0 == who.id }.map(\.1)
-   if !mine.isEmpty { change("memory", "I'll remember", mine.map(\.text).joined(separator: "\n")) { for (id, f) in kept { CompanionMemory.forget(id, f.id) } } }
+   remember("memory", companions.count > 1 ? "Your team will remember" : "I'll remember", [who] + companions.filter { $0 !== who }, facts)
   }
+  // What each companion focuses on for them goes under its own instructions, after "For me:", so setting up again
+  // replaces it.
+  for o in (st["companions"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).prefix(10) {
+   guard let c = find(str("id", 24, o)) else { continue }
+   let focus = str("instructions", 600, o), before = c.job.components(separatedBy: "\n\nFor me: ")[0]
+   if focus.count > 10 && before.count < 900 {
+    let old = c.job
+    func focusOn(_ t: String) -> String { let t = String(t.prefix(990 - before.count)); c.job = (before + "\n\nFor me: " + t).trimmingCharacters(in: .whitespacesAndNewlines); return t }
+    change("focus:" + c.id, whose(c, "What I'll focus on", "What {0} will focus on"), focusOn(focus), owner: c.id, edit: focusOn) { c.job = old }
+   }
+   remember("memory:" + c.id, whose(c, "I'll also remember", "{0} will also remember"), [c], sentences(texts("memories", 6, 200, o)), owner: c.id)
+  }
+  for o in (st["routines"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).prefix(3) {
+   guard let c = find(str("id", 24, o)) else { continue }
+   var r = o; r["id"] = nil; r["on"] = false
+   guard let routine = Routine.read([r], old: []).first else { continue }
+   c.routines.append(routine)
+   change("routine:" + routine.id, whose(c, "My routine, off for now", "{0}'s routine, off for now"), "\(routineDays(routine.days)) at \(routine.time): \(routine.text)", owner: c.id) { c.routines.removeAll { $0.id == routine.id } }
+  }
+  // What they want help with first: the welcome offers it as their first task.
+  let first = str("first", 300)
+  if first.count > 3 { change("first", "First, I'll help with", first, edit: { $0 }) {} }
  }
 }
