@@ -444,37 +444,29 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-pick-setup { margin-left:auto; padding-left:10px; font-size:11px; color:var(--muted-foreground); }
 .ai-usage { display:flex;align-items:center;gap:5px;margin:7px 4px 0;font-size:11px;color:var(--muted-foreground); }
 .ai-usage svg { width:12px;height:12px;flex:none; }
-/* Team chat. A handoff is a card in the thread: the two faces with an arrow, who passed what to whom, and a status pill
-   that goes Up next, On it, Done (or Stopped). The bar over the message box is the team: the speaker lifts and rings. */
-.team-handoff { display:flex; align-items:flex-start; gap:12px; margin:4px 0 4px 42px; padding:10px 14px 11px 10px; border-radius:16px; background:color-mix(in oklab,var(--hue) 9%,var(--card)); box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--hue) 30%,var(--border)); animation:ai-in .25s ease-out; }
-.team-handoff-faces { flex:none; display:flex; align-items:center; gap:2px; } .team-handoff-faces > svg { width:14px; height:14px; color:var(--muted-foreground); }
-.team-handoff-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:3px; padding-top:3px; }
-.team-handoff-text p { display:flex; flex-wrap:wrap; align-items:center; gap:4px 6px; margin:0; font-size:13px; color:var(--muted-foreground); } .team-handoff-text b { font-weight:560; color:var(--foreground); }
-.team-handoff-text > span { font-size:13.5px; line-height:1.5; overflow-wrap:anywhere; }
-.team-handoff-status { margin-left:auto; padding:1px 9px; border-radius:99px; font-size:11.5px; font-weight:500; background:var(--muted); color:var(--muted-foreground); }
-.team-handoff[data-status=working] .team-handoff-status { background:color-mix(in oklab,var(--hue) 26%,transparent); color:var(--foreground); }
-.team-handoff[data-status=done] .team-handoff-status { background:color-mix(in oklab,#22c55e 18%,transparent); color:var(--foreground); }
-.team-handoff[data-status=stopped] { opacity:.7; }
-.team-bar { display:flex; align-items:center; gap:2px; margin-bottom:8px; padding-left:4px; }
-.team-bar-face { display:grid; place-items:center; width:38px; height:38px; border-radius:50%; transition:transform .25s var(--ease-spring),box-shadow .2s; }
-.team-bar-face[data-on] { transform:translateY(-2px); box-shadow:0 0 0 2px var(--background),0 0 0 4px color-mix(in oklab,var(--ring) 70%,transparent); }
-.team-bar-line { margin-left:8px; font-size:12.5px; color:var(--muted-foreground); }
-.mate-switch-team { display:flex; align-items:center; gap:6px; height:30px; margin-left:2px; padding:0 12px 0 10px; border-radius:999px; font-size:13px; color:var(--muted-foreground); transition:background .15s,color .15s; }
-.mate-switch-team:hover { background:var(--muted); color:var(--foreground); } .mate-switch-team svg { width:15px; height:15px; }
-.home-team { position:relative; display:flex; align-items:flex-end; justify-content:center; margin-bottom:22px; }
-.home-team-face + .home-team-face { margin-left:-18px; }
-.home-team-x { position:absolute; left:50%; bottom:-14px; translate:-50% 0; display:flex; align-items:center; gap:4px; height:26px; padding:0 10px; border-radius:99px; background:var(--card); box-shadow:0 0 0 1px var(--border); font-size:12px; color:var(--muted-foreground); }
-.home-team-x:hover { color:var(--foreground); } .home-team-x svg { width:12px; height:12px; }
-.team-dialog[data-slot=dialog-content] { max-width:min(640px, calc(100vw - 32px)); gap:16px; }
-.team-pick { display:grid; grid-template-columns:repeat(auto-fill,minmax(130px,1fr)); gap:8px; }
-.team-pick-card { position:relative; display:flex; flex-direction:column; align-items:center; gap:2px; padding:12px 8px 10px; border-radius:16px; border:1px solid var(--border); background:var(--card); outline:none; transition:border-color .2s,background-color .2s; }
-.team-pick-card:hover { background:color-mix(in oklab,var(--hue) 6%,var(--card)); } .team-pick-card:focus-visible { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent); }
-.team-pick-card[aria-pressed=true] { border-color:color-mix(in oklab,var(--hue) 70%,var(--border)); background:color-mix(in oklab,var(--hue) 12%,var(--card)); }
-.team-pick-face { display:grid; place-items:center; width:64px; height:64px; margin-bottom:4px; border-radius:50%; background:color-mix(in oklab,var(--hue) 22%,var(--card)); }
-.team-pick-card b { font-family:var(--font-display); font-size:15px; font-weight:500; } .team-pick-card small { font-size:11.5px; color:var(--muted-foreground); }
-.team-pick-check { position:absolute; top:8px; right:8px; width:18px; height:18px; padding:3px; border-radius:50%; background:var(--hue); color:#fff; }
-.team-start[data-slot=button] { align-self:flex-end; border-radius:99px; }
-.history-team { flex:none; display:flex; width:30px; } .history-team > * + * { margin-left:-12px; } .history-team.is-small { width:24px; } .history-team.is-small > * + * { margin-left:-12px; }
+/* One companion messaging another, in the chat: the two faces with an arrow, who asked whom, a status pill (Working,
+   Replied or Done, Failed, Stopped), the message and the reply in two lines each. It opens to all of both. */
+.exchange { display:flex; flex-direction:column; gap:6px; margin:6px 0 6px 42px; padding:10px 14px 12px 10px; border-radius:16px; background:color-mix(in oklab,var(--hue) 8%,var(--card)); box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--hue) 28%,var(--border)); animation:ai-in .25s ease-out; }
+.exchange-head { display:flex; align-items:center; gap:10px; width:100%; min-width:0; text-align:left; border-radius:10px; }
+.exchange-head:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.exchange-faces { flex:none; display:flex; align-items:center; gap:2px; } .exchange-faces > svg { width:13px; height:13px; color:var(--muted-foreground); }
+.exchange-who { flex:1; min-width:0; font-size:13px; color:var(--muted-foreground); } .exchange-who b { color:var(--foreground); font-weight:600; }
+.exchange-status { flex:none; display:flex; align-items:center; gap:5px; padding:2px 9px; border-radius:99px; font-size:11.5px; font-weight:500; background:var(--muted); color:var(--muted-foreground); }
+.exchange-status svg { width:12px; height:12px; }
+.exchange[data-status=working] .exchange-status { background:color-mix(in oklab,var(--hue) 24%,transparent); color:var(--foreground); }
+.exchange[data-status=replied] .exchange-status { background:color-mix(in oklab,#22c55e 18%,transparent); color:var(--foreground); }
+.exchange[data-status=failed] .exchange-status { background:color-mix(in oklab,var(--destructive) 16%,transparent); color:var(--foreground); }
+.exchange[data-status=stopped] { opacity:.75; }
+.exchange-chevron { flex:none; width:15px; height:15px; color:var(--muted-foreground); transition:rotate .2s; } .exchange[data-open] .exchange-chevron { rotate:180deg; }
+.exchange-message, .exchange-reply > p { margin:0 0 0 2px; font-size:13.5px; line-height:1.5; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
+.exchange-reply { padding:8px 11px; border-radius:11px; background:var(--card); box-shadow:inset 0 0 0 1px var(--border); }
+.exchange-reply > p { margin:0; color:var(--foreground); }
+.exchange[data-open] .exchange-message { display:block; white-space:pre-wrap; }
+.exchange-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
+.exchange-actions [data-slot=button] { border-radius:99px; height:28px; }
+/* A message a teammate sent this companion: their face and name over it, tinted in their color. */
+.ai-msg.is-user.is-teammate { background:color-mix(in oklab,var(--hue) 12%,var(--muted)); }
+.ai-asker { display:flex; align-items:center; gap:6px; margin:-2px 0 6px -4px; font-size:12px; font-weight:600; color:var(--muted-foreground); white-space:normal; }
 .ai-queued { display:flex; align-items:center; gap:8px; margin-bottom:6px; padding:6px 6px 6px 11px; border-radius:12px; background:var(--muted); font-size:12px; animation:ai-in .2s ease-out; }
 .ai-queued span { flex:none; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); }
 .ai-queued p { flex:1; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }

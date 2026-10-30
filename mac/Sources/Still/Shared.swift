@@ -4,7 +4,9 @@ import AppKit
 
 final class AiMessage: Codable {
  var role = "", text = ""
- var who: String?, to: String?, status: String? // team chats: who said it; a handoff card's receiver, and how it's going (waiting, working, done, stopped)
+ // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
+ // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
+ var who: String?, to: String?, status: String?, reply: String?, chat: String?
  init(_ role: String, _ text: String, who: String? = nil) { self.role = role; self.text = text; self.who = who }
 }
 final class AiAudit: Codable {
@@ -16,10 +18,9 @@ final class AiChat: Codable {
  var title = "", harness = ""
  var session: String? // the CLI's conversation, resumed by the next message
  var started = false
- var companion = "" // who the user is working with in this chat (a team chat: who spoke last)
- private var teamIds: [String]?, sessionIds: [String: String]? // optional, so chats saved before team chats still load
- var team: [String] { get { teamIds ?? [] } set { teamIds = newValue } } // a team chat's companions, in the order they joined; empty = one companion
- var sessions: [String: String] { get { sessionIds ?? [:] } set { sessionIds = newValue } } // a team chat: each companion's own conversation with its AI app
+ var companion = "" // who the user is working with in this chat
+ var from: String? // a teammate's chat that asked this companion something: this chat answers it
+ var team: [String]?, sessions: [String: String]? // only read to split up a team chat from before companions messaged each other (untangle)
  var unread = false, archived = false
  var noMemory = false // "Don't remember this chat": nothing from it goes into the companion's memory
  var worked = 0 // how long its last run took, in seconds
@@ -29,7 +30,7 @@ final class AiChat: Codable {
  var messages: [AiMessage] = []
  var allowed: [String] = [] // "action site" the user allowed for the rest of this chat
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case teamIds = "team", sessionIds = "sessions"; case id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
  init() {}
 }
 
