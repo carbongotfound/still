@@ -53,15 +53,15 @@ const PRESETS = Object.entries({ default: DEFAULT_LOOK, blank: BLANK, ...AGENT_L
 const pictureState = (s: MascotState): MascotState => s === "listening" || s === "talking" ? "idle" : s
 const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0; return h.toString(36) }
 const memo = new Map<string, string>()
-const wanted = new Map<string, { look: Look; state: MascotState; px: number; frame: Frame }>()
-const STORE = "still.picture2." // 2: every companion framed whole from its own bounds
-try { for (const k of Object.keys(localStorage)) if (k.startsWith("still.picture.")) localStorage.removeItem(k) } catch { /* no storage */ }
+const wanted = new Map<string, { look: Look; state: MascotState; px: number; frame: Frame; flat: boolean }>()
+const STORE = "still.picture3." // 3: 2D at chat sizes, bigger faces; pictures kept from before are dropped
+try { for (const k of Object.keys(localStorage)) if (k.startsWith("still.picture") && !k.startsWith(STORE)) localStorage.removeItem(k) } catch { /* no storage */ }
 
 function drain() {
  if (!engine || !wanted.size) return
  for (const [key, w] of wanted) {
   try {
-   const url = engine.picture(w.look, w.state, w.px, w.frame)
+   const url = engine.picture(w.look, w.state, w.px, w.frame, w.flat)
    if (!url) continue // its model is still loading: drawn when it's in
    wanted.delete(key); memo.set(key, url)
    try {
@@ -73,26 +73,27 @@ function drain() {
  changed()
 }
 
-/// A still picture of a look in a state: rendered once (loading the engine if it must), then kept.
-export function pictureOf(look: Look, state: MascotState, px: number, frame: Frame, render = true): string | undefined {
+/// A still picture of a look in a state: rendered once (loading the engine if it must), then kept. flat: drawn 2D.
+export function pictureOf(look: Look, state: MascotState, px: number, frame: Frame, render = true, flat = false): string | undefined {
  state = pictureState(state)
- const lk = lookKey(look), key = `${px}${frame[0]}-${state}-${hash(lk)}`
+ const lk = lookKey(look), key = `${px}${frame[0]}${flat ? "f" : ""}-${state}-${hash(lk)}`
  const preset = PRESETS.find(p => p[1] === lk)?.[0]
- const shipped = preset && bundled[`./assets/companion/${preset}-${frame}-${state}.webp`]
+ const shipped = preset && bundled[`./assets/companion/${preset}-${flat ? "flat" : frame}-${state}.webp`] // the default look's idle, 2D too
  if (shipped) return shipped
  let url = memo.get(key)
  if (!url) try { url = localStorage.getItem(STORE + key) ?? undefined; if (url) memo.set(key, url) } catch { /* no storage */ }
- if (url || !render || !webgl) return url ?? bundled[`./assets/companion/default-${frame}-idle.webp`] // no WebGL: the default look, drawn ahead
- if (!wanted.has(key)) { wanted.set(key, { look, state, px, frame }); if (engine) queueMicrotask(drain); else void loadEngine() }
+ if (url || !render || !webgl) return url ?? bundled[`./assets/companion/default-${flat ? "flat" : frame}-idle.webp`] // no WebGL: the default look, drawn ahead
+ if (!wanted.has(key)) { wanted.set(key, { look, state, px, frame, flat }); if (engine) queueMicrotask(drain); else void loadEngine() }
  return undefined
 }
 
-// Small companions (under 40px: chat turns, headers, tabs, the working pill) are avatars: the whole body, turned a
-// little toward the text, with room on every side. Each role's look and Make your own's are rendered in Blender at 96
-// and 144px (crew/blob.py, view "avatar"); any other look gets a full-body picture from the 3D model.
+// Chat sizes (48px and under: chat turns, mentions, handoff cards, tabs, the companion switcher, headers, menus) are 2D:
+// the same model drawn flat, each part in its own color, with a bold outline, so the face reads at 32px. Each role's
+// look and Make your own's are rendered so in Blender (rig/anim.py "flat"): avatars at 96 and 144px, and strips of its
+// clips (96px, 15 fps), one per state, played by CSS. Any other look is drawn flat from the 3D model. Bigger is 3D.
+export const FLAT = 48
 const avatarFiles = import.meta.glob("./assets/avatar/*.png", { eager: true, import: "default" }) as Record<string, string>
 const AVATAR = new Map(RIGS.map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/avatar/${f}-96.png`], avatarFiles[`./assets/avatar/${f}-144.png`]]]))
-// Rigged companions move there too: strips of their own clips (96px, 15 fps, rig/sprites), one per state, played by CSS.
 const strips = import.meta.glob("./assets/sprite/*/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>
 const sheets = import.meta.glob("./assets/sprite/*/*.json", { eager: true, import: "default" }) as Record<string, Record<string, { frames: number; fps: number; rows?: number }>>
 const RIG = new Map(RIGS.map(([l, f]) => [lookKey(l), f]))
@@ -111,12 +112,12 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  const ref = useRef<HTMLCanvasElement>(null)
  useVersion()
  const reduced = useReduced()
- const small = size < 40
- const avatar = small ? AVATAR.get(lookKey(look)) : undefined, sprite = avatar && strip(look, state)
- const live = webgl && !reduced && (!small || !!gesture) && !avatar
+ const flat = size <= FLAT
+ const avatar = flat ? AVATAR.get(lookKey(look)) : undefined, sprite = avatar && strip(look, state)
+ const live = webgl && !reduced && (!flat || !!gesture) && !avatar
  const frame: Frame = "full" // the whole body at every size, never a crop
  const px = Math.min(768, Math.round(size * Math.min(devicePixelRatio || 1, 2)))
- const picture = avatar ? undefined : pictureOf(look, state, small ? 96 : 384, frame, !live)
+ const picture = avatar ? undefined : pictureOf(look, state, flat ? 96 : 384, frame, !live, flat)
  useEffect(() => {
   const canvas = ref.current
   if (!live || !canvas) return
@@ -126,7 +127,7 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
   return () => { seen.unobserve(canvas); slots.delete(id); delete canvas.dataset.live; changed() }
  }, [live, id]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { const s = slots.get(id); if (s) Object.assign(s, { look, state, follow, gesture, gestureAt, frame }) }, [id, look, state, follow, gesture, gestureAt, frame])
- return <span className={cn("mascot", avatar && "is-avatar", className)} data-state={state} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
+ return <span className={cn("mascot", avatar && "is-avatar", flat && "is-flat", className)} data-state={state} data-rig={RIG.get(lookKey(look))} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
   {sprite ? <span key={sprite.url} className={cn("mascot-sprite", sprite.once && "is-once", sprite.rows && "is-rows")} style={{ backgroundImage: `url(${sprite.url})`, "--n": sprite.frames, "--d": `${sprite.frames / sprite.fps}s`, "--r": sprite.rows, "--c": sprite.rows && sprite.frames / sprite.rows } as CSSProperties} />
    : avatar && <img src={avatar[0]} srcSet={`${avatar[0]} 96w, ${avatar[1]} 144w`} sizes={`${size}px`} alt="" draggable={false} />}
   {picture && <img src={picture} alt="" draggable={false} />}
