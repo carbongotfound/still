@@ -404,6 +404,35 @@ extension Browser {
  /// The page shown beside a chat: the latest of its AI's pages.
  func chatShownPage(_ chat: String) -> Tab? { tabs.filter { ($0.inChat ?? $0.runChat) == chat && !$0.closed }.max { $0.lastSeen < $1.lastSeen } }
  func publishOthers() { for browser in browsers where browser !== self { browser.publishAi() } }
+ /// Adds a companion, or saves the changes to one: the profile panel, the library and setup's hires. Returns it.
+ @discardableResult func saveCompanion(_ data: [String: Any]) -> Companion {
+  func s(_ k: String) -> String { data[k] as? String ?? "" }
+  let name = tidy(s("name"))
+  let c = companions.first { $0.id == s("id") } ?? {
+   let c = Companion(), nid = s("id") // setup names it first, to start a chat with it
+   c.id = (4...24).contains(nid.count) && nid.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } ? nid : String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(10))
+   companions.append(c)
+   return c
+  }()
+  c.name = String(name.prefix(24)); c.face = s("face").count <= 20 ? s("face") : ""; c.color = s("color").count <= 20 ? s("color") : ""
+  if data["look"] != nil { c.look = s("look").count <= 2000 && s("look").hasPrefix("{") ? s("look") : "" }
+  c.job = String(tidy(s("job")).prefix(1000))
+  if data["ai"] != nil { c.ai = aiClis.contains { $0.id == s("ai") } ? s("ai") : "" }
+  if ["efficient", "default", "expert"].contains(s("mode")) { c.mode = s("mode") }
+  if data["folder"] != nil { var folder: ObjCBool = false; c.folder = s("folder").hasPrefix("/") && FileManager.default.fileExists(atPath: s("folder"), isDirectory: &folder) && folder.boolValue ? s("folder") : "" }
+  if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
+  if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
+  if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
+  if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
+  c.askName = false // saved, renamed or kept: it's the user's name now
+  storeCompanions()
+  return c
+ }
+ /// Lets a companion go, its folder and memory with it.
+ func dropCompanion(_ gone: Companion) {
+  companions.removeAll { $0 === gone }; storeCompanions(); publishOthers()
+  try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
+ }
  func storeCompanions() { prefs["Companions"] = companions.map(\.dict); saveLater() }
 
  func startAi() {
@@ -429,7 +458,7 @@ extension Browser {
   let v = aiView
   var harness = v.chat?.harness ?? pref("AiHarness", "")
   switch op {
-  case "setupStart", "setupAnswer", "setupUndo", "setupEnd": handleSetup(op, data); return true
+  case "setupStart", "setupAnswer", "setupUndo", "setupEdit", "setupEnd": handleSetup(op, data); return true
   case "welcomeAgain": welcome = true; welcomeTalk = b("talk"); publishEverywhere(); return true
   case "interests":
    var seen = Set<String>()
@@ -566,30 +595,9 @@ extension Browser {
    if let run = tabs.first(where: { $0.id == s("id") })?.runChat, let chat = aiChats.first(where: { $0.id == run }) { v.chat = chat; v.open = true }
 
   case "companionSave":
-   let name = tidy(s("name"))
-   guard !name.isEmpty else { break }
-   let c = companions.first { $0.id == s("id") } ?? {
-    let c = Companion(), nid = s("id") // setup names it first, to start a chat with it
-    c.id = (4...24).contains(nid.count) && nid.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } ? nid : String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(10))
-    companions.append(c)
-    return c
-   }()
-   c.name = String(name.prefix(24)); c.face = s("face").count <= 20 ? s("face") : ""; c.color = s("color").count <= 20 ? s("color") : ""
-   if data["look"] != nil { c.look = s("look").count <= 2000 && s("look").hasPrefix("{") ? s("look") : "" }
-   c.job = String(tidy(s("job")).prefix(1000))
-   if data["ai"] != nil { c.ai = aiClis.contains { $0.id == s("ai") } ? s("ai") : "" }
-   if ["efficient", "default", "expert"].contains(s("mode")) { c.mode = s("mode") }
-   if data["folder"] != nil { var folder: ObjCBool = false; c.folder = s("folder").hasPrefix("/") && FileManager.default.fileExists(atPath: s("folder"), isDirectory: &folder) && folder.boolValue ? s("folder") : "" }
-   if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
-   if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
-   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
-   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
-   c.askName = false // saved, renamed or kept: it's the user's name now
-   storeCompanions(); publishOthers()
+   if !tidy(s("name")).isEmpty { saveCompanion(data); publishOthers() }
   case "companionDelete":
-   guard companions.count > 1, let gone = companions.first(where: { $0.id == s("id") }) else { break }
-   companions.removeAll { $0 === gone }; storeCompanions(); publishOthers()
-   try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
+   if companions.count > 1, let gone = companions.first(where: { $0.id == s("id") }) { dropCompanion(gone) }
   case "companionMain": // setup's main pick: it runs new chats
    guard let main = companions.first(where: { $0.id == s("id") }) else { break }
    companions.removeAll { $0 === main }; companions.insert(main, at: 0); storeCompanions(); publishOthers()

@@ -91,18 +91,41 @@ FAKE = textwrap.dedent(r'''
     site = open(os.path.join(here, "site.txt")).read().strip()
     def say(e): print(json.dumps(e), flush=True)
     def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
-    # "Set it up with <name>": one question, then the settings (later turns carry only the answer, so a file keeps count)
-    asked = os.path.join(here, "setup.txt")
-    if "setting Still up" in prompt or os.path.exists(asked):
+    # "Set it up with <name>": a follow-up on each answer until it knows them or hears "that's enough", then the settings.
+    # Later turns carry only the answer, so a file keeps the topics left and the lead's id from the first prompt's team.
+    asked = os.path.join(here, "setup.json")
+    if "set Still up around them" in prompt or os.path.exists(asked):
         say({"type": "system", "subtype": "init", "session_id": "setup-1"})
         if not os.path.exists(asked):
-            open(asked, "w").write("1")
-            reply(json.dumps({"say": "Hi! Let's make Still yours.", "question": "What does your work involve?", "options": ["Research", "Sales", "Hiring"]}))
-        else:
-            os.remove(asked)
-            reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Research", "Planning"], "layout": "", "theme": "Dark",
-                "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
-                "tone": "Keep it short and cheerful.", "memories": ["Cooks most weeknights.", "grows tomatoes on the balcony. Has  two cats"]}}))
+            lead = next(l[2:].split(":")[0] for l in prompt.splitlines() if l.startswith("- ") and ": Miso," in l)
+            json.dump({"lead": lead, "left": ["goals", "tools", "replies", "schedule"]}, open(asked, "w"))
+            reply(json.dumps({"say": "Hi! I'd like to get to know you a bit.", "question": "What do you work on these days?", "options": ["I run a small bakery", "Research", "Sales"]}))
+            sys.exit(0)
+        talk = json.load(open(asked))
+        answer = prompt.strip()
+        ask = {"goals": ("What's the big goal for the next few months?", ["Grow wholesale", "Hire help"]),
+               "tools": ("Which apps and sites are open all day?", ["Gmail", "Shopify", "Sheets"]),
+               "replies": ("How do you like my answers?", ["Short and direct", "Detailed"]),
+               "schedule": ("When does your day start and end?", ["5am to 1pm", "9 to 5"])}
+        if not answer.startswith("That's enough") and talk["left"]:
+            topic = talk["left"].pop(0) if answer == "(skip)" or "wholesale" in answer.lower() or talk.get("work") else None
+            talk["work"] = True
+            json.dump(talk, open(asked, "w"))
+            if topic is None:
+                reply(json.dumps({"say": f"Nice: {answer.lower()}.", "question": f"Tell me more: who buys from you, walk-ins or other businesses?", "options": []}))
+            else:
+                reply(json.dumps({"say": "No problem, let's skip that." if answer == "(skip)" else "Got it.", "question": ask[topic][0], "options": ask[topic][1]}))
+            sys.exit(0)
+        os.remove(asked)
+        reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Baking", "Wholesale"], "layout": "", "theme": "Dark",
+            "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
+            "tone": "Keep it short and cheerful.", "memories": ["Runs a small bakery that sells to cafes.", "uses Gmail and Shopify all day. Has  two cats"],
+            "hire": ["scout", "researcher", "nobody"],
+            "companions": [{"id": talk["lead"], "instructions": "Keep my wholesale orders on track and tell me when a cafe is late to pay.", "memories": ["Bakes sourdough for six cafes."]},
+                           {"id": "scout", "instructions": "Find me a second baker who can start at 5am.", "memories": ["Hiring a second baker for early shifts."]},
+                           {"id": "nobody", "instructions": "Not on the team, so this goes nowhere."}],
+            "routines": [{"id": "scout", "text": "Check new applicants for the baker job and pick the best three.", "time": "08:30", "days": [1, 2, 3, 4, 5]}],
+            "first": "Find three flour suppliers near me with next-day delivery."}}))
         sys.exit(0)
     server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
     still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
@@ -620,32 +643,90 @@ def again(process):
 
 
 def interview(process):
-    """Set me up with Miso: the fake AI app asks one question, then picks settings; each change shows with an undo."""
+    """Set me up with Miso: the fake AI app follows up on each answer; a question can be skipped and "that's enough" ends it.
+    Then what it set up: a companion from the library with its instructions, memory and a routine (off), what Miso focuses
+    on and remembers, settings and a first task, each with an undo, and the wording ones editable. Recorded as interview.mp4."""
     calls = rpc(process).get("aiCalls")
-    send(process, "welcomeAgain", talk=True)
-    check(until(lambda: "What does your work involve?" in talk_text(process), 20), "Set me up again opens straight into Miso's questions")
-    options = js(process, "[...document.querySelectorAll('.ob-interview .ob-chips button')].map(b => b.innerText.trim())") or []
-    check(options == ["Research", "Sales", "Hiring"], f"Its question comes with answers to tap ({options})")
-    rpc(process, "capture", name="interview.png")
-    click_text(process, ".ob-interview .ob-chips button", "Research")
-    check(until(lambda: js(process, "document.querySelectorAll('.ob-summary li').length") == 6, 20), "Then it shows the six things it changed")
-    rows = js(process, "[...document.querySelectorAll('.ob-summary li b')].map(b => b.innerText.trim())") or []
-    check(rows == ["Theme", "Pinned", "When I work in tabs", "How I talk", "Ideas about", "I'll remember"], f"The summary names each change, in the companion's own words ({rows})")
-    told = (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith(\"I'll remember\"))?.querySelector('small')?.innerText") or "").split("\n")
-    check(len(told) >= 2 and all(t[:1].isupper() and t.endswith(".") and t.count(". ") == 0 for t in told), f"Each memory is its own short sentence, on its own line ({told})")
-    rpc(process, "capture", name="interview-summary.png")
-    prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Research", "Planning"] and p, 5) or {}  # saved a moment later
-    check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
-    check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
-    mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
-    facts = [f["Text"] for f in memory("Miso")]
-    check(mate.get("Tone") == "Keep it short and cheerful." and "Cooks most weeknights." in facts and "Grows tomatoes on the balcony." in facts and "Has two cats." in facts and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts,
-          f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
-    js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
-    check(until(lambda: rpc(process).get("theme") == "System" and js(process, "document.querySelector('.ob-summary li')?.innerText.includes('Undone')"), 5), "Undo puts the theme back")
-    check(rpc(process).get("aiCalls") - calls == 2, f"It took two small AI runs ({rpc(process).get('aiCalls') - calls})")
-    click(process, ".ob-next")
-    check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Done closes setup")
+    recorder = record(process.pid, RUN / "interview.mp4")
+    sent = lambda: [json.loads(l)["prompt"] for l in (BIN / "prompts.jsonl").read_text(encoding="utf-8").splitlines()]
+    talked = len(sent())
+    try:
+        send(process, "welcomeAgain", talk=True)
+        check(until(lambda: "What do you work on these days?" in talk_text(process), 20), "Set me up again opens straight into Miso's questions")
+        first = sent()[talked]
+        check("- scout: Bloom, Scout, Hiring" in first and "- researcher:" not in first and "Glint, Researcher" in first,
+              "It knows Still's companions, and which ones are already on the team")
+        options = js(process, "[...document.querySelectorAll('.ob-interview .ob-chips button')].map(b => b.innerText.trim())") or []
+        check(options == ["I run a small bakery", "Research", "Sales"], f"Its question comes with answers to tap ({options})")
+        time.sleep(1.2)
+        click_text(process, ".ob-interview .ob-chips button", "I run a small bakery")
+        check(until(lambda: "who buys from you" in talk_text(process), 20) and sent()[-1].strip() == "I run a small bakery", "It follows up on the answer instead of moving down a list")
+        time.sleep(1)
+        type_into(process, ".ob-interview .ob-say input", "Mostly cafes, wholesale. Walk-ins on Saturdays.")
+        time.sleep(.8)
+        js(process, "document.querySelector('.ob-interview .ob-say')?.requestSubmit()")
+        check(until(lambda: "big goal" in talk_text(process), 20), "Typed answers work too")
+        rpc(process, "capture", name="interview.png")
+        time.sleep(1)
+        click_text(process, ".ob-interview-foot button", "Skip this one")
+        check(until(lambda: "Which apps and sites" in talk_text(process), 20) and sent()[-1].strip() == "(skip)" and "Skipped" in talk_text(process),
+              "Any question can be skipped, and it moves on")
+        time.sleep(1)
+        click_text(process, ".ob-interview .ob-chips button", "Shopify")
+        check(until(lambda: "How do you like my answers?" in talk_text(process), 20), "Then the next topic")
+        time.sleep(1)
+        click_text(process, ".ob-interview-foot button", "That's enough")
+        check(until(lambda: js(process, "document.querySelectorAll('.ob-summary li').length") >= 10, 20), "\"That's enough\" ends it, and it sets Still up from what it heard")
+        rows = js(process, "[...document.querySelectorAll('.ob-summary section')].map(s => s.querySelector('h4').textContent.trim() + ': ' + [...s.querySelectorAll('li b')].map(b => b.innerText.trim()).join(' | '))") or []
+        check(rows == ["Your team: New on your team | Your team will remember | What I'll focus on | I'll also remember | What Bloom will focus on | Bloom will also remember | Bloom's routine, off for now",
+                       "Your Still: Theme | Pinned | When I work in tabs | How I talk | Ideas about", "First up: First, I'll help with"], f"The summary groups what it set up ({rows})")
+        told = (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Your team will remember'))?.querySelector('small')?.innerText") or "").split("\n")
+        check(len(told) >= 2 and all(t[:1].isupper() and t.endswith(".") and t.count(". ") == 0 for t in told), f"Each memory is its own short sentence, on its own line ({told})")
+        time.sleep(1.5)
+        rpc(process, "capture", name="interview-summary.png")
+        prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Baking", "Wholesale"] and "Bloom" in companions(p) and p, 5) or {}  # saved a moment later
+        check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
+        check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
+        check(sorted(companions(prefs)) == ["Bloom", "Glint", "Miso"], f"It hired Bloom from the library, and not Glint twice ({companions(prefs)})")
+        mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
+        bloom = next((c for c in prefs.get("Companions", []) if c["Name"] == "Bloom"), {})
+        check(mate.get("Job", "").endswith("For me: Keep my wholesale orders on track and tell me when a cafe is late to pay.") and bloom.get("Job", "").endswith("For me: Find me a second baker who can start at 5am."),
+              "Each companion's instructions get a paragraph about the user")
+        check(bloom.get("Crew") == "scout" and len(bloom.get("Routines", [])) == 2 and not any(r["On"] for r in bloom["Routines"])
+              and any(r["Time"] == "08:30" and r["Days"] == [1, 2, 3, 4, 5] for r in bloom["Routines"]), f"Bloom's routines, its own and the new one, start off ({bloom.get('Routines')})")
+        facts, glint, bloom_facts = [f["Text"] for f in memory("Miso")], [f["Text"] for f in memory("Glint")], [f["Text"] for f in memory("Bloom")]
+        check(mate.get("Tone") == "Keep it short and cheerful." and "Runs a small bakery that sells to cafes." in facts and "Uses Gmail and Shopify all day." in facts and "Has two cats." in facts
+              and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts and "Bakes sourdough for six cafes." in facts, f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
+        check("Has two cats." in glint and "Bakes sourdough for six cafes." not in glint and "Has two cats." in bloom_facts and "Hiring a second baker for early shifts." in bloom_facts,
+              f"The whole team learns about the user, and each one what's just for it ({glint}, {bloom_facts})")
+
+        def edit(label, text):
+            js(process, f"[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith({json.dumps(label)}))?.querySelector('button')?.click()")
+            until(lambda: js(process, "!!document.querySelector('.ob-edit textarea')"), 3)
+            time.sleep(.6)
+            type_into(process, ".ob-edit textarea", text)
+            time.sleep(.6)
+            js(process, "document.querySelector('.ob-edit')?.requestSubmit()")
+        edit("How I talk", "Short answers, no small talk.")
+        check(until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), {}).get("Tone") == "Short answers, no small talk.", 5)
+              and "Short answers, no small talk." in (js(process, "document.querySelector('.ob-summary')?.innerText") or ""), "Its wording can be edited right in the summary")
+        edit("I'll also remember", "Bakes sourdough and rye for six cafes.\nDelivers before 7am.")
+        check(until(lambda: "Delivers before 7am." in [f["Text"] for f in memory("Miso")] and "Bakes sourdough for six cafes." not in [f["Text"] for f in memory("Miso")], 5),
+              "An edited memory replaces what it kept")
+        js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.querySelector('button')?.click()")
+        check(until(lambda: rpc(process).get("theme") == "System" and "Undone" in (js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('Theme'))?.innerText") or ""), 5),
+              "Undo puts the theme back")
+        bloom_dir = PROFILE / "companions" / bloom.get("Id", "-")
+        js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('New on your team'))?.querySelector('button')?.click()")
+        check(until(lambda: "Bloom" not in companions() and not bloom_dir.exists(), 5) and until(lambda: js(process, "[...document.querySelectorAll('.ob-summary li')].filter(l => /Bloom/.test(l.innerText) && l.classList.contains('is-undone')).length") == 4, 3),
+              "Undoing a hire lets that companion go, with everything setup gave it")
+        js(process, "[...document.querySelectorAll('.ob-summary li')].find(l => l.innerText.startsWith('First,'))?.querySelectorAll('button')[1]?.click()")  # no first task: the next suite wants no chat running
+        time.sleep(2)
+        check(rpc(process).get("aiCalls") - calls == 6, f"Each message is one small AI run ({rpc(process).get('aiCalls') - calls})")
+        click(process, ".ob-next")
+        check(until(lambda: not js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), 5), "Done closes setup")
+    finally:
+        stop(recorder)
 
 
 CREW = [("Juniper", "#a6cf98", {"shape": "kitty", "eyes": "iris", "pupil": .3, "brows": "thin", "mouth": "cat", "hat": "beret"}),

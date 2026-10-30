@@ -4,24 +4,30 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Still;
 
-/// "Set it up with <name>": a short interview run by the user's own AI app (a few small messages on their plan), then
-/// the settings it picked, each with an undo. Quick setup never comes here and never runs an AI.
+/// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
+/// what they say until it knows them, then sets Still up around them (Assets/setup.md): settings, companions from Still's
+/// library, what each companion focuses on and remembers, and starter routines, off. Every change keeps an undo, and the
+/// text ones can be reworded in the summary. Quick setup never comes here and never runs an AI.
 public partial class MainWindow
 {
- sealed class SetupTalk(string companion)
+ sealed class SetupTalk(string companion, JsonElement library)
  {
   public readonly string Companion = companion;
-  public List<string> Also = []; // the other companions picked in setup: they learn the same things
+  public readonly JsonElement Library = library; // Still's companions as the welcome hires them, with their role and area
+  public IEnumerable<JsonElement> Crew => Library.ValueKind == JsonValueKind.Array ? Library.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object) : [];
   public string? Session;
   public bool Started, Busy, Done;
   public string Error = "";
   public readonly List<object> Turns = []; // what was said, for the welcome to show: { role, text, options }
   public readonly List<SetupChange> Changes = [];
  }
- sealed class SetupChange(string key, string label, string value, Action undo)
+ sealed class SetupChange(string key, string label, string value, Action undo, Func<string, string?>? edit = null, string owner = "")
  {
-  public readonly string Key = key, Label = label, Value = value;
+  public readonly string Key = key, Label = label;
+  public readonly string Owner = owner; // the companion it's for: a companion setup hired takes what it gave it along when it goes
+  public string Value = value;
   public readonly Action Undo = undo;
+  public readonly Func<string, string?>? Edit = edit; // puts the user's own wording in: what's shown after, or null if none of it is kept
   public bool Undone;
  }
  static SetupTalk? setupTalk;
@@ -31,25 +37,39 @@ public partial class MainWindow
 
  static void PublishSetup() { foreach (var w in Windows) w.ShellSend(new { kind = "setup", data = setupTalk is not { } s ? null : new {
   busy = s.Busy, error = s.Error, done = s.Done, turns = s.Turns,
-  changes = s.Changes.Select(c => new { key = c.Key, label = c.Label, value = c.Value, undone = c.Undone }) } }); }
+  changes = s.Changes.Select(c => new { key = c.Key, label = c.Label, value = c.Value, undone = c.Undone, editable = c.Edit != null }) } }); }
+
+ static string Field(JsonElement e, string k) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 
  async Task HandleSetup(string op, JsonElement data)
  {
-  string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+  string S(string k) => Field(data, k);
   switch (op) {
    case "setupStart":
-    setupTalk = new SetupTalk(S("companion")) { Also = data.TryGetProperty("also", out var also) && also.ValueKind == JsonValueKind.Array ? [.. also.EnumerateArray().Select(x => x.ToString())] : [] }; welcomeTalk = false;
+    setupTalk = new SetupTalk(S("companion"), data.TryGetProperty("library", out var library) ? library.Clone() : default); welcomeTalk = false;
     await SetupAsk("Start now: say hello in one line and ask your first question.", "");
     break;
    case "setupAnswer" when setupTalk is { Busy: false } && S("text").Trim() is { Length: > 0 and <= 2000 } answer:
     await SetupAsk(answer, answer);
     break;
    case "setupUndo" when setupTalk != null:
-    foreach (var c in setupTalk.Changes.Where(c => !c.Undone && (S("key").Length == 0 || c.Key == S("key")))) { c.Undo(); c.Undone = true; }
+    foreach (var c in setupTalk.Changes.Where(c => !c.Undone && (S("key").Length == 0 || c.Key == S("key")))) UndoSetup(setupTalk, c);
+    SaveLater(); PublishAll(); PublishAiEverywhere(); PublishSetup();
+    break;
+   case "setupEdit" when setupTalk?.Changes.FirstOrDefault(c => c.Key == S("key") && c is { Undone: false, Edit: not null }) is { } edited && S("value").Trim() is { Length: > 0 and <= 1000 } value:
+    if (edited.Edit!(value) is { } shown) edited.Value = shown;
+    else { edited.Undone = true; Toast("That looks like a password or a code, so it isn't kept."); }
     SaveLater(); PublishAll(); PublishAiEverywhere(); PublishSetup();
     break;
    case "setupEnd": setupTalk = null; PublishSetup(); break;
   }
+ }
+
+ /// Takes a change back. A companion setup hired goes with everything setup gave it.
+ static void UndoSetup(SetupTalk s, SetupChange c)
+ {
+  c.Undo(); c.Undone = true;
+  if (c.Key.StartsWith("hire:")) foreach (var x in s.Changes.Where(x => x.Owner == c.Owner)) x.Undone = true;
  }
 
  async Task SetupAsk(string text, string shown)
@@ -60,7 +80,7 @@ public partial class MainWindow
   if (shown.Length > 0) s.Turns.Add(new { role = "user", text = shown });
   if (cli == null || FindCli(cli.Command) is not { } exe) { s.Error = "No AI app is set up yet."; PublishSetup(); return; }
   s.Busy = true; s.Error = ""; PublishSetup();
-  string prompt = (s.Started ? "" : SetupPrompt(who, cli) + "\n\n") + text, folder = Path.Combine(AiFolder, "setup"), said = "";
+  string prompt = (s.Started ? "" : await SetupPrompt(who, cli, s) + "\n\n") + text, folder = Path.Combine(AiFolder, "setup"), said = "";
   List<string> mcp = ["--mcp", "--no-tools", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   var (model, effort) = ForMode(cli.Id, "efficient"); // the quickest model: setup is small talk
@@ -89,10 +109,10 @@ public partial class MainWindow
    var reply = ParseObject(said);
    string Str(string k) => reply?[k] is JsonValue v && v.TryGetValue<string>(out var x) ? x.Trim() : "";
    if (reply?["done"] is JsonValue d && d.TryGetValue<bool>(out var done) && done && reply["settings"] is JsonObject settings) {
-    foreach (var c in s.Changes.Where(c => !c.Undone)) c.Undo(); // a second round (the user asked for a change) starts from where they were
+    foreach (var c in s.Changes.Where(c => !c.Undone)) UndoSetup(s, c); // a second round (the user asked for a change) starts from where they were
     s.Changes.Clear(); s.Done = true;
     SetupApply(settings, who);
-    s.Turns.Add(new { role = "ai", text = Str("say") is { Length: > 0 } bye ? bye : "All set. Here's what I changed." });
+    s.Turns.Add(new { role = "ai", text = Str("say") is { Length: > 0 } bye ? bye : "All set. Here's what I set up for you." });
     SaveLater(); PublishAll(); PublishAiEverywhere();
    } else {
     string[] options = reply?["options"] is JsonArray o ? [.. o.Select(x => x is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : "").Where(t => t.Length is > 0 and <= 80).Take(4)] : [];
@@ -117,45 +137,51 @@ public partial class MainWindow
   s = Regex.Replace(s, @"\s+", " ").Trim().TrimEnd(',', ';', ':', ' ');
   return s.Length == 0 ? s : char.ToUpperInvariant(s[0]) + s[1..] + (".!?".Contains(s[^1]) ? "" : ".");
  }
- string SetupPrompt(Companion? who, AgentAdapter cli) => $$"""
-  You are {{who?.Name ?? "the user's companion"}}, the companion in Still, a web browser with AI built in. {{(who is { Job.Length: > 0 } ? "The user picked you as: " + who.Job : "")}}
-  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
-  You're setting Still up with the user in a short, friendly chat. Ask one short question at a time, 4 to 6 in all, and adapt to what they say. Find out:
-  what their work involves (research, email, planning, sales, hiring, marketing, support, code and so on), the sites they're on every day, how hands-on they want you to be when you work in tabs for them, what they'd like your help with most, and how they'd like you to talk to them. Skip anything they've already told you. Don't use any tools and don't look anything up.
 
-  Reply with ONLY one JSON object and nothing else:
-  {"say": "a short, warm reaction to their answer (or hello)", "question": "your next question", "options": ["2 to 4 short answers they can tap"]}
-  Write plainly, in second person, no em dashes. Don't call Still quiet, calm or minimal.
+ /// Routine days as the profile panel shows them.
+ static string Days(List<int> d) => d.Count == 7 ? "Every day" : d.SequenceEqual([1, 2, 3, 4, 5]) ? "Weekdays" : d.SequenceEqual([0, 6]) ? "Weekends" : string.Join(", ", d.Select(x => ((DayOfWeek)x).ToString()[..3]));
 
-  When you know enough, or they ask you to finish, reply instead with:
-  {"say": "one line wrapping up", "done": true, "settings": {
-   "name": "what they want to be called, or empty",
-   "interests": ["up to 6 short areas of their work, like research, sales or hiring"],
-   "layout": "Classic" (tabs across the top) or "Modern" (tabs down the side) or "",
-   "theme": "Light", "Dark", "System" or "",
-   "search": "Google", "Bing", "DuckDuckGo" or "",
-   "pinned": [{"title": "Site", "url": "https://..."}] (up to 4 sites they use all day, kept as pinned tabs),
-   "sites": [{"title": "Site", "url": "https://..."}] (up to 8 sites for their new tab page),
-   "newTab": "companion" (you and ideas on the new tab page) or "sites" (search and their sites) or "",
-   "agent": "careful" (ask before every click), "balanced" (ask once per site in a chat) or "hands-off" (just do it) or "",
-   "tone": "how they want you to talk, one or two short sentences addressed to you, like 'Keep answers short and skip the small talk.'",
-   "memories": ["facts worth remembering about them, each one short sentence"]} }
-  Use "" or [] for anything they didn't say: Still leaves those as they are. Buying, sending and deleting always ask, whatever they pick.
-
-  Still right now: tabs {{(Prefs.TabLayout == "Modern" ? "down the side" : "across the top")}}, theme {{Prefs.Theme}}, search {{Prefs.SearchEngine}}. They're using {{cli.Name}}.
-  """;
+ async Task<string> SetupPrompt(Companion? who, AgentAdapter cli, SetupTalk s)
+ {
+  var crew = s.Crew.ToList();
+  string Role(Companion c) => crew.FirstOrDefault(x => c.Crew.Length > 0 && Field(x, "crew") == c.Crew) is { ValueKind: JsonValueKind.Object } x ? Field(x, "role")
+   : c.Job.Length > 100 ? c.Job[..100] + "..." : c.Job.Length > 0 ? c.Job : "their own companion";
+  var free = crew.Where(x => !Companions.Any(c => c.Crew == Field(x, "crew"))).Select(x => $"- {Field(x, "crew")}: {Field(x, "name")}, {Field(x, "role")}, {Field(x, "area")}").ToList();
+  return (await AppContent.ReadAsset("setup.md"))
+   .Replace("{{name}}", who?.Name ?? "the user's companion")
+   .Replace("{{picked}}", who is { Job.Length: > 0 } ? "The user picked you as: " + who.Job : "")
+   .Replace("{{team}}", string.Join("\n", Companions.Select(c => $"- {c.Id}: {c.Name}, {Role(c)}")))
+   .Replace("{{library}}", free.Count > 0 ? string.Join("\n", free) : "(none, they have them all)")
+   .Replace("{{now}}", $"tabs {(Prefs.TabLayout == "Modern" ? "down the side" : "across the top")}, theme {Prefs.Theme}, search {Prefs.SearchEngine}")
+   .Replace("{{cli}}", cli.Name);
+ }
 
  /// Applies what the interview settled on. Each change keeps its own undo; anything invalid is left out.
  void SetupApply(JsonObject st, Companion? who)
  {
-  var changes = setupTalk!.Changes;
-  string Str(string k, int max = 200) => st[k] is JsonValue v && v.TryGetValue<string>(out var x) ? (x.Trim() is var t && t.Length > max ? t[..max] : t) : "";
+  var s = setupTalk!;
+  var changes = s.Changes;
+  static string Of(JsonNode? n, string k, int max = 200) => n?[k] is JsonValue v && v.TryGetValue<string>(out var x) ? (x.Trim() is var t && t.Length > max ? t[..max] : t) : "";
+  static List<string> Texts(JsonNode? n, string k, int max, int len) => n?[k] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : "").Where(t => t.Length is > 1 && t.Length <= len).Take(max)] : [];
+  string Str(string k, int max = 200) => Of(st, k, max);
   List<(string Title, string Url)> Sites(string k, int max) => st[k] is JsonArray a ? [.. a.OfType<JsonObject>()
    .Select(o => (Title: (o["title"] as JsonValue)?.ToString().Trim() ?? "", Url: (o["url"] as JsonValue)?.ToString().Trim() ?? ""))
    .Where(x => Uri.TryCreate(x.Url, UriKind.Absolute, out var u) && u.Scheme is "https" or "http" && x.Url.Length < 300)
    .Select(x => (x.Title.Length is > 0 and <= 40 ? x.Title : Host(x.Url), x.Url)).DistinctBy(x => Host(x.Item2)).Take(max)] : [];
-  List<string> Texts(string k, int max, int len) => st[k] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : "").Where(t => t.Length is > 1 && t.Length <= len).Take(max)] : [];
   void Theme(string t) { Prefs.Theme = t; foreach (var w in Windows) w.ApplyTheme(); }
+  // Each one its own short sentence: an answer with two sentences becomes two memories.
+  static List<string> Facts(IEnumerable<string> lines) => [.. lines.SelectMany(t => Regex.Split(t, @"\n+|(?<=[.!?])\s+(?=\p{Lu})")).Select(Sentence).Where(t => t.Length > 2).Take(8)];
+  // What it learned goes into memory, like anything else a companion remembers: undo forgets it, and an edit swaps the
+  // user's lines in. The summary shows what the first companion keeps.
+  void Remember(string key, string label, List<Companion> to, List<string> facts, string owner = "")
+  {
+   List<(string Id, Fact Fact)> Keep(List<string> lines) => [.. to.Where(Companions.Contains).SelectMany(c => lines.Select(f => (c.Id, CompanionMemory.Remember(c.Id, f, "preference", "",
+    f.StartsWith("Likes to be called ") ? "name" : f.StartsWith("Works on ") ? "interests" : "")))).Where(k => k.Item2 != null).Select(k => (k.Id, k.Item2!))];
+   var kept = Keep(facts);
+   string Shown() => string.Join("\n", kept.Where(k => k.Id == to[0].Id).Select(k => k.Fact.Text));
+   void Forget() { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f.Id); }
+   if (kept.Any(k => k.Id == to[0].Id)) changes.Add(new(key, label, Shown(), Forget, text => { Forget(); kept = Keep(Facts([text])); return kept.Count > 0 ? Shown() : null; }, owner));
+  }
 
   if (Str("layout") is "Classic" or "Modern" && Str("layout") != Prefs.TabLayout) {
    var old = Prefs.TabLayout; Prefs.TabLayout = Str("layout");
@@ -193,24 +219,49 @@ public partial class MainWindow
   }
   if (who != null && Str("tone", 600) is { Length: > 3 } tone && tone != who.Tone) {
    var old = who.Tone; who.Tone = tone;
-   changes.Add(new("tone", "How I talk", tone, () => who.Tone = old));
+   changes.Add(new("tone", "How I talk", tone, () => who.Tone = old, t => who.Tone = t.Length > 600 ? t[..600] : t));
   }
-  var interests = Texts("interests", 6, 40);
+  var interests = Texts(st, "interests", 6, 40);
   if (interests.Count > 0) {
    var old = Prefs.Interests; Prefs.Interests = interests;
    changes.Add(new("interests", "Ideas about", string.Join(", ", interests), () => Prefs.Interests = old));
   }
+
+  // Companions from Still's library whose work matches theirs, hired as the library hires them: routine off.
+  Dictionary<string, Companion> hired = [];
+  foreach (var crew in Texts(st, "hire", 3, 24))
+   if (!Companions.Any(c => c.Crew == crew) && s.Crew.FirstOrDefault(x => Field(x, "crew") == crew) is { ValueKind: JsonValueKind.Object } entry) {
+    var c = hired[crew] = SaveCompanion(entry);
+    changes.Add(new("hire:" + crew, "New on your team", $"{c.Name}, {Field(entry, "role")} · {Field(entry, "area")}", () => DropCompanion(c), owner: c.Id));
+   }
+  Companion? Find(string id) => hired.GetValueOrDefault(id) ?? Companions.FirstOrDefault(c => c.Id == id) ?? Companions.FirstOrDefault(c => id.Length > 0 && c.Crew == id);
+  string Whose(Companion c, string mine, string theirs) => c == who ? mine : string.Format(theirs, c.Name);
+
   if (who != null) {
-   // What it learned goes into the companion's memory, like anything else it remembers.
-   // Each one its own short sentence: an answer with two sentences becomes two memories.
-   List<string> facts = [.. Texts("memories", 8, 200).SelectMany(t => Regex.Split(t, @"(?<=[.!?])\s+(?=\p{Lu})")).Select(Sentence).Where(t => t.Length > 2).Take(8)];
+   List<string> facts = Facts(Texts(st, "memories", 8, 200));
    if (Str("name", 40) is { Length: > 0 } name) facts.Insert(0, "Likes to be called " + name + ".");
    if (interests.Count > 0) facts.Add("Works on " + string.Join(", ", interests).ToLowerInvariant() + ".");
-   var ids = new[] { who.Id }.Concat(setupTalk?.Also ?? []).Distinct().Where(id => Companions.Any(c => c.Id == id)).ToList();
-   var kept = ids.SelectMany(id => facts.Select((f, i) => (id, fact: CompanionMemory.Remember(id, f, "preference", "", i == 0 && Str("name", 40).Length > 0 ? "name" : f.StartsWith("Works on ") ? "interests" : ""))))
-    .Where(k => k.fact != null).ToList();
-   if (kept.Any(k => k.id == who.Id)) changes.Add(new("memory", "I'll remember", string.Join("\n", kept.Where(k => k.id == who.Id).Select(k => k.fact!.Text)),
-    () => { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f!.Id); }));
+   Remember("memory", Companions.Count > 1 ? "Your team will remember" : "I'll remember", [.. Companions.OrderBy(c => c != who)], facts);
   }
+  // What each companion focuses on for them goes under its own instructions, after "For me:", so setting up again
+  // replaces it.
+  foreach (var o in (st["companions"] as JsonArray ?? []).OfType<JsonObject>().Take(10)) {
+   if (Find(Of(o, "id", 24)) is not { } c) continue;
+   if (Of(o, "instructions", 600) is { Length: > 10 } focus && c.Job.Split("\n\nFor me: ")[0] is { Length: < 900 } before) {
+    var old = c.Job;
+    string Focus(string t) { t = t.Length > 990 - before.Length ? t[..(990 - before.Length)] : t; c.Job = $"{before}\n\nFor me: {t}".TrimStart(); return t; }
+    changes.Add(new("focus:" + c.Id, Whose(c, "What I'll focus on", "What {0} will focus on"), Focus(focus), () => c.Job = old, Focus, c.Id));
+   }
+   Remember("memory:" + c.Id, Whose(c, "I'll also remember", "{0} will also remember"), [c], Facts(Texts(o, "memories", 6, 200)), c.Id);
+  }
+  foreach (var o in (st["routines"] as JsonArray ?? []).OfType<JsonObject>().Take(3)) {
+   if (Find(Of(o, "id", 24)) is not { } c) continue;
+   var r = (JsonObject)o.DeepClone(); r.Remove("id"); r["on"] = false;
+   if (ReadRoutines(JsonSerializer.SerializeToElement(new JsonArray(r)), []) is not [var routine]) continue;
+   c.Routines.Add(routine);
+   changes.Add(new("routine:" + routine.Id, Whose(c, "My routine, off for now", "{0}'s routine, off for now"), $"{Days(routine.Days)} at {routine.Time}: {routine.Text}", () => c.Routines.Remove(routine), owner: c.Id));
+  }
+  // What they want help with first: the welcome offers it as their first task.
+  if (Str("first", 300) is { Length: > 3 } first) changes.Add(new("first", "First, I'll help with", first, () => { }, t => t));
  }
 }
