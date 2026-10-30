@@ -480,8 +480,8 @@ def settings(process):
     send(process, "permSet", site="shop.example", action="interact", companion="maya", mode="ask")
     send(process, "permSensitive", site="mybank.example", on=True)
     send(process, "openPanel", name="settings")
-    until(lambda: js(process, "!!document.querySelector('.settings-tabs')"), 10)
-    js(process, "[...document.querySelectorAll('.settings-tabs [role=tab]')].find(t => t.innerText.trim() === 'Permissions')?.focus()")  # tabs switch on focus
+    until(lambda: js(process, "!!document.querySelector('.set-shell')"), 10)
+    js(process, "[...document.querySelectorAll('.set-nav-item')].find(t => t.innerText.trim() === 'Privacy & permissions')?.click()")
     table = until(lambda: js(process, "document.querySelector('.perm-table')?.textContent ?? ''"), 10) or ""
     check("Any site" in table and "Sensitive steps" in table and "shop.example" in table and "Maya" in table, "Settings list the defaults and the rule for Maya on shop.example")
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
@@ -490,7 +490,7 @@ def settings(process):
     press(process, "Reset now", ".perm-settings")
     check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 10), "Reset all goes back to the defaults")
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-    until(lambda: not js(process, "!!document.querySelector('.settings-tabs')"), 5)
+    until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 
     first = chat_of("CART " + SITE + " 2 a")
     send(process, "chatOpen", id=first["Id"])

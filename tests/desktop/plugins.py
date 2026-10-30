@@ -275,7 +275,7 @@ def apps(process, which="is-found"):
 
 def close_panel(process):
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
-    until(lambda: not js(process, "!!document.querySelector('.settings-tabs')"), 5)
+    until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 
 
 def paste_key(process, key, scope=".plug-settings"):
@@ -402,11 +402,11 @@ def no_key(process):
     js(process, "[...document.querySelectorAll('.home-page .history-chip')].find(b => b.innerText.trim() === 'Plugins')?.click()")
     check(until(lambda: js(process, "!!document.querySelector('.plug-settings') && !document.querySelector('.skills-part[aria-label=Skills]')"), 5), "and Plugins only plugins")
     send(process, "openPanel", name="settings", value="plugins")
-    until(lambda: js(process, "!!document.querySelector('.settings-tabs')"), 10)
-    card = until(lambda: js(process, "[...document.querySelectorAll('.settings-content button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.innerText"), 5)
-    check(card and not js(process, "!!document.querySelector('.settings-content .plug-settings')"), "Settings → Plugins is only a card that opens Skills & plugins")
-    js(process, "[...document.querySelectorAll('.settings-content button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.click()")
-    check(until(lambda: not js(process, "!!document.querySelector('.settings-tabs')") and js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins'] .plug-settings\")"), 10), "and it does")
+    until(lambda: js(process, "!!document.querySelector('.set-shell')"), 10)
+    card = until(lambda: js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.innerText"), 5)
+    check(card and not js(process, "!!document.querySelector('.set-main .plug-settings')"), "Settings → Skills & plugins is only a card that opens Skills & plugins")
+    js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.click()")
+    check(until(lambda: not js(process, "!!document.querySelector('.set-shell')") and js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins'] .plug-settings\")"), 10), "and it does")
     ask(process, "NOPLUG")
     idle(process)
     done = until(lambda: len(calls("NOPLUG")) == 2 and calls("NOPLUG"), 20) or calls("NOPLUG")  # the run's first chat can start late

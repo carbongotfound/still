@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -28,8 +28,7 @@ import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs"
-import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select"
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator } from "@/components/ui/select"
 import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
@@ -65,7 +64,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -105,6 +104,34 @@ function approveCard() {
 }
 
 const FLOW = { type: "spring" as const, stiffness: 460, damping: 34, mass: .75 }
+// Settings: its pages, and every setting by its row id (set-<id>) with the words a search finds it by.
+const SETTING_PAGES: [string, string, LucideIcon][] = [["general", "General", SlidersHorizontal], ["appearance", "Appearance", Palette], ["companions", "Companions", UsersRound], ["models", "Models", Cpu],
+ ["skills", "Skills & plugins", Blocks], ["privacy", "Privacy & permissions", ShieldCheck], ["shortcuts", "Shortcuts", Keyboard], ["about", "About", Info]]
+const AI_PAGES = ["companions", "skills"]
+const OLD_PAGES: Record<string, string> = { ai: "models", memory: "companions", plugins: "skills", permissions: "privacy", extensions: "general", advanced: "general" }
+type Finding = [string, string, string, string]
+const SETTINGS_FIND: Finding[] = [
+ ["setup", "general", "Run setup again", "welcome first steps start over"], ["talk", "general", "Set me up with your companion", "setup questions layout"],
+ ["search", "general", "Search engine", "google bing duckduckgo"], ["default", "general", "Default browser", "open links"], ["startup", "general", "Open Still at sign-in", "login start boot"],
+ ["restore", "general", "Pick up where you left off", "restore tabs session reopen"], ["sounds", "general", "Sounds", "audio jingle mute"], ["downloads", "general", "Download folder", "files save location"],
+ ["import", "general", "Import browsing data", "chrome edge firefox brave bookmarks history passwords"], ["export", "general", "Export bookmarks", "backup file"],
+ ["profiles", "general", "Profiles", "spaces accounts separate"], ["extensions", "general", "Extensions", "chrome web store add-ons"],
+ ["theme", "appearance", "Theme", "dark light black system mode colors"], ["layout", "appearance", "Tab layout", "classic modern side vertical tabs"], ["tearoff", "appearance", "Drag tabs into their own window", "tear off new window"],
+ ["team", "companions", "Companions", "team add edit hire look"], ["memory", "companions", "What companions remember", "memory forget facts"],
+ ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"],
+ ["mcp", "models", "Let other AI apps use Still", "mcp claude desktop code cursor agents"], ["askInChat", "models", "Ask me in the AI's chat when I'm away", "agents away"],
+ ["dev", "models", "Connect an AI app by hand", "mcp config cli developer command line prompt"],
+ ["skills", "skills", "Skills & plugins", "composio gmail slack apps connect"],
+ ["blocking", "privacy", "Block ads & trackers", "adblock tracking"], ["passwords", "privacy", "Passwords", "logins autofill"], ["cookies", "privacy", "Cookies", "site data"],
+ ["security", "privacy", "Privacy & security", "tracking protection site permissions camera location"], ["permissions", "privacy", "What companions may do", "permissions ask approve sites sensitive"],
+ ["clearHistory", "privacy", "Clear browsing history", "delete"], ["clearCookies", "privacy", "Clear cookies and website data", "delete sign out"],
+ ["about", "about", "About Still", "version update intro open source"]]
+function SetCard({ title, children }: { title: string; children: ReactNode }) {
+ return <section className="set-group" aria-label={title}><h3>{title}</h3><div className="set-card">{children}</div></section>
+}
+function SetRow({ id, title, help, children }: { id: string; title: string; help?: ReactNode; children?: ReactNode }) {
+ return <div className="setting-row" id={"set-" + id}><div><strong>{title}</strong>{help && <p>{help}</p>}</div>{children}</div>
+}
 const AnimatedButton = motion.create(Button)
 function FlowTabs({ tabs, top = false }: { tabs: Tab[]; top?: boolean }) {
  const reduced = useReducedMotion()
@@ -260,11 +287,20 @@ export default function App() {
  const [displayPane, setDisplayPane] = useState("")
  const [settingsPage, setSettingsPage] = useState("general")
  const [memoryFor, setMemoryFor] = useState("") // the companion Settings > Memory opens on
+ const [settingsFind, setSettingsFind] = useState("")
+ const [flash, setFlash] = useState("") // the setting a search result jumped to: it lights up for a moment
  const reduced = useReducedMotion()
  const [replay, setReplay] = useState(false) // About's "Replay the intro"
  // The little sounds (sound.ts): the Sounds setting, unless the system's own sounds are off or motion is reduced
  const soundsBlocked = state.preferences.osSoundsOff ? (MAC ? "Off because your Mac's sound effects are off" : "Off because Windows sounds are off") : reduced ? "Off because reduce motion is on" : ""
  const sounds = state.preferences.sounds !== false && !soundsBlocked
+ useEffect(() => {
+  const row = flash ? document.getElementById("set-" + flash) : null
+  if (!row) return
+  row.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }); row.classList.add("set-flash")
+  const t = setTimeout(() => { row.classList.remove("set-flash"); setFlash("") }, 1600)
+  return () => clearTimeout(t)
+ }, [flash, reduced])
  useEffect(() => setSounds(sounds), [sounds])
  const [query, setQuery] = useState("")
  const [filter, setFilter] = useState("")
@@ -439,7 +475,7 @@ export default function App() {
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
-   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage(data.value || "general") } }
+   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") { setSettingsFind(""); setSettingsPage(OLD_PAGES[data.value] ?? (data.value || "general")) } } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
    if (data.kind === "snapshot") { setSnapshot(data.data); setPairShot(data.partner ?? "") }
    if (data.kind === "upload") setUpload(data.data)
@@ -448,7 +484,12 @@ export default function App() {
    if (data.kind === "tasks") { if (document.querySelector(".tasks-button")) window.dispatchEvent(new Event("still-tasks")); else toast("Nothing is running right now.") }
    if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
    if (data.kind === "pointerAway") { const root = document.documentElement; root.classList.add("pointer-away"); addEventListener("pointermove", () => root.classList.remove("pointer-away"), { once: true }) }
-   if (data.kind === "escape") { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }); document.dispatchEvent(new KeyboardEvent("keydown", { key: "Escape", bubbles: true })) }
+   if (data.kind === "escape") {
+    // Still's window takes Esc before the page: the top layer (an open dropdown, the settings search, a dialog) gets it first.
+    const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
+    ;(document.activeElement ?? document).dispatchEvent(esc)
+    if (!esc.defaultPrevented) { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }) }
+   }
   }
   window.chrome?.webview?.addEventListener("message", listener)
   send("ready")
@@ -481,7 +522,7 @@ export default function App() {
  useEffect(() => {
   const handler = (e: KeyboardEvent) => {
    if (e.key === "F11") { e.preventDefault(); send("fullscreen"); return }
-   if (e.key === "Escape") { if(!document.querySelector(":is([role=dialog],[role=alertdialog],[role=menu]):not([aria-hidden=true])")){send("exitFullscreen");setViewing("")} close(); return }
+   if (e.key === "Escape") { if (e.defaultPrevented) return; if(!document.querySelector(":is([role=dialog],[role=alertdialog],[role=menu]):not([aria-hidden=true])")){send("exitFullscreen");setViewing("")} close(); return }
    if (!(e.ctrlKey || e.metaKey)) return
    if (e.key === "Enter" && approveCard()) { e.preventDefault(); return }
    if (e.key.toLowerCase() === "l") { e.preventDefault(); openAddress() }
@@ -505,6 +546,13 @@ export default function App() {
  // Hidden until Still sends its state, or the stand-in would flash a browser before the welcome. It still renders, so the
  // page's bounds and every other measurement are in place when it shows.
  useLayoutEffect(() => { document.documentElement.classList.toggle("is-waiting", state === initial) }, [state])
+ const hasAi = !!ai && !state.noAi
+ const pageName = (id: string) => SETTING_PAGES.find(p => p[0] === id)?.[1] ?? ""
+ const found = settingsFind.trim() ? [...SETTINGS_FIND, ...shortcuts.map(([label], i): Finding => ["key-" + i, "shortcuts", label, "keyboard key"])].filter(([id, page, label, more]) =>
+  (hasAi || !AI_PAGES.includes(page)) && !(id === "talk" && !hasAi) && !(["askInChat", "dev"].includes(id) && !state.preferences.agents) && !(id === "dev" && !state.mcpCommand) && !(["ai", "titles"].includes(id) && !hasAi) &&
+  settingsFind.toLowerCase().split(/\s+/).filter(Boolean).every(w => `${label} ${more} ${pageName(page)}`.toLowerCase().includes(w))).slice(0, 12) : []
+ const jumpTo = (f: Finding) => { setSettingsFind(""); setSettingsPage(f[1]); setFlash(f[0]) }
+ const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT or Grok, through their own apps, with no API keys. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button><p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.34"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
@@ -692,7 +740,7 @@ export default function App() {
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
-         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { chatWith(id); setView("home") }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "memory") }} />
+         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { chatWith(id); setView("home") }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} start={pluginsFirst.current ? "plugins" : ""} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
@@ -783,58 +831,65 @@ export default function App() {
   </Dialog>
 
   <Dialog open={dialogOpen} onOpenChange={o => { if (!o) close() }}>
-   <DialogContent className={cn("app-dialog", displayPane === "settings" && "settings-dialog", ["history", "bookmarks", "cookies", "passwords", "extensions", "downloads", "security", "import", "profiles"].includes(displayPane) && "library-dialog")}>
-    <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "A few things to make it yours." : displayPane === "about" ? "The open-source agent browser." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? (MAC ? "Your logins, protected on this Mac." : "Your logins, protected on this PC.") : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
+   <DialogContent onEscapeKeyDown={e => { if (displayPane === "settings" && settingsFind) { e.preventDefault(); setSettingsFind("") } }} className={cn("app-dialog", displayPane === "settings" && "settings-dialog", ["history", "bookmarks", "cookies", "passwords", "extensions", "downloads", "security", "import", "profiles"].includes(displayPane) && "library-dialog")}>
+    <DialogHeader><DialogTitle>{title}</DialogTitle><DialogDescription>{displayPane === "settings" ? "Changes save as you make them." : displayPane === "about" ? "The open-source agent browser." : displayPane === "profiles" ? "Separate spaces for your browsing." : displayPane === "import" ? "Import a browser profile or a saved export." : displayPane === "passwords" ? (MAC ? "Your logins, protected on this Mac." : "Your logins, protected on this PC.") : displayPane === "extensions" ? "Add tools to your browser." : displayPane === "cookies" ? "Manage website cookies." : displayPane === "security" ? "Browser protection and site permissions." : displayPane === "site" ? (active?.certificateError ? "The certificate could not be verified. Connection blocked." : active?.secure ? "Connection secured with HTTPS." : active?.loading ? "Checking this connection…" : "This page does not have a verified HTTPS connection.") : displayPane === "history" ? "Your recent visits, kept on this PC." : displayPane === "bookmarks" ? "The pages you want to come back to." : displayPane === "downloads" ? "Files from this session." : "Keep your hands on the keys."}</DialogDescription></DialogHeader>
     {["passwords","extensions","cookies","security","profiles","import"].includes(displayPane)&&<BrowserTools key={displayPane} pane={displayPane} data={toolData[displayPane]??{}} send={send} url={active?.url??""} tracking={state.preferences.tracking} memory={state.preferences.memory} autofill={state.preferences.autofill}/> }
-    {displayPane === "settings" && <Tabs value={settingsPage} onValueChange={setSettingsPage} className="settings-tabs">
-     <LayoutGroup id="settings"><TabsList className="w-full">{[["general", "General"], ["ai", "AI & companions"], ...(ai && !state.noAi ? [["permissions", "Permissions"], ["memory", "Memory"], ["plugins", "Plugins"]] : []), ["privacy", "Privacy"], ["appearance", "Appearance"], ["extensions", "Extensions"], ["advanced", "Advanced"]].map(([value, label]) => <TabsTrigger value={value} key={value}>
-      {settingsPage === value && <motion.span className="settings-selection" layoutId="settings-selection" transition={FLOW} />}<span className="settings-tab-label">{label}</span>
-     </TabsTrigger>)}</TabsList></LayoutGroup>
-     <TabsContent value="general" className="settings-content">
-      <div className="setting-row"><div><strong>Setup</strong><p>Go through the first steps again: your companions, your AI and how Still looks.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></div>
-      {ai && !state.noAi && ai.companions?.[0] && <div className="setting-row"><div><strong>Set me up with {ai.companions[0].name}</strong><p>{ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more. You check every change.</p></div><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></div>}<Separator />
-      <div className="setting-row"><div><strong>Search engine</strong><p>Search only when you press Enter.</p></div><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Default browser</strong><p>{state.preferences.isDefaultBrowser ? "Still opens your links." : `Open links from other apps in Still. ${MAC ? "macOS" : "Windows"} asks you to confirm.`}</p></div>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</div>
-      <Separator /><div className="setting-row"><div><strong>Open Still at sign-in</strong><p>{MAC ? "Start with your launch profile when you log in to your Mac." : "Start with your launch profile when you sign in to Windows."}</p></div><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", {enabled})} /></div>
-      {state.preferences.startupDisabled && <p className="tool-caption">{MAC ? "Still is switched off in Login Items. " : "Windows has disabled this startup entry. "}<Button variant="link" onClick={() => send("startupSettings")}>{MAC ? "Open Login Items" : "Open Windows startup settings"}</Button></p>}
-      <Separator /><div className="setting-row"><div><strong>Pick up where you left off</strong><p>Restore tabs when Still opens.</p></div><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></div>
-      <Separator /><div className="setting-row"><div><strong>Sounds</strong><p>{soundsBlocked ? soundsBlocked + "." : "The intro, and a short jingle when setup is done. Browsing never makes a sound."}</p></div><Switch aria-label="Sounds" disabled={!!soundsBlocked} checked={sounds} onCheckedChange={v => preference("sounds", String(v))} /></div>
-      <Separator /><div className="download-setting"><strong>Download folder</strong><p>{state.preferences.downloads}</p><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change folder</Button></div>
-      <Separator /><Button variant="ghost" className="settings-link" onClick={() => open("shortcuts")}><Keyboard />Keyboard shortcuts<ChevronRight /></Button>
-     </TabsContent>
-     <TabsContent value="ai" className="settings-content">
-      <div className="setting-row"><div><strong>Let other AI apps use Still</strong><p>Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits.</p></div><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></div>
-      {state.preferences.agents && <><Separator /><div className="setting-row"><div><strong>Ask me in the AI's chat when I'm away</strong><p>If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window.</p></div><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></div></>}
-      {ai && !state.noAi && <><Separator /><Button variant="ghost" className="settings-link" onClick={() => { close(); send("aiToggle") }}><Bot />Your AI and its model<ChevronRight /></Button><Button variant="ghost" className="settings-link" onClick={() => { close(); goHome("companions") }}><UsersRound />Companions<ChevronRight /></Button></>}
-     </TabsContent>
-     {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
-     {ai && !state.noAi && <TabsContent value="plugins" className="settings-content"><div className="setting-row"><div><strong>Skills & plugins</strong><p>Your apps, like Gmail and Slack, are with your skills now: turn plugins on, connect apps and pick which companion can use each.</p></div><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></div></TabsContent>}
-     {ai && !state.noAi && <TabsContent value="memory" className="settings-content"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></TabsContent>}
-     <TabsContent value="privacy" className="settings-content">
-      <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>
-      <Separator /><div className="setting-row"><div><strong>Block common ads & trackers</strong><p>A small built-in list. Some ads may remain.</p></div><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></div>
-      <Separator className="my-4" />
-      <Button variant="ghost" className="settings-link" onClick={()=>open("passwords")}><KeyRound/>Passwords<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("cookies")}><Cookie/>Cookies<ChevronRight/></Button><Button variant="ghost" className="settings-link" onClick={()=>open("security")}><ShieldCheck/>Privacy & security<ChevronRight/></Button>
-      <Separator className="my-4" />
-      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>
-      <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear cookies and website data</Button>
-     </TabsContent>
-     <TabsContent value="appearance" className="settings-content">
-      <div className="setting-label">Theme</div><div className="theme-choices">{["Light", "Dark", "System"].map(theme => <Button key={theme} variant="outline" className={cn("theme-choice", state.preferences.theme === theme && "chosen")} onClick={() => preference("theme", theme)}>
-       <div className={cn("theme-preview", theme.toLowerCase())}><i /><span /><b /></div><span>{theme === "Dark" ? "Black" : theme}{state.preferences.theme === theme && <Check />}</span>
-      </Button>)}</div>
-      <div className="setting-row"><div><strong>Tab layout</strong><p>Classic puts tabs across the top. Modern puts them down the side, with your chats.</p></div><Select value={state.preferences.tabLayout ?? "Classic"} onValueChange={v => preference("tabLayout", v)}><SelectTrigger className="w-32" aria-label="Tab layout"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Classic">Classic</SelectItem><SelectItem value="Modern">Modern</SelectItem></SelectContent></Select></div>
-      <Separator /><div className="setting-row"><div><strong>Drag tabs into their own window</strong><p>Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back.</p></div><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></div>
-     </TabsContent>
-     <TabsContent value="extensions" className="settings-content">
-      <p className="data-intro">Add tools from the Chrome Web Store. You check what each one can do before it installs.</p>
-      <Button variant="outline" className="settings-link" onClick={() => open("extensions")}><Puzzle />Manage extensions<ChevronRight /></Button>
-     </TabsContent>
-     <TabsContent value="advanced" className="settings-content">
-      <Button variant="outline" className="settings-link" onClick={() => open("import")}><Import />Import browsing data<ChevronRight /></Button>
-      <Button variant="outline" className="settings-link" onClick={() => send("exportBookmarks")}><ExternalLink />Export bookmarks<ChevronRight /></Button>
-      <Button variant="ghost" className="settings-link" onClick={()=>open("profiles")}><UsersRound/>Profiles<ChevronRight/></Button>
-      {state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <details className="mcp-config welcome-dev"><summary>For developers: connect an AI app by hand</summary><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
+    {displayPane === "settings" && <div className="set-shell">
+     <nav className="set-nav" aria-label="Settings sections">
+      <label className="set-search"><Search /><input aria-label="Search settings" placeholder="Search settings" value={settingsFind} onChange={e => setSettingsFind(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && found[0]) jumpTo(found[0]) }} /></label>
+      {SETTING_PAGES.filter(([id]) => hasAi || !AI_PAGES.includes(id)).map(([id, label, Icon]) => <button key={id} className="set-nav-item" aria-current={!settingsFind && settingsPage === id ? "page" : undefined} onClick={() => { setSettingsFind(""); setSettingsPage(id) }}><Icon />{label}</button>)}
+     </nav>
+     <div className="set-main">
+      {settingsFind ? found.length ? <SetCard title={found.length === 1 ? "1 setting" : `${found.length} settings`}>{found.map(f => { const Icon = SETTING_PAGES.find(p => p[0] === f[1])?.[2] ?? Info; return <button key={f[0]} className="set-result" onClick={() => jumpTo(f)}><strong>{f[2]}</strong><span><Icon />{pageName(f[1])}</span></button> })}</SetCard> : <p className="set-empty">Nothing matches "{settingsFind}". Try a word like theme, model or passwords.</p> : <>
+      <h2 className="set-title">{pageName(settingsPage)}</h2>
+      {settingsPage === "general" && <>
+       <SetCard title="Start">
+        <SetRow id="setup" title="Setup" help="Go through the first steps again: your companions, your AI and how Still looks."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
+        {hasAi && ai.companions?.[0] && <SetRow id="talk" title={`Set me up with ${ai.companions[0].name}`} help={`${ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more. You check every change.`}><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></SetRow>}
+       </SetCard>
+       <SetCard title="Browsing">
+        <SetRow id="search" title="Search engine" help="Search only when you press Enter."><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36" aria-label="Search engine"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></SetRow>
+        <SetRow id="default" title="Default browser" help={state.preferences.isDefaultBrowser ? "Still opens your links." : `Open links from other apps in Still. ${MAC ? "macOS" : "Windows"} asks you to confirm.`}>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</SetRow>
+        <SetRow id="startup" title="Open Still at sign-in" help={<>{MAC ? "Start with your launch profile when you log in to your Mac." : "Start with your launch profile when you sign in to Windows."}{state.preferences.startupDisabled && <> {MAC ? "It's switched off in Login Items. " : "Windows has disabled this startup entry. "}<Button variant="link" className="h-auto p-0 text-xs" onClick={() => send("startupSettings")}>{MAC ? "Open Login Items" : "Open Windows startup settings"}</Button></>}</>}><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", { enabled })} /></SetRow>
+        <SetRow id="restore" title="Pick up where you left off" help="Restore tabs when Still opens."><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></SetRow>
+        <SetRow id="sounds" title="Sounds" help={soundsBlocked ? soundsBlocked + "." : "The intro, and a short jingle when setup is done. Browsing never makes a sound."}><Switch aria-label="Sounds" disabled={!!soundsBlocked} checked={sounds} onCheckedChange={v => preference("sounds", String(v))} /></SetRow>
+       </SetCard>
+       <SetCard title="Files and data">
+        <SetRow id="downloads" title="Download folder" help={<span className="break-all">{state.preferences.downloads}</span>}><Button variant="outline" size="sm" onClick={() => send("chooseDownloads")}><FolderOpen />Change</Button></SetRow>
+        <SetRow id="import" title="Import browsing data" help="Bookmarks, history and passwords from another browser or a saved export."><Button variant="outline" size="sm" onClick={() => open("import")}><Import />Import</Button></SetRow>
+        <SetRow id="export" title="Export bookmarks" help="Save your bookmarks as a file any browser can read."><Button variant="outline" size="sm" onClick={() => send("exportBookmarks")}><ExternalLink />Export</Button></SetRow>
+        <SetRow id="profiles" title="Profiles" help="Separate spaces for your browsing, each with its own tabs and sign-ins."><Button variant="outline" size="sm" onClick={() => open("profiles")}>Manage</Button></SetRow>
+        <SetRow id="extensions" title="Extensions" help="Add tools from the Chrome Web Store. You check what each one can do before it installs."><Button variant="outline" size="sm" onClick={() => open("extensions")}><Puzzle />Manage</Button></SetRow>
+       </SetCard>
+      </>}
+      {settingsPage === "appearance" && <>
+       <SetCard title="Theme"><div className="set-pad" id="set-theme"><div className="theme-choices">{["Light", "Dark", "System"].map(theme => <Button key={theme} variant="outline" className={cn("theme-choice", state.preferences.theme === theme && "chosen")} onClick={() => preference("theme", theme)}>
+        <div className={cn("theme-preview", theme.toLowerCase())}><i /><span /><b /></div><span>{theme === "Dark" ? "Black" : theme}{state.preferences.theme === theme && <Check />}</span>
+       </Button>)}</div></div></SetCard>
+       <SetCard title="Tabs">
+        <SetRow id="layout" title="Tab layout" help="Classic puts tabs across the top. Modern puts them down the side, with your chats."><Select value={state.preferences.tabLayout ?? "Classic"} onValueChange={v => preference("tabLayout", v)}><SelectTrigger className="w-32" aria-label="Tab layout"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="Classic">Classic</SelectItem><SelectItem value="Modern">Modern</SelectItem></SelectContent></Select></SetRow>
+        <SetRow id="tearoff" title="Drag tabs into their own window" help="Drag a tab out of the tab list to open it in a new window. Right-click a tab and choose Move to window to send it back."><Switch aria-label="Drag tabs into their own window" checked={!!state.preferences.tearOff} onCheckedChange={enabled => preference("tearOff", String(enabled))} /></SetRow>
+       </SetCard>
+      </>}
+      {settingsPage === "companions" && hasAi && <>
+       <SetCard title="Your team">
+        <SetRow id="team" title="Companions" help={`${ai.companions?.length ?? 0} on your team. Add one, change how they look and what they do, or let one go.`}><Button variant="outline" size="sm" onClick={() => { close(); goHome("companions") }}><UsersRound />Open</Button></SetRow>
+       </SetCard>
+       <SetCard title="What they remember"><div className="set-pad" id="set-memory"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></div></SetCard>
+      </>}
+      {settingsPage === "models" && <>
+       {hasAi && <SetCard title="Your AI">
+        <SetRow id="ai" title="AI and model" help={`${ai.harnesses?.find(h => h.id === ai.harness)?.name ?? "No AI picked yet"}. Pick your AI, sign in, and choose its model and how hard it thinks.`}><Button variant="outline" size="sm" onClick={() => { close(); openAiSettings() }}><Bot />Open</Button></SetRow>
+        <SetRow id="titles" title="Chat titles" help="A new chat gets a short name from its first message, written by the model you pick here."><Select value={state.preferences.chatTitles || "quick"} onValueChange={v => preference("chatTitles", v === "quick" ? "" : v)}><SelectTrigger className="w-48" aria-label="Chat titles"><SelectValue /></SelectTrigger><SelectContent className="titles-list">
+         <SelectItem value="quick">Quickest model</SelectItem>
+         {(ai.harnesses ?? []).filter(h => h.installed && h.status !== "signedOut").map(h => { const list = (ai.models ?? []).filter(m => m.harness === h.id && m.id); return list.length > 0 && <SelectGroup key={h.id}><SelectSeparator /><SelectLabel>{h.name}</SelectLabel>{list.map(m => <SelectItem key={m.id} value={h.id + "/" + m.id}><span className="titles-ai">{h.name} · </span>{m.name}</SelectItem>)}</SelectGroup> })}
+         <SelectSeparator /><SelectItem value="off">Off (use first message)</SelectItem>
+        </SelectContent></Select></SetRow>
+       </SetCard>}
+       <SetCard title="Other AI apps">
+        <SetRow id="mcp" title="Let other AI apps use Still" help="Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits."><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></SetRow>
+        {state.preferences.agents && <SetRow id="askInChat" title="Ask me in the AI's chat when I'm away" help="If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window."><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></SetRow>}
+        {state.preferences.agents && state.mcpCommand && <div className="set-pad" id="set-dev">{state.preferences.agents && state.mcpCommand && (() => { const cfg = JSON.stringify({ mcpServers: { still: { command: state.mcpCommand, args: ["--mcp"] } } }, null, 2); return <details className="mcp-config welcome-dev"><summary>For developers: connect an AI app by hand</summary><p className="tool-caption">Add this to your AI app's MCP settings:</p><pre>{cfg}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: cfg }); setNotice("MCP config copied") }}><Copy />Copy config</Button>
        {(() => { const exe = `& "${state.mcpCommand}"`; const prompt = `You can control my Still web browser from the terminal (PowerShell) with:
 ${exe} --cli <tool> as=<your name> [key=value ...]
 
@@ -857,14 +912,36 @@ Run \`${exe} --cli help\` to list tools. Common ones:
 - switch_tab / close_tab / go_back / go_forward / reload [tabId=<id>]
 - list_profiles; add profile=<name> to any tool to use another profile, or profile=temp for a separate temporary window with no cookies or logins
 
-The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Grok Build or another agent app:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</details> })()}
-     </TabsContent>
-    </Tabs>}
+The first call waits for me to approve you in Still. Private tabs, passwords and cookies are never available. Ids stay valid while their element is on the page. Each action tells you where you ended up, so read the page again only when you need to. don't submit forms or buy anything without asking me.`; return <><p className="tool-caption">Or paste this prompt into Claude Code, Grok Build or another agent app:</p><pre>{prompt}</pre><Button variant="outline" size="sm" onClick={() => { send("copyText", { text: prompt }); setNotice("Agent prompt copied") }}><Copy />Copy agent prompt</Button></> })()}</details> })()}</div>}
+       </SetCard>
+      </>}
+      {settingsPage === "skills" && hasAi && <SetCard title="Skills & plugins">
+       <SetRow id="skills" title="Skills & plugins" help="Your apps, like Gmail and Slack, are with your skills: turn plugins on, connect apps and pick which companion can use each."><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></SetRow>
+      </SetCard>}
+      {settingsPage === "privacy" && <>
+       <p className="data-intro">Tabs, bookmarks and history stay on this {MAC ? "Mac" : "PC"}. Still has no account or cloud sync.</p>
+       <SetCard title="Protection">
+        <SetRow id="blocking" title="Block common ads & trackers" help="A small built-in list. Some ads may remain."><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></SetRow>
+        <SetRow id="passwords" title="Passwords" help={MAC ? "Your logins, kept in your Keychain." : "Your logins, encrypted by Windows."}><Button variant="outline" size="sm" onClick={() => open("passwords")}><KeyRound />Open</Button></SetRow>
+        <SetRow id="cookies" title="Cookies" help="See and remove what websites keep."><Button variant="outline" size="sm" onClick={() => open("cookies")}><Cookie />Open</Button></SetRow>
+        <SetRow id="security" title="Privacy & security" help="Tracking protection and what each site may use."><Button variant="outline" size="sm" onClick={() => open("security")}><ShieldCheck />Open</Button></SetRow>
+       </SetCard>
+       {hasAi && <SetCard title="What companions may do"><div className="set-pad" id="set-permissions"><PermissionsSettings ai={ai} send={send} /></div></SetCard>}
+       <SetCard title="Clear data">
+        <SetRow id="clearHistory" title="Clear browsing history" help="Your bookmarks and open tabs stay."><Button variant="outline" size="sm" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear</Button></SetRow>
+        <SetRow id="clearCookies" title="Clear cookies and website data" help="This signs you out of websites in Still."><Button variant="outline" size="sm" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear</Button></SetRow>
+       </SetCard>
+      </>}
+      {settingsPage === "shortcuts" && <SetCard title="Keys">{shortcuts.map(([label, key], i) => <div className="shortcut-row" id={"set-key-" + i} key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</SetCard>}
+      {settingsPage === "about" && <SetCard title="Still"><div className="set-pad" id="set-about">{about}</div></SetCard>}
+      </>}
+     </div>
+    </div>}
     {(displayPane === "history" || displayPane === "bookmarks") && <>{displayPane === "history" && state.history.length > 0 && <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>}{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id} onDoubleClick={e => { if (d.status === "Completed" && !(e.target as HTMLElement).closest("button")) send("openDownload", { id: d.id }) }}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
-    {displayPane === "about" && <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT or Grok, through their own apps, with no API keys. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button><p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "1.6.34"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>}
+    {displayPane === "about" && about}
    </DialogContent>
   </Dialog>
 

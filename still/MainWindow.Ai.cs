@@ -684,6 +684,7 @@ public partial class MainWindow
    chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito }; // a private window remembers nothing
    AiChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
+   if (asker == null) _ = NameChat(chat, shown ?? text);
   }
   if (chat.Harness.Length == 0) chat.Harness = Companions.FirstOrDefault(c => c.Id == chat.Companion) is { Ai.Length: > 0 } own ? own.Ai : Prefs.AiHarness;
   if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
@@ -821,6 +822,41 @@ public partial class MainWindow
  }
 
  static void PublishAiEverywhere() { foreach (var w in Windows) w.PublishAi(); }
+
+ /// Names a new chat from its first message, on the model picked in Settings (Chat titles): the quickest one of the
+ /// chat's AI unless the user chose another. Off, in a private window, or if the AI doesn't answer, the chat keeps its
+ /// first message as its title.
+ async Task NameChat(AiChat chat, string first)
+ {
+  if (Prefs.ChatTitles == "off" || chat.NoMemory) return;
+  var was = chat.Title; // renamed meanwhile: the user's name stays
+  if (App.IsQa && Prefs.ChatTitles == "" && Environment.GetEnvironmentVariable("STILL_QA_TITLES") == null) return; // tests' fake AIs answer anything: only the tests about titles ask for them
+  var pick = Prefs.ChatTitles.Split('/', 2);
+  var chosen = pick.Length == 2 ? AiClis.FirstOrDefault(c => c.Id == pick[0] && FindCli(c.Command) != null) : null;
+  var cli = chosen ?? AiClis.FirstOrDefault(c => c.Id == chat.Harness);
+  if (cli == null || FindCli(cli.Command) is not { } exe) return;
+  var (model, effort) = chosen != null ? (pick[1], "") : ForMode(cli.Id, "efficient");
+  if (!aiModels.GetValueOrDefault(cli.Id, []).Any(m => m.Id == model)) model = effort = "";
+  string said = "", prompt = "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + Clip(first, 2000);
+  List<string> mcp = ["--mcp", "--no-tools", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
+  if (App.IsQa) mcp.Insert(1, "--qa");
+  AgentRun? run = null; RunRequest? request = null;
+  try {
+   request = new RunRequest(prompt, model, effort, Path.Combine(AiFolder, "titles"), mcp, cli.NamesSession ? Guid.NewGuid().ToString() : null, false);
+   run = await cli.Start(exe, request);
+   using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+   await foreach (var e in run.Events(limit.Token)) if (e is AgentEvent.Message m) said += (m.Join ?? "\n") + m.Text;
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception) { App.Log(ex); }
+  finally {
+   run?.Dispose();
+   try { if (request != null) File.Delete(request.PromptFile); } catch (IOException) { }
+  }
+  var title = said.Split('\n').Select(l => Regex.Replace(l, @"^(?i:title)\s*:", "").Trim().Trim('"', '\'', '*', '#', '“', '”', '.').Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+  if (title.Length == 0 || chat.Title != was || !AiChats.Contains(chat)) return;
+  chat.Title = Clip(title, 60); SaveAiChats();
+  foreach (var w in Windows) foreach (var t in w.tabs.Where(t => t.ChatId == chat.Id)) t.Title = chat.Title;
+  SaveLater(); PublishAll(); PublishAiEverywhere();
+ }
 
  /// Asks each AI app whether it's signed in. These are local checks that use none of the user's AI usage.
  static async Task CheckAis(bool force = false)
