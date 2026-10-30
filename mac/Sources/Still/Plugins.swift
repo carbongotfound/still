@@ -1,5 +1,7 @@
 // Plugins (Windows: MainWindow.Plugins.cs): the user's apps (Gmail, Calendar, Slack…) through Composio, a third-party
-// service, with the user's own API key. Off until they paste one. The key is kept like saved logins (the Keychain) and
+// service, with the user's own project API key (ak_…, from Composio's Platform: Settings → Project Settings → API Keys).
+// Off until they paste one. For You's Connect key (ck_…) is for Composio's MCP endpoint and the API refuses it: Still says
+// so and doesn't keep it. The key is kept like saved logins (the Keychain) and
 // only ever goes to Composio in the x-api-key header: never to a file in the clear, a log, memory, the shell, an agent,
 // MCP or a CLI. Companions get two tools, plugin_tools and use_plugin: reads go ahead, anything else asks the user first.
 import AppKit
@@ -7,10 +9,12 @@ import Security
 
 struct PluginAccount { let id: String, slug: String, name: String }
 
-var pluginStatus = "off" // off (no key), checking, ok, bad (Composio refused the key), down (no answer)
+var pluginStatus = "off" // off (no key), checking, ok, bad (Composio refused the key), kind (not a project key), down (no answer)
 var pluginAccounts: [PluginAccount] = []
-var pluginFound: [[String: Any]] = []
-var pluginConnecting = ""
+var pluginFound: [[String: Any]]? // nil until Composio answers a search
+var pluginConnecting = "", pluginFailed = "", pluginError = "" // the app that didn't connect, and Composio's own words for the last failure
+// Keys Composio's API refuses in x-api-key: For You's Connect key (ck_) and the personal one its CLI uses (uak_).
+func notProjectKey(_ key: String) -> Bool { key.hasPrefix("ck_") || key.hasPrefix("uak_") }
 let composioApi = qaEnv("STILL_QA_COMPOSIO") ?? "https://backend.composio.dev/api/v3.1"
 let composioSession: URLSession = { let config = URLSessionConfiguration.ephemeral; config.timeoutIntervalForRequest = 30; config.urlCache = nil; return URLSession(configuration: config) }()
 // Names for the apps people connect most; Composio's own name for the rest.
@@ -57,7 +61,7 @@ enum PluginKey {
   if isQa { try? FileManager.default.removeItem(at: file) } else { SecItemDelete(query as CFDictionary) }
  }
 }
-func forgetPluginKey() { PluginKey.erase(); pluginStatus = "off"; pluginAccounts = []; pluginFound = [] }
+func forgetPluginKey() { PluginKey.erase(); pluginStatus = "off"; pluginAccounts = []; pluginFound = nil; pluginFailed = ""; pluginError = "" }
 
 /// One call to Composio. Nil when there's no key, or Composio refused it or didn't answer (pluginStatus says which).
 /// Other errors come back as Composio's own { error: { message } }.
@@ -131,24 +135,29 @@ extension Browser {
   // Only apps Composio signs in to itself: one click, no developer app of the user's own.
   pluginFound = (list?["items"] as? [[String: Any]] ?? []).filter { ($0["composio_managed_auth_schemes"] as? [Any])?.isEmpty != true }
    .map { ["slug": pluginStr($0, "slug"), "name": pluginName(pluginStr($0, "slug"), pluginStr($0, "name")), "about": pluginStr($0["meta"], "description")] }
+  pluginError = list == nil || list?["items"] is [Any] ? "" : composioError(list!) // said, not an empty list
   publishAiEverywhere()
  }
 
  /// Composio's own sign-in for one app, in a Still window. True once the account is connected.
  @MainActor func connectPlugin(_ slug: String) async -> Bool {
   guard pluginConnecting.isEmpty, !slug.isEmpty else { return false }
-  pluginConnecting = slug; publishAiEverywhere()
+  pluginConnecting = slug; pluginFailed = ""; pluginError = ""; publishAiEverywhere()
+  func failed(_ why: [String: Any]?) -> Bool { pluginFailed = slug; pluginError = why.map { pluginName(slug) + " didn't connect: " + composioError($0) } ?? ""; return false }
   var signIn: Browser?
   defer {
    if let signIn, !signIn.closing, browsers.contains(where: { $0 === signIn }) { signIn.window.close() }
    pluginConnecting = ""; publishAiEverywhere()
   }
-  guard let configs = await composio("GET", "/auth_configs?is_composio_managed=true&toolkit_slug=" + pluginEscape(slug)) else { return false }
-  var config = pluginStr((configs["items"] as? [[String: Any]])?.first { pluginStr($0, "status") != "DISABLED" }, "id")
-  if config.isEmpty { config = pluginStr(await composio("POST", "/auth_configs", ["toolkit": ["slug": slug], "auth_config": ["type": "use_composio_managed_auth"]])?["auth_config"], "id") }
-  guard !config.isEmpty, let link = await composio("POST", "/connected_accounts/link", ["auth_config_id": config, "user_id": pluginUser]) else { return false }
+  let configs = await composio("GET", "/auth_configs?is_composio_managed=true&toolkit_slug=" + pluginEscape(slug))
+  guard let all = configs?["items"] as? [[String: Any]] else { return failed(configs) }
+  var config = pluginStr(all.first { pluginStr($0, "status") != "DISABLED" }, "id")
+  var made: [String: Any]?
+  if config.isEmpty { made = await composio("POST", "/auth_configs", ["toolkit": ["slug": slug], "auth_config": ["type": "use_composio_managed_auth"]]); config = pluginStr(made?["auth_config"], "id") }
+  guard !config.isEmpty else { return failed(made) }
+  let link = await composio("POST", "/connected_accounts/link", ["auth_config_id": config, "user_id": pluginUser])
   let url = pluginStr(link, "redirect_url"), id = pluginStr(link, "connected_account_id")
-  guard !id.isEmpty, url.hasPrefix("https://") || isQa && url.hasPrefix("http://127.0.0.1:") else { return false }
+  guard !id.isEmpty, url.hasPrefix("https://") || isQa && url.hasPrefix("http://127.0.0.1:") else { return failed(link) }
   let tab = Tab()
   tab.url = url; tab.title = "Connect " + pluginName(slug)
   let opened = Browser(moving: tab)
@@ -160,9 +169,10 @@ extension Browser {
    let account = await composio("GET", "/connected_accounts/" + pluginEscape(id))
    let status = pluginStr(account, "status")
    if status == "ACTIVE" { await refreshPlugins(); return true }
-   if closed || ["FAILED", "EXPIRED", "INACTIVE"].contains(status) || account == nil { return false }
+   if closed { return false } // the user closed it: not an error
+   if ["FAILED", "EXPIRED", "INACTIVE"].contains(status) || account == nil { return failed(account == nil ? nil : ["error": "the sign-in didn't finish."]) }
   }
-  return false
+  return failed(["error": "the sign-in took too long."])
  }
 
  func handlePlugins(_ op: String, _ data: [String: Any]) -> Bool {
@@ -170,15 +180,16 @@ extension Browser {
   case "pluginKey":
    let key = argText(data, "key").trimmingCharacters(in: .whitespacesAndNewlines)
    guard (8...400).contains(key.count), !key.contains(where: \.isWhitespace) else { break }
+   if notProjectKey(key) { pluginStatus = "kind"; publishAiEverywhere(); break } // never sent, never kept
    PluginKey.save(key); pluginStatus = "checking"; publishAiEverywhere()
    Task { @MainActor in
     await self.refreshPlugins()
     if pluginStatus == "bad" { forgetPluginKey(); pluginStatus = "bad"; publishAiEverywhere() } // a key Composio refuses isn't kept
    }
   case "pluginLink":
-   guard let link = ["key": "https://platform.composio.dev/", "pricing": "https://composio.dev/pricing"][argText(data, "to")] else { break }
+   guard argText(data, "to") == "key" else { break }
    let tab = Tab()
-   tab.url = link
+   tab.url = "https://platform.composio.dev/"
    _ = Browser(moving: tab)
   case "pluginKeyRemove": forgetPluginKey(); publishAiEverywhere()
   case "pluginRefresh": Task { @MainActor in await self.refreshPlugins() }
@@ -206,15 +217,15 @@ extension Browser {
  }
 
  func pluginsPayload() -> [String: Any] {
-  ["key": PluginKey.exists, "status": pluginStatus, "connecting": pluginConnecting, "found": pluginFound,
+  ["key": PluginKey.exists, "status": pluginStatus, "connecting": pluginConnecting, "found": pluginFound.map { $0 as Any } ?? NSNull(), "failed": pluginFailed, "error": pluginError,
    "connected": pluginAccounts.map { ["id": $0.id, "slug": $0.slug, "name": $0.name] }]
  }
 
  @MainActor func pluginTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
   guard let run = runs[who] else { return agentFail("Plugins are only for Still's own companions.") }
-  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Settings → Plugins.") }
+  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.") }
   let mate = companions.first { $0.id == run.chat.companion }
-  let unavailable = { pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Settings → Plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later." }
+  let unavailable = { pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later." }
   if tool == "plugin_tools" {
    let plugin = argText(args, "plugin").trimmingCharacters(in: .whitespaces).lowercased(), query = argText(args, "query").trimmingCharacters(in: .whitespaces)
    var slugs: [String] = []
@@ -236,14 +247,14 @@ extension Browser {
   guard let info = await composio("GET", "/tools/" + pluginEscape(slug)) else { return agentFail(unavailable()) }
   let toolkit = pluginStr(info["toolkit"], "slug"), app = pluginName(toolkit, pluginStr(info["toolkit"], "name"))
   guard !toolkit.isEmpty else { return agentFail("There's no tool called \(slug). Call plugin_tools to find one.") }
-  if mate?.pluginsOff.contains(toolkit) == true { return agentFail("The user turned \(app) off for you. They can turn it on in Settings → Plugins.") }
+  if mate?.pluginsOff.contains(toolkit) == true { return agentFail("The user turned \(app) off for you. They can turn it on in Skills & plugins.") }
   var account = pluginAccounts.first { $0.slug == toolkit }
   if account == nil {
    // Not connected: a card with a button that connects it, then the work goes on.
    guard await approve(run, "Connect " + app, app, "connect", "You sign in through Composio, in a Still window.", countdown: false) == "connect" else {
     return agentFail("The user didn't connect \(app). Don't ask again unless they bring it up.")
    }
-   guard await connectPlugin(toolkit), let now = pluginAccounts.first(where: { $0.slug == toolkit }) else { return agentFail(app + " didn't get connected. Tell the user they can connect it in Settings → Plugins.") }
+   guard await connectPlugin(toolkit), let now = pluginAccounts.first(where: { $0.slug == toolkit }) else { return agentFail(app + " didn't get connected. Tell the user they can connect it in Skills & plugins.") }
    account = now
   }
   let arguments = args["arguments"] as? [String: Any] ?? [:]

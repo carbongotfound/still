@@ -1242,7 +1242,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
 .crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
-/* Plugins (Plugins.tsx): name chips, setup's belt and grid, Settings → Plugins */
+/* Plugins (Plugins.tsx): name chips, setup's belt and grid, Skills & plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }
 .plug-chip i { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); font-style:normal; font-weight:700; font-size:12px; }
 .plug-belt { display:grid; gap:10px; margin:6px 0 16px; }
@@ -1273,6 +1273,14 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .plug-who button[aria-pressed=true] { color:var(--foreground); background:var(--card); } .plug-who svg { width:11px; height:11px; }
 .plug-search { display:flex; align-items:center; gap:8px; margin-bottom:8px; } .plug-search svg { flex:none; width:15px; height:15px; color:var(--muted-foreground); }
 .plug-down { display:flex; align-items:center; gap:12px; padding:10px 12px; border-radius:12px; background:var(--secondary); } .plug-down p { margin:0; flex:1; font-size:12px; }
+.plug-on.is-off { opacity:.8; } .plug-on.is-error { color:var(--destructive); }
+.plug-steps { display:grid; gap:4px; margin:0 0 4px; padding-left:20px; list-style:decimal; font-size:13px; line-height:1.5; } .plug-steps a { text-decoration:underline; text-underline-offset:2px; }
+.plug-steps b { font-weight:600; } .plug-steps code { padding:1px 5px; border-radius:5px; background:var(--muted); font-size:12px; }
+/* Skills & plugins (Home.tsx) */
+.plug-connect { display:grid; gap:12px; padding:20px; border-radius:16px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06); }
+.dark .plug-connect { box-shadow:0 0 0 1px var(--border); } .plug-connect h3 { margin:0; font-size:15px; font-weight:600; }
+.skills-part .home-page-sub { margin-top:28px; } .skills-part .plug-list.is-found { max-height:none; }
+.skill-row .plug-who { flex:none; max-width:45%; justify-content:flex-end; }
 .ob .plug-chip, .ob .plug-pick { background:var(--ob-card); border-color:var(--ob-line); } .ob .plug-pick .plug-chip { background:none; }
 .ob-team { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 14px; padding-top:30px; }
 .ob-team-mate { position:relative; display:grid; justify-items:center; }

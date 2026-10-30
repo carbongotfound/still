@@ -291,8 +291,8 @@ def tools(process):
     check(all(n in names for n in ("Gmail", "Google Calendar", "Slack", "Notion", "GitHub", "Google Drive", "Linear", "HubSpot")), "Gmail, Calendar, Slack, Notion, GitHub, Drive, Linear and HubSpot are on it, as name chips")
     check(js(process, "document.querySelector(\"input[aria-label='Composio API key']\")?.type") == "password", "Below it, a field for your Composio API key")
     words = talk_text(process)
-    check("Get a key" in words and "third-party service with its own" in words and "pricing and terms" in words, "With a link to get a key, and a note that Composio is a third party with its own pricing")
-    check("Settings → Plugins" in words, "No key: it says you can do it later in Settings → Plugins")
+    check("Get a key" in words and "Project Settings" in words and "ak_" in words and "third-party service" in words and "pricing" not in words, "With where to get a project key (ak_), and a note that Composio is a third party (no pricing)")
+    check("Skills & plugins" in words, "No key: it says you can do it later in Skills & plugins")
     foot = js(process, "[...document.querySelectorAll('.ob-foot button')].map(b => b.innerText.trim() + (b.disabled ? ' (off)' : ''))") or []
     check(foot == ["Back", "Skip", "Continue (off)"], f"Skip is the only other way on ({foot})")
 
