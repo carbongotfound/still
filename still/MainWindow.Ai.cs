@@ -749,7 +749,7 @@ public partial class MainWindow
    promptFile = request.PromptFile;
    run = me.Run = await cli.Start(exe, request);
    if (me.Stopped) run.Cancel();
-   bool named = shown.Length > 0; // a kickoff (no message of the user's) is named from the companion's hello, once it's written
+   bool named = !kickoffs.Contains(chat.Id); // a kickoff (no message of the user's) is named from the companion's hello, once it's written
    await foreach (var e in run.Events()) {
     said |= ApplyEvent(chat, cli, e);
     if (!named && e is not AgentEvent.Message && chat.Messages.Find(m => m.Role == "assistant") is { } hello) { named = true; NameFromHello(chat, hello.Text); }

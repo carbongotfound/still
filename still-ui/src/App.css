@@ -392,6 +392,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-pill.is-open[data-slot="button"], .ai-pill.is-open[data-slot="button"]:hover { background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); }
 .ai-logo { display:inline-grid; place-items:center; flex:none; line-height:1; }
 .ai-logo.is-letter { border-radius:50%; box-shadow:inset 0 0 0 1.25px color-mix(in oklab,currentColor 35%,transparent); font-weight:650; color:var(--muted-foreground); }
+.ai-logo.is-letter::before { content:attr(data-letter); } /* drawn, not text: names next to it read cleanly */
 .permission-bar > .ai-logo { flex:none; }
 .tab-agent { display:grid;place-items:center;position:relative; }
 .tab-agent::after { content:"";position:absolute;inset:-3px;border-radius:50%;border:1.5px solid transparent;border-top-color:var(--drive,#da7756);border-right-color:var(--drive,#da7756);animation:spin 1.1s linear infinite; }

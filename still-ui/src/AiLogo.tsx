@@ -11,7 +11,7 @@ const LOGOS: Record<string, { color?: string; d: string }> = {
 export function AiLogo({ id, size = 32, className }: { id?: string; size?: number; className?: string }) {
  if (!id?.trim()) return null
  const l = LOGOS[Object.keys(LOGOS).find(k => id.toLowerCase().includes(k)) ?? ""]
- return <span className={cn("ai-logo", !l && "is-letter", className)} style={{ width: size, height: size, fontSize: size * .5 }} aria-hidden>
-  {l ? <svg className="size-[90%] text-current" viewBox="0 0 24 24" fill={l.color ?? "currentColor"} fillRule="evenodd"><path d={l.d} /></svg> : id.trim()[0].toUpperCase()}
+ return <span className={cn("ai-logo", !l && "is-letter", className)} data-letter={l ? undefined : id.trim()[0].toUpperCase()} style={{ width: size, height: size, fontSize: size * .5 }} aria-hidden>
+  {l && <svg className="size-[90%] text-current" viewBox="0 0 24 24" fill={l.color ?? "currentColor"} fillRule="evenodd"><path d={l.d} /></svg>}
  </span>
 }
