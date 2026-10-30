@@ -176,7 +176,7 @@ def main():
         # A skill: make it, then use it with / in the message box.
         click(process, ".home-rail-item[aria-label='Skills & plugins']")
         until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins']\")"), 5)
-        click_text(process, ".home-new", "New skill")
+        click_text(process, ".plug-all", "New skill")
         until(lambda: js(process, "!!document.querySelector('.skill-dialog')"), 5)
         type_into(process, ".skill-dialog input[required]", "Trip plan")
         type_into(process, ".skill-dialog input[placeholder^='Lays out']", "Lays out a trip day by day")

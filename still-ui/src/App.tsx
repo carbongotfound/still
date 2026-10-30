@@ -12,7 +12,7 @@ import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookO
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
-import { PluginStack } from "./Plugins"
+import { PluginKeySetting, PluginStack } from "./Plugins"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
@@ -121,7 +121,7 @@ const SETTINGS_FIND: Finding[] = [
  ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"],
  ["mcp", "models", "Let other AI apps use Still", "mcp claude desktop code cursor agents"], ["askInChat", "models", "Ask me in the AI's chat when I'm away", "agents away"],
  ["dev", "models", "Connect an AI app by hand", "mcp config cli developer command line prompt"],
- ["skills", "skills", "Skills & plugins", "composio gmail slack apps connect"],
+ ["skills", "skills", "Skills & plugins", "composio gmail slack apps connect"], ["composio", "skills", "Composio API key", "plugins key change delete remove"],
  ["blocking", "privacy", "Block ads & trackers", "adblock tracking"], ["passwords", "privacy", "Passwords", "logins autofill"], ["cookies", "privacy", "Cookies", "site data"],
  ["security", "privacy", "Privacy & security", "tracking protection site permissions camera location"], ["permissions", "privacy", "What companions may do", "permissions ask approve sites sensitive"],
  ["clearHistory", "privacy", "Clear browsing history", "delete"], ["clearCookies", "privacy", "Clear cookies and website data", "delete sign out"],
@@ -360,8 +360,6 @@ export default function App() {
  const blank = !!active && !active.url && !active.chatId && !active.isPrivate
  const view = views[active?.id ?? ""] ?? "home"
  const setView = (v: HomeView) => { if (active) setViews(m => ({ ...m, [active.id]: v })) }
- const pluginsFirst = useRef(false) // the home row's Plugins button opens Skills & plugins on its plugins
- useEffect(() => { if (view !== "skills") pluginsFirst.current = false }, [view])
  const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
  useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
  const role = premadeOf(companion), plugins = ai?.plugins
@@ -474,6 +472,7 @@ export default function App() {
    if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted?.length ?? 0) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
+   if (data.kind === "pluginCatalog" || data.kind === "pluginLogos") dispatchEvent(new CustomEvent("still-" + data.kind, { detail: data.data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") { setSettingsFind(""); setSettingsPage(OLD_PAGES[data.value] ?? (data.value || "general")) } } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
@@ -552,7 +551,7 @@ export default function App() {
   (hasAi || !AI_PAGES.includes(page)) && !(id === "talk" && !hasAi) && !(["askInChat", "dev"].includes(id) && !state.preferences.agents) && !(id === "dev" && !state.mcpCommand) && !(["ai", "titles"].includes(id) && !hasAi) &&
   settingsFind.toLowerCase().split(/\s+/).filter(Boolean).every(w => `${label} ${more} ${pageName(page)}`.toLowerCase().includes(w))).slice(0, 12) : []
  const jumpTo = (f: Finding) => { setSettingsFind(""); setSettingsPage(f[1]); setFlash(f[0]) }
- const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT or Grok, through their own apps, with no API keys. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button><p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
+ const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT or Grok, through their own apps, with no API keys. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button><p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.1"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
@@ -596,7 +595,7 @@ export default function App() {
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
      {!state.noAi && ai && <><RunningTasks ai={ai} send={send} onOpen={setTasksOpen} tabs={state.tabs} /><RunAnnouncer ai={ai} /></>}
-     {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={18} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
+     {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={34} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
      {!chatTab && <><IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton></>}
@@ -741,7 +740,7 @@ export default function App() {
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
          : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { chatWith(id); setView("home") }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
-         : view === "skills" ? <SkillsPage ai={ai} send={send} start={pluginsFirst.current ? "plugins" : ""} />
+         : view === "skills" ? <SkillsPage ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
@@ -758,7 +757,7 @@ export default function App() {
             <button onClick={() => setView("companions")}><Users />Companions</button>
             <button onClick={() => setView("library")}><Library />Library</button>
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
-            <PluginStack plugins={ai?.plugins} onOpen={() => { pluginsFirst.current = true; setView("skills") }} />
+            <PluginStack plugins={ai?.plugins} send={send} onOpen={() => setView("skills")} />
            </div>
            {ideas.length > 0 && <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(({ kind, label, why, prompt }) => { const [Icon, color] = IDEA_LOOKS[kind]
             return <button key={label} className="home-idea" data-kind={kind} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{why}</small></button> })}</div></div>}
@@ -916,7 +915,8 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
        </SetCard>
       </>}
       {settingsPage === "skills" && hasAi && <SetCard title="Skills & plugins">
-       <SetRow id="skills" title="Skills & plugins" help="Your apps, like Gmail and Slack, are with your skills: turn plugins on, connect apps and pick which companion can use each."><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></SetRow>
+       <SetRow id="skills" title="Skills & plugins" help="Your apps, like Gmail and Slack, are with your skills: connect apps and pick which companion can use each."><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></SetRow>
+       <PluginKeySetting plugins={ai?.plugins} send={send} />
       </SetCard>}
       {settingsPage === "privacy" && <>
        <p className="data-intro">Tabs, bookmarks and history stay on this {MAC ? "Mac" : "PC"}. Still has no account or cloud sync.</p>

@@ -1007,7 +1007,7 @@ public partial class MainWindow
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
-   "remember" => "Saved to memory", "recall" => "Checked memory", "forget" => "Removed from memory", "plugin_tools" => "Looked at apps",
+   "remember" => "Saved to memory", "recall" => "Checked memory", "forget" => "Removed from memory", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
    _ => tool.Replace('_', ' ') + (arg.Length > 0 ? " " + arg : ""),
   };
   static string? o2(JsonNode? n, string k) => n?[k]?.ToString() is { Length: > 0 } v ? "“" + v + "”" : null;

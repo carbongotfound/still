@@ -28,7 +28,7 @@ public partial class MainWindow
         activeId = active?.Id, panel, dark, theme = Prefs.Theme, aiCalls = AgentRun.Launched, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth, extensionPopup = extensionPopup != null,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
-        windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, left = w.Left, top = w.Top }),
+        windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, w.temporary, left = w.Left, top = w.Top }),
         title = Title, width = ActualWidth, height = ActualHeight, left = Left, top = Top,
         tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.InChat, t.RunChat, t.ChatId, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, muted=t.View?.CoreWebView2?.IsMuted==true, t.InUse, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
         history = state.History, bookmarks = state.Bookmarks, hidden = state.Hidden,
@@ -95,6 +95,8 @@ public partial class MainWindow
        // Answers the Windows Hello prompt for tests (allow, deny or none: not set up), and where an export is written.
        if (op == "osAuth") { if (doc.RootElement.TryGetProperty("answer", out var a)) { qaAuthAnswer = a.GetString() ?? "deny"; verifiedUntil = default; } if (doc.RootElement.TryGetProperty("exportPath", out var x)) qaExportPath = x.GetString() ?? ""; return JsonSerializer.Serialize(new { asks = qaAuthAsks, answer = qaAuthAnswer }); }
        if (op == "quit") { Close(); return "{\"ok\":true}"; }
+       if (op == "closeWindow") { Windows.FirstOrDefault(w => w.WindowId == doc.RootElement.GetProperty("id").GetString())?.Close(); return "{\"ok\":true}"; }
+       if (op == "closeAll") { foreach (var w in Windows.ToList()) w.Close(); return "{\"ok\":true}"; } // like the taskbar's Close all windows: this one first
        if (op == "memoryPressure") { qaPressure = true; try { await ReduceBackgroundMemory(); } finally { qaPressure = false; } return "{\"ok\":true}"; }
        return "{\"error\":\"unknown operation or no page\"}";
       } catch (Exception ex) { return JsonSerializer.Serialize(new { error = ex.Message }); }

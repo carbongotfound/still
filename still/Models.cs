@@ -12,6 +12,7 @@ public sealed class BrowserTab
  [JsonIgnore] public string? Agent { get; set; } // the AI working in this tab right now (bot icon)
  [JsonIgnore] public bool AgentGroup { get; set; } // opened by an AI: shown together in the AI group
  public bool Pinned { get; set; }
+ public int Window { get; set; } // which window it was saved in (0 is the first): every window comes back
  public string Group { get; set; } = ""; // a TabGroup id, "" = none
  [JsonIgnore] public object? Wire { get; set; } // which window's page handlers are live (see MainWindow.WireView)
  public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page

@@ -252,7 +252,8 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "remember": return "Saved to memory"
  case "recall": return "Checked memory"
  case "forget": return "Removed from memory"
- case "plugin_tools": return "Looked at apps"
+ case "list_connected_plugins", "find_plugins": return "Looked at apps"
+ case "get_plugin_tools": return "Looked at " + (AgentStream.str(o?["plugin"]) ?? "an app")
  default: return tool.replacingOccurrences(of: "_", with: " ") + (arg.isEmpty ? "" : " " + arg)
  }
 }
