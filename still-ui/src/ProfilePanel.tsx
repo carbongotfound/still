@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { CalendarClock, Check, ChevronDown, Copy, FolderOpen, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react"
+import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -30,10 +30,13 @@ const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name:
 /// `preview`: a companion from the library, not added yet. Changes stay here until Add, and only the tabs that make
 /// sense before hiring show.
 const PREVIEW_TABS = ["general", "skills", "routines", "model"]
+// Still's own instructions for each official role (still/Assets/roles, the same files the hosts send), by crew id.
+const ROLE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(import.meta.glob<string>("../../still/Assets/roles/*.md", { query: "?raw", import: "default", eager: true }))
+ .map(([path, text]) => [path.slice(path.lastIndexOf("/") + 1, -3), text.replace(/\r\n/g, "\n").trim()]))
 export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, onOpenFile, onSkills }: {
  ai: AiState; id: string; preview?: Companion; send: Send; onPick: (id: string) => void; onClose: () => void; onAdd?: (c: Companion) => void; onOpenFile: (path: string) => void; onSkills: () => void
 }) {
- const saved = preview ?? ai.companions?.find(c => c.id === id)
+ const saved: (Companion & { instructions?: string }) | undefined = preview ?? ai.companions?.find(c => c.id === id)
  const [c, setC] = useState(saved)
  const [tab, setTab] = useState("general")
  const [styling, setStyling] = useState(false)
@@ -53,7 +56,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
   addEventListener("keydown", key); return () => removeEventListener("keydown", key)
  }) // eslint-disable-line react-hooks/exhaustive-deps
  if (!saved || !c) return null
- const save = (next: Companion, later = false) => {
+ const save = (next: Companion & { instructions?: string }, later = false) => {
   setC(next); clearTimeout(typing.current)
   if (preview) return
   const go = () => send("companionSave", { ...next })
@@ -96,10 +99,20 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
        </div>
       </div>
       <label className="profile-field"><span>Name</span><Input ref={name} maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} onBlur={() => c.name.trim() ? save({ ...c, name: c.name.trim() }) : setC(saved)} /></label>
-      <label className="profile-field"><span>Instructions</span>
-       <textarea rows={5} maxLength={1000} value={c.job} placeholder={`What ${c.name || "they"} does for you inside Still. For example: "Find me the best price before I buy anything, and show me where."`} onChange={e => save({ ...c, job: e.target.value }, true)} /></label>
+      <label className="profile-field"><span>{premade ? `What ${label} does` : "Instructions"}</span>
+       <textarea rows={premade ? 3 : 5} maxLength={1000} value={c.job} placeholder={`What ${c.name || "they"} does for you inside Still. For example: "Find me the best price before I buy anything, and show me where."`} onChange={e => save({ ...c, job: e.target.value }, true)} /></label>
       <label className="profile-field"><span>How {label} talks</span>
        <textarea rows={2} maxLength={600} value={c.tone ?? ""} placeholder="For example: upbeat and quick, with short answers and a joke now and then." onChange={e => save({ ...c, tone: e.target.value }, true)} /></label>
+      {premade && ROLE_TEXT[premade.id] && <>
+       <div className="profile-rows">
+        <button type="button" onClick={() => setTab("skills")}><span>Skills</span><b>{c.skills?.length ?? 0}</b><ChevronRight /></button>
+        <button type="button" onClick={() => setTab("routines")}><span>Routines</span><b>{routines.length}</b><ChevronRight /></button>
+       </div>
+       <label className="profile-field is-instructions"><span>Companion instructions</span>
+        <textarea rows={14} maxLength={8000} spellCheck={false} value={c.instructions || ROLE_TEXT[premade.id]} onChange={e => save({ ...c, instructions: e.target.value.trim() === ROLE_TEXT[premade.id] ? "" : e.target.value }, true)} /></label>
+       <div className="profile-instructions-foot"><p className="profile-note">{c.instructions ? "Your edit." : `Still's version for ${premade.role}.`} {label} follows these in every chat.</p>
+        {!!c.instructions && <Button size="sm" variant="ghost" onClick={() => save({ ...c, instructions: "" })}><RotateCcw />Reset to Still's version</Button>}</div>
+      </>}
       {preview && premade && <section className="profile-section"><h4>What to expect</h4><ul className="profile-will">{premade.expect.map(w => <li key={w}>{w}</li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="skills">
@@ -164,7 +177,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
    <AlertDialogContent>
     {ask === "reset" && premade ? <>
      <AlertDialogHeader><AlertDialogTitle>Reset {c.name}?</AlertDialogTitle><AlertDialogDescription>Their name, look, instructions, way of talking and thinking go back to how {premade.name} started. What they remember about you, their skills and routines stay.</AlertDialogDescription></AlertDialogHeader>
-     <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai })}>Reset</AlertDialogAction></AlertDialogFooter>
+     <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai, instructions: "" })}>Reset</AlertDialogAction></AlertDialogFooter>
     </> : only ? <>
      <AlertDialogHeader><AlertDialogTitle>{c.name} is your only companion</AlertDialogTitle><AlertDialogDescription>Still needs at least one. Hire or make another first, then you can {premade ? "fire" : "delete"} {c.name}.</AlertDialogDescription></AlertDialogHeader>
      <AlertDialogFooter><AlertDialogCancel>OK</AlertDialogCancel></AlertDialogFooter>

@@ -133,6 +133,23 @@ def main():
         type_into(p, ".profile-field textarea", "Finds the best price before I buy anything.")
         check(until(lambda: mates().get("Zesty", {}).get("Job") == "Finds the best price before I buy anything.", 5), "Instructions save as you type")
 
+        # An official companion's full instructions: Still's version, editable, and a reset back to it.
+        rows = js(p, "[...document.querySelectorAll('.profile-rows button')].map(b => b.innerText.replace(/\\s+/g, ' ').trim())") or []
+        z = mates().get("Zesty", {})
+        check(rows == [f"Skills {len(z.get('Skills') or [])}", f"Routines {len(z.get('Routines') or [])}"], f"Skills and Routines rows with their counts, above the instructions ({rows})")
+        box = ".profile-field.is-instructions textarea"
+        brief = js(p, f"document.querySelector('{box}')?.value") or ""
+        check(brief.startswith("# Sales") and "## When you join the team" in brief and "offer_routine" in brief, "Companion instructions show Still's whole setup for the role")
+        type_into(p, box, brief + "\n\nALWAYS END WITH A HAIKU.")
+        check(until(lambda: mates().get("Zesty", {}).get("Instructions", "").endswith("ALWAYS END WITH A HAIKU."), 5), "An edit saves as you type")
+        check(until(lambda: click(p, ".profile-instructions-foot button", "Reset to Still's version"), 3) and until(lambda: mates().get("Zesty", {}).get("Instructions") == "", 5)
+              and js(p, f"document.querySelector('{box}')?.value") == brief, "Reset to Still's version brings it back")
+        type_into(p, box, brief + "\n\nALWAYS END WITH A HAIKU.")
+        until(lambda: mates().get("Zesty", {}).get("Instructions", "").endswith("HAIKU."), 5)
+        js(p, "document.querySelector('.profile-rows')?.scrollIntoView({ block: 'start' })")
+        time.sleep(.3)
+        rpc(p, "capture", name="profile-instructions.png")
+
         # Routines: one due now runs once, in a new chat, through the companion.
         press(p, ".profile-tablist [role=tab][id$='-trigger-routines']", "mousedown")
         until(lambda: shown(p, ".profile-routine textarea"), 3)
@@ -148,6 +165,7 @@ def main():
         log = BIN / "prompts.jsonl"
         ran = until(lambda: log.exists() and "ROUTINE check the price" in log.read_text(), 45, .5)
         check(ran, "At its time, the routine runs through the fake agent")
+        check(ran and "ALWAYS END WITH A HAIKU." in log.read_text() and "## When you join the team" in log.read_text(), "and it follows the edited instructions")
         last = until(lambda: (mates().get("Zesty", {}).get("Routines") or [{}])[0].get("Last"), 5)
         check(last == now.strftime("%Y-%m-%d"), "and it's marked as run today, so it runs once")
         time.sleep(32)
@@ -178,6 +196,7 @@ def main():
         until(lambda: shown(p, "[role=alertdialog]"), 3)
         js(p, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
         check(until(lambda: "Jonah" in mates() and mates()["Jonah"].get("Routines"), 5), "Reset brings back Jonah's name and keeps the routines")
+        check(mates()["Jonah"].get("Instructions") == "", "and Still's instructions")
         escape(p)
         check(until(lambda: not shown(p, ".profile-panel"), 2), "Esc closes the profile")
         js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")

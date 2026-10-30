@@ -1421,6 +1421,13 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-list b { font-size:14px; font-weight:600; overflow-wrap:anywhere; } .profile-list small { display:flex; align-items:center; gap:4px; font-size:12px; color:var(--muted-foreground); } .profile-list small svg { width:12px; height:12px; }
 .profile-list > li > .plug-chip, .profile-list > li > span:first-child { flex:1; min-width:0; }
 .profile-empty { display:flex; flex-direction:column; align-items:center; gap:16px; padding:32px 24px; border:1px dashed var(--border); border-radius:12px; text-align:center; } .profile-empty p { margin:0; max-width:40ch; font-size:13px; line-height:1.5; color:var(--muted-foreground); }
+/* An official companion's Skills and Routines, then its full instructions. */
+.profile-rows { display:flex; flex-direction:column; border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+.profile-rows button { display:flex; align-items:center; gap:8px; padding:10px 12px; font-size:13px; font-weight:500; text-align:left; transition:background .15s; }
+.profile-rows button + button { border-top:1px solid var(--border); } .profile-rows button:hover { background:var(--muted); }
+.profile-rows b { margin-left:auto; font-weight:600; color:var(--muted-foreground); } .profile-rows svg { width:14px; height:14px; color:var(--muted-foreground); }
+.profile-field.is-instructions textarea { font-size:12.5px; line-height:1.55; min-height:280px; }
+.profile-instructions-foot { display:flex; align-items:center; gap:8px; justify-content:space-between; margin-top:-4px; }
 .profile-section { display:flex; flex-direction:column; gap:8px; } .profile-section h4 { margin:0; font-size:13px; font-weight:600; }
 .profile-files { display:flex; flex-direction:column; gap:8px; }
 .profile-modes { display:grid; gap:8px; }
