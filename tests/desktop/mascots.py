@@ -21,7 +21,7 @@ from qa import CREW, MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
 EXE = sys.argv[1]
 OUT = ROOT / "docs" / "agentic" / "compare"
 OUT.mkdir(parents=True, exist_ok=True)
-LOOKS, STATES = 8, 9  # Mascot.tsx: SHEET_LOOKS and STATES
+LOOKS, STATES = 7, 9  # Mascot.tsx: SHEET_LOOKS and STATES
 RESULT = []
 
 
@@ -130,7 +130,7 @@ def blinks():
     """A blink (Blender's, held by the test clock) shuts every rig's eyes, and they open again after it."""
     looks = [{"color": "#f7a26a", "shape": "tall", "prop": "chart"}, {"color": "#f2a5c4", "shape": "gumdrop", "prop": "badge"},
              {"color": "#a6cf9c", "shape": "block", "prop": "clipboard"}, {"color": "#f6d56a", "shape": "round", "prop": "megaphone"},
-             {"color": "#86d0c8", "shape": "squat", "prop": "headset"}, {"color": "#8cc3ee", "shape": "bump", "prop": "laptop"},
+             {"color": "#8cc3ee", "shape": "bump", "prop": "laptop"},
              {"color": "#c0a3ec", "shape": "lean", "prop": "magnifier"}, {"color": "#ddd4c6", "shape": "bean", "prop": ""}]  # look.ts: RIGS
     process, _ = window()
     try:

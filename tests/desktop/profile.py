@@ -85,7 +85,7 @@ def main():
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run"], "output": "stream-json"}))
-    crew = [{**c, "Crew": "closer"} for c in CREW if c["Id"] == "zest"] + [c for c in CREW if c["Id"] != "zest"]
+    crew = [{**c, "Crew": "sales"} for c in CREW if c["Id"] == "jonah"] + [c for c in CREW if c["Id"] != "jonah"]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake", "Width": 1400, "Height": 900},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     p = launch(EXE, PROFILE)
@@ -96,9 +96,9 @@ def main():
         escape(p)  # a new tab opens with the address bar's suggestions
         send(p, "skillSave", name="Price check", description="Compares three stores and shows a table", when="Shopping", body="1. Find three stores.")
 
-        # The home mascot opens Zest's profile, on General.
+        # The home mascot opens Jonah's profile, on General.
         js(p, "document.querySelector('.home-face')?.click()")
-        check(until(lambda: shown(p, ".profile-panel[aria-label=\"Zest's profile\"] .profile-stage canvas, .profile-panel .profile-stage img"), 10), "Clicking the home mascot opens its profile, with a live mascot on the stage")
+        check(until(lambda: shown(p, ".profile-panel[aria-label=\"Jonah's profile\"] .profile-stage canvas, .profile-panel .profile-stage img"), 10), "Clicking the home mascot opens its profile, with a live mascot on the stage")
         check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills Routines Files Memory Plugins Model", "Seven tabs: General, Skills, Routines, Files, Memory, Plugins, Model")
         time.sleep(1)
 
@@ -118,11 +118,11 @@ def main():
 
         # Model: Thorough is saved. Skills: the switch adds the skill.
         click(p, ".profile-modes button", "Thorough")
-        check(until(lambda: mates().get("Zest", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
+        check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
         press(p, ".profile-tablist [role=tab][id$='-trigger-skills']", "mousedown")
         until(lambda: shown(p, ".profile-list [role=switch]"), 3)
         js(p, "document.querySelector('.profile-list [role=switch]')?.click()")
-        check(until(lambda: len(mates().get("Zest", {}).get("Skills", [])) == 1, 5), "Skills: turning one on saves it for Zest")
+        check(until(lambda: len(mates().get("Jonah", {}).get("Skills", [])) == 1, 5), "Skills: turning one on saves it for Jonah")
 
         # General: rename on blur; instructions autosave.
         press(p, ".profile-tablist [role=tab][id$='-trigger-general']", "mousedown")
@@ -177,7 +177,7 @@ def main():
         menu(p, "Reset")
         until(lambda: shown(p, "[role=alertdialog]"), 3)
         js(p, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
-        check(until(lambda: "Zest" in mates() and mates()["Zest"].get("Routines"), 5), "Reset brings back Zest's name and keeps the routines")
+        check(until(lambda: "Jonah" in mates() and mates()["Jonah"].get("Routines"), 5), "Reset brings back Jonah's name and keeps the routines")
         escape(p)
         check(until(lambda: not shown(p, ".profile-panel"), 2), "Esc closes the profile")
         js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")

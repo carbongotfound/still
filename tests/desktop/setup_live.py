@@ -1,5 +1,5 @@
-"""Set it up with Zest, through a real signed-in agent app (uses that plan): a baker answers Zest's questions, skips one,
-and the interview runs until Zest has what it needs (or "That's enough" after ten turns). Checks the follow-ups and
+"""Set it up with Jonah, through a real signed-in agent app (uses that plan): a baker answers Jonah's questions, skips one,
+and the interview runs until Jonah has what it needs (or "That's enough" after ten turns). Checks the follow-ups and
 what it set up: a hire from the library, what each companion focuses on, memories, routines off, a first task. Frames
 of the whole interview go to frames/ (for a GIF). Nothing is approved or sent. Run it by hand only.
 
@@ -40,9 +40,9 @@ def check(ok, name):
 def main():
     PROFILE.mkdir(parents=True)
     src = (ROOT / "still-ui" / "src" / "crew.tsx").read_text(encoding="utf-8")
-    job, tone = re.search(r'\{ id: "closer", name: "Zest".*?job: "((?:[^"\\]|\\.)*)",\s*tone: "((?:[^"\\]|\\.)*)"', src, re.S).groups()
-    zest = {"Id": "zest0001", "Name": "Zest", "Job": job, "Tone": tone, "Crew": "closer", "Mode": "default"}
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": [zest], "AiHarness": AGENT, "Width": 1250, "Height": 800},
+    job, tone = re.search(r'\{ id: "sales", name: "Jonah".*?job: "((?:[^"\\]|\\.)*)",\s*tone: "((?:[^"\\]|\\.)*)"', src, re.S).groups()
+    jonah = {"Id": "zest0001", "Name": "Jonah", "Job": job, "Tone": tone, "Crew": "sales", "Mode": "default"}
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": [jonah], "AiHarness": AGENT, "Width": 1250, "Height": 800},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, PROFILE)
     frames, shot, said = RUN / "frames", [0], []
@@ -53,9 +53,9 @@ def main():
         rpc(process, "capture", name=f"frame-{shot[0]:03}.png")
 
     def bubbles():
-        return js(process, "[...document.querySelectorAll('.ob-chat .ob-bubble:not(.is-typing)')].map(b => (b.classList.contains('is-you') ? 'you: ' : 'zest: ') + b.innerText.trim())") or []
+        return js(process, "[...document.querySelectorAll('.ob-chat .ob-bubble:not(.is-typing)')].map(b => (b.classList.contains('is-you') ? 'you: ' : 'jonah: ') + b.innerText.trim())") or []
 
-    def wait():  # for Zest's next message, filming as it types
+    def wait():  # for Jonah's next message, filming as it types
         end = time.monotonic() + 150
         while time.monotonic() < end:
             film()
@@ -93,8 +93,8 @@ def main():
         said = bubbles()
         error = js(process, "document.querySelector('.ob-fallback')?.innerText") or ""
         check(not error and js(process, "!!document.querySelector('.ob-summary')"), f"The interview ends in a summary ({error or len(said)} messages)")
-        asks = [b for b in said if b.startswith("zest: ")]
-        check(len(asks) >= 4 and len(set(asks)) == len(asks), f"Zest asked {len(asks) - 1} questions, none twice")
+        asks = [b for b in said if b.startswith("jonah: ")]
+        check(len(asks) >= 4 and len(set(asks)) == len(asks), f"Jonah asked {len(asks) - 1} questions, none twice")
         check(any(w in " ".join(asks[1:3]).lower() for w in ("cafe", "bakery", "sourdough", "wholesale", "bake")), "Its follow-ups build on the answers (they mention the bakery)")
         time.sleep(2); film()
         rows = js(process, "[...document.querySelectorAll('.ob-summary li')].map(l => l.querySelector('b').innerText.trim() + ': ' + (l.querySelector('small')?.innerText.trim() ?? ''))") or []
@@ -106,7 +106,7 @@ def main():
         check(all(not r["On"] for c in team for r in c.get("Routines", [])) and any("routine, off" in r for r in rows), "It suggested routines, all off")
         check(any(r.startswith("First, I'll help with: ") and "flour" in r.lower() for r in rows), "The first task is the one asked for")
         facts = json.loads((PROFILE / "companions" / "zest0001" / "memory.json").read_text(encoding="utf-8")) if (PROFILE / "companions" / "zest0001" / "memory.json").exists() else []
-        check(len(facts) >= 3, f"Zest remembers {len(facts)} things about the user")
+        check(len(facts) >= 3, f"Jonah remembers {len(facts)} things about the user")
         rpc(process, "capture", name="summary.png")
         js(process, "document.querySelector('.ob-summary').scrollTop = 1e6")
         time.sleep(.6); film()

@@ -21,21 +21,20 @@ export const BODY_COLORS: [string, string][] = [
  ["#d9b2e6", "Orchid"], ["#ddd4c6", "Oat"], ["#cfc9c0", "Pebble"], ["#9aa3b2", "Slate"],
 ]
 
-// The seven roles' own looks, keyed by role id (crew.tsx).
+// The six roles' own looks, keyed by role id (crew.tsx).
 export const ROLE_LOOKS: Record<string, Look> = {
- closer: { color: "#f7a26a", shape: "tall", prop: "chart", accessory: "" },
- scout: { color: "#f2a5c4", shape: "gumdrop", prop: "badge", accessory: "" },
- chief: { color: "#a6cf9c", shape: "block", prop: "clipboard", accessory: "" },
- marketer: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
- fixer: { color: "#86d0c8", shape: "squat", prop: "headset", accessory: "" },
- builder: { color: "#8cc3ee", shape: "bump", prop: "laptop", accessory: "" },
- researcher: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
+ sales: { color: "#f7a26a", shape: "tall", prop: "chart", accessory: "" },
+ growth: { color: "#f2a5c4", shape: "gumdrop", prop: "badge", accessory: "" },
+ planner: { color: "#a6cf9c", shape: "block", prop: "clipboard", accessory: "" },
+ marketing: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
+ engineer: { color: "#8cc3ee", shape: "bump", prop: "laptop", accessory: "" },
+ research: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
 }
 /// Make your own: the neutral blob you start from.
 export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }
-/// The eight Blender companions (crew/): each one's model, avatar and sprites go by this name.
-export const RIGS: [Look, string][] = [[ROLE_LOOKS.closer, "zest"], [ROLE_LOOKS.scout, "bloom"], [ROLE_LOOKS.chief, "noon"], [ROLE_LOOKS.marketer, "fizz"],
- [ROLE_LOOKS.fixer, "mallow"], [ROLE_LOOKS.builder, "rivet"], [ROLE_LOOKS.researcher, "glint"], [BLANK, "custom"]]
+/// The seven Blender companions: each one's model, avatar and sprites go by this name.
+export const RIGS: [Look, string][] = [[ROLE_LOOKS.sales, "jonah"], [ROLE_LOOKS.growth, "talia"], [ROLE_LOOKS.planner, "nora"], [ROLE_LOOKS.marketing, "leo"],
+ [ROLE_LOOKS.engineer, "ivan"], [ROLE_LOOKS.research, "maya"], [BLANK, "custom"]]
 /// A friendly companion for places that don't have one yet.
 export const DEFAULT_LOOK: Look = { color: "#8cc3ee", shape: "bean", prop: "", accessory: "" }
 // Other AI apps working in Still wear these.

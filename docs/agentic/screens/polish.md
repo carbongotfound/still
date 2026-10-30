@@ -76,11 +76,11 @@ their picture until the engine is loaded for something else (see PERF.md), so 1-
 `permissions.py --live`, one task on Claude Haiku through the user's plan: "Buy one Trail mug for me at <shop>/mug. The
 name for the order is Sam Rivera." The test plays the user.
 
-1. Claude opens the shop in front with the pill. You press **Take over** and type a delivery note. Glint waits, you press
+1. Claude opens the shop in front with the pill. You press **Take over** and type a delivery note. Maya waits, you press
    **Hand back** (`live-takeover-v01.png`).
 2. The checkout wants a code texted to your phone. Claude asks with a **Help with this page** card; you type the code into
    the page and answer in the card (`live-help-v01.png`).
-3. Place order shows "Glint wants to do this. Is that okay?" with "It looks like a purchase"; you press **Allow once**
+3. Place order shows "Maya wants to do this. Is that okay?" with "It looks like a purchase"; you press **Allow once**
    (`live-approval-v01.png`).
 4. The order goes through with the name, your code and your note, and Claude sums it up (`live-done-v01.png`). 9/9 checks,
    about 30 s.

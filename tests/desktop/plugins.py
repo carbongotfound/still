@@ -13,7 +13,7 @@ the Keychain on the Mac) and never reaches a file in the clear, the interface, a
 search shows apps Composio signs in to itself; Connect opens Composio's sign-in in a Still window, which closes when it's
 done; reads go ahead, writes ask (Deny or Allow once, nothing else); per-companion switches; a missing app offers a
 button that connects it; Composio down; Disconnect; Remove key. Then setup's Connect your tools step with a key: the belt
-turns into a grid, a tap connects Gmail, and Zest, who works in it, bounces and says so.
+turns into a grid, a tap connects Gmail, and Jonah, who works in it, bounces and says so.
 
 Run: python tests/desktop/plugins.py artifacts/Still-QA/Still.exe
 """
@@ -174,7 +174,7 @@ FAKE = textwrap.dedent(r'''
         call("plugin_tools", plugin="gmail", query="emails")
         call("use_plugin", tool="GMAIL_FETCH_EMAILS", arguments={"query": "is:unread"})
     elif "SENDMAIL" in tag:
-        call("use_plugin", tool="GMAIL_SEND_EMAIL", arguments={"to": "sam@example.com", "subject": "Lunch on Friday", "body": "Still on for noon?"})
+        call("use_plugin", tool="GMAIL_SEND_EMAIL", arguments={"to": "sam@example.com", "subject": "Lunch on Friday", "body": "Still on for nora?"})
     elif "SLACK" in tag:
         call("use_plugin", tool="SLACK_SEND_MESSAGE", arguments={"channel": "#general", "text": "Shipping today"})
     elif "PEEK" in tag:
@@ -197,7 +197,7 @@ def ask(process, tag):
     send(process, "new")
     until(lambda: js(process, "!!document.querySelector('.home-rail')"), 20)
     time.sleep(.4)
-    send(process, "aiSend", text=tag, home=True, companion="glint")
+    send(process, "aiSend", text=tag, home=True, companion="maya")
 
 
 def idle(process):
@@ -360,7 +360,7 @@ def connect(process):
     account = next(iter(MOCK["accounts"].values()))
     check(account["user_id"].startswith("still-") and MOCK["configs"].get("ac_gmail", {}).get("is_composio_managed"), "It uses Composio's own sign-in, for this profile's own user")
     who = js(process, "[...document.querySelectorAll('.plug-who button')].map(b => b.innerText.trim() + ':' + b.getAttribute('aria-pressed'))") or []
-    check(who[:2] == ["Glint:true", "Noon:true"], f"Each companion can use it, with a switch each ({who})")
+    check(who[:2] == ["Maya:true", "Nora:true"], f"Each companion can use it, with a switch each ({who})")
     close_panel(process)
 
 
@@ -395,14 +395,14 @@ def reads_and_writes(process):
     idle(process)
 
     open_plugins(process)
-    js(process, "document.querySelector('.plug-who button')?.click()")  # Glint
+    js(process, "document.querySelector('.plug-who button')?.click()")  # Maya
     until(lambda: js(process, "document.querySelector('.plug-who button')?.getAttribute('aria-pressed')") == "false", 5)
     close_panel(process)
-    check(until(lambda: "gmail" in turned_off("glint"), 5), "Turning Gmail off for Glint is saved")
+    check(until(lambda: "gmail" in turned_off("maya"), 5), "Turning Gmail off for Maya is saved")
     before = len(MOCK["executed"])
     ask(process, "READMAIL")
     idle(process)
-    check(calls("READMAIL")[-1]["ok"] is False and "turned Gmail off for you" in calls("READMAIL")[-1]["text"] and len(MOCK["executed"]) == before, "Then Glint can't use Gmail, and is told why")
+    check(calls("READMAIL")[-1]["ok"] is False and "turned Gmail off for you" in calls("READMAIL")[-1]["text"] and len(MOCK["executed"]) == before, "Then Maya can't use Gmail, and is told why")
     open_plugins(process)
     js(process, "document.querySelector('.plug-who button')?.click()")
     until(lambda: js(process, "document.querySelector('.plug-who button')?.getAttribute('aria-pressed')") == "true", 5)
@@ -413,7 +413,7 @@ def missing(process):
     ask(process, "SLACK")
     card = until(lambda: cards(process), 20)
     head = js(process, "document.querySelector('.approve-card .ask-q')?.innerText.trim()")
-    check(card and "Connect Slack" in card[0] and head == "Glint needs Slack for this." and buttons(process) == ["Not now", "Connect Slack"], f"Slack isn't connected: Glint says it needs it, with a button that connects it ({head}; {buttons(process)})")
+    check(card and "Connect Slack" in card[0] and head == "Maya needs Slack for this." and buttons(process) == ["Not now", "Connect Slack"], f"Slack isn't connected: Maya says it needs it, with a button that connects it ({head}; {buttons(process)})")
     press(process, "Not now")
     idle(process)
     check(calls("SLACK")[-1]["ok"] is False and not [e for e in MOCK["executed"] if e["tool"] == "SLACK_SEND_MESSAGE"], "Not now: nothing connects and nothing is posted")
@@ -468,7 +468,7 @@ def disconnect(process):
 
 
 def setup(env):
-    """Setup's Connect your tools with a key: the belt turns into a grid, a tap connects Gmail, and Zest bounces and says so."""
+    """Setup's Connect your tools with a key: the belt turns into a grid, a tap connects Gmail, and Jonah bounces and says so."""
     profile = RUN / "profile2"
     (profile / "agents").mkdir(parents=True)
     shutil.copy(PROFILE / "agents" / "fake.json", profile / "agents" / "fake.json")
@@ -493,7 +493,7 @@ def setup(env):
         time.sleep(1)
         forward()  # -> crew
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 8, 5)
-        js(process, "document.querySelector(\".crew-pick[aria-label='Hire Zest']\")?.click()")
+        js(process, "document.querySelector(\".crew-pick[aria-label='Hire Jonah']\")?.click()")
         time.sleep(.6)
         forward()  # -> tools
         check(until(lambda: js(process, "!!document.querySelector('.plug-belt')"), 5), "Setup: Connect your tools shows the belt")
@@ -503,7 +503,7 @@ def setup(env):
         js(process, "document.querySelector(\".plug-pick[aria-label='Connect Gmail']\")?.click()")
         sign_in(process, "Gmail")
         check(until(lambda: js(process, "document.querySelector(\".plug-pick[aria-label='Gmail is connected']\")?.getAttribute('aria-pressed')") == "true", 10), "Gmail gets its check")
-        check(until(lambda: "Now I can work in Gmail" in (js(process, "document.querySelector('.ob-team-line, .ob-cheer')?.innerText") or ""), 5), "Zest, who works in Gmail, bounces and says so")
+        check(until(lambda: "Now I can work in Gmail" in (js(process, "document.querySelector('.ob-team-line, .ob-cheer')?.innerText") or ""), 5), "Jonah, who works in Gmail, bounces and says so")
         rpc(process, "capture", name="tools-connected.png")
         foot = js(process, "[...document.querySelectorAll('.ob-foot button')].map(b => b.innerText.trim() + (b.disabled ? ' (off)' : ''))") or []
         check(foot == ["Back", "Continue"], f"With an app connected, Continue goes on ({foot})")

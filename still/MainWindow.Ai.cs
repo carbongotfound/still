@@ -188,14 +188,64 @@ public partial class MainWindow
   0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444];
  static uint Fnv(string s) { uint h = 2166136261; foreach (char ch in s.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return h; }
  internal static bool OldName(string name) => OldNames.Contains(Fnv(name));
- /// The roles before the blobs (their ids hashed the same way) and the role that took over each, with its name.
- static readonly Dictionary<uint, (string Role, string Name)> MovedCrew = new() { [327684010u] = ("researcher", "Glint"), [235257612u] = ("closer", "Zest"),
-  [3817335319u] = ("scout", "Bloom"), [2393765392u] = ("chief", "Noon"), [389508247u] = ("chief", "Noon"), [2625268281u] = ("marketer", "Fizz"), [56376696u] = ("builder", "Rivet") };
- /// A companion hired from an old role moves to the role that took over, and takes its new name unless the user renamed it.
+ /// The roles before the blobs and before the six had people's names (their ids hashed the same way), and the role that
+ /// took over each, with its name. The fixer's work went to the planner.
+ static readonly Dictionary<uint, (string Role, string Name)> MovedCrew = new() { [327684010u] = ("research", "Maya"), [235257612u] = ("sales", "Jonah"),
+  [3817335319u] = ("growth", "Talia"), [2393765392u] = ("planner", "Nora"), [389508247u] = ("planner", "Nora"), [2625268281u] = ("marketing", "Leo"), [56376696u] = ("engineer", "Ivan"),
+  [0xf5ee6083u] = ("sales", "Jonah"), [0xc322ad05u] = ("growth", "Talia"), [0xd18a3a92u] = ("planner", "Nora"), [0xcee7c10au] = ("marketing", "Leo"),
+  [0xe4350540u] = ("engineer", "Ivan"), [0x6df6fa7bu] = ("research", "Maya"), [Fixer] = ("planner", "Nora") };
+ const uint Fixer = 0xc5f5784fu;
+ /// What the six were called before they had people's names, so an @mention or a handoff by the old name still finds them.
+ static readonly Dictionary<uint, string> FormerNames = new() { [0x7271fe9fu] = "sales", [0xe4ee9edcu] = "growth", [0x88ab4733u] = "planner", [0x418c07d1u] = "planner",
+  [0xa7bec5ecu] = "marketing", [0x4860da37u] = "engineer", [0x7e526a4fu] = "research" };
+ /// The library's jobs and personalities from before the renames (hashed), and each role's now (crew.tsx), for companions hired back then.
+ static readonly HashSet<uint> OldCrewJobs = [0x31b4df6a, 0xf832af65, 0x7256db08, 0xfeedd6eb, 0x5b7368a5, 0x40d3e149, 0x1b090d4c];
+ static readonly HashSet<uint> OldCrewTones = [0xd75824d2, 0xc3ea17aa, 0x88c57c82, 0xeeac15be, 0x81223d6c, 0xe44ba5bd, 0xce35abaf];
+ static readonly Dictionary<string, (string Job, string Tone)> CrewJobs = new() {
+  ["sales"] = ("Sales for the user. Learns what the user sells and to whom, researches leads and companies from public information, preps a one-page brief before each call, drafts outreach and follow-ups in the user's voice, and keeps a simple pipeline table with a next step and a date for every deal. Never sends, books or posts anything without asking first, and never makes up a number.",
+   "Bold and upbeat. Talks in next steps and dates, and gets straight to what moves the deal."),
+  ["growth"] = ("Growth for the user's product. Finds where people drop off between visiting, signing up, getting value and paying, plans small experiments with one metric each, drafts the copy and emails they need, and tracks what worked. Never launches, sends or changes anything live without asking, and never uses tricks that mislead people.",
+   "Curious and upbeat. Talks in numbers and bets, and celebrates small wins."),
+  ["planner"] = ("A planner for the user's days and projects. Plans tomorrow with the important things first, briefs the user before meetings, keeps a short list of what's waiting on them and drafts the replies, and turns projects into checklists with owners and dates. Works in the user's own calendar and mail in Still's tabs when asked. Asks before sending, accepting, declining or changing anything.",
+   "Composed and organized. Short lists, clear priorities and one next step at a time."),
+  ["marketing"] = ("Marketing for the user's posts, launches and newsletters. Learns the user's voice from examples, turns one idea into posts sized for each platform, and drafts launch posts, newsletters and landing page copy. Drafts only: shows every draft and never posts, schedules or sends anything itself.",
+   "Energetic and punchy. Big on hooks, short sentences and a clear call to action."),
+  ["engineer"] = ("An engineer for the user's code and product. Builds small web tools and pages in the working folder and runs them in a tab to test them, tests web releases like a careful user, files clear bug reports with steps to reproduce, turns feedback into short specs with acceptance checks, and reads docs and code to explain how things work. Never says something works before running it, and never submits or deploys anything without asking.",
+   "Practical and dry. Steps, evidence and no fluff."),
+  ["research"] = ("Research for the user. Digs into topics, compares sources and writes short briefs with a citation for every claim. Answers hard questions from solid sources, compares tools, vendors and options in one table, checks whether claims hold up, and looks into the user's market and competitors when asked. Says plainly when something is uncertain or the sources disagree.",
+   "Precise and direct. Leads with the answer, then the evidence, and flags weak sources.") };
+ /// A companion hired from an old role moves to the role that took over, and takes its new name unless the user renamed it;
+ /// the job and personality Still gave it move along, with what the user added after "For me:". The fixer is gone: its
+ /// chats and memory go to the planner, or it becomes the planner when there isn't one.
  internal static void MoveOldCrew(Preferences prefs)
  {
-  foreach (var c in prefs.Companions)
-   if (c.Crew.Length > 0 && MovedCrew.TryGetValue(Fnv(c.Crew), out var to)) { if (Fnv(c.Name) == Fnv(c.Crew)) c.Name = to.Name; c.Crew = to.Role; }
+  foreach (var c in prefs.Companions.OrderBy(c => Fnv(c.Crew) == Fixer).ToList()) { // the fixer last, once the planner has moved
+   if (c.Crew.Length == 0 || !MovedCrew.TryGetValue(Fnv(c.Crew), out var to)) continue;
+   if (Fnv(c.Crew) == Fixer && prefs.Companions.FirstOrDefault(x => x.Crew == "planner") is { } planner) {
+    HandOver(c, planner); prefs.Companions.Remove(c); continue;
+   }
+   if (Fnv(c.Name) == Fnv(c.Crew) || FormerNames.ContainsKey(Fnv(c.Name))) c.Name = to.Name;
+   var mine = c.Job.Split("\n\nFor me: ", 2);
+   if (OldCrewJobs.Contains(Fnv(mine[0]))) c.Job = CrewJobs[to.Role].Job + (mine.Length > 1 ? "\n\nFor me: " + mine[1] : "");
+   if (OldCrewTones.Contains(Fnv(c.Tone))) c.Tone = CrewJobs[to.Role].Tone;
+   if (Fnv(c.Crew) == Fixer) { c.Look = ""; c.Routines.Clear(); } // its look and its support routine were the fixer's
+   c.Crew = to.Role;
+  }
+ }
+ /// The fixer's chats and what it remembered go to the planner; its folder goes.
+ static void HandOver(Companion gone, Companion to)
+ {
+  foreach (var chat in AiChats) {
+   if (chat.Companion == gone.Id) chat.Companion = to.Id;
+   foreach (var m in chat.Messages) { if (m.Who == gone.Id) m.Who = to.Id; if (m.To == gone.Id) m.To = to.Id; }
+  }
+  SaveAiChats();
+  var facts = CompanionMemory.Of(to.Id);
+  foreach (var f in CompanionMemory.Of(gone.Id)) if (!facts.Any(x => x.Text == f.Text || f.Key.Length > 0 && x.Key == f.Key)) facts.Add(f);
+  CompanionMemory.Save(to.Id);
+  CompanionMemory.Drop(gone.Id);
+  try { if (Path.Combine(App.DataRoot, "companions", gone.Id) is var dir && Directory.Exists(dir)) Directory.Delete(dir, true); }
+  catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
  static readonly string[] OldJobs = [
   "An all-round helper: researches, compares options and gets things done on the web.",
@@ -504,8 +554,16 @@ public partial class MainWindow
  }
 
  /// The companions a message @mentions (of among, when given), in the order it names them.
- IEnumerable<string> Mentioned(string text, ICollection<string>? among = null) => Companions.Where(c => among?.Contains(c.Id) != false)
-  .Select(c => (c.Id, At: Regex.Match(text, @"(?<![\w.@])@" + Regex.Escape(c.Name) + @"(?!\w)", RegexOptions.IgnoreCase))).Where(x => x.At.Success).OrderBy(x => x.At.Index).Select(x => x.Id);
+ IEnumerable<string> Mentioned(string text, ICollection<string>? among = null)
+ {
+  var old = Regex.Matches(text, @"(?<![\w.@])@(\w+)").Where(m => FormerNames.ContainsKey(Fnv(m.Groups[1].Value))).ToList();
+  int At(Companion c) => Regex.Match(text, @"(?<![\w.@])@" + Regex.Escape(c.Name) + @"(?!\w)", RegexOptions.IgnoreCase) is { Success: true } m ? m.Index
+   : old.FirstOrDefault(m => Named(m.Groups[1].Value) == c)?.Index ?? -1;
+  return Companions.Where(c => among?.Contains(c.Id) != false).Select(c => (c.Id, At: At(c))).Where(x => x.At >= 0).OrderBy(x => x.At).Select(x => x.Id);
+ }
+ /// The companion called name, or the official one that used to be called it.
+ Companion? Named(string name) => Companions.FirstOrDefault(c => c.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))
+  ?? (FormerNames.TryGetValue(Fnv(name), out var role) ? Companions.FirstOrDefault(c => c.Crew == role) : null);
 
  /// Companions message each other: ask_companion waits for the reply, tell_companion hands work over. The one asked answers
  /// in its own chat with the asker (its own memory, tools and AI app), and only it sees what was asked; the asking chat,
@@ -528,7 +586,7 @@ public partial class MainWindow
   if (runs.GetValueOrDefault(who) is not { } run || Companions.FirstOrDefault(c => c.Id == run.Chat.Companion) is not { } me) return Fail("Only Still's companions can message each other.");
   if (tool == "list_companions") return Reply(new { companions = Companions.Select(c => new { name = c.Name, does = Clip(c.Job, 240), you = c == me ? true : (bool?)null }) });
   string name = S(args, "name").Trim().TrimStart('@'), text = S(args, "message").Trim();
-  var to = Companions.FirstOrDefault(c => c.Name.Equals(name, StringComparison.OrdinalIgnoreCase));
+  var to = Named(name);
   if (to == null) return Fail($"No teammate is called \"{name}\". list_companions shows who's on the team.");
   if (to == me) return Fail("That's you: a companion can't message itself.");
   if (text.Length == 0) return Fail("Write the message.");
@@ -892,6 +950,22 @@ public partial class MainWindow
   if (r.Question == asked) r.Question = null;
   PublishAiEverywhere();
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
+ }
+
+ /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.
+ async Task<string> OfferRoutine(string who, JsonElement args)
+ {
+  if (runs.GetValueOrDefault(who) is not { } r || Companions.FirstOrDefault(c => c.Id == r.Chat.Companion) is not { } me) return Fail("Only Still's companions have routines.");
+  string text = Clip(S(args, "text").Trim(), 600), time = S(args, "time").Trim();
+  List<int> days = args.TryGetProperty("days", out var d) && d.ValueKind == JsonValueKind.Array
+   ? [.. d.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number && x.TryGetInt32(out _)).Select(x => x.GetInt32()).Where(x => x is >= 0 and <= 6).Distinct().Order()] : [];
+  if (text.Length == 0 || !TimeOnly.TryParseExact(time, "HH:mm", out _) || days.Count == 0) return Fail("Pass what to do, a time as HH:mm and at least one day (0 = Sunday).");
+  var said = await AskInChat(who, JsonSerializer.SerializeToElement(new { question = $"Should I make this a routine? {Days(days)} at {time}: {text}", options = new[] { "Yes, add it", "Not now" } }));
+  string answer = JsonNode.Parse(said)?["result"]?["answer"]?.GetValue<string>() ?? "";
+  if (!Regex.IsMatch(answer, @"^\s*(yes|sure|ok|okay|please)\b", RegexOptions.IgnoreCase)) return Reply(new { added = false, note = "The user said no. Don't offer it again in this chat." });
+  me.Routines.Add(new() { Id = Guid.NewGuid().ToString("N")[..8], Text = text, Time = time, Days = days, On = true });
+  SaveLater(); PublishAiEverywhere();
+  return Reply(new { added = true, routine = $"{Days(days)} at {time}" });
  }
 
  /// One step of a run, shown in the chat. Returns true when the AI said something.

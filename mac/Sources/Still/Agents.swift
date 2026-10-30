@@ -791,6 +791,7 @@ extension Browser {
   do {
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
+   case "offer_routine": return await offerRoutine(who, args)
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "plugin_tools", "use_plugin": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget": return memoryTool(who, tool, args)
@@ -1259,6 +1260,9 @@ enum Mcp {
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
         str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),
+  tool("offer_routine", "Offer to repeat something that clearly helped on a schedule. Still asks the user in the chat, and the routine is added to your profile only if they say yes. Offer it once, after a useful result.",
+       [str("text", "What to do each time, as an instruction to yourself"), str("time", "When, as HH:mm (24-hour)"),
+        ("days", ["type": "array", "items": ["type": "integer"], "description": "Days of the week: 0 = Sunday to 6 = Saturday"] as [String: Any])], ["text", "time", "days"]),
   // Teammates: the user's other companions, each with its own role, memory and tools (Ai.swift, exchange).
   tool("list_companions", "List your teammates: the user's other companions, what each one does, and which one is you.", [], []),
   tool("ask_companion", "Ask a teammate something and wait for their reply (up to 10 minutes). They answer with their own role, memory and tools, and only they see your message. Say what you need and why, with what they need from you. The user sees the exchange.",
