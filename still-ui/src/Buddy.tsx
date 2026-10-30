@@ -1,5 +1,5 @@
-import { createContext, useContext, useMemo } from "react"
-import { Mascot, type MascotState } from "./Mascot"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { Mascot, pictureOf, useMascotVersion, type MascotState } from "./Mascot"
 import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, isOld, parseLook, type Look } from "./look"
 
 // The old companion hues: a companion saved before looks existed keeps its color.
@@ -44,5 +44,22 @@ export function Face({ companion, mood = "idle", size = 56, follow, gesture, ges
   className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face
+
+/// Home's space: the companion you work with, live and big (its body about 40% of the view's height), and the rest of the
+/// team behind it, smaller, as still pictures; a teammate picks it. The view is the scrolling page it stands in.
+const FILL = .6 // a body's share of its canvas: the frame clears every clip's reach and hop
+export function Space({ companion, team = [], mood, onOpen, onPick }: { companion: Companion; team?: Companion[]; mood: Mood; onOpen: () => void; onPick: (id: string) => void }) {
+ const ref = useRef<HTMLDivElement>(null), [view, setView] = useState(innerHeight - 100)
+ useEffect(() => {
+  const page = ref.current?.closest(".home-main"); if (!page) return
+  const o = new ResizeObserver(() => setView(page.clientHeight)); o.observe(page); return () => o.disconnect()
+ }, [])
+ useMascotVersion()
+ const size = Math.round(Math.max(200, view * .4 / FILL)), rest = team.filter(c => c.id !== companion.id).slice(0, 4)
+ return <div ref={ref} className="space" style={{ "--s": `${size}px` } as CSSProperties}>
+  {rest.map((c, i) => { const url = pictureOf(lookOf(c), "idle", 384, "full"); return <button key={c.id} type="button" className="space-mate" data-at={i} title={c.name} aria-label={`Work with ${c.name}`} onClick={() => onPick(c.id)}>{url && <img src={url} alt="" draggable={false} />}</button> })}
+  <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={onOpen}><Face key={companion.id} companion={companion} size={size} follow mood={mood} /></button>
+ </div>
+}
 /// Opens a companion's profile (App listens), from any of its mascots.
 export const showProfile = (c?: Companion) => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: c.id })) }

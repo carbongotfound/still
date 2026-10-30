@@ -2,7 +2,7 @@
 through every frame of every move, on a flat background. A non-background pixel on a box's outer pixel ring fails it.
 Also checks the Blender avatar files (still-ui/src/assets/avatar): nothing on their outer pixel ring, the visible body
 (alpha 8 and up) at least 10% from every side, and that they're the 2D ones (a dark outline round the body); and that
-chat sizes (48px and under) are 2D, bigger ones live 3D. And the
+chat sizes (48px and under) are 2D, bigger ones live 3D. And the places people meet them, at their sizes (places()); the
 Blender companions' every clip, ten frames a second, at the Companions page's corner size.
 
 Run: python tests/desktop/avatars.py artifacts/Still-QA/Still.exe
@@ -17,7 +17,7 @@ import uuid
 from PIL import Image, ImageChops, ImageFilter, ImageStat
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, until  # noqa: E402
+from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = sys.argv[1]
 PAPER = (246, 243, 238)
@@ -145,7 +145,57 @@ def frames(process, profile, size, live, rig=False):
         check(not bad, f"{size}px {what}: {len(times)} frame{'s' * (len(times) > 1)} clear of the edge" + (f" (touching: looks {sorted(bad)})" if bad else ""))
 
 
+# The body's box in each companion canvas (opaque pixels: the shadow is fainter), in CSS px, against its art's box.
+BODY = """(sel, box) => [...document.querySelectorAll(sel)].map(m => { const c = m.querySelector('canvas[data-live]'), r = m.getBoundingClientRect()
+ const art = (box ? m.closest(box) : m).getBoundingClientRect(), o = { size: Math.round(r.width), art: Math.round(art.height), inside: r.left >= art.left - 1 && r.right <= art.right + 1 }
+ if (!c) return o
+ const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, k = r.width / c.width; let t = 1e9, b = -1
+ for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (d[(y * c.width + x) * 4 + 3] > 200) { t = Math.min(t, y); b = Math.max(b, y) }
+ return { ...o, body: Math.round((b - t + 1) * k), share: +((b - t + 1) * k / art.height).toFixed(2) } })"""
+
+
+def places():
+    """Where people meet them, at the brief's sizes: a chat turn's companion at least 40px; the Companions page's, in its
+    card's corner, at least 96px, whole (nothing clips it) with room round it; home's space with the companion at 35-45%
+    of the view's height and the rest of the team behind it."""
+    profile = ROOT / "artifacts" / ("avatars-" + uuid.uuid4().hex[:8]) / "profile"
+    (profile / "ai").mkdir(parents=True)
+    roles = {"jonah": "sales", "maya": "research", "nora": "planner"}
+    crew = [{**c, "Crew": roles[c["Id"]]} for c in CREW if c["Id"] in roles]
+    chat = {"Id": "lamp", "Title": "A desk lamp", "Harness": "claude", "Started": True, "Companion": "jonah", "Updated": "2026-10-01T10:00:00Z",
+            "Messages": [{"Role": "user", "Text": "Find me a desk lamp."}, {"Role": "assistant", "Text": "Warm light, no glare, fair price.", "Who": "jonah"}]}
+    (profile / "ai" / "chats.json").write_text(json.dumps([chat]))
+    (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AiHarness": "claude", "Width": 1400, "Height": 900},
+        "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
+    p = launch(EXE, profile)
+    body = lambda sel, box="": json.loads(js(p, f"JSON.stringify(({BODY})({json.dumps(sel)}, {json.dumps(box)}))") or "[]")
+    try:
+        until(lambda: js(p, "!!document.body.innerText.length"), 20)
+        send(p, "new")
+        until(lambda: js(p, "!!document.querySelector('.home-face canvas[data-live]')"), 30)
+        time.sleep(1.5)
+        view, me = js(p, "document.querySelector('.home-main').clientHeight"), body(".home-face .mascot")
+        team = js(p, "document.querySelectorAll('.space-mate').length")
+        check(me and .35 <= me[0].get("body", 0) / view <= .45 and team == len(crew) - 1,
+              f"Home's space: the companion is {me and me[0].get('body', 0) / view:.0%} of the view's height, {team} teammates behind")
+        js(p, "[...document.querySelectorAll('.home-chips button')].find(b => b.innerText.includes('Companions'))?.click()")
+        until(lambda: js(p, "document.querySelectorAll('.mate-portrait canvas[data-live]').length") == len(crew), 20)
+        time.sleep(1)
+        corner = body(".mate-portrait .mascot", ".mate-portrait")
+        whole = js(p, "[...document.querySelectorAll('.mate-portrait')].every(e => getComputedStyle(e).overflow === 'visible')")
+        check(len(corner) == len(crew) and all(c["size"] >= 96 and c["inside"] and c["art"] - c["size"] >= 8 for c in corner) and whole,
+              f"The Companions page's corner companion: {corner[0]['size'] if corner else 0}px, whole, with room round it")
+        send(p, "chatOpen", id="lamp")
+        until(lambda: js(p, "!!document.querySelector('.ai-turn-face .mascot')"), 15)
+        turn = js(p, "Math.min(...[...document.querySelectorAll('.ai-turn-face .mascot')].map(m => m.getBoundingClientRect().width))")
+        check(turn >= 40, f"A chat turn's companion: {turn}px")
+    finally:
+        rpc(p, "quit")
+        p.wait(timeout=20)
+
+
 files()
+places()
 profile = ROOT / "artifacts" / ("avatars-" + uuid.uuid4().hex[:8]) / "profile"
 profile.mkdir(parents=True)
 (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Width": 1400, "Height": 900},
