@@ -7,6 +7,8 @@ Tools:
       List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.
   web_search query= count= profile=
       Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.
+  read_attachment id= offset= profile=
+      Read a file the user attached to their message, by the id Still gave you: text and code come back as text (20000 characters at a time), PDFs as their text, images as the image itself.
   read_url url= offset= profile=
       Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.
   open_tab url= background= profile=

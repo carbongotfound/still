@@ -266,7 +266,7 @@ def run(process):
     split = until(lambda: (s := tabs(process)["split"]) and s["partner"] == "b" and s["rightVisible"] and s["leftWidth"] and s
                   and abs(s["leftWidth"] - s["rightWidth"]) <= 1 and s, 5)
     check(split and split["left"] == "a" and split["right"] == "b", "Dropping a tab on the right half opens it beside this one")
-    check(until(lambda: shell(process, "!!document.querySelector('.split-button.is-on')&&!!document.querySelector('.split-divider')"), 3), "The split button and the divider show")
+    check(until(lambda: shell(process, "!!document.querySelector('.split-divider')"), 3), "The divider shows")
     capture(process, "tabs-split")
     send(process, "splitRatio", ratio=.3)
     s = until(lambda: (s := tabs(process)["split"]) and abs(s["leftWidth"] / (s["leftWidth"] + s["rightWidth"]) - .3) < .02 and s, 3)
@@ -302,13 +302,12 @@ def run(process):
     send(process, "panel", name="")
     rpc(process, "key", key="Escape", mods="None")
     check(until(lambda: (s := tabs(process)["split"])["leftVisible"] and s["rightVisible"] and rpc(process)["viewport"]["visible"] == "Visible", 5), "Closing it shows both pages again")
-    shell(process, "document.querySelector('.split-button').dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,button:0,pointerType:'mouse'}))")
+    shell(process, "(t=>{const r=t.getBoundingClientRect();t.dispatchEvent(new MouseEvent('contextmenu',{bubbles:true,cancelable:true,button:2,clientX:r.left+20,clientY:r.top+10}))})(document.querySelector('[data-tab-id=\"c\"]'))")
     items = until(lambda: json.loads(shell(process, "JSON.stringify([...document.querySelectorAll('[role=menuitem]')].map(i=>i.textContent))")), 3) or []
-    check(items[:2] == ["Swap sides", "Resize to 50/50"] and items[2:4] == ["Close leftPage C", "Close rightPage A"] and items[-1] == "Separate tabs",
-          f"The split button offers Swap, 50/50, Close left, Close right and Separate ({' | '.join(items)})")
+    check(all(i in items for i in ["Swap sides", "Resize to 50/50", "Separate tabs"]), f"A split tab's right-click menu offers Swap, 50/50 and Separate ({' | '.join(items)})")
     capture(process, "tabs-split-options")
-    shell(process, "[...document.querySelectorAll('[role=menuitem]')].find(i=>i.textContent.startsWith('Close left')).click()")
-    check(until(lambda: "c" not in tabs(process)["order"] and tabs(process)["split"]["left"] is None and active(process) == "a", 5), "Close left closes that page and ends the split")
+    shell(process, "[...document.querySelectorAll('[role=menuitem]')].find(i=>i.textContent.startsWith('Close tab')).click()")
+    check(until(lambda: "c" not in tabs(process)["order"] and tabs(process)["split"]["left"] is None and active(process) == "a", 5), "Closing one side ends the split")
 
     # ---- group operations hold 60 frames a second ----
     send(process, "groupNew", id="b")
