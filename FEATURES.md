@@ -1,6 +1,6 @@
 # Still: feature map
 
-Everything Still has today, read from the code. ✅ shipped (on `welcome`, built and installed locally; the last public release is v1.6.34, so not all of it is public yet) · 🚧 in progress (branch named) · 🧪 experimental.
+Everything Still has today, read from the code. ✅ shipped (on `team`, built and installed locally; the last public release is v1.6.34, so not all of it is public yet) · 🚧 in progress (branch named) · 🧪 experimental.
 Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React interface both hosts load, `mac/Sources/Still/` = Mac host (AppKit, WebKit).
 
 **Rule:** any commit that adds, changes or removes a feature updates this file in the same commit.
@@ -92,7 +92,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Chat from anywhere**: Ctrl+Shift+A chats about the page; text typed in the address bar offers "Start a chat" (`aiAsk`).
 - ✅ **Questions with options**: the AI asks via `ask_user`; the chat shows options and waits up to 10 min.
 - ✅ **Replies**: Markdown renderer (no HTML injection), copyable draft cards, next-step suggestions from `>>` lines (`Markdown.tsx`).
-- 🚧 **Step cards**: the companion's avatar sits left of a turn's first line, once per turn, its name only as the avatar's tooltip, and every card and paragraph lines up right of it; each run of actions is one card: icon tile, bold verb and muted target (a site shows as its host, the full address on hover), a check, "+ N more" opens the list (`AiSidebar.tsx` `Step`; branch `chatpolish`).
+- ✅ **Step cards**: the companion's avatar sits left of a turn's first line, once per turn, its name only as the avatar's tooltip, and every card and paragraph lines up right of it; each run of actions is one card: icon tile, bold verb and muted target (a site shows as its host, the full address on hover), a check, "+ N more" opens the list (`AiSidebar.tsx` `Step`).
 - ✅ **Skills**: Markdown files with front matter in the profile's skills folder; invoke as `/id` or give to a companion (`MainWindow.Ai.cs` `Skill`).
 - ✅ **Library**: files the AI saved with `save_file`, one folder per chat; built-in viewer with CSV grid and Markdown (`Files.tsx`).
 - ✅ **Set me up again**: typing it reopens setup's interview.
@@ -105,7 +105,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **AI tabs**: agents work in background tabs grouped under AI; tabs close 48 h after their chat goes quiet.
 - ✅ **AI cursor and glow**: a named arrow in the companion's color glides to each click; a glow frames the page in use.
 - ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs.
-- 🚧 **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`; branch `chatpolish`).
+- ✅ **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`).
 - ✅ **Permission layer**: every call is read, navigate, interact or sensitive; rules per site and companion: always, once per chat, or every time.
 - ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first.
 - ✅ **Sensitive sites**: every click or keystroke on a listed site counts as sensitive (Preferences `SensitiveSites`).
@@ -127,26 +127,25 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - ✅ **Crew**: seven ready companions with a job and voice (Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint) plus Make your own (`crew.tsx`).
 - ✅ **Create**: Make your own: look, name, job, way of talking, AI, effort, skills; one is main; the last can't be deleted (`Home.tsx` `CompanionEditor`); a companion that exists edits in its profile.
-- 🚧 **Companion library**: New companion (switcher +, Companions page, chat sidebar menu) opens Still's seven first, each a live mascot with name, role, What to expect and Add, or Added for ones you have; then Make your own and Paste a shared companion. A card opens a preview in the profile panel (General, Skills, Routines, Model; nothing saved until Add) (`crew.tsx` `CompanionLibrary`, `ProfilePanel.tsx` `preview`; branch `team`).
-- 🚧 **Mentions in the message box**: in every chat, solo or team, and on the new tab: # lists your open tabs (favicon and title, filtered as you type, never a private tab) and attaches the one you pick as a chip; the message links it and the AI is told which tab to read with read_page, and Still drops a private or closed tab even when asked for one directly; @ lists companions (avatar, name, role) and brings the one you pick in (a solo chat becomes a team chat; in a team chat it answers next); x or Backspace at the start of the box removes a chip; arrows, Enter or Tab and Esc work every picker, / skills included; + Add a tab attaches a chip too (`AiSidebar.tsx` `Composer`, `aiSend` `tabs` in `MainWindow.Ai.cs` and `Ai.swift`; `tests/desktop/team.py`; branch `team`).
-- 🚧 **Testing what it built**: an AI may open files from its companion's working folder in a tab (Windows), so a builder runs and tests the page it made; anything else stays http and https only (`MainWindow.Agents.cs` `WebUrl`; branch `team`).
-- 🚧 **Companion cards**: the library and setup's crew step share one card in Geist (no serif): a faint tint of the companion's color with a border in it, its mascot whole on a soft glow of that color (waves on hover, the card lifts), the role in small caps in its color, What to expect (three things it does for you, no first-person promises), a ghost Add or Hire that takes the color on hover, Added or Hired as a soft check; Make your own is dashed and Paste matches (`crew.tsx` `RoleCard`, `App.css` `.role-card`; branch `team`).
-- 🚧 **Role setups**: each of the seven, hired from the crew, works to a senior expert's setup in its field that follows its instructions: how it plans, does, checks and reports, its tools in Still (browser and tabs, apps with your OK before any send, files, memory, routines, handoffs) and quality rules (Glint cites every claim, Rivet runs and tests what it builds, Zest, Fizz, Mallow and Bloom draft and never send or post); your own instructions win where they differ (`still/Assets/roles/*.md`, `RoleSetup`, `Ai.swift` `roleSetup`; live check `tests/desktop/roles_live.py`; branch `team`).
-- 🚧 **Starter routines**: hiring one of the seven adds its routine, off until you switch it on (Zest's weekday pipeline check, Bloom's Monday shortlist, Noon's evening plan for tomorrow, Fizz's Friday drafts, Mallow's morning queue sort, Rivet's Monday site smoke test, Glint's Monday market watch) (`crew.tsx` `routine`; branch `team`).
-- 🚧 **Team chat**: Team chat (switcher, when you have two or more) picks companions for one thread, or @Name pulls one into a chat; each speaks as itself on its own AI app and session, asks others with @Name, and passes work with a HANDOFF line that shows as a card (Up next, On it, Done, Stopped); the team carries on by itself for up to 8 turns, you can jump in (the one you @name goes next) or stop it any time; what any member remembers in the chat is shared with the team and stays in that member's own memory; the speaker talks and lifts over the message box, the others listen, and a handoff waves on the sender and nods on the receiver (`MainWindow.Ai.cs` `TeamNext`, `Ai.swift` `teamNext`, `AiSidebar.tsx` `HandoffCard`, `TeamBar`; `tests/desktop/team.py`; branch `team`).
-- 🚧 **Companion profile**: clicking any mascot (home, chat header, chat turns and hello, switcher, Companions page) slides in a panel: a switcher, ⋯ (rename, duplicate, reset to the crew original, fire or delete after a confirm) and close; tabs General (live mascot on a dotted stage, Edit look, Share, name, instructions, way of talking), Skills, Routines, Files (working folder, files it made), Memory, Plugins, Model (AI and thinking); saves as you type; Esc or the backdrop closes (`ProfilePanel.tsx`; branch `characters`).
-- 🚧 **Share a companion**: Share copies its name, look, instructions, way of talking, thinking and role, never its memory, folder, skills, plugins or routines; pasting that on the Companions page or in the library adds it (`ProfilePanel.tsx`, `Home.tsx`; branch `characters`).
-- 🚧 **Routines**: up to 20 per companion, each "do this at HH:MM on these days"; while Still is open it runs once that day in a new chat (up to 15 minutes late), approvals as in any chat (`MainWindow.Routines.cs`, `Routines.swift`; branch `characters`).
+- ✅ **Companion library**: New companion (switcher +, Companions page, chat sidebar menu) opens Still's seven first, each a live mascot with name, role, What to expect and Add, or Added for ones you have; then Make your own and Paste a shared companion. A card opens a preview in the profile panel (General, Skills, Routines, Model; nothing saved until Add) (`crew.tsx` `CompanionLibrary`, `ProfilePanel.tsx` `preview`).
+- ✅ **Mentions in the message box**: in every chat, solo or team, and on the new tab: # lists your open tabs (favicon and title, filtered as you type, never a private tab) and attaches the one you pick as a chip; the message links it and the AI is told which tab to read with read_page, and Still drops a private or closed tab even when asked for one directly; @ lists companions (avatar, name, role) and brings the one you pick in (a solo chat becomes a team chat; in a team chat it answers next); x or Backspace at the start of the box removes a chip; arrows, Enter or Tab and Esc work every picker, / skills included; + Add a tab attaches a chip too (`AiSidebar.tsx` `Composer`, `aiSend` `tabs` in `MainWindow.Ai.cs` and `Ai.swift`; `tests/desktop/team.py`).
+- ✅ **Testing what it built**: an AI may open files from its companion's working folder in a tab (Windows), so a builder runs and tests the page it made; anything else stays http and https only (`MainWindow.Agents.cs` `WebUrl`).
+- ✅ **Companion cards**: the library and setup's crew step share one card in Geist (no serif): a faint tint of the companion's color with a border in it, its mascot whole on a soft glow of that color (waves on hover, the card lifts), the role in small caps in its color, What to expect (three things it does for you, no first-person promises), a ghost Add or Hire that takes the color on hover, Added or Hired as a soft check; Make your own is dashed and Paste matches (`crew.tsx` `RoleCard`, `App.css` `.role-card`).
+- ✅ **Role setups**: each of the seven, hired from the crew, works to a senior expert's setup in its field that follows its instructions: how it plans, does, checks and reports, its tools in Still (browser and tabs, apps with your OK before any send, files, memory, routines, handoffs) and quality rules (Glint cites every claim, Rivet runs and tests what it builds, Zest, Fizz, Mallow and Bloom draft and never send or post); your own instructions win where they differ (`still/Assets/roles/*.md`, `RoleSetup`, `Ai.swift` `roleSetup`; live check `tests/desktop/roles_live.py`).
+- ✅ **Starter routines**: hiring one of the seven adds its routine, off until you switch it on (Zest's weekday pipeline check, Bloom's Monday shortlist, Noon's evening plan for tomorrow, Fizz's Friday drafts, Mallow's morning queue sort, Rivet's Monday site smoke test, Glint's Monday market watch) (`crew.tsx` `routine`).
+- ✅ **Team chat**: Team chat (switcher, when you have two or more) picks companions for one thread, or @Name pulls one into a chat; each speaks as itself on its own AI app and session, asks others with @Name, and passes work with a HANDOFF line that shows as a card (Up next, On it, Done, Stopped); the team carries on by itself for up to 8 turns, you can jump in (the one you @name goes next) or stop it any time; what any member remembers in the chat is shared with the team and stays in that member's own memory; the speaker talks and lifts over the message box, the others listen, and a handoff waves on the sender and nods on the receiver (`MainWindow.Ai.cs` `TeamNext`, `Ai.swift` `teamNext`, `AiSidebar.tsx` `HandoffCard`, `TeamBar`; `tests/desktop/team.py`).
+- ✅ **Companion profile**: clicking any mascot (home, chat header, chat turns and hello, switcher, Companions page) slides in a panel: a switcher, ⋯ (rename, duplicate, reset to the crew original, fire or delete after a confirm) and close; tabs General (live mascot on a dotted stage, Edit look, Share, name, instructions, way of talking), Skills, Routines, Files (working folder, files it made), Memory, Plugins, Model (AI and thinking); saves as you type; Esc or the backdrop closes (`ProfilePanel.tsx`).
+- ✅ **Share a companion**: Share copies its name, look, instructions, way of talking, thinking and role, never its memory, folder, skills, plugins or routines; pasting that on the Companions page or in the library adds it (`ProfilePanel.tsx`, `Home.tsx`).
+- ✅ **Routines**: up to 20 per companion, each "do this at HH:MM on these days"; while Still is open it runs once that day in a new chat (up to 15 minutes late), approvals as in any chat (`MainWindow.Routines.cs`, `Routines.swift`).
 - ✅ **3D companions**: Blender-built glTF on a shared rig, rendered by three.js through one hidden WebGL canvas (`companion3d.ts`, `Mascot.tsx`, `tools/mascot`).
 - ✅ **Still pictures**: small idle companions are cached renders in localStorage; WebGL off or reduced motion → stills only.
-- 🚧 **Chat avatars**: under 40px, every role and Make your own is a full-body Blender avatar (96/144px, `assets/avatar`, `crew/blob.py` view `avatar`) that bobs while working; other looks get a full-body still, never a head crop (`Mascot.tsx`; branch `chatpolish`). Rigged companions there play 96px strips of their own clips by CSS steps: idle, working, thinking, a nod when done, a shrug on an error, a wave when they need you; reduced motion holds the first frame (`assets/sprite`; branch `characters`).
-- 🚧 **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture (rigs carry theirs in the file), centered with 12% clear and grown for the camera's perspective on deep bodies, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`; branch `chatpolish`).
+- ✅ **Chat avatars**: under 40px, every role and Make your own is a full-body Blender avatar (96/144px, `assets/avatar`, `crew/blob.py` view `avatar`) that bobs while working; other looks get a full-body still, never a head crop (`Mascot.tsx`). Rigged companions there play 96px strips of their own clips by CSS steps: idle, working, thinking, a nod when done, a shrug on an error, a wave when they need you; reduced motion holds the first frame (`assets/sprite`).
+- ✅ **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture (rigs carry theirs in the file), centered with 12% clear and grown for the camera's perspective on deep bodies, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`).
 - ✅ **Look editor**: color, eyes, brows, mouth, body shape, hair, hats, glasses, live 3D preview (`LookEditor.tsx`, `look.ts`, `face.ts`).
 - ✅ **Old-name check**: once after an update, a companion with an old stock name asks whether to keep it.
 - ✅ **Outside AI apps' look**: other AI apps working in Still wear their maker's look and color.
-- 🚧 **Blob companions**: soft blobs in three.js, Zest to the character spec (branch `blobs`).
-- 🚧 **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint each show what to expect; work interests (branch `roles`). Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs) on branch `chatpolish`.
-- 🚧 **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; idle blinks, glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`; branch `characters`).
+- ✅ **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint each show what to expect; work interests. Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs).
+- ✅ **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; idle blinks, glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`).
 - 🚧 **Companions act on themselves**: change their look, settings and memory on request, each with Undo (branch `selfact`, uncommitted).
 
 ## Memory
@@ -159,8 +158,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Plugins (Composio)
 
-- 🚧 **Plugins**: your apps through Composio with your own API key, stored with DPAPI/Keychain; reads go ahead, writes ask first (branch `plugins`, `MainWindow.Plugins.cs`, `Plugins.swift`).
-- 🚧 **Plugin settings and setup step**: Plugins tab with per-companion switches; "Connect your tools" setup step; Connect cards for unlinked apps (branch `plugins`).
+- ✅ **Plugins**: your apps through Composio with your own API key, stored with DPAPI/Keychain; reads go ahead, writes ask first (`MainWindow.Plugins.cs`, `Plugins.swift`).
+- ✅ **Plugin settings and setup step**: Plugins tab with per-companion switches; "Connect your tools" setup step; Connect cards for unlinked apps.
 
 ## Extensions (Windows only)
 
@@ -177,7 +176,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **First task**: setup ends on a first task; typing a "no" counts as skip.
 - ✅ **Tour**: coach marks on the new tab page that follow their targets through layout changes (`Tour.tsx`).
 - ✅ **Sounds**: intro, setup and look editor only; off with the Sounds setting, system "no sounds" or reduced motion (`sound.ts`, `tools/sound`).
-- 🚧 **Quieter setup sound**: setup plays only the intro and end jingle, 6 dB quieter (branch `fixes12`, done, not merged).
+- ✅ **Quieter setup sound**: setup plays only the intro and end jingle, 6 dB quieter.
 - 🚧 **Intro rebuilt for the blobs**: storyboard first (branch `intro12`, uncommitted).
 
 ## Settings
@@ -186,7 +185,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
 - ✅ **About**: version, release notes, check for updates, replay the intro.
-- 🚧 **Address-bar notice**: a notice ends when the page or tab changes (branch `fixes12`, done, not merged).
+- ✅ **Address-bar notice**: a notice ends when the page or tab changes.
 
 ## Updates and install
 
@@ -208,7 +207,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - 🧪 **QA hooks**: test-only automation compiled in only with `StillQa=true` (`STILL_QA`), never in releases (`MainWindow.Qa.cs`, `Qa.swift`).
 - ✅ **Desktop tests**: Python suites per area run against real windows on Windows and Mac (`tests/desktop/*.py`, `mac/test.sh`).
-- 🚧 **Avatar edge check**: every look at 16 to 168px, through every frame of every state and gesture, fails if a drawn pixel touches its box (except the drop's fall from above); plus the avatar files' margins (`tests/desktop/avatars.py`; branch `chatpolish`).
+- ✅ **Avatar edge check**: every look at 16 to 168px, through every frame of every state and gesture, fails if a drawn pixel touches its box (except the drop's fall from above); plus the avatar files' margins (`tests/desktop/avatars.py`).
 - ✅ **Unit checks**: CRX signature and ID verification, unsafe URL and argument rejection (`tests/Still.PerformanceChecks`); speed and RAM in `tests/desktop/performance.py`.
 
 ## Known gaps
@@ -217,10 +216,10 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Not code-signed (Windows SmartScreen) or notarized (Mac); no independent security audit.
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.
 - Agents can't read cross-origin frames or closed shadow roots.
-- Companions on `welcome` still use placeholder bodies; the blob crew, roles, plugins and self-actions sit on unmerged branches.
+- Companions changing themselves (`selfact`, uncommitted) and the intro rebuilt for the blobs (`intro12`) aren't in the build yet.
 - Team chat has no hand-off clip of its own: the sender waves and the receiver nods. Team chats are tested with a fake agent, not live.
 - In a team chat, an attached tab reaches the AI as a link in the message rather than with its tab id. The Mac has no working folders yet, so its builder can't open what it made.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
-- Local `main` holds older copies of 14 commits that `welcome` replaced; it needs a cleanup decision before release.
-- Dropped: the Chromium port (`chromium`) and the animal mascots (`characters-app`), both unmerged.
+- Local `main`'s 14 older commits are merged into `team` and kept in its history; their changes were already there in newer form, so `team`'s versions won.
+- Dropped: the Chromium port (`chromium`), the animal mascots (`characters-app`) and the first three.js blob pass (`blobs`, replaced by the rigged companions), all unmerged.
