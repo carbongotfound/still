@@ -314,8 +314,8 @@ export default function App() {
  const [editing, setEditing] = useState<Companion | null>(null)
  const [joined, setJoined] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
- const [library, setLibrary] = useState(false) // "New companion" opens Still's companion library first
- const [meeting, setMeeting] = useState<Premade | null>(null) // a library companion, previewed before it's added
+ const [library, setLibrary] = useState(false) // "Hire a companion" opens Still's companion library first
+ const [meeting, setMeeting] = useState<Premade | null>(null) // a library companion, previewed before it's hired
  const edit = (c: Companion) => c.id ? setProfile(c.id) : setLibrary(true)
  // Adding a companion: it gets its own id here, so the joined card can start its first chat.
  const hire = (c: Companion) => { const added = { ...c, id: crypto.randomUUID().replace(/-/g, "").slice(0, 10) }; send("companionSave", added); setJoined(added) }
@@ -882,7 +882,7 @@ export default function App() {
         <SetRow id="ai" title="AI and model" help={`${ai.harnesses?.find(h => h.id === ai.harness)?.name ?? "No AI picked yet"}. Pick your AI, sign in, and choose its model and how hard it thinks.`}><Button variant="outline" size="sm" onClick={() => { close(); openAiSettings() }}><Bot />Open</Button></SetRow>
         <SetRow id="titles" title="Chat titles" help="A new chat gets a short name from its first message, written by the model you pick here."><Select value={state.preferences.chatTitles || "quick"} onValueChange={v => preference("chatTitles", v === "quick" ? "" : v)}><SelectTrigger className="w-48" aria-label="Chat titles"><SelectValue /></SelectTrigger><SelectContent className="titles-list">
          <SelectItem value="quick">Quickest model</SelectItem>
-         {(ai.harnesses ?? []).filter(h => h.installed && h.status !== "signedOut").map(h => { const list = (ai.models ?? []).filter(m => m.harness === h.id && m.id); return list.length > 0 && <SelectGroup key={h.id}><SelectSeparator /><SelectLabel>{h.name}</SelectLabel>{list.map(m => <SelectItem key={m.id} value={h.id + "/" + m.id}><span className="titles-ai">{h.name} · </span>{m.name}</SelectItem>)}</SelectGroup> })}
+         {(ai.harnesses ?? []).filter(h => h.installed && h.status !== "signedOut").map(h => { const list = (ai.models ?? []).filter(m => m.harness === h.id && m.id); return list.length > 0 && <SelectGroup key={h.id}><SelectSeparator /><SelectLabel className="titles-label"><AiLogo id={h.id} size={14} />{h.name}</SelectLabel>{list.map(m => <SelectItem key={m.id} value={h.id + "/" + m.id}><AiLogo id={h.id} size={16} /><span className="titles-ai">{h.name} · </span>{m.name}</SelectItem>)}</SelectGroup> })}
          <SelectSeparator /><SelectItem value="off">Off (use first message)</SelectItem>
         </SelectContent></Select></SetRow>
        </SetCard>}
@@ -1026,7 +1026,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
     <DropdownMenuSeparator />
     <DropdownMenuLabel>Companions</DropdownMenuLabel>
     {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => onEdit(c)}><Face companion={c} size={18} />{c.name}<Pencil className="ml-auto size-3.5 opacity-60" /></DropdownMenuItem>)}
-    <DropdownMenuItem onSelect={() => onEdit(randomCompanion())}><Plus />New companion</DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => onEdit(randomCompanion())}><Plus />Hire a companion</DropdownMenuItem>
     <DropdownMenuSeparator />
     <DropdownMenuItem onSelect={onSettings}><Bot />AI settings</DropdownMenuItem>
     <DropdownMenuItem onSelect={() => openPanel("settings")}><Settings2 />Settings</DropdownMenuItem>
@@ -1067,7 +1067,7 @@ function ChatInfo({ ai, pages, onEdit, onSettings, onFile }: { ai: AiState; page
  return <aside className="chat-info" aria-label="Chat details">
   <h4>In this chat</h4>
   {[companion].map(c => c && <button key={c.id} className="chat-info-row" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={18} /><b>{c.name}</b><Settings /></button>)}
-  <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
+  <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, harness.maker && "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
   {files.length > 0 && <><Separator /><h4>Files</h4>{files.map(f => <button key={f.path} className="chat-info-row" title={"Open " + f.name} onClick={() => onFile(f.path)}><FileIcon path={f.path} /><b>{f.name}</b></button>)}</>}
   {!!ai.audit?.length && <><Separator /><h4>Permissions</h4><AuditList list={ai.audit} /></>}

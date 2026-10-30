@@ -46,7 +46,7 @@ export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage }: { a
     {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => onPick(c.id)}><Face companion={c} size={20} />{c.name}</DropdownMenuItem>)}
     <DropdownMenuSeparator /><DropdownMenuItem onSelect={onManage}><Users />Manage companions</DropdownMenuItem>
    </DropdownMenuContent></DropdownMenu>
-  <button className="mate-switch-more" aria-label="New companion" title="New companion" onClick={() => onEdit(randomCompanion())}><Plus /></button>
+  <button className="mate-switch-more" aria-label="Hire a companion" title="Hire a companion" onClick={() => onEdit(randomCompanion())}><Plus /></button>
  </div>
 }
 
@@ -108,12 +108,12 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
    const c = !(e.target as HTMLElement).closest?.("input, textarea") && fromShared(e.clipboardData?.getData("text") ?? "")
    if (!c) return
    send("companionSave", c)
-   toast(`Added ${c.name}. They start fresh: they don't know anything about you yet.`)
+   toast(`Hired ${c.name}. They start fresh: they don't know anything about you yet.`)
   }
   addEventListener("paste", paste); return () => removeEventListener("paste", paste)
  }, [send])
  return <section className="home-page" aria-label="Companions">
-  <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />New companion</Button></header>
+  <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
@@ -121,7 +121,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
     <div className="mate-info">
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
-    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name} · Your {h.name} plan</> : "Pick your AI"}</span>
+    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
     <button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
     </div>
@@ -250,10 +250,10 @@ export function CompanionEditor({ ai, companion, canDelete, only, onClose, onSav
     <label><span>Name</span><Input required maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} /></label>
     <label><span>What should they do?</span><textarea className="companion-job" rows={3} maxLength={1000} placeholder="For example: a careful researcher who checks sources and cites them." value={c.job} onChange={e => setC({ ...c, job: e.target.value })} /></label>
     <div className="companion-row">
-     <label><span>Runs on</span><select className="companion-select" value={c.ai} onChange={e => setC({ ...c, ai: e.target.value })}>
+     <label><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai} onChange={e => setC({ ...c, ai: e.target.value })}>
       <option value="">Your AI{ai.harnesses.find(h => h.id === ai.harness) ? " (" + ai.harnesses.find(h => h.id === ai.harness)!.name + ")" : ""}</option>
       {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
-     </select></label>
+     </select></span></label>
      <div className="companion-field"><span>Thinking</span><div className="companion-modes" role="radiogroup" aria-label="Thinking">{MODE_NAMES.map(([m, label]) => <button type="button" key={m} role="radio" aria-checked={c.mode === m} onClick={() => setC({ ...c, mode: m })}>{label}</button>)}</div></div>
     </div>
     {c.ai && state(c.ai) && <p className="companion-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {c.name || "they"} can start.</p>}

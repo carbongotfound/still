@@ -85,7 +85,6 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
  return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
-const MONOGRAM: Record<string, string> = { chatgpt: "Gp", grok: "Gk", claude: "Cl" }
 // "Bring your own AI": each agent app on this PC, signed in with the user's own plan. Picking one makes it the AI for
 // new chats; a row that isn't ready offers the next step. Nothing is installed unless the user asks.
 export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
@@ -100,7 +99,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    : h.installed ? "Installed" : "Checking…"
   return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
    <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
-    <span className="byo-tile" aria-hidden>{MONOGRAM[h.id] ?? h.name.slice(0, 2)}</span>
+    <span className="byo-tile" aria-hidden><AiLogo id={h.id} size={22} /></span>
     <span className="byo-name"><strong>{h.name}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
@@ -485,7 +484,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
       <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
     </div>
    })}
-   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">Working · {clock(tick)}</p></div>}
+   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? "Working · " + clock(tick) : `${name} is writing…`}</p></div>}
   </div></div>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">

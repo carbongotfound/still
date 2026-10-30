@@ -133,7 +133,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .set-result span { display:flex; align-items:center; gap:6px; font-size:12px; font-weight:400; color:var(--muted-foreground); } .set-result svg { width:13px; height:13px; }
 .set-main > .data-intro { margin:0; line-height:1.6; }
 .set-empty { margin:6px 2px; font-size:13px; color:var(--muted-foreground); }
-.titles-list .titles-ai { display:none; } /* the list groups models under their AI; the picked one reads "Claude · Haiku" */
+.titles-list .titles-ai, .titles-list [role=option] .ai-logo { display:none; } /* the list groups models under their AI; the picked one reads "Claude · Haiku" */
 @media (max-width:680px) { .set-shell { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); } .set-nav { flex-direction:row; overflow-x:auto; border-right:0; border-bottom:1px solid var(--border); } .set-search { margin:0 6px 0 0; min-width:150px; } .set-main { padding:18px 16px 24px; } }
 [data-slot="dialog-title"] { font-size:21px;letter-spacing:-.55px;font-weight:550; }[data-slot="dialog-description"] { font-size:12px;line-height:1.7;color:var(--muted-foreground); }
 .setting-label { font-size:12px;font-weight:500;margin-bottom:12px; }.theme-choices { display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-bottom:8px; }
@@ -844,6 +844,9 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .companion-look .companion-faces { display:flex; align-items:center; gap:6px; }
 .companion-row { display:grid; grid-template-columns:1fr 1fr; gap:12px; }
 .companion-field { display:flex; flex-direction:column; gap:6px; } .companion-field > span { font-size:13px; font-weight:500; }
+/* An AI picker with its maker's mark beside it (native selects can't hold one). */
+.ai-select { display:flex; align-items:center; gap:9px; } .ai-select > .companion-select { flex:1; min-width:0; }
+.titles-label { display:flex; align-items:center; gap:6px; }
 .companion-select { height:36px; padding:0 10px; border-radius:9px; border:1px solid var(--input); background:var(--background); font-size:13.5px; color:var(--foreground); }
 .companion-modes { display:flex; padding:3px; border-radius:10px; background:var(--muted); }
 .companion-modes button { flex:1; height:30px; border-radius:8px; font-size:12.5px; color:var(--muted-foreground); }
@@ -1274,15 +1277,15 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .mate-card h3 { margin:2px 0 0; font-family:var(--font-display); font-size:18px; font-weight:500; }
 .mate-card p { flex:1; margin:6px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
 .mate-chat { height:30px; padding:0 14px; border-radius:99px; background:color-mix(in oklab,var(--hue) 32%,var(--card)); color:var(--foreground); font-size:12.5px; font-weight:580; transition:background-color .15s; } .mate-chat:hover { background:color-mix(in oklab,var(--hue) 46%,var(--card)); }
-.crew-dialog { max-width:440px; --font-display:var(--font-ui); } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
+.crew-dialog { max-width:440px; max-height:calc(100vh - 48px); overflow-y:auto; --font-display:var(--font-ui); } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
 .crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .role-tag { padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--hue) 24%,transparent); }
 .crew-dialog-body { display:flex; flex-direction:column; gap:14px; } .crew-dialog-body h4 { margin:0 0 5px; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
 .crew-dialog-body p, .crew-dialog-body ul { margin:0; font-size:13.5px; line-height:1.5; } .crew-dialog-body ul { padding-left:18px; list-style:disc; }
 .crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
 .crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
 /* A companion joined: its hero with a check badge, then Not now and Start chatting. */
-.joined-card .crew-dialog-hero { position:relative; }
-.joined-badge { position:absolute; left:calc(50% + 46px); bottom:22px; display:grid; place-items:center; width:30px; height:30px; border-radius:99px; background:var(--primary); color:var(--primary-foreground); box-shadow:0 0 0 3px var(--card); animation:joined-pop .45s .5s cubic-bezier(.34,1.56,.64,1) both; }
+.joined-card .crew-dialog-hero { position:relative; height:248px; }
+.joined-badge { position:absolute; left:calc(50% + 64px); bottom:28px; display:grid; place-items:center; width:30px; height:30px; border-radius:99px; background:var(--primary); color:var(--primary-foreground); box-shadow:0 0 0 3px var(--card); animation:joined-pop .45s .5s cubic-bezier(.34,1.56,.64,1) both; }
 .joined-badge svg { width:16px; height:16px; stroke-width:3; }
 @keyframes joined-pop { from { transform:scale(0); } to { transform:scale(1); } }
 @media (prefers-reduced-motion: reduce) { .joined-badge { animation:none; } }
@@ -1488,7 +1491,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 
 /* Still's companions as cards, in the library and in setup: a faint tint of the companion's color with a border in it,
    its mascot whole on a soft glow of the color (it waves when you point at the card), the name, the role in small caps
-   and what to expect. Add or Hire is a ghost button that takes the color on hover; Added and Hired are a soft check. */
+   and what to expect. Hire is a ghost button that takes the color on hover; Hired is a soft check. */
 :root { --font-ui:"Geist Variable",ui-sans-serif,system-ui,sans-serif; --soft:#71717a; } .dark { --soft:#a1a1aa; }
 .role-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,320px),1fr)); gap:16px; }
 .role-card { position:relative; display:grid; grid-template-columns:minmax(0,1fr) auto; grid-template-areas:"head act" "list list"; align-items:center; align-content:start; gap:14px 12px; padding:20px; border-radius:18px; border:1px solid color-mix(in oklab,var(--hue) 20%,transparent); background:color-mix(in oklab,var(--hue) 6%,var(--card)); font-family:var(--font-ui); transition:transform .25s var(--ease-spring,ease),border-color .2s,background-color .2s,box-shadow .25s; }
@@ -1518,8 +1521,25 @@ button.role-head { cursor:pointer; } button.role-head:focus-visible { box-shadow
 .role-card:hover .role-bubble, .role-card:focus-within .role-bubble { opacity:1; transform:none; }
 @media (prefers-reduced-motion: reduce) { .role-card, .role-card:hover, .role-card:focus-within { transform:none; } .role-bubble { transform:none; transition:opacity .15s; } }
 .crew-grid { padding-top:14px; }
+/* The art cards (library and setup): three across when there's room, two when narrower, one on a phone. Each is a tall
+   stage in the companion's color with the character big and whole on a contact shadow, then name, role, what to expect,
+   and the buttons. */
+.library-grid, .crew-grid { grid-template-columns:repeat(auto-fill,minmax(max(232px,calc((100% - 32px) / 3)),1fr)); }
+.role-card.is-art { display:flex; flex-direction:column; align-items:stretch; padding:0; overflow:hidden; }
+.role-art { position:relative; display:grid; place-items:end center; height:250px; background:radial-gradient(130% 95% at 50% 12%,color-mix(in oklab,var(--hue) 38%,var(--card)),color-mix(in oklab,var(--hue) 13%,var(--card)) 72%); border-bottom:1px solid color-mix(in oklab,var(--hue) 18%,transparent); outline:none; }
+.role-art::after { content:""; position:absolute; bottom:22px; left:50%; width:120px; height:18px; translate:-50% 0; border-radius:50%; background:radial-gradient(closest-side,rgb(0 0 0 / .24),transparent); }
+.role-art .mascot { z-index:1; }
+button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--ring) 60%,transparent); }
+.role-card.is-own .role-art { background:color-mix(in oklab,var(--muted-foreground) 7%,transparent); }
+.role-body { display:flex; flex:1; flex-direction:column; gap:12px; padding:16px 18px 18px; }
+.role-card.is-art .role-act { justify-content:space-between; margin-top:auto; padding-top:2px; }
+.role-profile { padding:4px 2px; font:500 13px var(--font-ui); color:var(--soft); text-decoration:underline; text-underline-offset:3px; text-decoration-color:color-mix(in oklab,var(--soft) 40%,transparent); }
+.role-profile:hover, .role-profile:focus-visible { color:var(--foreground); outline:none; }
+.role-card.is-art .role-bubble { top:12px; left:12px; max-width:calc(100% - 24px); }
+.crew-instructions { max-height:220px; overflow-y:auto; padding:10px 12px; border-radius:10px; background:var(--muted); font-size:12.5px; line-height:1.5; white-space:pre-wrap; outline:none; }
+.crew-instructions:focus-visible { box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
 /* The library dialog: one UI typeface, more room, a softer backdrop. */
-.companion-library[data-slot=dialog-content] { --font-display:var(--font-ui); width:min(820px,calc(100vw - 32px)); max-width:min(820px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; gap:22px; padding:28px; border-radius:24px; font-family:var(--font-ui); }
+.companion-library[data-slot=dialog-content] { --font-display:var(--font-ui); width:min(1080px,calc(100vw - 32px)); max-width:min(1080px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow-y:auto; scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; gap:22px; padding:28px; border-radius:24px; font-family:var(--font-ui); }
 .companion-library [data-slot=dialog-header] { gap:6px; }
 .companion-library [data-slot=dialog-title], .crew-dialog [data-slot=dialog-title] { font-family:var(--font-ui); font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
 .companion-library [data-slot=dialog-description] { font-size:14px; line-height:1.5; color:var(--soft); }

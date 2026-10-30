@@ -8,11 +8,12 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Face, hueOf, type Companion, type Mode, type Routine } from "./Buddy"
+import { AiLogo } from "./AiLogo"
 import { LookEditor } from "./LookEditor"
 import { MemorySettings } from "./Memory"
 import { PluginChip } from "./Plugins"
 import { FileCard } from "./Files"
-import { SHARE_KIND, fromPremade, premadeOf } from "./crew"
+import { ROLE_TEXT, SHARE_KIND, fromPremade, premadeOf } from "./crew"
 import { cn } from "@/lib/utils"
 import type { AiState } from "./AiSidebar"
 
@@ -27,12 +28,9 @@ const when = (r: Routine) => (r.days.length === 7 ? "Every day" : r.days.join() 
 /// What Share copies: the companion without anything personal (no memory, folder, plugins or keys).
 const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name: c.name, look: c.look ?? "", job: c.job, tone: c.tone ?? "", mode: c.mode ?? "default", crew: c.crew ?? "" })
 
-/// `preview`: a companion from the library, not added yet. Changes stay here until Add, and only the tabs that make
+/// `preview`: a companion from the library, not hired yet. Changes stay here until Hire, and only the tabs that make
 /// sense before hiring show.
 const PREVIEW_TABS = ["general", "skills", "routines", "model"]
-// Still's own instructions for each official role (still/Assets/roles, the same files the hosts send), by crew id.
-const ROLE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(import.meta.glob<string>("../../still/Assets/roles/*.md", { query: "?raw", import: "default", eager: true }))
- .map(([path, text]) => [path.slice(path.lastIndexOf("/") + 1, -3), text.replace(/\r\n/g, "\n").trim()]))
 export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, onOpenFile, onSkills }: {
  ai: AiState; id: string; preview?: Companion; send: Send; onPick: (id: string) => void; onClose: () => void; onAdd?: (c: Companion) => void; onOpenFile: (path: string) => void; onSkills: () => void
 }) {
@@ -156,10 +154,10 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
      </TabsContent>
      <TabsContent value="memory"><MemorySettings companions={[saved]} send={send} /></TabsContent>
      <TabsContent value="model">
-      <label className="profile-field"><span>Runs on</span><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
+      <label className="profile-field"><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
        <option value="">Your AI{harness && !c.ai ? ` (${harness.name})` : ""}</option>
        {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
-      </select></label>
+      </select></span></label>
       {c.ai && state(c.ai) && <p className="profile-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {label} can start.</p>}
       <div className="profile-field"><span>Thinking</span>
        <div className="profile-modes" role="radiogroup" aria-label="Thinking">{MODES.map(([m, t, d]) => <button key={m} role="radio" aria-checked={(c.mode ?? "default") === m} onClick={() => save({ ...c, mode: m })}><b>{t}</b><small>{d}</small></button>)}</div>
@@ -169,7 +167,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
    </Tabs>
    {preview && <footer className="profile-foot">
     <Button variant="ghost" onClick={close}>Back to the library</Button>
-    <Button className="profile-add" onClick={() => onAdd?.({ ...c, name: c.name.trim() || saved.name })}><Plus />Add {c.name.trim() || saved.name}</Button>
+    <Button className="profile-add" onClick={() => onAdd?.({ ...c, name: c.name.trim() || saved.name })}><Plus />Hire {c.name.trim() || saved.name}</Button>
    </footer>}
   </aside>
   {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { save({ ...c, look }); setStyling(false) }} />}

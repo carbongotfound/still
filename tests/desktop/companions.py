@@ -103,8 +103,8 @@ def main():
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
         check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
 
-        # Create a companion: New companion opens the library, then Make your own.
-        click(process, ".mate-switch-more[aria-label='New companion']")
+        # Create a companion: Hire a companion opens the library, then Make your own.
+        click(process, ".mate-switch-more[aria-label='Hire a companion']")
         until(lambda: js(process, "!!document.querySelector('.companion-library')"), 5)
         click_text(process, ".library-more .role-head", "Make your own")
         until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)

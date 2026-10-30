@@ -7,6 +7,10 @@ import { BLANK, ROLE_LOOKS, lookKey, type Look } from "./look"
 import { Mascot } from "./Mascot"
 import { lookOf, type Companion } from "./Buddy"
 
+// Still's own instructions for each official role (still/Assets/roles, the same files the hosts send), by crew id.
+export const ROLE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(import.meta.glob<string>("../../still/Assets/roles/*.md", { query: "?raw", import: "default", eager: true }))
+ .map(([path, text]) => [path.slice(path.lastIndexOf("/") + 1, -3), text.replace(/\r\n/g, "\n").trim()]))
+
 // Still's own companions, ready to hire: each one owns a part of your work, and its card says what to expect. How each
 // one works in its field (method, tools, quality rules) is its role setup in still/Assets/roles. Hiring one makes a
 // companion like any other, which the user can then change. The id is the role, so a name can change without breaking
@@ -166,7 +170,7 @@ export function JoinedCard({ companion, onStart, onLater }: { companion: Compani
  const look = lookOf(companion), role = premadeOf(companion)
  return <Dialog open onOpenChange={o => { if (!o) onLater() }}>
   <DialogContent className="app-dialog crew-dialog joined-card" style={{ "--hue": look.color } as CSSProperties}>
-   <div className="crew-dialog-hero"><Mascot look={look} size={150} follow gesture={JOINED_GESTURE} gestureAt={1} /><span className="joined-badge" aria-hidden><Check /></span></div>
+   <div className="crew-dialog-hero"><Mascot look={look} size={212} follow gesture={JOINED_GESTURE} gestureAt={1} /><span className="joined-badge" aria-hidden><Check /></span></div>
    <DialogHeader><DialogTitle>{companion.name} joined your team</DialogTitle>
     <DialogDescription>{role ? `${companion.name} is here for ${role.area.toLowerCase()}, and will open with a first task picked for your work.`
      : `${companion.name} will open with a first task and one question about how you like things done.`}</DialogDescription></DialogHeader>
@@ -175,12 +179,14 @@ export function JoinedCard({ companion, onStart, onLater }: { companion: Compani
  </Dialog>
 }
 
-/// One of Still's companions as a card, the same in setup and the library: a tint of its color, its mascot on a soft glow
-/// (it waves when you point at it, and bounces when hired), its name and role, and what to expect. open: the mascot and
-/// name open its details. children: its buttons; below: anything under the list.
-function RoleCard({ hue, look, icon, name, role, expect, line, bubble, own, on, nudge, open, label, className, children, below }: {
+/// One of Still's companions as a card, the same in setup and the library. It's built around the character: a tall art
+/// area in a tint of its color with the mascot big and whole on a contact shadow, playing its idle (it waves when you
+/// point at the card, and bounces when hired), then its name and role, what to expect, its buttons and View profile.
+/// compact (or no look): the mascot or icon small beside the name. open: the art, the name and View profile open its
+/// profile. children: its buttons; below: anything under the list.
+function RoleCard({ hue, look, icon, name, role, expect, line, bubble, own, on, nudge, open, label, compact, className, children, below }: {
  hue: string; look?: Look; icon?: ReactNode; name: string; role: string; expect?: string[]; line?: string; bubble?: string; own?: boolean; on?: boolean; nudge?: number
- open?: () => void; label?: string; className?: string; children?: ReactNode; below?: ReactNode
+ open?: () => void; label?: string; compact?: boolean; className?: string; children?: ReactNode; below?: ReactNode
 }) {
  const [move, setMove] = useState<[string, number]>(["", 0])
  const [was, setWas] = useState(on)
@@ -189,11 +195,25 @@ function RoleCard({ hue, look, icon, name, role, expect, line, bubble, own, on, 
  const wave = () => { if (Date.now() - move[1] > 1500) setMove(["wave", Date.now()]) }
  const head = <><span className="role-glow">{look ? <Mascot look={look} size={72} follow gesture={move[0]} gestureAt={move[1]} /> : icon}</span>
   <span className="role-name"><b className="role-title">{name}</b><span className="role-tag">{role}</span></span></>
+ const list = <div className="role-expect">{expect ? <><h4>What to expect</h4><ul>{expect.map(e => <li key={e}>{e}</li>)}</ul></> : line && <p>{line}</p>}{below}</div>
+ if (look && !compact) {
+  // 260px: the whole body with room for every gesture, about 70% of the stage; the top of the box is empty headroom
+  const art = <Mascot look={look} size={260} follow gesture={move[0]} gestureAt={move[1]} />
+  return <article className={cn("role-card is-art", on && "is-on", own && "is-own", className)} style={{ "--hue": hue } as CSSProperties} onMouseEnter={wave} onFocus={wave}>
+   {open ? <button type="button" className="role-art" aria-label={label} onClick={open}>{art}</button> : <div className="role-art">{art}</div>}
+   {bubble && <span className="role-bubble" aria-hidden>{bubble}</span>}
+   <div className="role-body">
+    <span className="role-name"><b className="role-title">{name}</b><span className="role-tag">{role}</span></span>
+    {list}
+    <div className="role-act">{children}{open && !own && <button type="button" className="role-profile" onClick={open}>View profile</button>}</div>
+   </div>
+  </article>
+ }
  return <article className={cn("role-card", on && "is-on", own && "is-own", className)} style={{ "--hue": hue } as CSSProperties} onMouseEnter={wave} onFocus={wave}>
   {open ? <button type="button" className="role-head" aria-label={label} onClick={open}>{head}</button> : <div className="role-head">{head}</div>}
   {bubble && <span className="role-bubble" aria-hidden>{bubble}</span>}
   {children && <div className="role-act">{children}</div>}
-  <div className="role-expect">{expect ? <><h4>What to expect</h4><ul>{expect.map(e => <li key={e}>{e}</li>)}</ul></> : line && <p>{line}</p>}{below}</div>
+  {list}
  </article>
 }
 
@@ -234,6 +254,7 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
      <section><h4>What to expect</h4><ul>{more.expect.map(g => <li key={g}>{g}</li>)}</ul></section>
      <section><h4>Try asking</h4><ul className="crew-asks">{more.asks.map(([label, prompt]) => <li key={label}><b>{label}</b>{prompt}</li>)}</ul></section>
      <section><h4>How it gets better</h4><p>{more.learns}</p></section>
+     {ROLE_TEXT[more.id] && <section><h4>Instructions</h4><div className="crew-instructions" tabIndex={0}>{ROLE_TEXT[more.id]}</div></section>}
     </div>
     <Button className="crew-dialog-pick" onClick={() => act(more)}>{mine(more) ? `Say hi to ${more.name}` : on(more.id) ? `Hired. Let ${more.name} go` : `Hire ${more.name}`}</Button>
    </DialogContent>
@@ -241,9 +262,9 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
  </div>
 }
 
-/// "New companion": Still's own companions first, each a live mascot with its role and what to expect, then make your
-/// own or paste one someone shared. A card's mascot or name opens its preview (the profile panel); Add hires it right
-/// here. Ones you have say so.
+/// "Hire a companion": Still's own companions first, each a live mascot with its role and what to expect, then make your
+/// own or paste one someone shared. A card's art or View profile opens its preview (the profile panel); Hire hires it
+/// right here. Ones you have say Hired.
 export function CompanionLibrary({ have = [], onPreview, onAdd, onOpen, onOwn, onPaste, onClose }: {
  have?: Companion[]; onPreview: (p: Premade) => void; onAdd: (p: Premade) => void; onOpen: (id: string) => void; onOwn: () => void; onPaste: (c: Companion) => void; onClose: () => void
 }) {
@@ -253,13 +274,13 @@ export function CompanionLibrary({ have = [], onPreview, onAdd, onOpen, onOwn, o
  const pasted = (text: string) => { const c = fromShared(text); setBad(!c && !!text.trim()); if (c) onPaste(c) }
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog companion-library" onOpenAutoFocus={e => { e.preventDefault(); (e.target as HTMLElement).focus() }}>
-   <DialogHeader><DialogTitle>Add a companion</DialogTitle><DialogDescription>Seven ready-made companions, each built for one part of your work.</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Hire a companion</DialogTitle><DialogDescription>Six ready-made companions, each built for one part of your work.</DialogDescription></DialogHeader>
    <div className="role-grid library-grid">{PREMADES.map(p => { const got = mine(p); return <RoleCard key={p.id} className={cn("library-card", got && "is-added")} hue={p.look.color} look={p.look} name={p.name} role={p.role} expect={p.expect} on={!!got}
     open={() => got ? onOpen(got.id) : onPreview(p)} label={got ? `Open ${p.name}'s profile` : `Meet ${p.name}`}>
-    {got ? <span className="role-done library-added"><Check />Added</span> : <button className="role-btn library-add" aria-label={`Add ${p.name}`} onClick={() => onAdd(p)}><Plus />Add</button>}
+    {got ? <span className="role-done library-added"><Check />Hired</span> : <button className="role-btn library-add" aria-label={`Hire ${p.name}`} onClick={() => onAdd(p)}><Plus />Hire</button>}
    </RoleCard> })}</div>
    <div className="role-grid library-more">
-    <RoleCard className="library-own" own hue="var(--muted-foreground)" look={BLANK} name="Make your own" role="Any job" expect={OWN_EXPECT} open={onOwn} label="Make your own" />
+    <RoleCard className="library-own" compact own hue="var(--muted-foreground)" look={BLANK} name="Make your own" role="Any job" expect={OWN_EXPECT} open={onOwn} label="Make your own" />
     <RoleCard className="library-paste" hue="var(--muted-foreground)" icon={<ClipboardPaste />} name="Paste a shared companion" role="From a friend" open={() => setPasting(true)} label="Paste a shared companion"
      expect={pasting ? undefined : ["Their name, look, job and way of talking", "Starts fresh, knowing nothing about you", "Never brings their memory or files"]}
      below={pasting && <>
