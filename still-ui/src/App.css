@@ -1547,6 +1547,7 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 .role-card.is-own .role-art { background:color-mix(in oklab,var(--muted-foreground) 7%,transparent); }
 .role-body { display:flex; flex:1; flex-direction:column; gap:12px; padding:16px 18px 18px; }
 .role-card.is-art .role-act { justify-content:space-between; margin-top:auto; padding-top:2px; }
+.crew-grid .role-card:not(.is-art) { grid-template-columns:minmax(0,1fr); grid-template-areas:"head" "list" "act"; } /* setup's Make your own: its button under the list, like the art cards, so the name has the width */
 .role-profile { padding:4px 2px; font:500 13px var(--font-ui); color:var(--soft); text-decoration:underline; text-underline-offset:3px; text-decoration-color:color-mix(in oklab,var(--soft) 40%,transparent); }
 .role-profile:hover, .role-profile:focus-visible { color:var(--foreground); outline:none; }
 .role-card.is-art .role-bubble { top:12px; left:12px; max-width:calc(100% - 24px); }
