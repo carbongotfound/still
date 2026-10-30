@@ -112,7 +112,7 @@ export class Rigged {
  mixer: THREE.AnimationMixer
  acts = new Map<string, THREE.AnimationAction>()
  lids: THREE.Mesh[] = []; face: THREE.Mesh | null = null; joint: THREE.Object3D | null = null
- tint: THREE.MeshStandardMaterial | null = null
+ tints = new Map<string, THREE.MeshStandardMaterial>()
  look?: Look; key = ""
  state: MascotState = "idle"; gestureAt = 0
  move = ""; moveStart = 0
@@ -145,11 +145,13 @@ export class Rigged {
   if (key === this.key) return
   this.look = look; this.key = key
   if (BY_LOOK.get(key) === this.id) return
-  // Make your own's model in another color
+  // Make your own's model in another color, the lids too (a blink is the body's color)
   this.root.traverse(o => {
    const mesh = o as THREE.Mesh, mat = mesh.material as THREE.MeshStandardMaterial
-   if (!mesh.isMesh || mat?.name !== "vinyl") return
-   this.tint ??= mat.clone(); this.tint.color.set(look.color); mesh.material = this.tint
+   if (!mesh.isMesh || mat?.name !== "vinyl" && mat?.name !== "lid") return
+   let t = this.tints.get(mat.name)
+   if (!t) { t = mat.clone(); t.userData.base = mat.color.clone(); this.tints.set(mat.name, t) }
+   t.color.copy(t.userData.base).multiply(new THREE.Color(look.color)); mesh.material = t
   })
  }
 
@@ -254,7 +256,7 @@ export class Rigged {
  occluders(_view?: THREE.Matrix4) { /* the blobs' soft shadows from their nubs: the models carry their own */ }
 
  dispose() {
-  this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.root); this.tint?.dispose()
+  this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.root); this.tints.forEach(t => t.dispose())
   if (this.shadow) { this.shadow.geometry.dispose(); (this.shadow.material as THREE.Material).dispose() }
  }
 }

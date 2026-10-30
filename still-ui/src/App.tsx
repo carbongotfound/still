@@ -8,7 +8,7 @@ import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
 import { AiLogo } from "./AiLogo"
-import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
+import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
@@ -749,7 +749,7 @@ export default function App() {
 
           </div>
           <div className="home-center">
-           <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>
+           <Space companion={companion} team={ai.companions} mood={typing ? "listening" : "idle"} onOpen={() => setProfile(companion.id)} onPick={setBuddy} />
            <div className="home-compose"><Composer draft={"tab." + state.activeId} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
             onSubmit={(text, tabs, files) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>

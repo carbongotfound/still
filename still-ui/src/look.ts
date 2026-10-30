@@ -1,19 +1,24 @@
-// A companion's look: a soft blob with its own color, silhouette, one job prop and a small accessory. Saved per
+// A companion's look: a soft blob with its own color, silhouette, one real thing it holds or wears and a small accessory. Saved per
 // companion as JSON (Companion.look) and drawn by companion3d.ts. Every id below is what's saved; validate against these.
 export type Look = {
  color: string // body color, hex
  shape: string // silhouette: SHAPES
- prop: string // what it holds or wears for its job: PROPS ("" for none)
+ prop: string // what it holds or wears: PROPS ("" for none; the six roles have none)
  accessory: string // a small extra: ACCESSORIES ("" for none)
 }
 
 export const SHAPES: [string, string][] = [
  ["bean", "Bean"], ["tall", "Tall"], ["gumdrop", "Gumdrop"], ["block", "Block"], ["round", "Round"], ["squat", "Squat"], ["bump", "Bump"], ["lean", "Lean"],
 ]
+// Real things, modeled in Blender (rig/props.py): each picker tile shows the thing itself (assets/prop).
 export const PROPS: [string, string][] = [
- ["", "None"], ["chart", "Chart"], ["badge", "Badge"], ["clipboard", "Clipboard"], ["megaphone", "Megaphone"], ["headset", "Headset"],
- ["laptop", "Laptop"], ["magnifier", "Magnifier"], ["pencil", "Pencil"], ["envelope", "Envelope"],
+ ["", "None"], ["laptop", "Laptop"], ["mug", "Coffee mug"], ["headphones", "Headphones"], ["notebook", "Notebook"], ["phone", "Phone"],
+ ["magnifier", "Magnifying glass"], ["wrench", "Wrench"], ["paintbrush", "Paintbrush"], ["camera", "Camera"], ["briefcase", "Briefcase"],
 ]
+// The props before these, and what each became (the rest are dropped): a saved look keeps the nearest.
+const RENAMED: Record<string, string> = { headset: "headphones", clipboard: "notebook", pencil: "paintbrush" }
+/// What each role held before the roles went prop-free: a role's companion saved with it wears the role's own look.
+export const ROLE_PROPS: Record<string, string> = { sales: "chart", growth: "badge", planner: "clipboard", marketing: "megaphone", engineer: "laptop", research: "magnifier" }
 export const ACCESSORIES: [string, string][] = [["", "None"], ["glasses", "Glasses"], ["bow", "Bow"], ["sprout", "Sprout"], ["flower", "Flower"]]
 export const BODY_COLORS: [string, string][] = [
  ["#f7a26a", "Tangerine"], ["#f39079", "Coral"], ["#f2a5c4", "Peony"], ["#f6c3b0", "Peach"], ["#f6d56a", "Lemon"], ["#f3e2a6", "Butter"],
@@ -21,14 +26,14 @@ export const BODY_COLORS: [string, string][] = [
  ["#d9b2e6", "Orchid"], ["#ddd4c6", "Oat"], ["#cfc9c0", "Pebble"], ["#9aa3b2", "Slate"],
 ]
 
-// The six roles' own looks, keyed by role id (crew.tsx).
+// The six roles' own looks, keyed by role id (crew.tsx): no props, their bodies say what they do.
 export const ROLE_LOOKS: Record<string, Look> = {
- sales: { color: "#f7a26a", shape: "tall", prop: "chart", accessory: "" },
- growth: { color: "#f2a5c4", shape: "gumdrop", prop: "badge", accessory: "" },
- planner: { color: "#a6cf9c", shape: "block", prop: "clipboard", accessory: "" },
- marketing: { color: "#f6d56a", shape: "round", prop: "megaphone", accessory: "" },
- engineer: { color: "#8cc3ee", shape: "bump", prop: "laptop", accessory: "" },
- research: { color: "#c0a3ec", shape: "lean", prop: "magnifier", accessory: "" },
+ sales: { color: "#f7a26a", shape: "tall", prop: "", accessory: "" },
+ growth: { color: "#f2a5c4", shape: "gumdrop", prop: "", accessory: "" },
+ planner: { color: "#a6cf9c", shape: "block", prop: "", accessory: "" },
+ marketing: { color: "#f6d56a", shape: "round", prop: "", accessory: "" },
+ engineer: { color: "#8cc3ee", shape: "bump", prop: "", accessory: "" },
+ research: { color: "#c0a3ec", shape: "lean", prop: "", accessory: "" },
 }
 /// Make your own: the neutral blob you start from.
 export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }
@@ -70,7 +75,7 @@ export function parseLook(raw: unknown, fallback: Look = DEFAULT_LOOK): Look {
  try { o = typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : (raw as Record<string, unknown>) ?? {} } catch { return fallback }
  if (!o || typeof o !== "object") return fallback
  if (isOld(o)) return fromOld(o, fallback)
- return { color: hex(o.color, fallback.color), shape: known(SHAPES, o.shape, fallback.shape), prop: known(PROPS, o.prop, fallback.prop), accessory: known(ACCESSORIES, o.accessory, fallback.accessory) }
+ return { color: hex(o.color, fallback.color), shape: known(SHAPES, o.shape, fallback.shape), prop: known(PROPS, RENAMED[o.prop as string] ?? o.prop, fallback.prop), accessory: known(ACCESSORIES, o.accessory, fallback.accessory) }
 }
 /// Saved before the blobs (it has a face of its own, or no prop field at all).
 export const isOld = (o: Record<string, unknown>) => "eyes" in o || "body" in o || !("prop" in o) && "shape" in o

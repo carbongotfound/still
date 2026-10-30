@@ -29,5 +29,10 @@
   "frames": 55,
   "fps": 15,
   "loop": false
+ },
+ "yes": {
+  "frames": 23,
+  "fps": 15,
+  "loop": false
  }
 }
