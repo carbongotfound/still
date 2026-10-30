@@ -150,6 +150,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Outside AI apps' look**: other AI apps working in Still wear their maker's look and color.
 - ✅ **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint each show what to expect; work interests. Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs).
 - ✅ **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; blinks are each rig's own Blender blink (lids, eye squash, brow and nod, at its tempo) and the lids always open again after one, the glass eye caps keep only their shine so the lids sit where Blender has them (checked frame by frame against Blender renders); glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`).
+- ✅ **12-second idles**: each of the eight has its own idle clip in character (Zest's confident nod and size-up, Glint's squint, check and chin-tap, Fizz's hops and so on), in the 3D view and as 96px avatar strips read in rows; blinks and glances layer over it on their own; matte clay material and a soft high key light, closer to the Cycles renders (`rig.ts`, `Mascot.tsx`, `companion3d.ts`).
 - 🚧 **Companions act on themselves**: change their look, settings and memory on request, each with Undo (branch `selfact`, uncommitted).
 
 ## Memory
@@ -224,7 +225,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Companions messaging each other is tested with a fake agent, not live. On the Mac it's typechecked, not run; an ask there waits by checking the run every quarter second.
 - The Mac has no working folders yet, so its builder can't open what it made.
 - Permissions button: a camera used inside a frame doesn't light the dot (Windows); screen sharing's Allow still asks like Ask. On the Mac (typechecked, not run) location, notifications, clipboard, screen sharing, MIDI and USB show as not available, pop-ups' Allow can't override WebKit's blocker, and Block on automatic downloads cancels a second download within 10 seconds.
-- Glint's glass eye cap shows through its shut lid mid-blink, in Blender too (the model), and the app's lighting is paler than the Cycles renders.
+- The glass eye caps show through shut lids mid-blink (Zest, Mallow, Rivet, Glint), in Blender too (the model).
+- Glint's right shoulder creases when that arm lifts (its chin-tap and the thinking clip): the rig's weights, not the pose.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
 - Local `main`'s 14 older commits are merged into `team` and kept in its history; their changes were already there in newer form, so `team`'s versions won.

@@ -7,9 +7,10 @@ import { clock, type MascotState } from "./Mascot"
 
 // The eight companions as Blender made them (crew/): a skeleton, face shapes and every clip, one glb each. Nothing
 // here moves them by code. A state loops its clip, a gesture plays its clip once and crossfades back, and the eyes and
-// body steer toward the pointer through held poses laid on top (pose.look.*, pose.turn*). Blinks are Blender's blink
-// (blink_once) laid over whatever plays; they and talking set the lid and mouth shapes after the clips, so they only ever
-// add to what a clip does. Any other bean look wears Make your own's model in its own color.
+// body steer toward the pointer through held poses laid on top (pose.look.*, pose.turn*). The idle (idle_a) is one 12 s
+// performance that blinks and moves its eyes itself; over anything else, Blender's blink (blink_once) comes every 2-4 s
+// and the eyes dart. Blinks and talking set the lid and mouth shapes after the clips, so they only ever add to what a
+// clip does. Any other bean look wears Make your own's model in its own color.
 
 const GLB = import.meta.glob("./assets/rig/*.glb", { query: "?url", import: "default", eager: true }) as Record<string, string>
 const BY_LOOK = new Map(RIGS.map(([l, id]) => [lookKey(l), id]))
@@ -66,6 +67,8 @@ function prepare(id: string, g: GLTF): Model {
   // The eye caps are clear glass in Blender, there for the shine. three.js glass draws the lid colour over the top of the
   // eye (the lids look half shut), so the caps keep only their shine, added over the eye
   if (mat?.name === "cap" && mat.transmission) Object.assign(mat, { transmission: 0, color: new THREE.Color(0), transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })
+  // Matte clay, as in the Cycles renders: the room's light only fills the shadow side a little, so the form reads
+  if (mat && ["vinyl", "brow", "lid"].includes(mat.name)) Object.assign(mat, { roughness: .86, envMapIntensity: .18 })
  })
  const track = lid && once?.tracks.find(k => k.name === `${lid!.name}.morphTargetInfluences`)
  if (once && lid && track) {
@@ -114,7 +117,7 @@ export class Rigged {
  state: MascotState = "idle"; gestureAt = 0
  move = ""; moveStart = 0
  from: Layer | null = null; fromAt = -9
- live = true; phase = Math.random() * 8
+ live = true; phase = Math.random() * 12
  fidgetNext = -1; waveAt = 0 // timers start on the first live frame (the clock is the page's)
  blinkNext = 0; blinkStart = -9; glanceNext = 0; glance = [0, 0]; gaze = [0, 0]; turn = 0
  undo: [number[], number, number][] = [] // the shapes after() set, and what the clips had there
@@ -169,14 +172,16 @@ export class Rigged {
  /// Moves time on to t and poses everything.
  update(dt: number, t: number, follow: { x: number; y: number } | null) {
   if (this.live && !clock.still) {
-   if (this.fidgetNext < 0) { this.fidgetNext = t + 4 + Math.random() * 6; this.blinkNext = t + 1 + Math.random() * 3; this.glanceNext = t + 1; this.waveAt = t }
-   if (!this.move && this.state === "idle" && t > this.fidgetNext) { this.begin(FIDGET[Math.floor(Math.random() * FIDGET.length)], t); this.fidgetNext = t + 7 + Math.random() * 8 }
+   if (this.fidgetNext < 0) { this.fidgetNext = t + 10 + Math.random() * 10; this.blinkNext = t + 1 + Math.random() * 3; this.glanceNext = t + 1; this.waveAt = t }
+   if (!this.move && this.state === "idle" && t > this.fidgetNext) { this.begin(FIDGET[Math.floor(Math.random() * FIDGET.length)], t); this.fidgetNext = t + 14 + Math.random() * 16 }
    if (!this.move && this.state === "needs" && t - this.waveAt > 6) { this.begin("wave", t); this.waveAt = t }
-   if (t > this.blinkNext) { this.blinkStart = t; this.blinkNext = t + (Math.random() < .14 ? this.m.blink.length / 60 : 2.5 + Math.random() * 3.5) }
-   if (t > this.glanceNext) { this.glance = Math.random() < .4 ? [0, 0] : [clamp(this.glance[0] + rnd(.5), .6), clamp(this.glance[1] + rnd(.2), .3)]; this.glanceNext = t + .8 + Math.random() * 2.4 }
+   const own = !this.move && LOOP[this.state] === "idle_a" // the idle blinks and looks about on its own
+   if (t > this.blinkNext) { if (!own) this.blinkStart = t; this.blinkNext = t + (Math.random() < .14 ? this.m.blink.length / 60 : 2 + Math.random() * 2) }
+   if (t > this.glanceNext) { this.glance = Math.random() < .4 ? [0, 0] : [clamp(this.glance[0] + rnd(.5), .6), clamp(this.glance[1] + rnd(.2), .3)]; this.glanceNext = t + .5 + Math.random() * 2 }
    // working looks toward the page it works on (left of the chat)
-   const want = follow ?? (this.state === "working" ? { x: -.55, y: .15 } : { x: this.glance[0], y: this.glance[1] }), k = 1 - Math.exp(-dt * (follow ? 10 : 6))
-   this.gaze[0] += (want.x - this.gaze[0]) * k; this.gaze[1] += (want.y - this.gaze[1]) * k
+   const want = follow ?? (this.state === "working" ? { x: -.55, y: .15 } : own ? { x: 0, y: 0 } : { x: this.glance[0], y: this.glance[1] }), k = 1 - Math.exp(-dt * (follow ? 10 : 6))
+   const dart = follow ? k : 1 - Math.exp(-dt * 40) // eyes jump to what they look at (about 0.08 s), then hold
+   this.gaze[0] += (want.x - this.gaze[0]) * dart; this.gaze[1] += (want.y - this.gaze[1]) * dart
    this.turn += ((follow?.x ?? (this.state === "working" ? -.4 : 0)) - this.turn) * k
   }
   this.pose(t)

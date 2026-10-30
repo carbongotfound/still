@@ -1,18 +1,9 @@
 {
  "idle_a": {
-  "frames": 69,
+  "frames": 180,
   "fps": 15,
-  "loop": true
- },
- "blink_once": {
-  "frames": 7,
-  "fps": 15,
-  "loop": false
- },
- "look_around": {
-  "frames": 62,
-  "fps": 15,
-  "loop": true
+  "loop": true,
+  "rows": 2
  },
  "working": {
   "frames": 57,
