@@ -171,8 +171,8 @@ def main():
         until(lambda: not js(process, "!!document.querySelector('.memory-settings')"), 5)
 
         # A skill: make it, then use it with / in the message box.
-        click(process, ".home-rail-item[aria-label=Skills]")
-        until(lambda: js(process, "!!document.querySelector('.home-page[aria-label=Skills]')"), 5)
+        click(process, ".home-rail-item[aria-label='Skills & plugins']")
+        until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins']\")"), 5)
         click_text(process, ".home-new", "New skill")
         until(lambda: js(process, "!!document.querySelector('.skill-dialog')"), 5)
         type_into(process, ".skill-dialog input[required]", "Trip plan")
@@ -291,7 +291,7 @@ def screens():
         newtab(p)
         send(p, "skillSave", name="Trip plan", description="Lays out a trip day by day, with costs", when="Planning any trip", body="1. Ask where I'm starting from.")
         send(p, "skillSave", name="Price check", description="Compares three stores and shows a table", when="Shopping", body="1. Find three stores.")
-        click(p, ".home-rail-item[aria-label=Skills]")
+        click(p, ".home-rail-item[aria-label='Skills & plugins']")
     shots(EXE, "newtab", "v03", newtab)
     shots(EXE, "modes", "v01", modes)
     shots(EXE, "companions", "v01", companions)

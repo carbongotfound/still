@@ -7,8 +7,10 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 namespace Still;
 
-// Plugins: the user's apps (Gmail, Calendar, Slack…) through Composio, a third-party service, with the user's own API
-// key. Off until they paste one. The key is kept like saved logins (DPAPI, composio.dpapi) and only ever goes to Composio
+// Plugins: the user's apps (Gmail, Calendar, Slack…) through Composio, a third-party service, with the user's own project
+// API key (ak_…, from Composio's Platform: Settings → Project Settings → API Keys). Off until they paste one. Composio's
+// For You area hands out a Connect key (ck_…) for its MCP endpoint, which the API refuses: Still says so and doesn't
+// keep it. The key is kept like saved logins (DPAPI, composio.dpapi) and only ever goes to Composio
 // in the x-api-key header: never to a file in the clear, a log, memory, the shell, an agent, MCP or a CLI. Companions get
 // two tools, plugin_tools and use_plugin: reads go ahead, anything else asks the user first. The Mac's twin is Plugins.swift.
 public partial class MainWindow
@@ -17,10 +19,12 @@ public partial class MainWindow
  static string PluginKeyFile => Path.Combine(App.DataRoot, "composio.dpapi");
  static readonly string ComposioApi = (App.IsQa ? Environment.GetEnvironmentVariable("STILL_QA_COMPOSIO") : null) ?? "https://backend.composio.dev/api/v3.1";
  static readonly HttpClient ComposioHttp = new() { Timeout = TimeSpan.FromSeconds(30) };
- static string pluginStatus = "off"; // off (no key), checking, ok, bad (Composio refused the key), down (no answer)
+ static string pluginStatus = "off"; // off (no key), checking, ok, bad (Composio refused the key), kind (not a project key), down (no answer)
  static List<PluginAccount> pluginAccounts = [];
- static List<object> pluginFound = [];
- static string pluginConnecting = "";
+ static List<object>? pluginFound; // null until Composio answers a search
+ static string pluginConnecting = "", pluginFailed = "", pluginError = ""; // the app that didn't connect, and Composio's own words for the last failure
+ // Keys Composio's API refuses in x-api-key: For You's Connect key (ck_) and the personal one its CLI uses (uak_).
+ static bool NotProjectKey(string key) => key.StartsWith("ck_", StringComparison.Ordinal) || key.StartsWith("uak_", StringComparison.Ordinal);
  static bool HasPluginKey => File.Exists(PluginKeyFile);
  // Names for the apps people connect most; Composio's own name for the rest.
  static readonly Dictionary<string, string> PluginNames = new() {
@@ -43,7 +47,7 @@ public partial class MainWindow
   try { File.WriteAllBytes(PluginKeyFile + ".tmp", ProtectedData.Protect(plain, null, DataProtectionScope.CurrentUser)); File.Move(PluginKeyFile + ".tmp", PluginKeyFile, true); }
   finally { CryptographicOperations.ZeroMemory(plain); }
  }
- static void ForgetPluginKey() { try { File.Delete(PluginKeyFile); } catch (IOException) { } pluginStatus = "off"; pluginAccounts = []; pluginFound = []; }
+ static void ForgetPluginKey() { try { File.Delete(PluginKeyFile); } catch (IOException) { } pluginStatus = "off"; pluginAccounts = []; pluginFound = null; pluginFailed = pluginError = ""; }
 
  /// One call to Composio. Null when there's no key, or Composio refused it or didn't answer (pluginStatus says which).
  /// Other errors come back as Composio's own { error: { message } }.
@@ -90,6 +94,7 @@ public partial class MainWindow
   // Only apps Composio signs in to itself: one click, no developer app of the user's own.
   pluginFound = list?["items"] is JsonArray items ? items.Where(i => i?["composio_managed_auth_schemes"] is not JsonArray { Count: 0 })
    .Select(i => (object)new { slug = Str(i, "slug"), name = PluginName(Str(i, "slug"), Str(i, "name")), about = Str(i?["meta"], "description") }).ToList() : [];
+  pluginError = list == null || list["items"] is JsonArray ? "" : ComposioError(list); // said, not an empty list
   PublishAiEverywhere();
  }
 
@@ -97,17 +102,19 @@ public partial class MainWindow
  async Task<bool> ConnectPlugin(string slug)
  {
   if (pluginConnecting.Length > 0 || slug.Length == 0) return false;
-  pluginConnecting = slug; PublishAiEverywhere();
+  pluginConnecting = slug; pluginFailed = pluginError = ""; PublishAiEverywhere();
   MainWindow? window = null;
+  bool Failed(JsonNode? why) { pluginFailed = slug; pluginError = why == null ? "" : PluginName(slug) + " didn't connect: " + ComposioError(why); return false; }
   try {
    var configs = await Composio(HttpMethod.Get, "/auth_configs?is_composio_managed=true&toolkit_slug=" + Uri.EscapeDataString(slug));
-   if (configs == null) return false;
-   string config = (configs["items"] as JsonArray)?.FirstOrDefault(c => Str(c, "status") != "DISABLED") is { } found ? Str(found, "id") : "";
-   if (config.Length == 0) config = Str((await Composio(HttpMethod.Post, "/auth_configs", new { toolkit = new { slug }, auth_config = new { type = "use_composio_managed_auth" } }))?["auth_config"], "id");
-   if (config.Length == 0) return false;
+   if (configs?["items"] is not JsonArray all) return Failed(configs);
+   string config = all.FirstOrDefault(c => Str(c, "status") != "DISABLED") is { } found ? Str(found, "id") : "";
+   JsonNode? made = null;
+   if (config.Length == 0) config = Str((made = await Composio(HttpMethod.Post, "/auth_configs", new { toolkit = new { slug }, auth_config = new { type = "use_composio_managed_auth" } }))?["auth_config"], "id");
+   if (config.Length == 0) return Failed(made);
    var link = await Composio(HttpMethod.Post, "/connected_accounts/link", new { auth_config_id = config, user_id = PluginUser });
    string url = Str(link, "redirect_url"), id = Str(link, "connected_account_id");
-   if (id.Length == 0 || !(url.StartsWith("https://") || App.IsQa && url.StartsWith("http://127.0.0.1:"))) return false;
+   if (id.Length == 0 || !(url.StartsWith("https://") || App.IsQa && url.StartsWith("http://127.0.0.1:"))) return Failed(link);
    window = new MainWindow(new BrowserTab { Url = url, Title = "Connect " + PluginName(slug) }, null);
    window.Show(); window.Activate();
    for (var end = DateTime.UtcNow.AddMinutes(10); DateTime.UtcNow < end;) {
@@ -116,9 +123,10 @@ public partial class MainWindow
     var account = await Composio(HttpMethod.Get, "/connected_accounts/" + Uri.EscapeDataString(id));
     string status = Str(account, "status");
     if (status == "ACTIVE") { await RefreshPlugins(); return true; }
-    if (closed || status is "FAILED" or "EXPIRED" or "INACTIVE" || account == null) return false;
+    if (closed) return false; // the user closed it: not an error
+    if (status is "FAILED" or "EXPIRED" or "INACTIVE" || account == null) return Failed(account == null ? null : new JsonObject { ["error"] = "the sign-in didn't finish." });
    }
-   return false;
+   return Failed(new JsonObject { ["error"] = "the sign-in took too long." });
   } finally {
    if (window is { closing: false } && Windows.Contains(window)) window.Close();
    pluginConnecting = ""; PublishAiEverywhere();
@@ -130,12 +138,13 @@ public partial class MainWindow
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
   switch (op) {
    case "pluginKey" when S("key").Trim() is { Length: >= 8 and <= 400 } key && !key.Any(char.IsWhiteSpace):
+    if (NotProjectKey(key)) { pluginStatus = "kind"; PublishAiEverywhere(); break; } // never sent, never kept
     SavePluginKey(key); pluginStatus = "checking"; PublishAiEverywhere();
     await RefreshPlugins();
     if (pluginStatus == "bad") { ForgetPluginKey(); pluginStatus = "bad"; PublishAiEverywhere(); } // a key Composio refuses isn't kept
     break;
-   case "pluginLink" when (S("to") switch { "key" => "https://platform.composio.dev/", "pricing" => "https://composio.dev/pricing", _ => "" }) is { Length: > 0 } link:
-    var page = new MainWindow(new BrowserTab { Url = link }, null); page.Show(); page.Activate(); break;
+   case "pluginLink" when S("to") == "key":
+    var page = new MainWindow(new BrowserTab { Url = "https://platform.composio.dev/" }, null); page.Show(); page.Activate(); break;
    case "pluginKeyRemove": ForgetPluginKey(); PublishAiEverywhere(); break;
    case "pluginRefresh": await RefreshPlugins(); break;
    case "pluginSearch": await SearchPlugins(S("query").Trim() is var q && q.Length > 100 ? q[..100] : q); break;
@@ -151,7 +160,7 @@ public partial class MainWindow
  }
 
  object PluginsPayload() => new {
-  key = HasPluginKey, status = pluginStatus, connecting = pluginConnecting, found = pluginFound,
+  key = HasPluginKey, status = pluginStatus, connecting = pluginConnecting, found = pluginFound, failed = pluginFailed, error = pluginError,
   connected = pluginAccounts.Select(a => new { id = a.Id, slug = a.Slug, name = a.Name }) };
 
  /// What a companion is told about its plugins.
@@ -186,7 +195,7 @@ public partial class MainWindow
  async Task<string> PluginTool(string who, string tool, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Plugins are only for Still's own companions.");
-  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Settings → Plugins.");
+  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.");
   var mate = Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
   if (tool == "plugin_tools") {
    string plugin = S(args, "plugin").Trim().ToLowerInvariant(), query = S(args, "query").Trim();
@@ -195,7 +204,7 @@ public partial class MainWindow
    var result = new JsonArray();
    foreach (var slug in slugs.Take(8)) {
     var list = await Composio(HttpMethod.Get, $"/tools?toolkit_slug={Uri.EscapeDataString(slug)}&limit={(slugs.Count > 1 ? 8 : 25)}" + (query.Length > 0 ? "&query=" + Uri.EscapeDataString(query) : ""));
-    if (list == null) return Fail(pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Settings → Plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.");
+    if (list == null) return Fail(pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.");
     result.Add(new JsonObject {
      ["plugin"] = slug, ["name"] = PluginName(slug), ["connected"] = pluginAccounts.Any(a => a.Slug == slug), ["offForYou"] = mate?.PluginsOff.Contains(slug) == true,
      ["tools"] = new JsonArray((list["items"] as JsonArray ?? []).Select(t => (JsonNode)new JsonObject {
@@ -208,15 +217,15 @@ public partial class MainWindow
   string slugOfTool = S(args, "tool").Trim().ToUpperInvariant();
   if (slugOfTool.Length is 0 or > 120) return Fail("Pass the tool's name from plugin_tools, like GMAIL_FETCH_EMAILS.");
   var info = await Composio(HttpMethod.Get, "/tools/" + Uri.EscapeDataString(slugOfTool));
-  if (info == null) return Fail(pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Settings → Plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.");
+  if (info == null) return Fail(pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.");
   string toolkit = Str(info["toolkit"], "slug"), app = PluginName(toolkit, Str(info["toolkit"], "name"));
   if (toolkit.Length == 0) return Fail("There's no tool called " + slugOfTool + ". Call plugin_tools to find one.");
-  if (mate?.PluginsOff.Contains(toolkit) == true) return Fail($"The user turned {app} off for you. They can turn it on in Settings → Plugins.");
+  if (mate?.PluginsOff.Contains(toolkit) == true) return Fail($"The user turned {app} off for you. They can turn it on in Skills & plugins.");
   if (pluginAccounts.FirstOrDefault(a => a.Slug == toolkit) is not { } account) {
    // Not connected: a card with a button that connects it, then the work goes on.
    if (await Approve(run, "Connect " + app, app, "connect", "You sign in through Composio, in a Still window.", countdown: false) != "connect")
     return Fail($"The user didn't connect {app}. Don't ask again unless they bring it up.");
-   if (!await ConnectPlugin(toolkit) || pluginAccounts.FirstOrDefault(a => a.Slug == toolkit) is not { } now) return Fail(app + " didn't get connected. Tell the user they can connect it in Settings → Plugins.");
+   if (!await ConnectPlugin(toolkit) || pluginAccounts.FirstOrDefault(a => a.Slug == toolkit) is not { } now) return Fail(app + " didn't get connected. Tell the user they can connect it in Skills & plugins.");
    account = now;
   }
   var arguments = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("arguments", out var given) && given.ValueKind == JsonValueKind.Object ? JsonNode.Parse(given.GetRawText()) : new JsonObject();

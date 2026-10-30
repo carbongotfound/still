@@ -384,8 +384,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
         : cheer[0] && <p key={cheer[2]} className="ob-bubble ob-cheer" role="status">Now I can work in {pluginName(cheer[1])}</p>}
        {plugins?.key && plugins.status === "ok" ? <PluginGrid plugins={plugins} send={send} /> : <PluginBelt />}
        {!(plugins?.key && plugins.status === "ok") && <PluginKey plugins={plugins} send={send} />}
-       <ThirdParty send={send} />
-       {!plugins?.key && <p className="ob-note">No key? Skip this. You can turn plugins on any time in Settings → Plugins.</p>}
+       <ThirdParty />
+       {!plugins?.key && <p className="ob-note">No key? Skip this. You can turn plugins on any time in Skills & plugins.</p>}
       </Reveal>
      </>}
      {at === "how" && <>

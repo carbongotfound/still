@@ -6,7 +6,6 @@ import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
-import { PluginsSettings } from "./Plugins"
 import { SitePermissions } from "./SitePermissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
@@ -704,7 +703,7 @@ export default function App() {
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
             onSubmit={(text, tabs) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }) }) }} /></div>
            <div className="home-chips">
-            <button onClick={() => setView("skills")}><BookOpen />Skills</button>
+            <button onClick={() => setView("skills")}><BookOpen />Skills & plugins</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
             <button onClick={() => setView("library")}><Library />Library</button>
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
@@ -804,7 +803,7 @@ export default function App() {
       {ai && !state.noAi && <><Separator /><Button variant="ghost" className="settings-link" onClick={() => { close(); send("aiToggle") }}><Bot />Your AI and its model<ChevronRight /></Button><Button variant="ghost" className="settings-link" onClick={() => { close(); goHome("companions") }}><UsersRound />Companions<ChevronRight /></Button></>}
      </TabsContent>
      {ai && !state.noAi && <TabsContent value="permissions" className="settings-content"><PermissionsSettings ai={ai} send={send} /></TabsContent>}
-     {ai && !state.noAi && <TabsContent value="plugins" className="settings-content"><PluginsSettings ai={ai} send={send} /></TabsContent>}
+     {ai && !state.noAi && <TabsContent value="plugins" className="settings-content"><div className="setting-row"><div><strong>Skills & plugins</strong><p>Your apps, like Gmail and Slack, are with your skills now: turn plugins on, connect apps and pick which companion can use each.</p></div><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></div></TabsContent>}
      {ai && !state.noAi && <TabsContent value="memory" className="settings-content"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></TabsContent>}
      <TabsContent value="privacy" className="settings-content">
       <p className="data-intro">Tabs, bookmarks and history stay on this PC. Still has no account or cloud sync.</p>
@@ -877,11 +876,11 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !editing && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
-  {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onPlugins={() => { setProfile(""); open("settings", "plugins") }} onSkills={() => { setProfile(""); setView("skills") }} />}
+  {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onSkills={() => { setProfile(""); goHome("skills") }} />}
   {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onPreview={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p), `${p.name} joined your companions.`)}
    onOpen={id => { setLibrary(false); setProfile(id) }} onOwn={() => { setLibrary(false); setEditing(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c, `Added ${c.name}. They start fresh: they don't know anything about you yet.`) }} />}
   {meeting && ai && <ProfilePanel key={meeting.id} ai={ai} id="" preview={fromPremade(meeting)} send={send} onPick={setProfile} onClose={() => { setMeeting(null); setLibrary(true) }}
-   onAdd={c => { hire(c, `${c.name} joined your companions.`); setMeeting(null); setLibrary(true) }} onOpenFile={openFile} onPlugins={() => open("settings", "plugins")} onSkills={() => setView("skills")} />}
+   onAdd={c => { hire(c, `${c.name} joined your companions.`); setMeeting(null); setLibrary(true) }} onOpenFile={openFile} onSkills={() => { setMeeting(null); goHome("skills") }} />}
   {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id} only={(ai?.companions?.length ?? 0) <= 1} onClose={() => setEditing(null)} onSave={c => { send("companionSave", c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />

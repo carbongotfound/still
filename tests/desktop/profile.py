@@ -99,12 +99,12 @@ def main():
         # The home mascot opens Jonah's profile, on General.
         js(p, "document.querySelector('.home-face')?.click()")
         check(until(lambda: shown(p, ".profile-panel[aria-label=\"Jonah's profile\"] .profile-stage canvas, .profile-panel .profile-stage img"), 10), "Clicking the home mascot opens its profile, with a live mascot on the stage")
-        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills Routines Files Memory Plugins Model", "Seven tabs: General, Skills, Routines, Files, Memory, Plugins, Model")
+        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Files Memory Model", "Six tabs: General, Skills & plugins, Routines, Files, Memory, Model (no Plugins tab)")
         time.sleep(1)
 
         # A screenshot per tab, and what each one holds.
         for tab, ready in (("general", ".profile-stage"), ("skills", ".profile-list [role=switch]"), ("routines", ".profile-routine"), ("files", ".companion-folder"),
-                           ("memory", ".memory-settings"), ("plugins", ".profile-empty"), ("model", ".profile-modes")):
+                           ("memory", ".memory-settings"), ("model", ".profile-modes")):
             press(p, f".profile-tablist [role=tab][id$='-trigger-{tab}']", "mousedown")
             check(until(lambda: shown(p, f".profile-panel [role=tabpanel][data-state=active] {ready}"), 5), f"The {tab.title()} tab shows its content")
             time.sleep(.5)
