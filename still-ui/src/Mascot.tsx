@@ -14,8 +14,10 @@ export type Frame = "full" | "bust"
 
 export type Slot = { id: string; look: Look; state: MascotState; follow: boolean; gesture: string; gestureAt: number; frame: Frame; canvas: HTMLCanvasElement; visible: boolean }
 export const slots = new Map<string, Slot>()
-// Tests freeze time and skip blinks and crossfades, so a pose is exact: <html data-mascot-freeze="0.35">.
-export const clock = { get frozen() { const f = document.documentElement.dataset.mascotFreeze; return f ? +f : null }, get still() { return !!document.documentElement.dataset.mascotFreeze } }
+// Tests freeze time and skip blinks and crossfades, so a pose is exact: <html data-mascot-freeze="0.35">. They can hold a
+// blink too, seconds into it: data-mascot-blink="0.1".
+export const clock = { get frozen() { const f = document.documentElement.dataset.mascotFreeze; return f ? +f : null }, get still() { return !!document.documentElement.dataset.mascotFreeze },
+ get blink() { const b = document.documentElement.dataset.mascotBlink; return b ? +b : null } }
 export const pointer = { x: -1, y: -1 }
 
 let version = 0

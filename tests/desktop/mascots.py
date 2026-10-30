@@ -126,6 +126,32 @@ def gifs():
         quit(process)
 
 
+def blinks():
+    """A blink (Blender's, held by the test clock) shuts every rig's eyes, and they open again after it."""
+    looks = [{"color": "#f7a26a", "shape": "tall", "prop": "chart"}, {"color": "#f2a5c4", "shape": "gumdrop", "prop": "badge"},
+             {"color": "#a6cf9c", "shape": "block", "prop": "clipboard"}, {"color": "#f6d56a", "shape": "round", "prop": "megaphone"},
+             {"color": "#86d0c8", "shape": "squat", "prop": "headset"}, {"color": "#8cc3ee", "shape": "bump", "prop": "laptop"},
+             {"color": "#c0a3ec", "shape": "lean", "prop": "magnifier"}, {"color": "#ddd4c6", "shape": "bean", "prop": ""}]  # look.ts: RIGS
+    process, _ = window()
+    try:
+        js(process, "document.documentElement.dataset.mascotFreeze = '0.5'; document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: %s }))"
+           % json.dumps({"state": "idle", "size": 240, "looks": looks}))
+        until(lambda: js(process, "document.querySelectorAll('.mascot-reel canvas[data-live]').length") >= len(looks), 30)
+        dark = ("JSON.stringify([...document.querySelectorAll('.mascot-reel canvas[data-live]')].map(c => { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;"
+                " let n = 0; for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 200 && d[i] + d[i + 1] + d[i + 2] < 90) n++; return n }))")
+
+        def eyes(blink):
+            js(process, f"document.documentElement.dataset.mascotBlink = '{blink}'" if blink else "delete document.documentElement.dataset.mascotBlink")
+            time.sleep(.8)
+            return json.loads(js(process, dark))
+        open_, shut, again = eyes(None), eyes(.14), eyes(None)
+        print("dark pixels: open", open_, "shut", shut, "after", again)
+        check(len(open_) == len(looks) and all(s < o * .5 for o, s in zip(open_, shut)), "A blink shuts every rig's eyes")
+        check(all(abs(a - o) <= o * .1 for o, a in zip(open_, again)), "After the blink every rig's eyes are open again (the lids don't keep it)")
+    finally:
+        quit(process)
+
+
 def fallbacks():
     """Without WebGL, Still shows the default look drawn ahead, one picture per framing (whole, and the look editor's top half)."""
     process, _ = window()
@@ -146,6 +172,7 @@ def fallbacks():
 
 
 plain_window()
+blinks()
 quit(gallery("Light"))
 quit(gallery("Dark"))
 if "--gifs" in sys.argv:
