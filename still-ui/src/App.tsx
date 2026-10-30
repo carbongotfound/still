@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Info, Settings, FileText, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, Mail, CalendarDays, PenLine, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
@@ -11,7 +11,7 @@ import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
-import { CompanionLibrary, fromPremade, starters, type Premade } from "./crew"
+import { CompanionLibrary, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginStack } from "./Plugins"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
@@ -35,7 +35,7 @@ import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import { cn, MAC } from "@/lib/utils"
 import "./app.css"
-import { rankSuggestions, type AddressPick } from "./suggestions"
+import { homeIdeas, rankSuggestions, type AddressPick, type HomeIdea } from "./suggestions"
 import { BrowserTools } from "./BrowserTools"
 import { SaveLoginBar } from "./Passwords"
 import { Welcome } from "./Welcome"
@@ -73,12 +73,8 @@ function send(op: string, payload: Record<string, unknown> = {}) { window.chrome
 const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverChat ?? tab.runChat ? companionOf(ai, ai?.chats.find(c => c.id === (tab.driverChat ?? tab.runChat))?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
 const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
 // One click on the new tab page hands one of these to the AI.
-const IDEAS: [LucideIcon, string, string, string, string][] = [
- [Search, "sky", "Brief me on a topic", "The key facts, with a source for each", "Ask me for a topic, then give me a one-page brief with the key facts and a source link for every claim."],
- [Mail, "green", "What needs a reply?", "Your inbox, most urgent first", "Open my inbox and list what's waiting on a reply from me, most urgent first, with a one-line draft for each. Don't send anything."],
- [CalendarDays, "amber", "Plan my week", "The important things first", "Ask me what's on my plate this week, then turn it into a day-by-day plan with the important things first."],
- [PenLine, "rose", "Make my writing sharper", "Shorter and clearer, in your voice", "Ask me to paste something I wrote, then make it shorter and clearer and tell me the three biggest changes."],
-]
+// "Try one of these": a look per kind of idea (suggestions.ts homeIdeas).
+const IDEA_LOOKS: Record<HomeIdea["kind"], [LucideIcon, string]> = { project: [Flag, "amber"], app: [Plug, "green"], tab: [FileText, "sky"], role: [Sparkles, "rose"] }
 const HELP = "https://github.com/carbongotfound/still#readme"
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
@@ -329,9 +325,9 @@ export default function App() {
  useEffect(() => { if (view !== "skills") pluginsFirst.current = false }, [view])
  const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
  useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
- const idea = state.tabs.find(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && t.id !== active?.id)
- const ideas: typeof IDEAS = [...(idea ? [[FileText, "sky", "Sum up " + (idea.title || host(idea.url)), "From your open tabs", `Sum up my open tab "${idea.title}" (${idea.url}) in a few short bullet points.`] as (typeof IDEAS)[number]] : []),
-  ...(state.preferences.interests?.length ? starters(state.preferences.interests, companion, 3).map(([label, prompt], i) => [Sparkles, ["green", "amber", "rose"][i], label, "Picked for your work", prompt] as (typeof IDEAS)[number]) : IDEAS)].slice(0, 3)
+ const role = premadeOf(companion), plugins = ai?.plugins
+ const ideas = !companion ? [] : homeIdeas({ name: companion.name, role: role?.role, asks: role?.asks, fits: tasksFor(state.preferences.interests), uses: role?.uses, memory: companion.memory, activeId: active?.id, tabs: state.tabs,
+  apps: plugins?.key && plugins.status !== "bad" ? plugins.connected.filter(c => !companion.pluginsOff?.includes(c.slug)) : [] })
  const [typing, setTyping] = useState(false) // to the companion on the new tab: it listens
  const openAiSettings = () => { setAiView("settings"); if (!ai?.open) send("aiToggle") }
  // In a chat tab the viewer takes the page's place beside the chat; anywhere else it opens over the page.
@@ -713,7 +709,8 @@ export default function App() {
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
             <PluginStack plugins={ai?.plugins} onOpen={() => { pluginsFirst.current = true; setView("skills") }} />
            </div>
-           <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
+           {ideas.length > 0 && <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(({ kind, label, why, prompt }) => { const [Icon, color] = IDEA_LOOKS[kind]
+            return <button key={label} className="home-idea" data-kind={kind} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{why}</small></button> })}</div></div>}
            {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
           </div>
          </>}
