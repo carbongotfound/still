@@ -81,6 +81,9 @@ final class ChatRun {
 }
 
 var runs: [String: ChatRun] = [:] // by chat id
+var kickoffs = Set<String>() // chats a new companion started itself: its first question's answer goes to its memory
+// A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
+let kickoffAsk = "[Still] You just joined the user's team and this is your first chat, so start it yourself now. Never open with a generic \"how can I help\". In two or three short lines, say hi and propose one concrete first task for your role, built on what you know about the user: what you remember, what they told Still in setup, open tabs that aren't private and connected apps. Then call ask_user once with one focused question whose answer changes how you'll do it, and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then start the task. If they skip, start with your best guess and say what you assumed."
 var aiChats: [AiChat] = [] // newest first; Ai.swift loads and saves them
 var browsers: [Browser] = [] // every open window, kept by main.swift
 /// The Mac's appearance as QA sets it ("Light" or "Dark"); nil = the real one. Only the QA channel sets it.

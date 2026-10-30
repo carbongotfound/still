@@ -240,6 +240,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   if (leaving) return
   send("setupEnd")
   if (firstTask) send("aiSend", { text: firstTask, home: true, companion: c.id })
+  else if (!again) send("aiKickoff", { companion: c.id }) // no first task: the companion starts its first chat itself
   try { localStorage.setItem("still.tour", "1") } catch { /* no storage: no tour */ }
   if (reduce) { send("welcomeDone"); return }
   play("jingle")

@@ -72,6 +72,7 @@ public sealed class Companion
  public List<string> PluginsOff { get; set; } = []; // connected plugins (Composio toolkit slugs) the user turned off for it
  public List<Routine> Routines { get; set; } = []; // what it does on a schedule (MainWindow.Routines.cs)
  public string Instructions { get; set; } = ""; // the user's edit of its role's instructions (Assets/roles), "" = Still's own
+ public bool Greet { get; set; } // new on the team: it starts its first chat itself, once (aiKickoff)
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -298,6 +299,7 @@ public partial class MainWindow
   public readonly HashSet<string> Typed = []; // what it typed into pages: form data, which memory never keeps
  }
  static readonly Dictionary<string, ChatRun> runs = []; // by chat id
+ static readonly HashSet<string> kickoffs = []; // chats a new companion started itself: its first question's answer goes to its memory
  static bool Busy(AiChat? c) => c != null && runs.ContainsKey(c.Id);
  static void StopRun(ChatRun r)
  {
@@ -340,7 +342,7 @@ public partial class MainWindow
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
-  question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page } : null,
+  question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = run?.Approvals.Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until }),
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
@@ -414,6 +416,14 @@ public partial class MainWindow
     if (active?.ChatId != null || B("home")) aiChat = target;
     await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
     break; }
+   case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Greet: true } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0): {
+    // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
+    fresh.Greet = false; SaveLater();
+    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = "Getting started with " + fresh.Name, Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
+    AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
+    await SelectTab(ChatTab(kick.Id));
+    await RunAi(kick, KickoffAsk, "");
+    break; }
    case "aiPickFiles": {
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
     if (picker.ShowDialog(this) == true) Attach(S("to"), picker.FileNames.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
@@ -424,6 +434,7 @@ public partial class MainWindow
     var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
     answering.Question = null;
+    if (kickoffs.Remove(asked.Id) && answer.Length > 0) CompanionMemory.Remember(asked.Companion, $"From our first chat: asked \"{q.Text}\", they said \"{answer}\"", "preference");
     asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
     break; }
@@ -556,6 +567,8 @@ public partial class MainWindow
   """ + PluginInstructions(who) + RoleSetup(who);
 
  /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
+ // A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
+ const string KickoffAsk = "[Still] You just joined the user's team and this is your first chat, so start it yourself now. Never open with a generic \"how can I help\". In two or three short lines, say hi and propose one concrete first task for your role, built on what you know about the user: what you remember, what they told Still in setup, open tabs that aren't private and connected apps. Then call ask_user once with one focused question whose answer changes how you'll do it, and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then start the task. If they skip, start with your best guess and say what you assumed.";
  static string RoleSetup(Companion? who)
  {
   if (who is { Instructions.Length: > 0 }) return "\nYour instructions for your role follow, as the user edited them. Where the user's own instructions above differ, theirs win.\n\n" + who.Instructions.ReplaceLineEndings("\n") + "\n";
@@ -693,6 +706,7 @@ public partial class MainWindow
   if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
+  if (who is { Greet: true }) { who.Greet = false; SaveLater(); } // they spoke first: no kickoff
   var skills = Skill.Invoked(shown);
   if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
   foreach (var k in skills) Step(chat, "Loaded skill " + k.Name);
@@ -781,7 +795,7 @@ public partial class MainWindow
   var name = S("name").Trim();
   var list = Companions.ToList();
   var c = list.FirstOrDefault(x => x.Id == S("id"));
-  if (c == null) list.Add(c = new() { Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
+  if (c == null) list.Add(c = new() { Greet = true, Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
   c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
   if (data.TryGetProperty("look", out _)) c.Look = S("look") is { Length: <= 2000 } lk && lk.StartsWith('{') ? lk : "";
   c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;

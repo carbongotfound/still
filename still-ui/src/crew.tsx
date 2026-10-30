@@ -158,6 +158,23 @@ export function fromShared(text: string): Companion | null {
 export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.name, face: "", color: "", job: p.job, tone: p.tone, mode: "default", look: lookKey(p.look), crew: p.id,
  routines: [{ id: p.id, text: p.routine[0], time: p.routine[1], days: p.routine[2], on: false }] })
 
+// The gesture a companion plays when it joins the team.
+const JOINED_GESTURE = "hired"
+/// A companion just joined: it celebrates, then the user starts its first chat (it opens with a task and one question)
+/// or carries on.
+export function JoinedCard({ companion, onStart, onLater }: { companion: Companion; onStart: () => void; onLater: () => void }) {
+ const look = lookOf(companion), role = premadeOf(companion)
+ return <Dialog open onOpenChange={o => { if (!o) onLater() }}>
+  <DialogContent className="app-dialog crew-dialog joined-card" style={{ "--hue": look.color } as CSSProperties}>
+   <div className="crew-dialog-hero"><Mascot look={look} size={150} follow gesture={JOINED_GESTURE} gestureAt={1} /><span className="joined-badge" aria-hidden><Check /></span></div>
+   <DialogHeader><DialogTitle>{companion.name} joined your team</DialogTitle>
+    <DialogDescription>{role ? `${companion.name} is here for ${role.area.toLowerCase()}, and will open with a first task picked for your work.`
+     : `${companion.name} will open with a first task and one question about how you like things done.`}</DialogDescription></DialogHeader>
+   <div className="joined-actions"><Button variant="ghost" onClick={onLater}>Not now</Button><Button autoFocus onClick={onStart}>Start chatting</Button></div>
+  </DialogContent>
+ </Dialog>
+}
+
 /// One of Still's companions as a card, the same in setup and the library: a tint of its color, its mascot on a soft glow
 /// (it waves when you point at it, and bounces when hired), its name and role, and what to expect. open: the mascot and
 /// name open its details. children: its buttons; below: anything under the list.

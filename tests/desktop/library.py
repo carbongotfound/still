@@ -118,6 +118,7 @@ def main():
         # Add straight from a card.
         click(p, ".library-add", "Add Leo")
         check(until(lambda: mates().get("Leo", {}).get("Crew") == "marketing", 5), "Add on a card hires that companion")
+        check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "It says Leo joined; Not now goes back to the library")
         routines = mates().get("Leo", {}).get("Routines") or []
         check(len(routines) == 1 and routines[0].get("On") is False and routines[0].get("Days") == [5] and "Don't post" in routines[0].get("Text", ""), f"Leo comes with its routine, off until you turn it on ({routines})")
         check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Leo')"), 5), "and its card turns to Added")
@@ -135,6 +136,8 @@ def main():
         capture(p, "library-preview.png")
         click(p, ".profile-foot button", "Add Blossom")
         check(until(lambda: mates().get("Blossom", {}).get("Crew") == "growth", 5), "Add in the preview hires Talia, with your changes")
+        check(until(lambda: shown(p, ".joined-card"), 3) and "Blossom joined your team" in (js(p, "document.querySelector('.joined-card')?.innerText") or ""), "and says Blossom joined")
+        click(p, ".joined-card button", "Not now")
         check(until(lambda: shown(p, ".companion-library") and not shown(p, ".profile-panel"), 5), "and goes back to the library")
         check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Talia')"), 5), "where Talia is Added")
 
@@ -157,6 +160,7 @@ def main():
         share = {"kind": "still.companion", "v": 1, "name": "Pasty", "look": "", "job": "Checks prices.", "tone": "", "mode": "default", "crew": ""}
         paste(p, ".library-paste textarea", json.dumps(share))
         check(until(lambda: mates().get("Pasty", {}).get("Job") == "Checks prices.", 5) and until(lambda: not shown(p, ".companion-library"), 3), "Pasting a shared companion adds them and closes the library")
+        check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "and says Pasty joined")
 
         # Make your own opens the create dialog. The Companions page's button opens the library too.
         open_library(p)
