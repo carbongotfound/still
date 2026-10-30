@@ -1254,6 +1254,13 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .crew-dialog-body p, .crew-dialog-body ul { margin:0; font-size:13.5px; line-height:1.5; } .crew-dialog-body ul { padding-left:18px; list-style:disc; }
 .crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
 .crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
+/* A companion joined: its hero with a check badge, then Not now and Start chatting. */
+.joined-card .crew-dialog-hero { position:relative; }
+.joined-badge { position:absolute; left:calc(50% + 46px); bottom:22px; display:grid; place-items:center; width:30px; height:30px; border-radius:99px; background:var(--primary); color:var(--primary-foreground); box-shadow:0 0 0 3px var(--card); animation:joined-pop .45s .5s cubic-bezier(.34,1.56,.64,1) both; }
+.joined-badge svg { width:16px; height:16px; stroke-width:3; }
+@keyframes joined-pop { from { transform:scale(0); } to { transform:scale(1); } }
+@media (prefers-reduced-motion: reduce) { .joined-badge { animation:none; } }
+.joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button] { border-radius:99px; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
 /* Plugins (Plugins.tsx): name chips, setup's belt and grid, Skills & plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }

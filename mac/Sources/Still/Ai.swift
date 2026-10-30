@@ -14,14 +14,15 @@ final class Companion {
  var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
  var routines: [Routine] = [] // what it does on a schedule (Routines.swift)
  var instructions = "" // the user's edit of its role's instructions (Assets/roles), "" = Still's own
+ var greet = false // new on the team: it starts its first chat itself, once (aiKickoff)
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
-  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions")
+  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions"); greet = d["Greet"] as? Bool ?? false
   routines = (d["Routines"] as? [[String: Any]] ?? []).map(Routine.init)
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions, "Greet": greet] }
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -425,7 +426,7 @@ extension Browser {
   let c = companions.first { $0.id == s("id") } ?? {
    let c = Companion(), nid = s("id") // setup names it first, to start a chat with it
    c.id = (4...24).contains(nid.count) && nid.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } ? nid : String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(10))
-   companions.append(c)
+   c.greet = true; companions.append(c)
    return c
   }()
   c.name = String(name.prefix(24)); c.face = s("face").count <= 20 ? s("face") : ""; c.color = s("color").count <= 20 ? s("color") : ""
@@ -624,6 +625,14 @@ extension Browser {
    if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); break }
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
+  case "aiKickoff": // a new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup
+   guard !incognitoWindow, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else { break }
+   fresh.greet = false; storeCompanions()
+   let kick = AiChat()
+   kick.companion = fresh.id; kick.title = "Getting started with " + fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
+   aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
+   openChatTab(kick.id); v.chat = kick
+   runAi(kick, kickoffAsk, shown: "")
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
     let picker = NSOpenPanel()
@@ -642,6 +651,7 @@ extension Browser {
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))
    answering.question = nil
+   if kickoffs.remove(answering.chat.id) != nil, !answer.isEmpty { CompanionMemory.remember(answering.chat.companion, "From our first chat: asked \"\(q.text)\", they said \"\(answer)\"", "preference") }
    answering.chat.messages.append(answer.isEmpty ? AiMessage("note", "Skipped the question.") : AiMessage("user", answer))
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
@@ -867,6 +877,7 @@ extension Browser {
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
   if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
+  if let who, who.greet { who.greet = false; storeCompanions() } // they spoke first: no kickoff
   var skills = Skill.invoked(shown)
   if !chat.started { skills += Skill.all.filter { k in who?.skills.contains(k.id) == true && !skills.contains { $0.id == k.id } } }
   for k in skills { chatStep(chat, "Loaded skill " + k.name) }
@@ -1018,7 +1029,7 @@ extension Browser {
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
-   "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
+   "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },

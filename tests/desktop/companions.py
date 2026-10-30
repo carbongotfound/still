@@ -99,8 +99,8 @@ def main():
         home(process)
         shown = text(process)
         check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
-              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" in shown
-              and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion, chips and ideas")
+              and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" not in shown
+              and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
         check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
 
         # Create a companion: New companion opens the library, then Make your own.
@@ -118,6 +118,9 @@ def main():
         click_text(process, ".companion-modes button", "Thorough")
         click(process, ".companion-save")
         ines = until(lambda: mates().get("Ines"), 10)
+        check(until(lambda: js(process, "document.querySelector('.joined-card [data-slot=dialog-title]')?.innerText") == "Ines joined your team", 5), "Ines joined: the card says so")
+        click_text(process, ".joined-card button", "Not now")
+        until(lambda: not js(process, "!!document.querySelector('.joined-card')"), 3)
         check(ines and '"color":"#a7b5f0"' in ines["Look"].replace(" ", "") and ines["Mode"] == "expert" and "research" in ines["Job"], "Create a companion: name, job, look and mode are saved")
         check(until(lambda: js(process, "!!document.querySelector('.mate-switch-face[aria-label=Ines]')"), 5), "The new companion is in the switcher")
 

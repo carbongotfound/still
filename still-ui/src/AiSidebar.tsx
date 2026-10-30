@@ -27,7 +27,7 @@ export type AiState = {
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
- question?: { text: string; options: string[]; page?: string | null } | null; companions?: Companion[]
+ question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
  chats: { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
  advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
@@ -317,7 +317,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
 }
 
 // The AI asked something with ask_user: pick an option, write an answer, or skip.
-function QuestionCard({ q, companion, send }: { q: { text: string; options: string[]; page?: string | null }; companion?: Companion; send: Send }) {
+function QuestionCard({ q, companion, send }: { q: { text: string; options: string[]; page?: string | null; kickoff?: boolean }; companion?: Companion; send: Send }) {
  const [own, setOwn] = useState("")
  useEffect(() => { // 1-9 picks an option, unless the user is typing
   const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) send("aiAnswer", { text: q.options[n - 1] }) }
@@ -328,7 +328,7 @@ function QuestionCard({ q, companion, send }: { q: { text: string; options: stri
   <div className="ask-q"><Face companion={companion} size={22} /><p>{q.text}</p></div>
   {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => send("aiAnswer", { text: o })}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
   <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) send("aiAnswer", { text: own }) }}>
-   <input aria-label="Your answer" placeholder="Or write your own answer…" value={own} onChange={e => setOwn(e.target.value)} />
+   <input aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
    <Button type="button" variant="ghost" size="sm" onClick={() => send("aiAnswer", { text: "" })}>Skip</Button>
    <Button type="submit" size="sm" disabled={!own.trim()}>Send</Button>
   </form>
@@ -447,7 +447,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
 
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
   {setup ?? <div className="ai-log" ref={log} onScroll={keepScroll}><div className="chat-column">
-   {!items.length && (mode === "tab" ? <div className="chat-hello">
+   {!items.length && !ai.question && (mode === "tab" ? <div className="chat-hello">
     <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
     <h3>{you ? `Hi ${you}! What are we working on?` : `Hi, I'm ${name}. What are we working on?`}</h3>
     <p>{companion?.job || "Ask me anything, or hand me a task. I work in my own background tabs while you keep browsing."}</p>

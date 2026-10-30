@@ -102,7 +102,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
 /// The AI a companion runs on, for its badge: its own pick, or the one picked for chats.
 const aiOf = (ai: AiState, c: Companion) => ai.harnesses.find(h => h.id === (c.ai || ai.harness))
 
-export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onMake: () => void; onChat: (id: string) => void; onMemory: (id: string) => void }) {
+export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onMake: () => void; onChat: (id: string) => void; onHire: (c: Companion) => void; onMemory: (id: string) => void }) {
  useEffect(() => { // a companion someone shared (ProfilePanel's Share), pasted anywhere on the page
   const paste = (e: ClipboardEvent) => {
    const c = !(e.target as HTMLElement).closest?.("input, textarea") && fromShared(e.clipboardData?.getData("text") ?? "")
@@ -129,7 +129,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onMemory }: {
   </div>
   <h2 className="home-page-sub">Hire for a role</h2>
   <p className="home-page-lead">Each one owns a part of your work and gets sharper as it learns about you. Hire one, then change anything you like.</p>
-  <CrewCards have={ai.companions} onChat={onChat} onOwn={onMake} onPick={p => send("companionSave", fromPremade(p))} />
+  <CrewCards have={ai.companions} onChat={onChat} onOwn={onMake} onPick={p => onHire(fromPremade(p))} />
  </section>
 }
 
