@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react"
-import { ArrowDown, ArrowUp, Braces, Copy, FileText, FolderOpen, Sheet, X } from "lucide-react"
+import { ArrowDown, ArrowUp, Braces, Copy, FileText, FolderOpen, Image as ImageIcon, Sheet, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { Markdown } from "./Markdown"
@@ -12,8 +12,10 @@ type Send = (op: string, payload?: Record<string, unknown>) => void
 export const extOf = (path: string) => path.slice(path.lastIndexOf(".") + 1).toLowerCase()
 export const nameOf = (path: string) => path.slice(path.lastIndexOf("/") + 1)
 const KIND: Record<string, string> = { csv: "Spreadsheet", tsv: "Spreadsheet", md: "Notes", json: "Data", txt: "Text" }
+const IMAGES = ["png", "jpg", "jpeg", "gif", "webp", "bmp", "svg", "avif", "heic"]
+export const sizeText = (b: number) => b < 1024 ? b + " B" : b < 1 << 20 ? (b / 1024).toFixed(b < 10240 ? 1 : 0) + " KB" : (b / 1048576).toFixed(1) + " MB"
 export function FileIcon({ path }: { path: string }) {
- const ext = extOf(path), Icon = ext === "csv" || ext === "tsv" ? Sheet : ext === "json" ? Braces : FileText
+ const ext = extOf(path), Icon = ext === "csv" || ext === "tsv" ? Sheet : ext === "json" ? Braces : IMAGES.includes(ext) ? ImageIcon : FileText
  return <span className="file-icon" data-ext={ext}><Icon aria-hidden /></span>
 }
 

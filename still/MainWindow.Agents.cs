@@ -759,6 +759,7 @@ public partial class MainWindow
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "web_search": return await WebSearch(who, args);
    case "read_url": return await ReadUrl(who, args);
+   case "read_attachment": return ReadAttachment(who, S(args, "id"), (int)Math.Max(0, N(args, "offset", 0)));
    case "open_tab": {
     bool background = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False ? bg.GetBoolean() : runs.ContainsKey(who);
     var tab = await (ChatRunner(who) ?? this).OpenAgentTab(who, WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who)), background); await WaitLoaded(tab);

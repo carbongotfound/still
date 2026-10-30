@@ -2,8 +2,11 @@
 // (ported from MainWindow.Ai.cs). Everything here is used on the main thread only.
 import AppKit
 
+/// A file the user attached to a message: kept in ai/attachments/<id>, read with read_attachment.
+struct AiFile: Codable { var id = "", name = "", size = 0 }
 final class AiMessage: Codable {
  var role = "", text = ""
+ var files: [AiFile]?
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  var who: String?, to: String?, status: String?, reply: String?, chat: String?

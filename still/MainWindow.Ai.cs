@@ -10,6 +10,7 @@ public sealed class AiMessage
 {
  public string Role { get; set; } = "";
  public string Text { get; set; } = "";
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public List<AiFile>? Files { get; set; }
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Who { get; set; }
@@ -18,6 +19,8 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Reply { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Chat { get; set; }
 }
+/// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
+public sealed class AiFile { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public long Size { get; set; } }
 public sealed class AiChat
 {
  public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -147,6 +150,10 @@ public partial class MainWindow
    if (aiChats != null) return aiChats;
    try { aiChats = JsonSerializer.Deserialize<List<AiChat>>(File.ReadAllText(Path.Combine(AiFolder, "chats.json"))); } catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
    aiChats ??= [];
+   // Files attached but never sent go: the message box doesn't keep them across restarts.
+   var sentFiles = aiChats.SelectMany(c => c.Messages).SelectMany(m => m.Files ?? []).Select(f => f.Id).ToHashSet();
+   if (File.Exists(Path.Combine(AiFolder, "chats.json")) || aiChats.Count > 0)
+    try { foreach (var dir in Directory.GetDirectories(AttachmentsFolder)) if (!sentFiles.Contains(Path.GetFileName(dir))) Directory.Delete(dir, true); } catch (IOException) { }
    var teams = aiChats.Where(c => c.Team?.Count > 0).ToList();
    foreach (var c in aiChats.ToList()) {
     if (c.Harness == "codex") c.Harness = "chatgpt"; // its id before adapters
@@ -331,7 +338,7 @@ public partial class MainWindow
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page } : null,
   approvals = run?.Approvals.Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until }),
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
@@ -369,11 +376,13 @@ public partial class MainWindow
    case "aiNew": aiChat = null; aiError = ""; break;
    case "aiOpenChat": aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
    case "aiDeleteChat" when !runs.ContainsKey(S("id")):
+    foreach (var gone in AiChats.Where(c => c.Id == S("id")).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsFolder, gone.Id), true); } catch (IOException) { }
     AiChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId == S("id")).ToList()) await CloseTab(t, true);
     break;
    case "aiDeleteAll" when runs.Count == 0:
     AiChats.Clear(); aiChat = null; SaveAiChats();
+    try { Directory.Delete(AttachmentsFolder, true); } catch (IOException) { }
     foreach (var t in tabs.Where(t => t.ChatId != null).ToList()) await CloseTab(t, true);
     break;
    case "aiStop" when runs.GetValueOrDefault(S("id") is { Length: > 0 } stopId ? stopId : ShownChat?.Id ?? "") is { } stopping:
@@ -396,10 +405,20 @@ public partial class MainWindow
      ? picked.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null).Distinct().Select(id => Windows.SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id && !t.Private && !t.Closed)).OfType<BrowserTab>().Take(8).ToList() : [];
     if (attached.Count > 0) text += "\n\n" + string.Join("\n", attached.Select(t => $"[{t.Title.Replace('[', '(').Replace(']', ')')}]({t.Url})"));
     string asked = attached.Count == 0 ? text : text + $"\n\n[Still] The user attached {(attached.Count == 1 ? "this tab" : "these tabs")}: " + string.Join("; ", attached.Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})")) + ". Read each with read_page before you answer.";
-    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(text); break; }
+    // Files from the box: the message names them, and the AI reads each with read_attachment.
+    var files = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("files", out var fileIds) && fileIds.ValueKind == JsonValueKind.Array
+     ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
+    if (files.Count > 0) asked += FilesNote(files);
+    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(files.Count > 0 ? text + FilesNote(files) : text); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"));
+    await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
     break; }
+   case "aiPickFiles": {
+    var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
+    if (picker.ShowDialog(this) == true) Attach(S("to"), picker.FileNames.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
+    break; }
+   case "aiAttach" when S("data") is { Length: > 0 } dropped: // dropped or pasted in the box
+    Attach(S("to"), [(S("name"), dropped.Length / 4L * 3, () => Convert.FromBase64String(dropped))]); break;
    case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
     var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
@@ -643,11 +662,11 @@ public partial class MainWindow
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null). asker: the teammate
  /// whose message this is, when one companion asks another (Exchange).
- async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null)
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null)
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = text.ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito }; // a private window remembers nothing
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito }; // a private window remembers nothing
    AiChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
   }
@@ -669,7 +688,7 @@ public partial class MainWindow
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
   aiError = chat.Error = ""; chat.Updated = DateTime.UtcNow; chat.Running = true;
-  if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker });
+  if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
   var skills = Skill.Invoked(shown);
@@ -950,6 +969,55 @@ public partial class MainWindow
   if (r.Question == asked) r.Question = null;
   PublishAiEverywhere();
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
+ }
+
+ // Attachments: up to 10 a message, files up to 10 MB and images up to 5 MB (what the AI apps take).
+ const int MaxFiles = 10;
+ const long MaxFile = 10L << 20, MaxImage = 5L << 20;
+ static string AttachmentsFolder => Path.Combine(AiFolder, "attachments");
+ static string? ImageMime(string name) => Path.GetExtension(name).ToLowerInvariant() switch { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp", _ => null };
+ static string SizeText(long b) => b < 1024 ? b + " B" : b < 1L << 20 ? $"{b / 1024.0:0.#} KB" : $"{b / 1048576.0:0.#} MB";
+ static AiFile? Attachment(string id) => Regex.IsMatch(id, "^[a-f0-9]{16}$") && Directory.Exists(Path.Combine(AttachmentsFolder, id))
+  && Directory.GetFiles(Path.Combine(AttachmentsFolder, id)).FirstOrDefault() is { } path ? new() { Id = id, Name = Path.GetFileName(path), Size = new FileInfo(path).Length } : null;
+ static string FilesNote(List<AiFile> files) => $"\n\n[Still] The user attached {(files.Count == 1 ? "a file" : files.Count + " files")}: "
+  + string.Join("; ", files.Select(f => $"\"{f.Name}\" ({SizeText(f.Size)}, id {f.Id})")) + ". Read each with read_attachment before you answer.";
+
+ /// Keeps what was picked, dropped or pasted, and tells the box (to) what it got; anything too big is named in the error.
+ void Attach(string to, IEnumerable<(string Name, long Size, Func<byte[]> Bytes)> picked)
+ {
+  List<AiFile> files = []; List<string> errors = [];
+  foreach (var (raw, size, bytes) in picked)
+  {
+   string name = string.Concat(Path.GetFileName(raw).Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim() is { Length: > 0 } n ? n[..Math.Min(n.Length, 120)] : "file";
+   long max = ImageMime(name) != null ? MaxImage : MaxFile;
+   if (size > max) { errors.Add($"{name} is {SizeText(size)}. {(max == MaxImage ? "Images" : "Files")} can be up to {max >> 20} MB."); continue; }
+   string id = Guid.NewGuid().ToString("N")[..16], folder = Path.Combine(AttachmentsFolder, id);
+   try { var data = bytes(); if (data.Length > max) throw new IOException(); Directory.CreateDirectory(folder); File.WriteAllBytes(Path.Combine(folder, name), data); files.Add(new() { Id = id, Name = name, Size = data.Length }); }
+   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException) { errors.Add($"Couldn't add {name}."); }
+  }
+  ShellSend(new { kind = "attached", to, files = files.Select(f => new { id = f.Id, name = f.Name, size = f.Size }), error = string.Join(" ", errors) });
+ }
+
+ /// read_attachment: text and code as text, a PDF's text, an image as itself.
+ string ReadAttachment(string who, string id, int offset)
+ {
+  if (Attachment(id) is not { } file) return Fail("No attachment has that id. Use the id from the [Still] note in the user's message.");
+  string path = Path.Combine(AttachmentsFolder, id, file.Name);
+  Did(who, "Read " + file.Name);
+  if (ImageMime(file.Name) is { } mime) return Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
+  string text;
+  if (Path.GetExtension(file.Name).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+   try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(path); text = string.Join("\n\n", pdf.GetPages().Select(p => UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(p))); }
+   catch (Exception ex) when (ex is not OutOfMemoryException) { return Fail($"Couldn't read {file.Name} as a PDF. Ask the user for another copy."); }
+  else
+  {
+   var bytes = File.ReadAllBytes(path);
+   if (bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).Contains((byte)0)) return Fail($"{file.Name} isn't text, a PDF or an image Still can show you. Tell the user what you can read.");
+   text = Encoding.UTF8.GetString(bytes);
+  }
+  if (text.Trim().Length == 0) return Reply(new { name = file.Name, text = "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)" });
+  int at = Math.Min(offset, text.Length), end = Math.Min(text.Length, at + 20000);
+  return Reply(new { name = file.Name, text = text[at..end], offset = at, next = end < text.Length ? end : (int?)null, length = text.Length });
  }
 
  /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.

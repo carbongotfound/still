@@ -435,6 +435,7 @@ export default function App() {
    if (data.kind === "state") setState(data)
    if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted?.length ?? 0) }
    if (data.kind === "file") setFileData(data.data)
+   if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") setSettingsPage(data.value || "general") } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
@@ -701,7 +702,7 @@ export default function App() {
            <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>
            <div className="home-compose"><Composer draft={"tab." + state.activeId} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
-            onSubmit={(text, tabs) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }) }) }} /></div>
+            onSubmit={(text, tabs, files) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills & plugins</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
