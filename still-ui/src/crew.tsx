@@ -133,9 +133,12 @@ export const TASKS: [string, string, string][] = [
 ]
 /// Starters for an empty chat or a first task: what the user's work is about first (set up by setup's interview or
 /// picked by hand, matched loosely), then the companion's own, then the rest.
-export function starters(interests: string[] = [], companion?: { crew?: string }, count = 4): [string, string][] {
+export const tasksFor = (interests: string[] = []) => {
  const into = interests.map(i => i.toLowerCase())
- const mine = TASKS.filter(t => t[0] && into.some(i => t[0].toLowerCase().includes(i) || i.includes(t[0].toLowerCase().split(" ")[0])))
+ return TASKS.filter(t => t[0] && into.some(i => t[0].toLowerCase().includes(i) || i.includes(t[0].toLowerCase().split(" ")[0])))
+}
+export function starters(interests: string[] = [], companion?: { crew?: string }, count = 4): [string, string][] {
+ const mine = tasksFor(interests)
  const own = premadeOf(companion)?.asks ?? []
  const all: [string, string][] = [...mine.map(t => [t[1], t[2]] as [string, string]), ...own, ...TASKS.filter(t => !mine.includes(t)).map(t => [t[1], t[2]] as [string, string])]
  return all.filter((t, i) => all.findIndex(x => x[0] === t[0]) === i).slice(0, count)

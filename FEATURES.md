@@ -22,6 +22,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Address bar**: search or URL; local history/bookmark suggestions, learned typed→picked ranking (`suggestions.ts`, `AddressPick`); never fetches icons or sends keystrokes.
 - ✅ **Search engine**: Google, Bing or DuckDuckGo (Preferences `SearchEngine`).
 - ✅ **New tab page**: the companion home (chats, ideas) or "sites" (speed dial, suggested sites, open tabs); Preferences `NewTab`.
+- ✅ **Try one of these**: up to three concrete one-click tasks under the home's message box, each with a one-line why, strongest first: a project the companion remembers ("From Maya's memory"), a connected app it works in ("Gmail is connected"), a real open tab (never a private, loading, chat or non-web one), then its role's tasks that match the work the user picked in setup, then its role's own. They follow the context as it changes; with nothing to go on there are no cards at all (`homeIdeas` in suggestions.ts; still-ui/tests/suggestions.test.ts, tests/desktop/ideas.py)
 - ✅ **Bookmarks**: Ctrl+D, bookmarks bar, edit/move/remove, import/export HTML (`MainWindow.Panels.cs`).
 - ✅ **History**: searchable panel, remove entries, clear all (`MainWindow.Panels.cs`).
 - ✅ **Downloads**: card on start, progress ring, open/show/cancel, choose folder (`MainWindow.xaml.cs`, Preferences `DownloadFolder`).
