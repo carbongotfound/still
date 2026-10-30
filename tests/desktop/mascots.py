@@ -2,7 +2,7 @@
   --gifs       one GIF per animation of the default look, posed frame by frame (docs/agentic/mascot/*.gif)
   --fallbacks  the default look's pictures drawn ahead, 3D and 2D (still-ui/src/assets/companion; rebuild the shell afterwards)
   --screens    the companions where people meet them, at the brief's sizes
-Also: the Blender companions hold no prop, a companion saved holding its
+Also: the Blender companions hold no prop and each has its "yes!" clip (glb and strip), a companion saved holding its
 role's old prop keeps its rig, and Make your own's props never go into the body or a nub.
 
 Run: python tests/desktop/mascots.py artifacts/Still-QA/Still.exe [--gifs] [--fallbacks] [--screens]
@@ -144,12 +144,16 @@ def glb(path):
 
 
 def art():
-    """Every Blender companion: no prop in its model."""
+    """Every Blender companion: no prop in its model, and a 1-1.5 s "yes!" clip in its glb and as a chat-size strip."""
     assets = ROOT / "still-ui" / "src" / "assets"
     for _, app in RIGS:
         g = glb(assets / "rig" / f"{app}.glb")
         held = [n["name"] for n in g["nodes"] if n.get("name", "").startswith("prop")]
-        check(not held, f"{app}: holds nothing")
+        clips = {a["name"]: max(g["accessors"][x["input"]]["max"][0] for x in a["samplers"]) for a in g["animations"]}
+        yes = clips.get("yes", 0)
+        strip = json.loads((assets / "sprite" / app / f"{app}.json").read_text()).get("yes")
+        check(not held and 1 <= yes <= 1.5 and strip and (assets / "sprite" / app / f"{app}-yes.webp").exists(),
+              f"{app}: holds nothing; a {yes:.2f} s yes clip and its {strip and strip['frames']}-frame strip")
 
 
 def looks():

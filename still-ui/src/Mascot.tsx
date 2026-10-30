@@ -1,4 +1,4 @@
-import { useEffect, useId, useRef, useSyncExternalStore, type CSSProperties } from "react"
+import { useEffect, useId, useRef, useState, useSyncExternalStore, type CSSProperties } from "react"
 import { cn } from "@/lib/utils"
 import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, RIGS, ROLE_LOOKS, lookKey, type Look } from "./look"
 
@@ -39,8 +39,9 @@ const useReduced = () => useSyncExternalStore(l => { reduce.addEventListener("ch
 type Engine = typeof import("./companion3d")
 let engine: Engine | null = null, loading: Promise<Engine | null> | null = null
 export const engineReady = () => !!engine
-/// Gestures a companion plays by name (the gesture prop), besides the states. pitch is "pick me", hired a happy bounce.
-export const GESTURES = ["idle", "happy", "thinking", "working", "pointing", "needs-you", "done", "sad", "talking", "wave", "admire", "pop", "wake", "drop", "pitch", "hired"] as const
+/// Gestures a companion plays by name (the gesture prop), besides the states. pitch is "pick me", hired a happy bounce,
+/// yes a short "yes!" (each Blender companion's own clip, at chat sizes its strip; any other look the hired bounce).
+export const GESTURES = ["idle", "happy", "thinking", "working", "pointing", "needs-you", "done", "sad", "talking", "wave", "admire", "pop", "wake", "drop", "pitch", "hired", "yes"] as const
 export function loadEngine() {
  return loading ??= import("./companion3d").then(async m => { await m.load(); m.start(); engine = m; m.onRigReady(() => { changed(); drain() }); changed(); drain(); return m })
   .catch(e => { console.error("The companion couldn't load", e); return null })
@@ -98,9 +99,9 @@ const strips = import.meta.glob("./assets/sprite/*/*.webp", { eager: true, query
 const sheets = import.meta.glob("./assets/sprite/*/*.json", { eager: true, import: "default" }) as Record<string, Record<string, { frames: number; fps: number; rows?: number }>>
 const RIG = new Map(RIGS.map(([l, f]) => [lookKey(l), f]))
 const STRIP: Partial<Record<MascotState, string>> = { working: "working", thinking: "thinking", done: "nod", error: "shrug", needs: "wave" } // the rest idle
-function strip(look: Look, state: MascotState) {
- const id = RIG.get(lookKey(look)), clip = STRIP[state] ?? "idle_a", url = strips[`./assets/sprite/${id}/${id}-${clip}.webp`], info = sheets[`./assets/sprite/${id}/${id}.json`]?.[clip]
- return url && info ? { url, ...info, once: state === "done" || state === "error" } : undefined // a nod or a shrug plays once and holds
+function strip(look: Look, state: MascotState, gesture = "") {
+ const id = RIG.get(lookKey(look)), clip = gesture === "yes" ? "yes" : STRIP[state] ?? "idle_a", url = strips[`./assets/sprite/${id}/${id}-${clip}.webp`], info = sheets[`./assets/sprite/${id}/${id}.json`]?.[clip]
+ return url && info ? { url, clip, ...info, once: clip === "yes" || state === "done" || state === "error" } : undefined // a nod or a shrug plays once and holds
 }
 
 // ---------------------------------------------------------------- the component
@@ -113,7 +114,8 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  useVersion()
  const reduced = useReduced()
  const flat = size <= FLAT
- const avatar = flat ? AVATAR.get(lookKey(look)) : undefined, sprite = avatar && strip(look, state)
+ const [played, setPlayed] = useState(0) // the gestureAt whose "yes" strip has played: then back to the state's
+ const avatar = flat ? AVATAR.get(lookKey(look)) : undefined, sprite = avatar && strip(look, state, gestureAt !== played ? gesture : "")
  const live = webgl && !reduced && (!flat || !!gesture) && !avatar
  const frame: Frame = "full" // the whole body at every size, never a crop
  const px = Math.min(768, Math.round(size * Math.min(devicePixelRatio || 1, 2)))
@@ -128,7 +130,7 @@ export function Mascot({ look, state = "idle", size, follow = false, gesture = "
  }, [live, id]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { const s = slots.get(id); if (s) Object.assign(s, { look, state, follow, gesture, gestureAt, frame }) }, [id, look, state, follow, gesture, gestureAt, frame])
  return <span className={cn("mascot", avatar && "is-avatar", flat && "is-flat", className)} data-state={state} data-rig={RIG.get(lookKey(look))} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
-  {sprite ? <span key={sprite.url} className={cn("mascot-sprite", sprite.once && "is-once", sprite.rows && "is-rows")} style={{ backgroundImage: `url(${sprite.url})`, "--n": sprite.frames, "--d": `${sprite.frames / sprite.fps}s`, "--r": sprite.rows, "--c": sprite.rows && sprite.frames / sprite.rows } as CSSProperties} />
+  {sprite ? <span key={sprite.url + (sprite.clip === "yes" ? gestureAt : "")} onAnimationEnd={sprite.clip === "yes" ? () => setPlayed(gestureAt) : undefined} className={cn("mascot-sprite", sprite.once && "is-once", sprite.rows && "is-rows")} style={{ backgroundImage: `url(${sprite.url})`, "--n": sprite.frames, "--d": `${sprite.frames / sprite.fps}s`, "--r": sprite.rows, "--c": sprite.rows && sprite.frames / sprite.rows } as CSSProperties} />
    : avatar && <img src={avatar[0]} srcSet={`${avatar[0]} 96w, ${avatar[1]} 144w`} sizes={`${size}px`} alt="" draggable={false} />}
   {picture && <img src={picture} alt="" draggable={false} />}
   {live && <canvas ref={ref} width={px} height={px} />}
