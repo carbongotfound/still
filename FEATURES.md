@@ -1,6 +1,6 @@
 # Still: feature map
 
-Everything Still has today, read from the code. ✅ shipped (on `team`, built and installed locally; the last public release is v1.6.34, so not all of it is public yet) · 🚧 in progress (branch named) · 🧪 experimental.
+Everything Still has today, read from the code. ✅ shipped in 2.0.0 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
 Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React interface both hosts load, `mac/Sources/Still/` = Mac host (AppKit, WebKit).
 
 **Rule:** any commit that adds, changes or removes a feature updates this file in the same commit.
@@ -153,7 +153,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Still pictures**: small idle companions are cached renders in localStorage; WebGL off or reduced motion → stills only.
 - ✅ **Chat avatars in 2D**: at 48px and under (chat turns, mentions, handoff cards, tabs, the switcher, headers, menus) every companion is 2D, whole body, never a head crop: the same Blender model drawn flat, each part in its own color with a two-tone shade, white eyes with dark pupils and a catchlight, and a dark outline (96/144px avatars in `assets/avatar`, `rig/anim.py` mode `flat`). Rigged companions there play 96px 2D strips of their own clips by CSS steps: idle, working, thinking, a nod when done, a shrug on an error, a wave when they need you; reduced motion holds the first frame (`assets/sprite`). Any other look, Make your own in its own color included, is drawn flat from its 3D model in the browser: toon shading and an outline in its color (`companion3d.ts` `picture(…, flat)`). Bigger places (the library, the hire moment, the profile, home) stay live 3D (`Mascot.tsx` `FLAT`).
 - ✅ **Readable faces**: every rig's face is bigger (eyes up to 22% larger by character; Leo's already fills his), with white sclera and dark pupils, with thicker dark brows and each part its own color: light mittens, deeper feet, Leo's antennae their own orange. A blink's lids cover the eye to the corners, a low brow rides clear of its lid, and an arm's shape fixes are made on the upright body, so a companion that stands tipped no longer tears at the shoulder when its arm lifts (Maya's thinking) (`rig/zfix.py`, `rig/zdef.py`, `rig/cdef.py`, `rig/build.py`). Make your own's lids take its color with the body (`rig.ts`).
-- ✅ **Companion sizes**: a chat turn's companion is 40px (2D); the Companions page's is 112px, live 3D, whole in a 128px rounded tile with room round it. Home is a space: the companion you work with live, its body about 40% of the view's height, and up to four teammates behind it as still pictures; one click works with that teammate (`Buddy.tsx` `Space`, `App.css`).
+- ✅ **Companion sizes**: a chat turn's companion is 40px (2D); the Companions page's is 112px, live 3D, whole in a 128px rounded tile with room round it. Home is a space: the companion you work with live, its body about a fifth of the view's height (120 to 192px), and up to four teammates behind it as still pictures; one click works with that teammate (`Buddy.tsx` `Space`, `App.css`).
 - ✅ **"Yes!" gesture**: every Blender companion has a `yes` clip at its own tempo (1.2–1.4 s: a crouch, then up with a little hop, the right mitten pumped high and a grin) in its glb and as a 2D strip; `gesture="yes"` with a new `gestureAt` plays it once (the strip at chat sizes, then back to its state's), and any other look does the hired bounce (`Mascot.tsx`, `companion3d.ts`, `rig/anim.py`).
 - ✅ **Whole-body framing**: every 3D companion is framed from its own bounds swept over every state and gesture (rigs carry theirs in the file), centered with 12% clear and grown for the camera's perspective on deep bodies, at every size; the head and bust crops are gone except the look editor's extras grid (`companion3d.ts` `fit`).
 - ✅ **Look editor**: color, body shape, a prop and a small extra (glasses, bow, sprout, flower), live 3D preview (`LookEditor.tsx`, `look.ts`).
@@ -206,7 +206,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Chat titles**: Settings → Models picks what names a new chat from its first message: the quickest model of the chat's AI (default), any model of the installed AIs grouped by AI, or Off (use first message). One short run in the background; quotes, "Title:" and a full stop are dropped; private windows keep the first message. Test builds only name by default with `STILL_QA_TITLES` (`NameChat`, `Ai.swift` `nameChat`, Preferences `ChatTitles`; tests/desktop/settings.py). Mac typechecked only
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
-- ✅ **About**: version, release notes, check for updates, replay the intro.
+- ✅ **About**: version (2.0.0, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
 - ✅ **Address-bar notice**: a notice ends when the page or tab changes.
 
 ## Updates and install
@@ -230,6 +230,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - 🧪 **QA hooks**: test-only automation compiled in only with `StillQa=true` (`STILL_QA`), never in releases (`MainWindow.Qa.cs`, `Qa.swift`).
 - ✅ **Desktop tests**: Python suites per area run against real windows on Windows and Mac (`tests/desktop/*.py`, `mac/test.sh`).
 - ✅ **Avatar edge check**: every look at 16 to 260px, through every frame of every state and gesture, fails if a drawn pixel touches its box (except the drop's fall from above); plus the avatar files' margins and outline, and that 48px and under is 2D, bigger live 3D; every Blender clip swept at 112px (`tests/desktop/avatars.py`).
+- ✅ **Contributor docs**: CONTRIBUTING.md (setup on Windows and macOS, run, test, build, layout, style, PRs, adding a companion, skill or plugin), CODE_OF_CONDUCT.md (Contributor Covenant 2.1), bug and feature issue forms and a PR checklist (`.github/`).
 - ✅ **Unit checks**: CRX signature and ID verification, unsafe URL and argument rejection (`tests/Still.PerformanceChecks`); speed and RAM in `tests/desktop/performance.py`.
 
 ## Known gaps
@@ -249,5 +250,4 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Plugins need a Composio project API key (ak_); For You's Connect key (ck_) and its MCP endpoint aren't supported. Plugins are tested against a stand-in shaped like Composio's v3.1 API, not live Composio; the Mac is typechecked, not run.
 - An app whose Composio account expires drops out of Connected instead of showing Needs sign-in: Still only lists ACTIVE accounts.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
-- Local `main`'s 14 older commits are merged into `team` and kept in its history; their changes were already there in newer form, so `team`'s versions won.
 - Dropped: the Chromium port (`chromium`), the animal mascots (`characters-app`) and the first three.js blob pass (`blobs`, replaced by the rigged companions), all unmerged.

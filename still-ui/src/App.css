@@ -463,6 +463,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-send.is-stop[data-slot], .ai-send.is-stop[data-slot]:hover { background:#e5484d; }
 .composer-gap { flex:1; }
 /* Attachments: a file chip shows its kind, name and size; dragging files over the box lights it up. */
+.file-chip .file-icon { width:16px; height:18px; border-radius:4px; background:none; } .file-chip .file-icon svg { width:14px; height:14px; }
 .file-chip > span { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .file-chip small { color:var(--muted-foreground); font-size:11px; }
 .msg-files { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; } .msg-files .skill-chip { background:color-mix(in oklab,var(--foreground) 8%,transparent); }
 .composer { position:relative; } .composer.is-drop { outline:2px dashed color-mix(in oklab,var(--hue,#5c7a76) 70%,var(--foreground)); outline-offset:2px; }

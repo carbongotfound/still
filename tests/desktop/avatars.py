@@ -157,7 +157,7 @@ BODY = """(sel, box) => [...document.querySelectorAll(sel)].map(m => { const c =
 
 def places():
     """Where people meet them, at the brief's sizes: a chat turn's companion at least 40px; the Companions page's, in its
-    card's corner, at least 96px, whole (nothing clips it) with room round it; home's space with the companion at 35-45%
+    card's corner, at least 96px, whole (nothing clips it) with room round it; home's space with the companion at 15-25%
     of the view's height and the rest of the team behind it."""
     profile = ROOT / "artifacts" / ("avatars-" + uuid.uuid4().hex[:8]) / "profile"
     (profile / "ai").mkdir(parents=True)
@@ -177,7 +177,7 @@ def places():
         time.sleep(1.5)
         view, me = js(p, "document.querySelector('.home-main').clientHeight"), body(".home-face .mascot")
         team = js(p, "document.querySelectorAll('.space-mate').length")
-        check(me and .35 <= me[0].get("body", 0) / view <= .45 and team == len(crew) - 1,
+        check(me and .15 <= me[0].get("body", 0) / view <= .25 and team == len(crew) - 1,
               f"Home's space: the companion is {me and me[0].get('body', 0) / view:.0%} of the view's height, {team} teammates behind")
         js(p, "[...document.querySelectorAll('.home-chips button')].find(b => b.innerText.includes('Companions'))?.click()")
         until(lambda: js(p, "document.querySelectorAll('.mate-portrait canvas[data-live]').length") == len(crew), 20)
