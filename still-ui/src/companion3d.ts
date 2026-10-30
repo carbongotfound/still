@@ -790,18 +790,46 @@ export const stop = () => cancelAnimationFrame(raf)
 // Where each state's picture is taken, in seconds into its loop.
 const STILL_AT: Partial<Record<MascotState, number>> = { idle: .3, working: .3, needs: .55, done: .3, error: .5, thinking: .5, talking: .2, pointing: .3 }
 /// A still picture of a look, for small places and for reduced motion.
-export function picture(look: Look, state: MascotState, px: number, frame: Frame) {
+export function picture(look: Look, state: MascotState, px: number, frame: Frame, flat = false) {
  start()
  const c = make(look)
  if (!c) return null // its model is loading (onRigReady)
  c.state = state; c.live = false
  c.update(0, STILL_AT[state] ?? .3, null)
+ const made = flat ? flatten(c) : []
  instances.set("__picture", c)
  draw(c, px, frame)
- const out = document.createElement("canvas"); out.width = out.height = px
+ let out = document.createElement("canvas"); out.width = out.height = px
  out.getContext("2d")!.drawImage(renderer.domElement, 0, 0, px, px, 0, 0, px, px)
- scene.remove(c.group); instances.delete("__picture"); c.dispose()
+ if (flat) out = outline(out, look.color)
+ scene.remove(c.group); instances.delete("__picture"); c.dispose(); made.forEach(m => m.dispose())
  return out.toDataURL("image/webp", .9)
+}
+
+// 2D, for chat sizes (Mascot.tsx): every part in its own color in two flat tones, the same face, a bold outline. The
+// Blender companions ship theirs (rig/anim.py "flat"); any other look is drawn so from its model.
+const TONES = (() => { const t = new THREE.DataTexture(new Uint8Array([200, 255]), 2, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t })()
+function flatten(c: Body) {
+ const made: THREE.Material[] = []
+ if (c.shadow) c.shadow.visible = false
+ c.group.traverse(o => {
+  const mesh = o as THREE.Mesh, m = mesh.material as THREE.MeshStandardMaterial
+  if (!mesh.isMesh || !m?.isMeshStandardMaterial || m.blending !== THREE.NormalBlending) return // the eye shine stays
+  // toon takes no environment light: its own color, glowing about half, stands in for it so the body keeps its color
+  const t = new THREE.MeshToonMaterial({ color: m.color, emissive: m.color, emissiveIntensity: .5, map: m.map, vertexColors: m.vertexColors, gradientMap: TONES, side: m.side, transparent: m.transparent, opacity: m.opacity })
+  mesh.material = t; made.push(t)
+ })
+ return made
+}
+/// The picture with a dark line in the look's own color round its silhouette, about 2.5% of its width.
+function outline(src: HTMLCanvasElement, color: string) {
+ const px = src.width, r = Math.max(1, px * .025), out = document.createElement("canvas"), sil = document.createElement("canvas")
+ out.width = out.height = sil.width = sil.height = px
+ const s = sil.getContext("2d")!, g = out.getContext("2d")!
+ s.drawImage(src, 0, 0); s.globalCompositeOperation = "source-in"; s.fillStyle = `#${new THREE.Color(color).multiplyScalar(.1).getHexString()}`; s.fillRect(0, 0, px, px)
+ for (let i = 0; i < 16; i++) g.drawImage(sil, Math.cos(i / 16 * TAU) * r, Math.sin(i / 16 * TAU) * r)
+ g.drawImage(src, 0, 0)
+ return out
 }
 
 /// A gesture (or a state's loop) as frames, for reels and review: PNG data URLs at fps for the given seconds.

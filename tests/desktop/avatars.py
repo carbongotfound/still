@@ -1,17 +1,20 @@
 """Nothing of a companion may touch the edge of its box: every look at chat, header, pill, tab and picker sizes, still and
 through every frame of every move, on a flat background. A non-background pixel on a box's outer pixel ring fails it.
-Also checks the Blender avatar files (still-ui/src/assets/avatar): nothing on their outer pixel ring, and the visible body
-(alpha 8 and up) at least 10% from every side.
+Also checks the Blender avatar files (still-ui/src/assets/avatar): nothing on their outer pixel ring, the visible body
+(alpha 8 and up) at least 10% from every side, and that they're the 2D ones (a dark outline round the body); and that
+chat sizes (48px and under) are 2D, bigger ones live 3D. And the
+Blender companions' every clip, ten frames a second, at the Companions page's corner size.
 
 Run: python tests/desktop/avatars.py artifacts/Still-QA/Still.exe
 """
 import json
 from pathlib import Path
+import struct
 import sys
 import time
 import uuid
 
-from PIL import Image
+from PIL import Image, ImageChops, ImageFilter, ImageStat
 
 sys.path.insert(0, str(Path(__file__).parent))
 from qa import ROOT, js, launch, rpc, until  # noqa: E402
@@ -25,8 +28,8 @@ LOOKS = [{"color": "#f7a26a", "shape": "tall", "prop": "chart"}, {"color": "#f2a
          {"color": "#c0a3ec", "shape": "lean", "prop": "magnifier"}, {"color": "#ddd4c6", "shape": "bean", "prop": ""},
          {"color": "#e6896b", "shape": "bean", "prop": ""}, {"color": "#10a37f", "shape": "round", "prop": ""},
          {"color": "#2b2b2b", "shape": "block", "prop": ""}, {"color": "#d7a8ff", "shape": "gumdrop", "prop": "", "accessory": "bow"}]
-SMALL = (16, 20, 24, 30, 32)  # screenshots stay in the top 100px; tabs, menus, the header, chat turns, the working pill
-BIG = (56, 120, 168)          # the picker and the home
+SMALL = (16, 20, 24, 30, 32, 40, 48)  # 2D (Mascot.tsx FLAT): tabs, menus, the header, chat turns, the working pill
+BIG = (56, 112, 260)          # the picker, the Companions page's corner, card art (every Blender clip at 112)
 STATES = ("idle", "listening", "thinking", "working", "needs", "done", "error", "talking", "pointing")  # Mascot.tsx STATES
 RESULT = []
 
@@ -34,6 +37,12 @@ RESULT = []
 def check(ok, name):
     RESULT.append(bool(ok))
     print(("PASS " if ok else "FAIL ") + name, flush=True)
+
+
+def rim(im):
+    """How light the body's outermost pixels are (median, 0-1): a 2D one's are its dark outline."""
+    m = im.getchannel("A").point(lambda v: 255 if v >= 128 else 0)
+    return ImageStat.Stat(im.convert("L"), ImageChops.subtract(m, m.filter(ImageFilter.MinFilter(3)))).median[0] / 255
 
 
 def files():
@@ -44,15 +53,20 @@ def files():
         edge = min(any_[0], any_[1], a.width - any_[2], a.height - any_[3])
         clear = min(body[0], body[1], a.width - body[2], a.height - body[3]) / a.width
         check(edge > 0 and clear >= .1, f"{png.name}: {clear:.1%} clear around the body, nearest drawn pixel {edge}px from the edge")
+        check(rim(Image.open(png).convert("RGBA")) < .35, f"{png.name}: 2D, outlined")
     for strip in sorted((ROOT / "still-ui" / "src" / "assets" / "sprite").glob("*/*.webp")):  # every frame of the rigs' strips
         a = Image.open(strip).getchannel("A")
-        n, worst, edge = a.width // a.height, 1.0, a.height
+        rows = json.loads((strip.parent / (strip.parent.name + ".json")).read_text())[strip.stem.split("-", 1)[1]].get("rows", 1)
+        px = a.height // rows  # a long clip goes on more rows (rig/sprites.py)
+        n, worst, edge = a.width // px * rows, 1.0, px
         for i in range(n):
-            f = a.crop((i * a.height, 0, (i + 1) * a.height, a.height))
+            x, y = i % (a.width // px) * px, i // (a.width // px) * px
+            f = a.crop((x, y, x + px, y + px))
             any_, body = f.point(lambda v: 255 if v > 0 else 0).getbbox(), f.point(lambda v: 255 if v >= 8 else 0).getbbox()
             edge = min(edge, any_[0], any_[1], f.width - any_[2], f.height - any_[3])
             worst = min(worst, min(body[0], body[1], f.width - body[2], f.height - body[3]) / f.width)
         check(edge > 0 and worst >= .1, f"{strip.name}: {n} frames, at least {worst:.1%} clear around the body, nearest drawn pixel {edge}px from the edge")
+        check(rim(Image.open(strip).convert("RGBA")) < .35, f"{strip.name}: 2D, outlined")
 
 
 CANVAS_RING = """JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map((m, i) => {
@@ -83,19 +97,35 @@ def touching(process, profile, n, live=False):
 
 def reel(process, size, state="idle", gesture=""):
     js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: %s }))" % json.dumps({"state": state, "gesture": gesture, "size": size, "looks": LOOKS}))
+    js(process, "chrome.webview.postMessage({ op: 'bounds', x: 0, y: 0, width: 1, height: 1, viewportWidth: innerWidth })")  # the page's view out of the way
     js(process, "(() => { const r = document.querySelector('.mascot-reel'), c = 'rgb%s'; document.documentElement.style.background = document.body.style.background = c; Object.assign(r.style, { display: 'flex', flexWrap: 'wrap', gap: '24px', padding: '24px', background: c }) })()" % (PAPER,))
 
 
-def frames(process, profile, size, live):
-    """Every look in every state and gesture at one size; live ones are posed through each move by the frozen clock."""
+def rig_clips():
+    """The Blender companions' own clips (every rig ships the same set), name: seconds, from a glb's animations."""
+    b = (ROOT / "still-ui" / "src" / "assets" / "rig" / "jonah.glb").read_bytes()
+    g = json.loads(b[20:20 + struct.unpack_from("<I", b, 12)[0]])
+    return {a["name"]: max(g["accessors"][s["input"]]["max"][0] for s in a["samplers"]) for a in g["animations"]}
+
+
+def frames(process, profile, size, live, rig=False):
+    """Every look in every state and gesture at one size; live ones are posed through each move by the frozen clock.
+    rig: every Blender clip too, played by name (a look without it stays idle), ten frames a second."""
     clips = json.loads(js(process, "JSON.stringify(window.__clips)"))
-    moves = [(s, "") for s in STATES] + ([("idle", g) for g in clips] if live else [])
+    own = {n: d for n, d in rig_clips().items() if rig and not n.startswith("pose.") and n not in ("idle_a", "thinking", "working", "drop_in")}
+    reel(process, size)
+    flat = lambda: json.loads(js(process, "JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map(m => [m.classList.contains('is-flat'), !!m.querySelector('canvas[data-live]')]))"))
+    if live:
+        until(lambda: all(c for _, c in flat()), 30)
+    k = flat()
+    check(len(k) == len(LOOKS) and all(f != live and c == live for f, c in k), f"{size}px: every look {'live 3D' if live else '2D, not live'}")
+    moves = [(s, "") for s in STATES] + ([("idle", g) for g in clips] if live else []) + [("idle", n) for n in own]
     for state, gesture in moves:
         reel(process, size, state, gesture)
         time.sleep(.8)
         if live:
             seconds = clips.get(gesture, 4)  # a gesture plays once; the loops are four seconds
-            times = [round(seconds * i / 12, 3) for i in range(13)]
+            times = [round(seconds * i / 12, 3) for i in range(13)] if gesture not in own else [i / 10 for i in range(int(own[gesture] * 10) + 1)]
             if gesture == "drop":  # it falls in from above the frame on purpose (companion3d.ts); every companion lands by .55 s
                 times = [t for t in times if t >= .6]
         else:
@@ -130,7 +160,7 @@ try:
     for size in SMALL:
         frames(process, profile, size, live=False)
     for size in BIG:
-        frames(process, profile, size, live=True)
+        frames(process, profile, size, live=True, rig=size == 112)
 finally:
     rpc(process, "quit")
     process.wait(timeout=20)
