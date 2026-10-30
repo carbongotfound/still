@@ -125,7 +125,7 @@ def main():
         # A card opens the preview: the profile panel, before anything is saved.
         click(p, ".library-card .role-head", "Meet Talia")
         check(until(lambda: shown(p, ".profile-panel.is-preview[aria-label='Meet Talia']"), 5) and not shown(p, ".companion-library"), "A card opens Talia's preview in the profile panel")
-        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills Routines Model", "The preview has the tabs that make sense before hiring")
+        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Model", "The preview has the tabs that make sense before hiring")
         check(until(lambda: shown(p, ".profile-panel .profile-stage .mascot"), 5) and js(p, "document.querySelectorAll('.profile-will li').length") == 3, "It shows the live mascot and what Talia does")
         check("Talia" not in mates(), "Nothing is saved while you look")
         js(p, """(() => { const e = document.querySelector('.profile-field input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, 'Blossom'); e.dispatchEvent(new Event('input', { bubbles: true })) })()""")
