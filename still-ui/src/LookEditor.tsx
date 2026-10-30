@@ -1,5 +1,5 @@
 import { useState, type CSSProperties, type ReactNode } from "react"
-import { Dices } from "lucide-react"
+import { Ban, Dices } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
@@ -8,6 +8,8 @@ import { ACCESSORIES, BODY_COLORS, PROPS, SHAPES, lookKey, surprise, type Look }
 import { Mascot, pictureOf, useMascotVersion, type Frame } from "./Mascot"
 
 // Customize: a big live preview that reacts to each change, and the blob's color, shape, prop and a small extra in tabs.
+// The props are shown as themselves, big, as Blender drew them (rig/props.py).
+const PROP_ART = import.meta.glob("./assets/prop/*.webp", { eager: true, import: "default" }) as Record<string, string>
 const TABS = [["color", "Color"], ["shape", "Shape"], ["prop", "Prop"], ["extra", "Extras"]] as const
 type Tab = (typeof TABS)[number][0]
 
@@ -36,7 +38,9 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
  const body: Record<Tab, ReactNode> = {
   color: <Swatches value={look.color} onPick={hex => set({ color: hex })} />,
   shape: grid("Shape", SHAPES, "shape"),
-  prop: grid("Prop", PROPS, "prop"),
+  prop: <div className="look-grid is-props" role="radiogroup" aria-label="Prop">{PROPS.map(([k, name]) =>
+   <button type="button" key={k || "none"} role="radio" aria-checked={look.prop === k} aria-label={name} title={name} className={cn("look-option", look.prop === k && "is-picked")} onClick={() => set({ prop: k })}>
+    {k ? <img src={PROP_ART[`./assets/prop/${k}.webp`]} alt="" draggable={false} /> : <Ban className="look-none" />}<small>{name}</small></button>)}</div>,
   extra: grid("Extras", ACCESSORIES, "accessory", "bust"),
  }
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>

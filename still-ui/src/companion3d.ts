@@ -1,5 +1,4 @@
 import * as THREE from "three"
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
 import { lookKey, type Look } from "./look"
@@ -126,7 +125,6 @@ const shadowTexture = (() => {
 
 // ---------------------------------------------------------------- props and accessories
 
-const box = (w: number, h: number, d: number, r: number) => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2, h / 2, d / 2))
 function put(g: THREE.Object3D, geo: THREE.BufferGeometry, mat: THREE.Material, x = 0, y = 0, z = 0, rx = 0, ry = 0, rz = 0) {
  const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.set(rx, ry, rz); g.add(m); return m
 }
@@ -134,110 +132,72 @@ const tube = (pts: number[][], r: number) => new THREE.TubeGeometry(new THREE.Ca
 const ball = (r: number) => new THREE.SphereGeometry(r, 20, 14)
 function blob(g: THREE.Object3D, mat: THREE.Material, sx: number, sy: number, sz: number, x = 0, y = 0, z = 0) { const m = put(g, ball(1), mat, x, y, z); m.scale.set(sx, sy, sz); return m }
 
-// How each prop is carried: in both nubs in front of the belly, in the right nub, or worn.
-const HOLD: Record<string, "both" | "hand" | "worn"> = { chart: "both", badge: "both", clipboard: "both", laptop: "both", envelope: "both", megaphone: "hand", magnifier: "hand", pencil: "hand", headset: "worn" }
+// The props (Blender: rig/props.py): ten real things, at their real sizes, in one glb. Each is cloned from it as it's
+// held, and a look with a prop isn't drawn until they're in (make waits, as for a rig). The six roles carry none.
+// How each is carried: in both nubs in front of the belly, in the right nub, or worn.
+export const HOLD: Record<string, "both" | "hand" | "worn"> = { laptop: "both", notebook: "both", camera: "both", mug: "hand", phone: "hand", magnifier: "hand", wrench: "hand", paintbrush: "hand", briefcase: "hand", headphones: "worn" }
+const METERS = 1.5 // the models are in meters; a blob is about 1 tall. Small things are drawn bigger (s), so they read
+// Each as it's held: the point of it that sits on the hold point (at, in meters: in the nub, where it's gripped), its
+// turn toward the companion (r: x, y, z), its scale (s) and where the eyes go to look at it (gx, gy).
+const HELD: Record<string, { at: number[]; r: number[]; s?: number; look: number[] }> = {
+ laptop: { at: [0, 0, 0], r: [0, 1, 0], look: [.3, 1] },
+ notebook: { at: [0, 0, 0], r: [.6, 0, 0], s: 1.6, look: [0, 1] },
+ camera: { at: [0, 0, 0], r: [0, -.3, 0], s: 2.4, look: [.1, .7] },
+ mug: { at: [.066, 0, 0], r: [0, .95, 0], s: 2.2, look: [.8, .5] },
+ phone: { at: [0, -.045, 0], r: [.3, .5, 0], s: 2.2, look: [.8, .6] },
+ magnifier: { at: [0, -.03, 0], r: [0, .8, 0], s: 1.9, look: [.8, .2] },
+ wrench: { at: [0, -.06, 0], r: [0, 0, -.25], s: 2.2, look: [.8, .4] },
+ paintbrush: { at: [0, -.05, 0], r: [.3, 0, -.3], s: 2.6, look: [.8, .1] },
+ briefcase: { at: [0, .03, 0], r: [0, -.8, 0], s: 1.05, look: [.6, 1] },
+}
 const props = new Map<string, THREE.Group>()
-function prop(id: string, b: Built): THREE.Group | null {
- if (!HOLD[id]) return null
- const key = HOLD[id] === "worn" ? id + "|" + b.def.h + b.def.w : id
+const part = (scene: THREE.Object3D, name: string) => scene.getObjectByName(THREE.PropertyBinding.sanitizeNodeName("prop." + name))!.clone()
+/// The prop as it's held (its hold point at the origin, turned toward the companion, at blob scale), or null for none or
+/// while the models load.
+function prop(id: string, b: Built, top: boolean): THREE.Group | null {
+ const m = HOLD[id] ? model("props") : null
+ if (!m) return null
+ const key = HOLD[id] === "worn" ? id + "|" + b.def.h + b.def.w + (top ? "|back" : "") : id
  let g = props.get(key)
- if (!g) props.set(key, g = makeProp(id, b))
+ if (!g) { props.set(key, g = HOLD[id] === "worn" ? headphones(m.scene, b, top ? .45 : 0) : held(m.scene, id)); g.traverse(o => { o.frustumCulled = false }) }
  return g.clone()
 }
-function makeProp(id: string, b: Built) {
- const g = new THREE.Group()
- switch (id) {
-  case "chart": { // a rising bar chart on a little tray, with an arrow going up
-   put(g, box(.32, .036, .14, .018), soft("#fbf7ef"))
-   ;[[.085, "#a6e3c8"], [.14, "#62c79f"], [.205, "#2fa57d"]].forEach(([h, c], i) => put(g, box(.07, h as number, .08, .026), soft(c as string), -.095 + i * .095, .018 + (h as number) / 2, .005))
-   put(g, tube([[-.14, .11, .07], [-.06, .14, .07], [.02, .17, .07], [.09, .23, .07]], .012), soft("#1f8a66"))
-   const tip = put(g, new THREE.ConeGeometry(.03, .06, 18), soft("#1f8a66"), .106, .255, .07); tip.rotation.z = -.62
-   break
-  }
-  case "badge": { // a name badge on its lanyard
-   put(g, tube([[-.035, .075, -.004], [-.075, .16, -.025], [0, .2, -.04], [.075, .16, -.025], [.035, .075, -.004]], .011), soft("#3f9fa3"))
-   put(g, box(.055, .034, .022, .01), soft("#9aa3b2"), 0, .08, .004)
-   put(g, box(.22, .16, .026, .03), soft("#3f9fa3"))
-   put(g, box(.185, .125, .01, .02), soft("#fffaf2"), 0, -.004, .013)
-   put(g, new THREE.CylinderGeometry(.027, .027, .008, 24), soft("#f6c3b0"), -.048, -.004, .018, Math.PI / 2)
-   put(g, box(.065, .014, .005, .006), soft("#b9b3aa"), .033, .014, .018)
-   put(g, box(.048, .014, .005, .006), soft("#d4cfc6"), .024, -.018, .018)
-   break
-  }
-  case "clipboard": { // a checklist, two ticked
-   put(g, box(.24, .3, .026, .03), soft("#7d8fb3"))
-   put(g, box(.2, .24, .006, .012), soft("#fffdf8"), 0, -.012, .016)
-   put(g, box(.095, .042, .03, .014), soft("#4b5262"), 0, .145, .02)
-   for (let i = 0; i < 3; i++) {
-    put(g, box(.026, .026, .006, .007), soft(i < 2 ? "#5cc49b" : "#d9d4cc"), -.058, .05 - i * .06, .02)
-    put(g, box(.09, .013, .005, .006), soft("#cfc9c0"), .028, .05 - i * .06, .02)
-   }
-   break
-  }
-  case "laptop": { // open, turned so you see the code on its screen
-   put(g, box(.28, .02, .18, .01), soft("#d6dce4"), 0, 0, -.06)
-   const lid = new THREE.Group(); lid.position.set(0, .006, .03); lid.rotation.x = -.14; g.add(lid)
-   put(lid, box(.28, .19, .016, .014), soft("#d6dce4"), 0, .095, 0)
-   put(lid, box(.25, .158, .004, .01), soft("#2f3644", { roughness: .7, clearcoat: 0, envMapIntensity: .1 }), 0, .1, .009)
-   ;[[.12, "#93d6bd", 0], [.08, "#f6d56a", .02], [.13, "#8cc3ee", .02], [.06, "#f2a5c4", .04], [.1, "#93d6bd", 0]].forEach(([w, c, x], i) =>
-    put(lid, box(w as number, .012, .003, .005), soft(c as string, { roughness: .4, emissive: c as string, emissiveIntensity: .25 }), -.09 + (x as number) + (w as number) / 2, .155 - i * .026, .012))
-   break
-  }
-  case "envelope": {
-   put(g, box(.26, .17, .028, .022), soft("#fbf3e2"))
-   for (const k of [-1, 1]) put(g, box(.155, .012, .005, .005), soft("#e3d3b5"), k * .064, .03, .016, 0, 0, k * .6)
-   put(g, new THREE.CylinderGeometry(.024, .024, .008, 24), soft("#ef6f7d"), 0, -.006, .018, Math.PI / 2)
-   break
-  }
-  case "megaphone": { // held up, pointing out and up
-   const m = new THREE.Group(); g.add(m); m.position.set(0, .03, .06); m.rotation.set(.85, 0, -.5)
-   const cone = new THREE.LatheGeometry([[.026, -.02], [.03, .02], [.062, .11], [.1, .2], [.106, .214], [.096, .216], [.06, .14], [.024, .03], [.02, -.02]].map(([r, y]) => new THREE.Vector2(r, y)), 40)
-   put(m, cone, soft("#f06f62", { side: THREE.DoubleSide }))
-   put(m, new THREE.TorusGeometry(.102, .013, 12, 40), soft("#fffaf2"), 0, .212, 0, Math.PI / 2)
-   put(m, new THREE.CircleGeometry(.092, 32), soft("#c9564b"), 0, .17, 0, -Math.PI / 2)
-   put(m, box(.036, .085, .04, .016), soft("#4b5262"), 0, .02, .05, .5)
-   break
-  }
-  case "magnifier": { // the handle in the nub, the lens up beside the face
-   const m = new THREE.Group(); g.add(m); m.rotation.z = .12
-   put(m, new THREE.CapsuleGeometry(.022, .1, 6, 14), soft("#4b5262"), 0, .02, 0)
-   put(m, new THREE.CylinderGeometry(.026, .026, .024, 20), soft("#e8b65a"), 0, .085, 0)
-   put(m, new THREE.TorusGeometry(.078, .017, 14, 44), soft("#4b5262"), 0, .18, 0)
-   put(m, new THREE.CylinderGeometry(.074, .074, .008, 40), new THREE.MeshPhysicalMaterial({ color: "#e4f3ff", roughness: .04, clearcoat: 1, transparent: true, opacity: .42, envMapIntensity: 1.6 }), 0, .18, 0, Math.PI / 2)
-   const glint = put(m, tube([[-.045, .21, .006], [-.03, .232, .006], [-.008, .244, .006]], .006), SHINE); glint.renderOrder = 2
-   break
-  }
-  case "pencil": {
-   const m = new THREE.Group(); g.add(m); m.position.set(0, .03, .03); m.rotation.set(.3, 0, -.6)
-   put(m, new THREE.CylinderGeometry(.024, .024, .19, 6), soft("#f6c445"), 0, .02, 0)
-   put(m, new THREE.CylinderGeometry(.006, .024, .05, 6), soft("#f1d3a8"), 0, .14, 0)
-   put(m, new THREE.ConeGeometry(.008, .016, 12), soft("#4a4f5c"), 0, .17, 0)
-   put(m, new THREE.CylinderGeometry(.025, .025, .028, 16), soft("#c9ced6", { metalness: .2 }), 0, -.088, 0)
-   put(m, new THREE.CapsuleGeometry(.023, .018, 6, 14), soft("#f39cb0"), 0, -.112, 0)
-   break
-  }
-  case "headset": { // over the top of the head, cups on the sides, a mic toward the mouth
-   const s = b.def, c = new THREE.Vector3(s.lean * .3, s.eye * s.h - .02, 0), dark = soft("#4b5262"), pts: number[][] = []
-   for (let a = -1.5; a <= 1.501; a += .1) { const d = new THREE.Vector3(Math.sin(a), Math.cos(a), 0), h = b.hit(c.clone().addScaledVector(d, 3), d.clone().negate()); h.p.addScaledVector(h.n, .022); pts.push(h.p.toArray()) }
-   put(g, tube(pts, .022), dark)
-   for (const k of [-1, 1]) {
-    const h = b.hit(new THREE.Vector3(k * 3, c.y, 0), new THREE.Vector3(-k, 0, 0))
-    blob(g, dark, .045, .095, .09, h.p.x + k * .025, h.p.y, h.p.z)
-    blob(g, soft("#f39079"), .022, .062, .058, h.p.x + k * .062, h.p.y, h.p.z)
-    if (k === 1) {
-     const m = b.mouth.p
-     put(g, tube([[h.p.x + .04, h.p.y - .03, .03], [h.p.x - .01, m.y - .02, m.z * .7], [m.x + .08, m.y - .02, m.z + .03]], .009), dark)
-     blob(g, soft("#f39079"), .024, .024, .024, m.x + .07, m.y - .02, m.z + .035)
-    }
-   }
-   break
-  }
- }
- g.traverse(o => { o.frustumCulled = false })
- g.children.forEach(o => o.position.y += LOWER[id] ?? 0)
+function held(scene: THREE.Object3D, id: string) {
+ const g = new THREE.Group(), turn = new THREE.Group(), n = part(scene, id), h = HELD[id]
+ n.position.fromArray(h.at).negate(); turn.rotation.fromArray(h.r as [number, number, number]); turn.add(n); g.add(turn)
+ g.scale.setScalar(h.s ?? METERS)
  return g
 }
-const LOWER: Record<string, number> = { chart: -.06, laptop: -.075, badge: -.02 } // so a tall prop stays under the face
+/// Over-ear headphones: the band (made round, radius 1) laid over the top of this head, each point at its own angle and
+/// keeping its own thickness, and a cup over each side.
+function headphones(scene: THREE.Object3D, b: Built, BACK: number) {
+ const g = new THREE.Group(), s = b.def, c = new THREE.Vector3(s.lean * .3, s.eye * s.h + .03, 0), at: Hit[] = [] // the cups a little over the eyes, clear of a raised nub
+ // the band over the crown, tipped back (BACK) behind a bow, sprout or flower; the cups at the sides
+ const side = new THREE.Vector3(0, Math.sin(BACK), Math.cos(BACK))
+ for (let i = 0; i <= 180; i++) { const a = (i - 90) * Math.PI / 180, d = new THREE.Vector3(Math.sin(a), Math.cos(a) * Math.cos(BACK), -Math.cos(a) * Math.sin(BACK)); at.push(b.hit(c.clone().addScaledVector(d, 3), d.negate())) }
+ const band = part(scene, "headphones.band"), v = new THREE.Vector3()
+ band.traverse(o => {
+  const mesh = o as THREE.Mesh
+  if (!mesh.isMesh) return
+  const geo = mesh.geometry = mesh.geometry.clone(), pos = geo.getAttribute("position") as THREE.BufferAttribute
+  for (let i = 0; i < pos.count; i++) {
+   v.fromBufferAttribute(pos, i)
+   const k = Math.min(179.999, Math.max(0, Math.atan2(v.x, v.y) * 180 / Math.PI + 90)), i0 = Math.floor(k), f = k - i0
+   const n = at[i0].n.clone().lerp(at[i0 + 1].n, f).normalize(), q = at[i0].p.clone().lerp(at[i0 + 1].p, f)
+   q.addScaledVector(n, .022 + (Math.hypot(v.x, v.y) - 1) * METERS).addScaledVector(side, v.z * METERS)
+   pos.setXYZ(i, q.x, q.y, q.z)
+  }
+  geo.computeVertexNormals(); geo.computeBoundingBox(); geo.computeBoundingSphere()
+ })
+ g.add(band)
+ for (const k of [1, -1]) {
+  const h = b.hit(new THREE.Vector3(c.x + k * 3, c.y, 0), new THREE.Vector3(-k, 0, 0)), cup = part(scene, "headphones.cup")
+  cup.position.copy(h.p).addScaledVector(h.n, .006); cup.scale.set(k * METERS, METERS, METERS)
+  cup.quaternion.setFromUnitVectors(new THREE.Vector3(k, 0, 0), h.n)
+  g.add(cup)
+ }
+ return g
+}
 
 const ACCESSORY_AT: Record<string, number> = { bow: .55, sprout: 0, flower: -.5 } // where on the head, as an angle from the top
 function accessory(id: string, b: Built): { node: THREE.Group; onFace: boolean } | null {
@@ -271,9 +231,10 @@ function accessory(id: string, b: Built): { node: THREE.Group; onFace: boolean }
 // ---------------------------------------------------------------- motion
 
 // One moment of the body: hop height and squash (sy, volume kept), lean forward (rx), tilt (rz), turn (ry), each arm
-// raised (u) and swung forward (f), a held prop lifted, the eyes' openness and squint, the mouth, gaze and overall size.
-type Pose = { y: number; sy: number; rx: number; rz: number; ry: number; lu: number; lf: number; ru: number; rf: number; lift: number; tilt: number; dx: number; open: number; squint: number; talk: number; gx: number; gy: number; scale: number }
-const REST: Pose = { y: 0, sy: 1, rx: 0, rz: 0, ry: 0, lu: 0, lf: 0, ru: 0, rf: 0, lift: 0, tilt: 0, dx: 0, open: 1, squint: 0, talk: 0, gx: 0, gy: 0, scale: 1 }
+// raised (u) and swung forward (f), a held prop lifted, the eyes' openness and squint, the mouth, gaze (and how much of
+// it is held on the prop: glances and the pointer don't pull those eyes away) and overall size.
+type Pose = { y: number; sy: number; rx: number; rz: number; ry: number; lu: number; lf: number; ru: number; rf: number; lift: number; tilt: number; dx: number; open: number; squint: number; talk: number; gx: number; gy: number; use: number; scale: number }
+const REST: Pose = { y: 0, sy: 1, rx: 0, rz: 0, ry: 0, lu: 0, lf: 0, ru: 0, rf: 0, lift: 0, tilt: 0, dx: 0, open: 1, squint: 0, talk: 0, gx: 0, gy: 0, use: 0, scale: 1 }
 const FIELDS = Object.keys(REST) as (keyof Pose)[]
 
 /// A smooth curve through [time, value, time, value, ...] keys: a monotone cubic, so it eases into each peak and
@@ -301,73 +262,64 @@ function hop(t: number, t0: number, height: number, air = .34): [number, number]
 const TAU = Math.PI * 2, LOOP = 4 // every idle repeats in LOOP seconds
 const blinkAt = (u: number, at: number, slow = 1) => K(u, [at, 1, at + .06 * slow, .06, at + .12 * slow, .06, at + .24 * slow, 1])
 
-// Each role's way of being: from the prop it carries for its job.
-const MOOD: Record<string, string> = { chart: "bold", badge: "warm", clipboard: "composed", megaphone: "energetic", headset: "calm", laptop: "practical", magnifier: "precise" }
+// A prop's way of being: how much bounce its gestures have.
+const MOOD: Record<string, string> = { laptop: "practical", notebook: "composed", camera: "warm", mug: "calm", phone: "warm", magnifier: "precise", wrench: "practical", paintbrush: "energetic", briefcase: "bold", headphones: "calm" }
 const ENERGY: Record<string, number> = { bold: 1.25, warm: 1, composed: .85, energetic: 1.3, calm: .65, practical: .85, precise: .85, neutral: 1 }
 
 /// Where the arms rest with this prop.
 function rest(p: Pose, prop: string) {
  const h = HOLD[prop]
  if (h === "both") { p.lu = p.ru = .05; p.lf = p.rf = .6 }
- else if (h === "hand") { p.lu = .06; p.lf = .2; p.ru = prop === "magnifier" ? .42 : .5; p.rf = prop === "magnifier" ? .75 : .5 }
+ else if (h === "hand") { p.lu = .06; p.lf = .2; p.ru = prop === "briefcase" ? .4 : .42; p.rf = prop === "briefcase" ? .3 : .7 }
  else { p.lu = p.ru = .04; p.lf = p.rf = .22 }
  return p
 }
 
+const USE = 8 // seconds: a prop's use repeats in USE, eyes on it for 6.4 of them
+/// Idle with a prop: using it, eyes on it about 80% of the time, then a 1.6 s glance away (at you, when you're there) and
+/// back. Headphones: in the music, eyes softly shut, nodding on the beat.
+function using(p: Pose, prop: string, t: number) {
+ const u = ((t % USE) + USE) % USE, away = K(u, [6.2, 0, 6.45, 1, 7.75, 1, 8, 0]), on = 1 - away, s = (hz: number, ph = 0) => Math.sin(TAU * hz * t + ph)
+ const k = (keys: number[]) => K(u, keys) * on
+ p.use = on
+ if (prop === "headphones") {
+  p.rx += .035 * Math.max(0, s(1.75)) * on; p.sy *= 1 + .012 * s(1.75) * on; p.rz += .03 * s(.875) * on; p.squint = .55 * on
+  p.gx = -.3 * away; p.gy = -.1 * away
+  return
+ }
+ const [gx, gy] = HELD[prop].look
+ p.gx = gx * on - .3 * away; p.gy = gy * on - .12 * away
+ if (HOLD[prop] === "both") p.rx += .06 * on // leans in to look down at it
+ else { p.ry += .14 * on; p.rz -= .03 * on } // turns to it
+ switch (prop) {
+  case "laptop": { const type = k([.4, 0, .7, 1, 5.6, 1, 5.9, 0]); p.lf += .06 * type * s(3.2); p.rf += .06 * type * s(3.2, 2); p.rx += k([2.8, 0, 3, .05, 3.3, 0]); break } // types, a nod
+  case "notebook": p.gx += .22 * Math.sin(TAU * u / 1.6) * k([.5, 0, .8, 1, 5.4, 1, 5.8, 0]); p.lift = .1 * k([1, 0, 1.5, 1, 4.8, 1, 5.4, 0]); break // reads, line by line
+  case "camera": { const up = k([1.6, 0, 2.1, 1, 3.6, 1, 4, 0]); p.lift = .4 * up; p.squint = Math.max(p.squint, .6 * k([2.6, 0, 2.68, 1, 2.9, 0])); break } // frames a shot, clicks
+  case "mug": { const up = k([2, 0, 2.6, 1, 3.6, 1, 4.2, 0]); p.lift = .5 * up; p.squint = .45 * k([2.6, 0, 2.8, 1, 3.4, 1, 3.6, 0]); p.gy -= .3 * up; break } // a sip
+  case "phone": p.tilt += .05 * s(.5) * on; p.gx += .1 * Math.sin(TAU * u / 2) * on; break // scrolls
+  case "magnifier": { const up = k([.6, 0, 1.05, 1, 3.5, 1, 4, 0]); p.ru += .12 * up; p.lift = up; p.rx = .06 * up; p.gy -= .2 * up; break } // brings it up to an eye, studies
+  case "wrench": p.tilt += .22 * k([1, 0, 1.4, 1, 2.6, 1, 3, -1, 4.2, -1, 4.6, 0]); break // turns it over, looks it up and down
+  case "paintbrush": p.tilt += .12 * s(2) * k([1.5, 0, 1.8, 1, 3.4, 1, 3.7, 0]); break // little strokes
+  case "briefcase": p.tilt += .06 * s(.4) * on; break // it swings
+ }
+}
+
 /// The loop for a state, at time t (seconds, any value: it repeats every LOOP).
-function loop(state: string, t: number, mood: string, prop: string): Pose {
- const p = rest({ ...REST }, prop), u = ((t % LOOP) + LOOP) % LOOP
+function loop(state: string, t: number, prop: string): Pose {
+ const p = rest({ ...REST }, prop), u = ((t % LOOP) + LOOP) % LOOP, hand = HOLD[prop] === "hand"
  const s = (n: number, ph = 0) => Math.sin(TAU * n * t / LOOP + ph)
+ const [U, F] = hand ? ["lu", "lf"] as const : ["ru", "rf"] as const // a nub that's holding something doesn't think or wave
+ const top = prop === "headphones" ? .62 : 9 // a raised nub stays under the headphones' cups
  p.sy = 1 + .016 * s(2); p.rz = .02 * s(1)
  p.open = blinkAt(u, 3.1)
- if (state === "idle" || state === "listening") switch (mood) {
-  case "bold": { // chest out, a sure little bounce, the chart tipped your way
-   const [y, sy] = hop(u, 2, .028)
-   p.y = y; p.sy *= sy; p.rx = -.035; p.lift = .12 + .1 * Math.max(0, s(1, -1)); p.tilt = .04 * s(1)
-   p.gx = K(u, [.6, 0, .8, -.25, 1.4, -.25, 1.6, 0]); p.gy = K(u, [.6, 0, .8, .35, 1.4, .35, 1.6, 0])
-   break
-  }
-  case "warm": { // looks around, curious, head tilting toward what it sees
-   p.gx = K(u, [.5, 0, .75, -.55, 1.5, -.55, 1.8, .5, 2.6, .5, 2.85, 0]); p.rz += .07 * p.gx; p.ry = .14 * p.gx; p.gy = -.1 * Math.abs(p.gx)
-   p.lift = .05 + .04 * s(2)
-   break
-  }
-  case "composed": { // upright and tidy: checks the clipboard, taps it twice, nods
-   p.sy = 1 + .011 * s(2); p.rz = .012 * s(1)
-   p.gy = K(u, [1.1, 0, 1.35, .5, 2.3, .5, 2.55, 0]); p.rx = K(u, [1.1, 0, 1.35, .05, 2.3, .05, 2.5, -.02, 2.75, .03, 3, 0])
-   p.rf += K(u, [1.5, 0, 1.6, .22, 1.7, 0, 1.82, .22, 1.92, 0]); p.ru += K(u, [1.5, 0, 1.6, .1, 1.7, 0, 1.82, .1, 1.92, 0])
-   p.lift = K(u, [1.1, 0, 1.35, .15, 2.3, .15, 2.55, 0])
-   break
-  }
-  case "energetic": { // can't keep still: two bounces a loop
-   const [y1, s1] = hop(u, .6, .06), [y2, s2] = hop(u, 2.6, .045)
-   p.y = y1 + y2; p.sy *= s1 * s2; p.rz = .04 * s(1); p.ry = .06 * s(1, 1)
-   p.ru += .1 * s(2); p.gx = .25 * s(1)
-   break
-  }
-  case "calm": { // slow, deep breaths and an easy sway
-   p.sy = 1 + .022 * s(1, -1.2); p.rz = .022 * s(1, .4); p.rx = .015 * s(1, -1.2)
-   p.open = blinkAt(u, 3, 1.6); p.gx = K(u, [1, 0, 1.5, .3, 2.4, .3, 2.9, 0])
-   break
-  }
-  case "practical": { // a look down at the screen, a nod, a dry side-eye
-   p.gy = K(u, [.4, 0, .6, .55, 1.6, .55, 1.8, 0]); p.rx = K(u, [.4, 0, .6, .06, 1.6, .06, 1.75, -.02, 1.95, .04, 2.2, 0])
-   p.gx = K(u, [2.5, 0, 2.62, .55, 3.25, .55, 3.4, 0]); p.lift = .04 + K(u, [.4, 0, .6, .06, 1.6, .06, 1.8, 0])
-   break
-  }
-  case "precise": { // brings the lens up to an eye, leans in, studies, lowers it
-   const up = K(u, [.6, 0, 1.05, 1, 2.5, 1, 3.05, 0])
-   p.ru += .12 * up; p.lift = up; p.rx = .06 * up; p.gx = .3 * up; p.gy = -.1 * up; p.rz += -.05 * up
-   break
-  }
-  default: p.gx = K(u, [.8, 0, 1, -.4, 1.7, -.4, 1.9, .35, 2.6, .35, 2.8, 0])
- }
- else if (state === "thinking") { p.rz = .08 + .015 * s(1); p.gx = .45; p.gy = -.45; p.ru = .55; p.rf = .9; p.sy = 1 + .01 * s(2) }
+ if (state === "idle" && HOLD[prop]) using(p, prop, t)
+ else if (state === "idle" || state === "listening") p.gx = K(u, [.8, 0, 1, -.4, 1.7, -.4, 1.9, .35, 2.6, .35, 2.8, 0])
+ else if (state === "thinking") { p.rz = .08 + .015 * s(1); p.gx = .45; p.gy = -.45; p[U] = .55; p[F] = .9; p.sy = 1 + .01 * s(2) }
  else if (state === "working") { p.gy = .45; p.rx = .05; p.lift = .06 + .04 * Math.abs(s(4)); p.lf += .12 * s(4); p.rf += .12 * s(4, Math.PI); p.sy = 1 + .015 * s(4) }
- else if (state === "needs") { const [y, sy] = hop(u % 2, .3, .05); p.y = y; p.sy *= sy; p.ru = .9 + .12 * s(4); p.rf = .2 }
- else if (state === "error") { p.rx = .1; p.sy = .95 + .01 * s(1); p.gy = .5; p.open = Math.min(p.open, .65); p.lu = p.ru = 0; p.lift = -.1 }
+ else if (state === "needs") { const [y, sy] = hop(u % 2, .3, .05); p.y = y; p.sy *= sy; p[U] = Math.min(top, .9 + .12 * s(4)); p[F] = .2 }
+ else if (state === "error") { p.rx = .1; p.sy = .95 + .01 * s(1); p.gy = .5; p.open = Math.min(p.open, .65); p.lu = 0; if (!hand) p.ru = 0; p.lift = -.1 } // a held prop stays held
  else if (state === "talking") { p.talk = Math.max(0, Math.sin(t * 11) * .6 + Math.sin(t * 7.3) * .4); p.rx = .02 * s(4); p.sy = 1 + .012 * s(4) }
- else if (state === "pointing") { p.ru = .78; p.rf = .55; p.rz = .05; p.gx = .4 }
+ else if (state === "pointing") { p[U] = Math.min(top, .78); p[F] = .55; p.rz = .05; p.gx = hand ? -.4 : .4 }
  if (state === "listening") { p.rx += .06; p.open = Math.max(p.open, .02) }
  return p
 }
@@ -380,13 +332,14 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
  switch (name) {
   case "wave": { // crouch a touch, swing a nub up, three waves that fade, bring it down past rest and settle
    const up = K(g, [0, 0, .16, -.08, .42, 1, 1.62, 1, 1.9, -.06, 2.05, .02, 2.2, 0])
-   const wv = K(g, [.42, 0, .55, 1, 1.45, 1, 1.62, 0]) * Math.sin((g - .42) * TAU * 2.4) * .3
+   const low = prop === "headphones" // under headphones, a lower wave in front of the cup
+   const wv = K(g, [.42, 0, .55, 1, 1.45, 1, 1.62, 0]) * Math.sin((g - .42) * TAU * 2.4) * (low ? .18 : .3)
    const side = left ? -1 : 1
-   p[U] = base[U] * (1 - Math.min(1, up)) + up * 1.05 + wv; p[F] = base[F] * (1 - Math.min(1, up)) + up * .15
+   p[U] = base[U] * (1 - Math.min(1, up)) + up * (low ? .5 : 1.05) + wv; p[F] = base[F] * (1 - Math.min(1, up)) + up * (low ? .45 : .15)
    p.sy *= K(g, [0, 1, .16, .95, .42, 1.04, .7, 1, 1.62, 1, 1.85, .98, 2.05, 1.01, 2.2, 1])
    p.rz += side * K(g, [0, 0, .16, -.03, .45, .07, 1.62, .07, 1.95, -.01, 2.2, 0]) + wv * .15
    p.squint = K(g, [.3, 0, .5, .45, 1.6, .45, 1.9, 0]); p.gx = 0; p.gy = 0
-   p.dx = side * -.03 * Math.min(1, up); p.tilt += side * .1 * Math.min(1, up) // the prop shifts to the other nub
+   if (!left) { p.dx = side * -.03 * Math.min(1, up); p.tilt += side * .1 * Math.min(1, up) } // the prop shifts to the other nub
    if (HOLD[prop] === "both") p[OF] += .1 * Math.min(1, up)
    break
   }
@@ -396,7 +349,7 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
    p.sy *= K(g, [0, .95, .5, .955, .85, 1.06, 1.1, .98, 1.3, 1.01, 1.5, 1])
    p.rx = K(g, [0, .08, .7, .08, .95, -.03, 1.3, 0])
    p.gy = K(g, [0, .55, .9, .55, 1.4, 0]); p.gx = K(g, [1.25, 0, 1.45, -.2, 1.7, -.2, 1.9, 0])
-   p.lift *= awake; p.lu *= .4 + .6 * awake; p.ru *= .4 + .6 * awake
+   p.lift *= awake; p.lu *= .4 + .6 * awake; if (!left) p.ru *= .4 + .6 * awake
    p.squint = K(g, [1.5, 0, 1.7, .4, 2.1, .4, 2.3, 0])
    const [y, sy] = hop(g, 1.6, .02); p.y += y; p.sy *= sy
    break
@@ -405,7 +358,7 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
    const fall = .38
    p.y = g < fall ? 1.7 * (1 - (g / fall) ** 2) : K(g, [fall, 0, .5, 0, .6, .045, .72, 0])
    p.sy *= K(g, [0, 1.1, fall - .04, 1.2, fall + .04, .7, .5, .82, .6, 1.08, .72, .95, .86, 1.03, 1, .995, 1.15, 1])
-   p.ru = K(g, [0, .6, fall, .5, fall + .06, .05, .7, .2, .9, base.ru])
+   if (!left) p.ru = K(g, [0, .6, fall, .5, fall + .06, .05, .7, .2, .9, base.ru])
    p.lu = K(g, [0, .6, fall, .5, fall + .06, .05, .7, .2, .9, base.lu])
    p.open = K(g, [0, 1, fall, 1, fall + .04, .2, fall + .16, .2, fall + .3, 1]); p.squint = K(g, [fall, 0, fall + .1, .5, .9, .5, 1.2, 0])
    p.lift = base.lift + K(g, [0, .2, fall, .2, fall + .06, -.12, .66, .05, .86, 0])
@@ -426,7 +379,7 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
    const big = name === "hired" ? 1 : .7, [y, sy] = hop(g, .2, .13 * big, .36), [y2, sy2] = hop(g, .75, .035 * big, .2)
    p.y += y + y2; p.sy *= sy * sy2
    const arms = K(g, [.1, 0, .3, 1, .62, .8, .9, 0])
-   p.lu = base.lu + arms * .55; p.ru = base.ru + arms * .55; p.lift = base.lift + arms * .5
+   p.lu = base.lu + arms * .55; p.ru = base.ru + arms * (HOLD[prop] === "hand" ? .3 : .55); p.lift = base.lift + arms * .5
    p.squint = K(g, [.1, 0, .3, .7, .9, .7, 1.15, 0]); p.gx = 0; p.gy = 0
    break
   }
@@ -446,6 +399,7 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
    break
   }
  }
+ if (prop === "briefcase") { p.ru = base.ru; p.rf = base.rf; p.lift = base.lift; p.tilt = base.tilt } // it hangs at the side through all of them
  return p
 }
 const GESTURE: Record<string, string> = { signature: "pitch", point: "pointing", "needs-you": "needs", sad: "error", thinking: "thinking", working: "working", talking: "talking" }
@@ -487,6 +441,10 @@ export class Companion {
  live = true; phase = Math.random() * LOOP
  // follow-through: a spring the prop and accessories hang on, kicked by the body's movement
  spring = { a: 0, v: 0, y: 0, vy: 0, rx: 0, first: true }
+ // the held prop's turn, trailing where its hold point turns (lagged)
+ lag = { q: new THREE.Quaternion(), w: new THREE.Vector3(), first: true }
+ at = new THREE.Vector3() // a prop held in both nubs: moved so its back clears the belly and its top stays under the mouth
+ out = 0 // a prop held in the right nub: how much further out that nub swings so the prop clears the body (outFor)
  // the little things nobody keys: blinks and glances, and following the pointer
  blinkNext = 1 + Math.random() * 3; blinkStart = -9; glanceNext = 1; glance = [0, 0]; gaze = [0, 0]; turn = [0, 0]
 
@@ -530,16 +488,17 @@ export class Companion {
   b.eyes.forEach((h, i) => { this.eyes[i].position.copy(h.p).addScaledVector(h.n, .006); this.eyes[i].quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), h.n) })
   for (const m of [this.smile, this.mouth]) { m.position.copy(b.mouth.p).addScaledVector(b.mouth.n, .006); m.quaternion.setFromUnitVectors(new THREE.Vector3(0, 0, 1), b.mouth.n) }
   b.shoulders.forEach((h, i) => this.arms[i].position.copy(h.p).addScaledVector(h.n, -.035))
-  this.held.position.copy(b.belly.p).add(new THREE.Vector3(0, 0, .09)); this.held.scale.setScalar(1.42)
+  this.held.position.copy(b.belly.p).add(new THREE.Vector3(0, 0, .09))
   this.shadow.scale.set(s.w * 2.7, s.w * 2.7 * s.d * 1.1, 1)
   for (const n of [this.prop, this.wear]) n?.removeFromParent()
-  this.prop = prop(look.prop, b); this.hand = null; this.wear = null
+  this.prop = prop(look.prop, b, !!look.accessory && look.accessory !== "glasses"); this.hand = null; this.wear = null; this.lag.first = true; this.at.set(0, 0, 0)
   if (this.prop) {
-   const h = HOLD[look.prop]
-   if (h === "both") this.held.add(this.prop)
+   const h = HOLD[look.prop], box = new THREE.Box3().setFromObject(this.prop, true)
+   if (h === "both") { this.held.add(this.prop); this.at.set(0, Math.min(0, b.mouth.p.y - .06 - b.belly.p.y - box.max.y), Math.max(0, .03 - .09 - box.min.z)) }
    else if (h === "worn") this.body.add(this.prop)
-   else { const hand = new THREE.Group(); hand.scale.setScalar(1.3); hand.add(this.prop); this.body.add(hand); this.hand = hand }
+   else { const hand = new THREE.Group(); hand.add(this.prop); this.body.add(hand); this.hand = hand }
   }
+  this.out = this.hand ? outFor(look) : 0
   const acc = accessory(look.accessory, b)
   if (acc) { this.wear = acc.node; (acc.onFace ? this.face : this.body).add(acc.node) }
   this.mood = MOOD[look.prop] ?? "neutral"
@@ -560,7 +519,7 @@ export class Companion {
  /// The pose at time t (the stage's clock, in seconds).
  target(t: number): Pose {
   const prop = this.look?.prop ?? "", st = this.state === "done" ? "idle" : this.state
-  const base = loop(st, t + (this.live ? this.phase : 0), this.mood, prop)
+  const base = loop(st, t + (this.live ? this.phase : 0), prop)
   if (this.move) {
    const g = t - this.moveStart
    if (g < DUR[this.move]) return gesture(this.move, g, base, this.mood, prop)
@@ -582,16 +541,17 @@ export class Companion {
    this.gaze[0] += (want.x - this.gaze[0]) * k; this.gaze[1] += (want.y - this.gaze[1]) * k
    const turn = follow ?? { x: 0, y: 0 }
    this.turn[0] += (turn.x - this.turn[0]) * k; this.turn[1] += (turn.y - this.turn[1]) * k
-   p.gx += this.gaze[0] * (1 - Math.abs(p.gx)); p.gy += this.gaze[1] * .6; p.ry += this.turn[0] * .3; p.rx += this.turn[1] * .08
+   const free = 1 - p.use
+   p.gx += this.gaze[0] * (1 - Math.abs(p.gx)) * free; p.gy += this.gaze[1] * .6 * free; p.ry += this.turn[0] * .3 * free; p.rx += this.turn[1] * .08 * free
   }
   this.pose = p
   this.follow(p, dt)
-  this.apply(p)
+  this.apply(p, dt)
  }
 
  /// The spring: kicked by the hold point's vertical acceleration and by leaning, a stiff soft bounce that settles.
  follow(p: Pose, dt: number) {
-  const s = this.spring, y = p.y + (p.sy - 1) * .5
+  const s = this.spring, y = (p.y + (p.sy - 1) * .5) * p.scale // as big as it is: popping in from nothing doesn't kick it
   if (s.first || dt <= 0) { s.first = false; s.y = y; s.vy = 0; s.rx = p.rx; return }
   for (let n = Math.max(1, Math.ceil(dt * 120)), h = dt / n, i = 0; i < n; i++) {
    const vy = (y - s.y) / dt, ay = clamp((vy - s.vy) / dt, 60), lean = clamp((p.rx - s.rx) / dt, 4)
@@ -601,9 +561,9 @@ export class Companion {
   }
  }
  /// Settles the spring at rest: pictures and seeking start from here.
- still() { this.spring = { a: 0, v: 0, y: 0, vy: 0, rx: 0, first: true } }
+ still() { this.spring = { a: 0, v: 0, y: 0, vy: 0, rx: 0, first: true }; this.lag.first = true }
 
- apply(p: Pose) {
+ apply(p: Pose, dt = 0) {
   const b = this.shape, s = b.def, sx = 1 / Math.sqrt(Math.max(.3, p.sy))
   this.root.position.set(0, p.y, 0); this.root.scale.setScalar(Math.max(.001, p.scale))
   this.body.scale.set(sx, p.sy, sx); this.body.rotation.set(p.rx, p.ry, p.rz)
@@ -617,24 +577,40 @@ export class Companion {
   this.smile.scale.setScalar(1 + .15 * p.squint)
   // arms: up swings a nub out and over, f swings it forward
   this.arms.forEach((a, i) => {
-   const side = i ? 1 : -1, up = i ? p.ru : p.lu, fwd = i ? p.rf : p.lf
+   const side = i ? 1 : -1, up = i ? p.ru + this.out : p.lu, fwd = i ? p.rf : p.lf
    a.children[0].scale.y = .14 * (1 + .28 * Math.min(1, Math.max(0, up - .45) * 2)) // a raised nub reaches
    a.rotation.set(-fwd, -side * Math.max(0, fwd) * 1.1, side * (.1 + up * 2.5), "YXZ") // swung forward, a nub comes in toward the middle
   })
   const sp = this.spring.a
   if (this.prop && HOLD[this.look!.prop] === "both") {
-   this.held.position.set(b.belly.p.x + p.dx, b.belly.p.y + p.lift * .16, b.belly.p.z + .09 + p.lift * .06)
+   this.held.position.set(b.belly.p.x + p.dx, b.belly.p.y + p.lift * .16, b.belly.p.z + .09 + p.lift * .06).add(this.at)
    this.held.rotation.set(-.05 - p.lift * .22 + sp, 0, p.tilt)
+   this.lagged(this.held, dt)
   }
-  if (this.hand) { // at the nub's tip, upright and facing you, tipping a little with the nub and the spring
-   const a = this.arms[1]; a.updateMatrix(); this.hand.position.set(.005, -.15, .03).applyMatrix4(a.matrix).add(new THREE.Vector3(-.1, .07, .1).multiplyScalar(p.lift)) // lifted: brought up and in, to the face
-   this.hand.rotation.set(sp * .8 - .1, -.15, (p.ru - .3) * .25 + p.tilt * .6)
+  if (this.hand) { // in the nub's tip, upright, tipping a little with the nub and the spring
+   const a = this.arms[1]; a.updateMatrix(); this.hand.position.set(.005, -.2, .02).applyMatrix4(a.matrix).add(new THREE.Vector3(-.07, .07, .14).multiplyScalar(p.lift)) // lifted: brought up and in, to the face
+   this.hand.rotation.set(sp * .8 - .1, -.15, (p.ru - .3) * .25 + Math.max(0, p.ru - .55) * 1.1 + p.tilt * .6) // raised high, it tips out with the nub
+   this.lagged(this.hand, dt)
   }
-  if (this.prop && HOLD[this.look!.prop] === "worn") this.prop.rotation.x = sp * .15
   if (this.wear && this.wear.parent === this.body) this.wear.rotation.z = sp * .6
   // the shadow shrinks and fades as the companion leaves the ground
   const lift = Math.max(0, p.y), k = Math.max(.45, 1 - lift * 1.6) * Math.max(.001, p.scale)
   this.shadow.scale.set(s.w * 2.7 * k * sx, s.w * 2.7 * s.d * 1.1 * k * sx, 1); (this.shadow.material as THREE.MeshBasicMaterial).opacity = Math.max(.3, 1 - lift * 2)
+ }
+
+ /// The held prop's turn trails its hold point's (body and all) on a soft spring, about 0.14 s behind with a little
+ /// overshoot, pivoting where it's held.
+ lagged(o: THREE.Object3D, dt: number) {
+  const L = this.lag, want = this.body.quaternion.clone().multiply(o.quaternion)
+  if (L.first || dt <= 0) { L.q.copy(want); L.w.set(0, 0, 0); L.first = false }
+  else for (let n = Math.max(1, Math.ceil(dt * 120)), h = dt / n, i = 0; i < n; i++) {
+   const d = want.clone().multiply(L.q.clone().invert()), sgn = d.w < 0 ? -1 : 1, sin = Math.hypot(d.x, d.y, d.z)
+   const e = new THREE.Vector3(d.x, d.y, d.z).multiplyScalar(sin < 1e-7 ? 0 : sgn * 2 * Math.atan2(sin, Math.abs(d.w)) / sin)
+   L.w.multiplyScalar(1 - 14 * h).addScaledVector(e, 100 * h)
+   const r = L.w.length() * h
+   if (r > 1e-9) L.q.premultiply(new THREE.Quaternion().setFromAxisAngle(L.w.clone().normalize(), r))
+  }
+  o.quaternion.copy(this.body.quaternion.clone().invert().multiply(L.q))
  }
 
  /// Soft occlusion from the nubs and the prop onto the body, in view space.
@@ -654,6 +630,66 @@ export class Companion {
  }
 }
 
+/// Whether a point (in the body's own space) is inside the blob: its shape's own surface, the knob on a bump left out.
+function inside(s: ShapeDef, q: THREE.Vector3) {
+ const below = s.h * s.mid, Y = (q.y - below) / (q.y > below ? s.h - below : below)
+ if (Math.abs(Y) >= 1) return false
+ const e = Y > 0 ? s.top : s.bot, r = (1 - Math.abs(Y) ** e) ** (1 / e) * s.w * (1 - s.taper * Y)
+ return Math.abs((q.x - s.lean * (q.y / s.h) ** 2) / r) ** s.n + Math.abs(q.z / (r * s.d)) ** s.n < 1
+}
+/// Every state (idle through its prop's use) and every gesture, frame by frame from rest, fps frames a second (the
+/// gestures half as many again): fn sees each pose, and the sweep stops (true) when fn says so.
+function sweep(c: Companion, fn: (what: string, t: number) => boolean | void, fps = 20) {
+ c.live = false
+ for (const s of STATES) { c.state = s; c.still(); for (let t = 0; t < (s === "idle" ? USE : LOOP); t += 1 / fps) { c.update(1 / fps, t, null); if (fn(s, t)) return true } }
+ c.state = "idle"
+ const g = 1 / (fps * 1.5)
+ for (const [name, dur] of Object.entries(DUR)) { c.begin(name, 0); c.still(); for (let t = 0; t <= dur; t += g) { c.update(g, t, null); if (fn(name, t)) return true } }
+ return false
+}
+const meshesOf = (o: THREE.Object3D) => { const out: THREE.Mesh[] = []; o.traverse(m => { if ((m as THREE.Mesh).isMesh) out.push(m as THREE.Mesh) }); return out }
+/// What of c's prop goes into its body or (nubs) a nub as it stands, from about most of each mesh's points: null for
+/// nothing. Touching a nub (inside .95 of it) isn't going in, and the holding nub's fist (its tip end, below -.2 of its
+/// height) closes round a hand prop: nothing may go through the rest of it.
+function into(c: Companion, meshes: THREE.Mesh[], most: number, nubs = true): string | null {
+ c.group.updateMatrixWorld(true)
+ if (Math.abs(c.body.matrixWorld.determinant()) < 1e-6) return null // popped in from nothing
+ const v = new THREE.Vector3(), w = new THREE.Vector3(), inv = c.body.matrixWorld.clone().invert(), arms = nubs ? c.arms.map(a => a.children[0].matrixWorld.clone().invert()) : []
+ for (const mesh of meshes) for (let i = 0, n = mesh.geometry.getAttribute("position").count, k = Math.max(1, Math.floor(n / most)); i < n; i += k) {
+  mesh.getVertexPosition(i, v).applyMatrix4(mesh.matrixWorld)
+  if (inside(c.shape.def, w.copy(v).applyMatrix4(inv))) return "the body"
+  for (const [j, m] of arms.entries()) if (w.copy(v).applyMatrix4(m).length() < .95 && !(c.hand && j === 1 && w.y < -.2)) return "a nub"
+ }
+ return null
+}
+/// How much further out the right nub swings so its prop clears the body through every state and gesture: wide and
+/// short shapes need it. Found once per look, in steps of .03 (up to .3).
+const outs = new Map<string, number>()
+function outFor(look: Look) {
+ const key = lookKey(look), known = outs.get(key)
+ if (known !== undefined) return known
+ outs.set(key, 0) // the companion swept here asks too
+ const c = new Companion(); c.setLook(look)
+ const meshes = meshesOf(c.prop!)
+ let k = 0
+ while (k < .3 && sweep(c, () => into(c, meshes, 120, false) !== null, 10)) c.out = k = Math.round((k + .03) * 100) / 100
+ if (k) k += .03 // a step more than the sweep found: it doesn't see every frame
+ c.dispose(); outs.set(key, k)
+ return k
+}
+/// Where a look's prop goes into its body or a nub, swept over every state and gesture as fit is (tests): one line per
+/// state or gesture that clashes, empty when none do, null while the props load.
+export function clashes(look: Look): string[] | null {
+ if (!HOLD[look.prop] || rigFor(look)) return []
+ if (!model("props")) return null
+ const c = new Companion(), out = new Map<string, string>()
+ c.setLook(look)
+ const meshes = meshesOf(c.prop!)
+ sweep(c, (what, t) => { if (out.has(what)) return; const hit = into(c, meshes, 400); if (hit) out.set(what, `${what} at ${t.toFixed(2)}s: the ${look.prop} goes into ${hit}`) })
+ c.dispose()
+ return [...out.values()]
+}
+
 // ---------------------------------------------------------------- the shared renderer
 
 let renderer: THREE.WebGLRenderer, scene: THREE.Scene, camera: THREE.PerspectiveCamera
@@ -663,7 +699,7 @@ const instances = new Map<string, Body>()
 /// A body for a look, or null while its model loads.
 function make(look: Look): Body | null {
  const id = rigFor(look), m = id ? model(id) : null
- if (id && !m) return null
+ if (id && !m || !id && HOLD[look.prop] && !model("props")) return null
  const c = m ? new Rigged(m, makeShadow()) : new Companion()
  c.setLook(look)
  return c
@@ -679,13 +715,8 @@ function fit(look: Look) {
  const id = rigFor(look), m = id && model(id)
  if (m) return frameOf(key, bounds(m))
  const c = new Companion(), box = new THREE.Box3()
- c.setLook(look); c.live = false
- for (const s of STATES) { c.state = s; c.still(); for (let t = 0; t < LOOP; t += 1 / 20) { c.update(1 / 20, t, null); box.expandByObject(c.root) } }
- c.state = "idle"
- for (const [name, dur] of Object.entries(DUR)) {
-  c.begin(name, 0); c.still()
-  for (let t = 0; t <= dur; t += 1 / 30) { c.update(1 / 30, t, null); if (name !== "drop" || t > .38) box.expandByObject(c.root) }
- }
+ c.setLook(look)
+ sweep(c, (what, t) => { if (what !== "drop" || t > .38) box.expandByObject(c.root) })
  c.dispose()
  return frameOf(key, box)
 }

@@ -54,7 +54,7 @@ const pictureState = (s: MascotState): MascotState => s === "listening" || s ===
 const hash = (s: string) => { let h = 5381; for (let i = 0; i < s.length; i++) h = (h * 33 ^ s.charCodeAt(i)) >>> 0; return h.toString(36) }
 const memo = new Map<string, string>()
 const wanted = new Map<string, { look: Look; state: MascotState; px: number; frame: Frame; flat: boolean }>()
-const STORE = "still.picture3." // 3: 2D at chat sizes, bigger faces; pictures kept from before are dropped
+const STORE = "still.picture4." // 4: real props (3: bigger faces); pictures kept from before are dropped
 try { for (const k of Object.keys(localStorage)) if (k.startsWith("still.picture") && !k.startsWith(STORE)) localStorage.removeItem(k) } catch { /* no storage */ }
 
 function drain() {

@@ -1058,6 +1058,10 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .look-option.is-picked { box-shadow:0 0 0 2px var(--foreground); }
 .look-option canvas, .look-option img { width:56px; height:56px; }
 .look-option small { font-size:11.5px; color:var(--muted-foreground); }
+.look-grid.is-props { grid-template-columns:repeat(4,minmax(0,1fr)); gap:10px; }
+.look-grid.is-props .look-option { padding:10px 4px 8px; gap:6px; }
+.look-grid.is-props .look-option img, .look-option .look-none { width:72px; height:72px; object-fit:contain; }
+.look-option .look-none { padding:20px; color:var(--muted-foreground); }
 .look-loading { width:56px; height:56px; border-radius:50%; background:color-mix(in oklab,var(--foreground) 6%,transparent); }
 .look-slider { display:grid; grid-template-columns:84px 1fr; align-items:center; gap:12px; font-size:13px; color:var(--muted-foreground); }
 .look-slider input { accent-color:var(--foreground); }

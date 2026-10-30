@@ -21,11 +21,12 @@ from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = sys.argv[1]
 PAPER = (246, 243, 238)
-# look.ts: ROLE_LOOKS, BLANK, AGENT_LOOKS, plus a look of your own
-LOOKS = [{"color": "#f7a26a", "shape": "tall", "prop": "chart"}, {"color": "#f2a5c4", "shape": "gumdrop", "prop": "badge"},
-         {"color": "#a6cf9c", "shape": "block", "prop": "clipboard"}, {"color": "#f6d56a", "shape": "round", "prop": "megaphone"},
-         {"color": "#86d0c8", "shape": "squat", "prop": "headset"}, {"color": "#8cc3ee", "shape": "bump", "prop": "laptop"},
-         {"color": "#c0a3ec", "shape": "lean", "prop": "magnifier"}, {"color": "#ddd4c6", "shape": "bean", "prop": ""},
+# look.ts: ROLE_LOOKS (no props), BLANK, AGENT_LOOKS, plus looks of your own with props
+LOOKS = [{"color": "#f7a26a", "shape": "tall", "prop": ""}, {"color": "#f2a5c4", "shape": "gumdrop", "prop": ""},
+         {"color": "#a6cf9c", "shape": "block", "prop": ""}, {"color": "#f6d56a", "shape": "round", "prop": ""},
+         {"color": "#86d0c8", "shape": "squat", "prop": "headphones"}, {"color": "#8cc3ee", "shape": "bump", "prop": ""},
+         {"color": "#c0a3ec", "shape": "lean", "prop": ""}, {"color": "#ddd4c6", "shape": "bean", "prop": ""},
+         {"color": "#f39079", "shape": "tall", "prop": "mug"}, {"color": "#93d6bd", "shape": "bean", "prop": "laptop"},
          {"color": "#e6896b", "shape": "bean", "prop": ""}, {"color": "#10a37f", "shape": "round", "prop": ""},
          {"color": "#2b2b2b", "shape": "block", "prop": ""}, {"color": "#d7a8ff", "shape": "gumdrop", "prop": "", "accessory": "bow"}]
 SMALL = (16, 20, 24, 30, 32, 40, 48)  # 2D (Mascot.tsx FLAT): tabs, menus, the header, chat turns, the working pill
