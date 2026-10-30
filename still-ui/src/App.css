@@ -401,13 +401,13 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-msg.is-user { align-self:flex-end; max-width:min(560px,85%); margin:18px 0 10px; padding:11px 18px; border-radius:20px 20px 6px 20px; background:var(--muted); white-space:pre-wrap; }
 .ai-msg.is-user:first-child { margin-top:0; }
 .ai-msg.is-note { color:var(--muted-foreground); font-size:12px; display:flex; gap:6px; align-items:center; }
-.ai-turn { position:relative; display:flex; flex-direction:column; gap:12px; padding-left:42px; }
+.ai-turn { position:relative; display:flex; flex-direction:column; gap:12px; padding-left:52px; }
 /* A turn's 30px avatar sits left of its first line, 12px from the content, which every later card and paragraph lines
    up with. The rest of the same turn (is-more) sits 12px under it instead of a full message gap. */
 .ai-turn.is-more { margin-top:-6px; }
-.ai-turn-face { position:absolute; left:0; top:-3px; display:flex; } /* centered on a line of text */
-.ai-turn:has(> .ai-turn-face + .ai-steps-group) > .ai-turn-face { top:9px; } /* on a step card's row */
-.ai-turn:has(> .ai-turn-face + .ai-timer) > .ai-turn-face { top:3px; }
+.ai-turn-face { position:absolute; left:0; top:-8px; display:flex; } /* centered on a line of text */
+.ai-turn:has(> .ai-turn-face + .ai-steps-group) > .ai-turn-face { top:4px; } /* on a step card's row */
+.ai-turn:has(> .ai-turn-face + .ai-timer) > .ai-turn-face { top:-2px; }
 /* Steps are compact cards on an 8px grid: an icon tile, the verb in bold and its target muted, a check on the right. */
 .ai-steps-group { border-radius:12px; background:var(--card); box-shadow:0 0 0 1px var(--border); }
 .ai-steps-group summary, .ai-steps-row { display:flex; align-items:center; gap:10px; padding:12px; list-style:none; }
@@ -708,7 +708,16 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-main > * { position:relative; }
 .home-top { width:100%; display:flex; justify-content:center; align-items:center; min-height:44px; }
 .home-center { flex:1; width:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding-top:min(6vh,48px); }
-.home-center .home-face { margin-bottom:22px; }
+.home-top { z-index:1; } /* over the space's empty top, which only a raised arm or a hop reaches */
+.home-center .space { position:relative; width:100%; height:var(--s); margin:calc(var(--s) * -.16) 0 6px; display:flex; justify-content:center; overflow-x:clip; }
+/* the team stands behind, smaller and back (higher up), two each side: near ones inside, far ones out */
+.space-mate { position:absolute; bottom:calc(var(--s) * .2); left:50%; width:calc(var(--s) * .4); height:calc(var(--s) * .4); opacity:.8; filter:saturate(.75); transition:opacity .2s,filter .2s,transform .25s var(--ease-spring,ease); }
+.space-mate:hover, .space-mate:focus-visible { opacity:1; filter:none; transform:translateY(-4px); }
+.space-mate img { display:block; width:100%; height:100%; }
+.space-mate[data-at="0"] { margin-left:calc(var(--s) * -.66); } .space-mate[data-at="1"] { margin-left:calc(var(--s) * .26); }
+.space-mate[data-at="2"] { margin-left:calc(var(--s) * -.92); bottom:calc(var(--s) * .26); width:calc(var(--s) * .32); height:calc(var(--s) * .32); }
+.space-mate[data-at="3"] { margin-left:calc(var(--s) * .6); bottom:calc(var(--s) * .26); width:calc(var(--s) * .32); height:calc(var(--s) * .32); }
+.space .home-face { position:relative; }
 .home-compose [data-slot=input-group] { border-radius:24px; }
 .home-compose .ai-send[data-slot] { width:36px; height:36px; }
 .home-chips { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:14px; }
@@ -1230,7 +1239,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .mate-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px; }
 .mate-card { display:flex; gap:14px; padding:14px; border-radius:16px; background:var(--card); border:1px solid var(--border); transition:border-color .2s,background-color .2s; }
 .mate-card:hover { border-color:color-mix(in oklab,var(--hue) 60%,var(--border)); background:color-mix(in oklab,var(--hue) 6%,var(--card)); }
-.mate-portrait { position:relative; flex:none; display:grid; place-items:center; width:100px; height:100px; border-radius:50%; overflow:hidden; background:color-mix(in oklab,var(--hue) 28%,var(--card)); box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--hue) 60%,var(--card)); }
+.mate-portrait { position:relative; flex:none; display:grid; place-items:center; width:128px; height:128px; border-radius:22px; background:radial-gradient(circle at 50% 42%,color-mix(in oklab,var(--hue) 30%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
 .mate-info { flex:1; min-width:0; display:flex; flex-direction:column; align-items:flex-start; }
 .mate-card h3 { margin:2px 0 0; font-family:var(--font-display); font-size:18px; font-weight:500; }
 .mate-card p { flex:1; margin:6px 0 10px; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
