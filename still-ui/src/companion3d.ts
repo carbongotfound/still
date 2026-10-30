@@ -708,10 +708,11 @@ function setup() {
  const pmrem = new THREE.PMREMGenerator(renderer)
  scene.environment = pmrem.fromScene(new RoomEnvironment(), .04).texture; pmrem.dispose()
  camera = new THREE.PerspectiveCamera(20, 1, .1, 30)
- scene.add(new THREE.HemisphereLight("#fffaf2", "#a89c96", .3))
- const key = new THREE.DirectionalLight("#fff4e8", 1.55); key.position.set(-2.6, 2.7, 1.5); scene.add(key)
- const fill = new THREE.DirectionalLight("#eef2ff", .14); fill.position.set(2.4, .4, 1.6); scene.add(fill)
- const rim = new THREE.DirectionalLight("#ffffff", 1.1); rim.position.set(1.2, 1.6, -2.6); scene.add(rim)
+ // A soft key from the upper left, high and broad, a sky fill, and a faint rim: the Cycles renders' studio
+ scene.add(new THREE.HemisphereLight("#fffaf2", "#5e5550", .5))
+ const key = new THREE.DirectionalLight("#fff4e8", 1.7); key.position.set(-2.2, 3.2, 2.2); scene.add(key)
+ const fill = new THREE.DirectionalLight("#eef2ff", .1); fill.position.set(2.4, .4, 1.6); scene.add(fill)
+ const rim = new THREE.DirectionalLight("#ffffff", .45); rim.position.set(1.2, 1.6, -2.6); scene.add(rim)
 }
 
 /// Frames the camera on a companion: the whole of it (fit), or the top half for the look editor's extras.

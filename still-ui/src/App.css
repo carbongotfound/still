@@ -830,6 +830,10 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mascot-sprite { display:block; width:var(--s); height:var(--s); background-repeat:no-repeat; background-size:calc(var(--n) * var(--s)) var(--s); animation:sprite var(--d) steps(var(--n), jump-none) infinite; }
 .mascot-sprite.is-once { animation-iteration-count:1; animation-fill-mode:forwards; }
 @keyframes sprite { to { background-position-x:calc((var(--n) - 1) * var(--s) * -1); } }
+/* A long clip (the 12 s idle) comes in --r rows: across each row in turn, and down a row each time one ends. */
+.mascot-sprite.is-rows { background-size:calc(var(--c) * var(--s)) calc(var(--r) * var(--s)); animation:sprite-col calc(var(--d) / var(--r)) steps(var(--c), jump-none) infinite, sprite-row var(--d) steps(var(--r), jump-none) infinite; }
+@keyframes sprite-col { to { background-position-x:calc((var(--c) - 1) * var(--s) * -1); } }
+@keyframes sprite-row { to { background-position-y:calc((var(--r) - 1) * var(--s) * -1); } }
 @media (prefers-reduced-motion: reduce) { .mascot-sprite { animation:none !important; } }
 .ai-queued [data-slot=button] { height:24px; padding:0 9px; font-size:12px; }
 .file-card { display:flex; align-items:center; gap:10px; max-width:460px; padding:8px 10px 8px 8px; border-radius:14px; border:1px solid var(--border); background:var(--card); box-shadow:0 1px 3px rgb(0 0 0/.05); animation:ai-in .25s ease-out; }
