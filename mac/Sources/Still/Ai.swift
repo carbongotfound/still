@@ -224,7 +224,7 @@ func openTabsNote() -> String {
 func toolLabel(_ name: String, _ input: Any?) -> String {
  let tool = name.replacingOccurrences(of: "mcp__still__", with: "").replacingOccurrences(of: "still__", with: "")
  let o = input as? [String: Any]
- var arg = o.flatMap { o in ["url", "text", "id", "direction"].compactMap { o[$0] }.first { !($0 is NSNull) } }.flatMap(AgentStream.str) ?? ""
+ var arg = AgentStream.str(o.flatMap { o in ["url", "text", "id", "direction"].compactMap { o[$0] }.first { !($0 is NSNull) } }) ?? ""
  if arg.count > 60 { arg = String(arg.prefix(60)) + "…" }
  func quoted(_ k: String) -> String? { AgentStream.str(o?[k]).flatMap { $0.isEmpty ? nil : "“" + $0 + "”" } }
  switch tool {
@@ -957,7 +957,7 @@ extension Browser {
   if cli.namesSession && chat.session == nil { chat.session = UUID().uuidString.lowercased() }
   var request = RunRequest(prompt: prompt, model: model, effort: effort, folder: folder, mcp: mcp, session: chat.session, resume: chat.started && chat.session != nil)
   request.workFolder = work
-  Task { await finishRun(chat, cli, exe, me, request, shown, asker: asker) }
+  Task { [request] in await finishRun(chat, cli, exe, me, request, shown, asker: asker) }
  }
 
  @MainActor func finishRun(_ chat: AiChat, _ cli: AgentAdapter, _ exe: String, _ me: ChatRun, _ request: RunRequest, _ shown: String, asker: String?) async {
