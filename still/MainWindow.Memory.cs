@@ -106,26 +106,28 @@ public partial class MainWindow
   foreach (var old in tabs.Where(AgentTabExpired).ToList()) if (!old.Closed) await CloseTab(old);
   if (!Prefs.MemorySaver || closing || memoryPassRunning) return;
   memoryPassRunning = true;
-  bool newlySuspended = false, discarded = false;
+  bool newlySuspended = false, discarded = false, pressure = UnderMemoryPressure();
   try
   {
    foreach (var tab in tabs.ToArray())
    {
-    // A tab asleep for a while is unloaded completely, like Chrome's Memory Saver: its pages give back all
-    // their memory and it reloads when selected. Pinned tabs and tabs with typed text only sleep.
-    if (CanSuspend(tab) && !tab.Pinned && !tab.Edited && tab.View?.CoreWebView2?.IsSuspended == true && DateTime.UtcNow - tab.LastActive >= DiscardAfter)
+    // Only when Windows runs short of memory is a sleeping tab unloaded completely: it reloads where it was
+    // scrolled to when selected. Switching tabs never unloads one. Pinned tabs and tabs with typed text only sleep.
+    if (pressure && CanSuspend(tab) && !tab.Pinned && !tab.Edited && tab.View?.CoreWebView2?.IsSuspended == true)
     { DisposeView(tab); discarded = true; continue; }
     if (!CanSuspend(tab) || tab.View?.CoreWebView2 is not { } core || core.IsSuspended) continue;
     try
     {
      // A hung page must not delay memory management for the other tabs.
+     tab.RestoreScroll = double.TryParse(await core.RunAsync("scrollY"), System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var y) ? y : 0; // where it reloads if unloaded
      string activity = await core.RunAsync("(() => { const busy = window.__stillMemoryBusy ? window.__stillMemoryBusy() : true; if (busy === true) return 'busy'; const edited = !!window.__stillEdited?.(); return busy === 'frames' ? (edited ? 'busy' : 'frames') : edited ? 'edited' : 'idle' })()").WaitAsync(TimeSpan.FromSeconds(2));
      if (activity == "\"busy\"") continue;
      if (activity == "\"frames\"") {
-      if (CanSuspend(tab) && !tab.Pinned && tab.View?.CoreWebView2 == core && DateTime.UtcNow - tab.LastActive >= DiscardAfter) { DisposeView(tab); discarded = true; }
+      if (pressure && CanSuspend(tab) && !tab.Pinned && tab.View?.CoreWebView2 == core) { DisposeView(tab); discarded = true; }
       continue;
      }
      tab.Edited = activity == "\"edited\"";
+     if (pressure && !tab.Edited && !tab.Pinned && CanSuspend(tab) && tab.View?.CoreWebView2 == core && !core.IsDocumentPlayingAudio) { DisposeView(tab); discarded = true; continue; }
      // Selecting/closing the tab, starting media or toggling memory saver can happen while awaiting.
      if (!CanSuspend(tab) || tab.View?.CoreWebView2 != core || core.IsDocumentPlayingAudio) continue;
      if (await core.TrySuspendAsync())
@@ -174,7 +176,14 @@ public partial class MainWindow
   // waking may incur page faults. This is a one-time trim on suspension, never a polling RAM cap.
  }
 
- static readonly TimeSpan DiscardAfter = TimeSpan.FromMinutes(App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_DISCARD_MINUTES") is { } qa ? double.Parse(qa) : 5);
+ [StructLayout(LayoutKind.Sequential)]
+ struct MemoryStatus { public uint Length, Load; public ulong TotalPhys, AvailPhys, TotalPageFile, AvailPageFile, TotalVirtual, AvailVirtual, AvailExtendedVirtual; }
+ [DllImport("kernel32.dll")]
+ [return: MarshalAs(UnmanagedType.Bool)]
+ static extern bool GlobalMemoryStatusEx(ref MemoryStatus status);
+ internal static bool qaPressure;
+ // Real pressure: 90% of the RAM in use, where Windows itself starts paging hard.
+ static bool UnderMemoryPressure() { var s = new MemoryStatus { Length = (uint)Marshal.SizeOf<MemoryStatus>() }; return qaPressure || GlobalMemoryStatusEx(ref s) && s.Load >= 90; }
  static bool trimmedInBackground;
  // While Still is in the background, hand idle memory back to Windows once: the engine's main, GPU and helper
  // processes. Not Still.exe itself: paging its UI back in froze Still for seconds when you returned. It pages back in when you return. Renderers are handled per tab above.
@@ -194,6 +203,6 @@ public partial class MainWindow
 
  bool CanSuspend(BrowserTab tab) => Prefs.MemorySaver && !closing && !tab.Closed && tabs.Contains(tab)
   && tab != Shown && !AgentBusy(tab) && !tab.Media && !tab.Loading && tab.ActiveDownloads == 0 && tab.View is { IsVisible: false }
-  && DateTime.UtcNow - tab.LastActive >= TimeSpan.FromMinutes(1)
+  && DateTime.UtcNow - tab.LastActive >= (qaPressure ? TimeSpan.Zero : TimeSpan.FromMinutes(1))
   && !permissions.Any(p => p.Tab == tab) && tab.View?.CoreWebView2?.IsDocumentPlayingAudio == false;
 }

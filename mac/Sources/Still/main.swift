@@ -121,6 +121,7 @@ final class Tab: NSObject {
  var closed = false, reader = false, edited = false, media = false
  var blocked = 0
  var lastSeen = Date()
+ var restoreScroll = 0.0 // where an unloaded tab was scrolled to: it reloads there
  var view: WKWebView?
  var observers: [NSKeyValueObservation] = []
  var agent: String? // the AI working in this tab right now (bot icon)
@@ -231,7 +232,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   applyTheme()
   appearanceObserver = NSApp.observe(\.effectiveAppearance) { [weak self] _, _ in DispatchQueue.main.async { self?.schedulePublish() } }
   if blockingRules == nil && browsers.count == 1 { compileRules() }
-  Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in self?.sleepIdleTabs() }
+  pressure.setEventHandler { [weak self] in self?.sleepIdleTabs() }
+  pressure.resume()
   if !secondary {
    startAgentServer()
    startAi()
@@ -640,6 +642,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   active = tab
   tab.lastSeen = Date()
   if tab.chatId != nil || leaving?.chatId != nil { publishAi() }
+  if tab.view != nil { tab.restoreScroll = 0 } // still loaded: it shows exactly as it was left
   for page in [shown, partner] { if let page, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } }
   layoutPages()
   if !overlay, let view = shown?.view, shown === tab { window.makeFirstResponder(view) }
@@ -782,15 +785,19 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  let editedCheck = "window.__stillEdited = () => [...document.querySelectorAll('textarea,input:not([type=hidden]):not([type=checkbox]):not([type=radio]):not([type=submit]):not([type=button])')].some(e => e.value && e.value !== e.defaultValue)"
  let busyCheck = "(() => [...document.querySelectorAll('video,audio')].some(m => !m.paused && !m.muted) || !!document.pictureInPictureElement || !!window.__stillEdited?.())()"
 
- /// Background tabs left alone for five minutes give their page back to the system, the way Safari and Chrome do,
- /// unless they're pinned, private, playing sound or holding typed text. Selecting one loads it again.
+ let pressure = DispatchSource.makeMemoryPressureSource(eventMask: [.warning, .critical], queue: .main)
+
+ /// Only when macOS runs short of memory do background tabs (left alone a minute or more) give their page back,
+ /// unless they're pinned, private, playing sound or holding typed text. Switching tabs never unloads one.
+ /// Selecting an unloaded tab loads it again, scrolled where it was.
  func sleepIdleTabs() {
   guard pref("MemorySaver", true) else { return }
-  let cutoff = Date().addingTimeInterval(-300), shown = self.shown, partner = self.partner
+  let cutoff = Date().addingTimeInterval(-60), shown = self.shown, partner = self.partner
   for tab in tabs where tab !== active && tab !== shown && tab !== partner && !tab.pinned && !tab.isPrivate && !tab.url.isEmpty && tab.lastSeen < cutoff && tab.agent == nil {
-   tab.view?.evaluateJavaScript(busyCheck) { [weak self, weak tab] result, _ in
-    guard let self, let tab, tab !== self.active, tab !== self.shown, (result as? Bool) == false else { return }
+   tab.view?.evaluateJavaScript("\(busyCheck) ? -1 : scrollY") { [weak self, weak tab] result, _ in
+    guard let self, let tab, tab !== self.active, tab !== self.shown, let y = result as? Double, y >= 0 else { return }
     self.unload(tab)
+    tab.restoreScroll = y
     self.schedulePublish()
    }
   }
@@ -991,6 +998,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
+  if tab.restoreScroll > 0 { view.evaluateJavaScript("scrollTo(0, \(tab.restoreScroll))"); tab.restoreScroll = 0 }
   updateFavicon(tab)
   guard !tab.isPrivate, let url = view.url?.absoluteString, url.hasPrefix("http") else { return }
   history.removeAll { $0["Url"] as? String == url }
