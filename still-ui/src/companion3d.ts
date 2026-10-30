@@ -402,7 +402,7 @@ function gesture(name: string, g: number, base: Pose, mood: string, prop: string
  if (prop === "briefcase") { p.ru = base.ru; p.rf = base.rf; p.lift = base.lift; p.tilt = base.tilt } // it hangs at the side through all of them
  return p
 }
-const GESTURE: Record<string, string> = { signature: "pitch", point: "pointing", "needs-you": "needs", sad: "error", thinking: "thinking", working: "working", talking: "talking" }
+const GESTURE: Record<string, string> = { yes: "hired", signature: "pitch", point: "pointing", "needs-you": "needs", sad: "error", thinking: "thinking", working: "working", talking: "talking" }
 const ONCE = new Set(Object.keys(DUR))
 function makeShadow() {
  const s = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({ map: shadowTexture, transparent: true, depthWrite: false }))
