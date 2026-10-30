@@ -343,6 +343,7 @@ public partial class MainWindow : Window
    core.IsDocumentPlayingAudioChanged += (_, _) => { if (core.IsDocumentPlayingAudio) { tab.Media = true; core.MemoryUsageTargetLevel = CoreWebView2MemoryUsageTargetLevel.Normal; } };
    SetupBlocking(tab, core);
    await InstallHiddenRules(tab);
+   await ApplyUsbRule(tab);
    await InstallLoginObserver(tab);
    await SetupFilePaste(tab, core);
    await InstallAudioReroute(core);
@@ -384,7 +385,9 @@ public partial class MainWindow : Window
    if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
    if (tab == Shown) UpdateChrome();
   };
-  core.SourceChanged += (_, _) => { if (Off()) return;  if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; if (tab == Shown) UpdateChrome(); SaveLater(); };
+  core.SourceChanged += (_, _) => { if (Off()) return;  if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; ApplySound(tab); if (tab == Shown) UpdateChrome(); SaveLater(); };
+  core.ContentLoading += (_, _) => { if (Off() || tab.InUse == "") return; tab.InUse = ""; ShellPublish(); }; // a new document has nothing on yet
+  core.ScreenCaptureStarting += (_, e) => { if (!Off() && SiteRule(tab, "ScreenShare") == "Deny") e.Cancel = true; };
   core.DocumentTitleChanged += (_, _) => { if (Off()) return; 
    if (!tab.Reader) tab.Title = string.IsNullOrWhiteSpace(core.DocumentTitle) ? Host(tab.Url) : core.DocumentTitle;
    RenderTabs(); if (tab == Shown) UpdateChrome(); SaveLater();
@@ -432,7 +435,7 @@ public partial class MainWindow : Window
   core.NewWindowRequested += async (_, e) => { if (Off()) return; 
    var deferral = e.GetDeferral(); e.Handled = true;
    try {
-    if (!e.IsUserInitiated && !Prefs.AllowedPopups.Contains(Host(tab.Url))) { PopupBlocked(tab, e.Uri); return; }
+    if (!e.IsUserInitiated && SiteRule(tab, "Popups") != "Allow") { if (SiteRule(tab, "Popups") != "Deny") PopupBlocked(tab, e.Uri); return; }
     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
@@ -497,6 +500,11 @@ public partial class MainWindow : Window
   core.WebMessageReceived += async (_, e) => { if (Off()) return; 
    // "Add to Still" on a Chrome Web Store page; installing still goes through the permission review.
    if (e.Source.StartsWith("https://chromewebstore.google.com/", StringComparison.Ordinal) && e.WebMessageAsJson.Contains("\"still-store-add\"")) { await PrepareStoreExtension(e.Source); return; }
+   // The memory script says what the page has on (camera, mic, location): the dot on the Permissions button.
+   if (e.WebMessageAsJson.Contains("\"still-in-use\"") && e.Source == core.Source) {
+    try { using var m = JsonDocument.Parse(e.WebMessageAsJson); string use = m.RootElement.GetProperty("use").GetString() ?? ""; if (use.Length < 40 && use != tab.InUse) { tab.InUse = use; ShellPublish(); } } catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
+    return;
+   }
    await ReceiveHidden(tab, e);
   };
   core.WebMessageReceived += async (_, e) => { if (Off()) return; await ReceiveLogin(tab, e); };

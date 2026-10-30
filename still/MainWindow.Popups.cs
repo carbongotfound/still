@@ -35,7 +35,7 @@ public partial class MainWindow
    string site = Host(tab.Url);
    if (string.IsNullOrWhiteSpace(site) || permissions.Any(p => p.Tab == tab && p.Kind == "open pop-ups")) return;
    if (!await AskPermission(tab, site, "open pop-ups")) return;
-   if (!tab.Private) { Prefs.AllowedPopups.Add(site); SaveLater(); }
+   await SetSitePermission(tab, "Popups", "Allow");
    if (uri.StartsWith("http")) await NewTab(uri, tab.Private, false);
   } catch (Exception ex) { App.Log(ex); }
  }

@@ -48,6 +48,7 @@ public partial class MainWindow
    object data=new{};
    if(name=="passwords")data=PasswordsData();
    if(name=="profiles")data=ProfileData();
+   if(name=="site")data=await SitePermissionData();
    if(name=="import"){DiscoverExternalProfiles();data=ImportData();}
    if(name=="cookies"){
     var core=active?.View?.CoreWebView2??await ManagementCore();var manager=core.CookieManager;
@@ -64,7 +65,8 @@ public partial class MainWindow
    }
    if(name=="security"){
     var core=active?.View?.CoreWebView2??await ManagementCore();var permissions=await core.Profile.GetNonDefaultPermissionSettingsAsync();
-    data=new{tracking=core.Profile.PreferredTrackingPreventionLevel.ToString(),reputationRequested=core.Settings.IsReputationCheckingRequired,permissions=permissions.Select(p=>new{origin=p.PermissionOrigin,kind=p.PermissionKind.ToString(),state=p.PermissionState.ToString()}),engine=core.Environment.BrowserVersionString};
+    data=new{tracking=core.Profile.PreferredTrackingPreventionLevel.ToString(),reputationRequested=core.Settings.IsReputationCheckingRequired,permissions=permissions.Select(p=>new{origin=p.PermissionOrigin,kind=p.PermissionKind.ToString(),state=p.PermissionState.ToString()})
+     .Concat(Prefs.SitePermissions.SelectMany(s=>s.Value.Where(r=>r.Key!="Autoplay").Select(r=>new{origin=s.Key,kind=r.Key,state=r.Value}))),engine=core.Environment.BrowserVersionString};
    }
    ShellSend(new{kind="tools",name,data});
   }catch(Exception ex){ShellSend(new{kind="tools",name,data=new{error=ex.Message}});}
@@ -95,8 +97,12 @@ public partial class MainWindow
    case "cookieDelete":if(cookieInventory.TryGetValue(S("id"),out var cookie)){await DeleteStoredCookie(cookie.Cookie,cookie.Manager);await PublishBrowserTools("cookies");}break;
    case "cookieDeleteDomain":foreach(var item in cookieInventory.Values.Where(v=>v.Cookie.Domain==S("domain")).ToArray())await DeleteStoredCookie(item.Cookie,item.Manager);await PublishBrowserTools("cookies");break;
    case "permissionReset":{
-    var core=active?.View?.CoreWebView2??await ManagementCore();if(Enum.TryParse<CoreWebView2PermissionKind>(S("kind"),out var kind))await core.Profile.SetPermissionStateAsync(kind,S("origin"),CoreWebView2PermissionState.Default);await PublishBrowserTools("security");break;
+    var core=active?.View?.CoreWebView2??await ManagementCore();if(S("kind")!="Popups"&&Enum.TryParse<CoreWebView2PermissionKind>(S("kind"),out var kind))await core.Profile.SetPermissionStateAsync(kind,S("origin"),CoreWebView2PermissionState.Default);
+    if(Prefs.SitePermissions.TryGetValue(S("origin").TrimEnd('/'),out var rules)){rules.Remove(S("kind"));if(rules.Count==0)Prefs.SitePermissions.Remove(S("origin").TrimEnd('/'));SaveLater();await ApplySiteRules(false);}
+    await PublishBrowserTools("security");break;
    }
+   case "sitePermission":if(active!=null){await SetSitePermission(active,S("kind"),S("state"));await PublishBrowserTools("site");}break;
+   case "sitePermissionsReset":if(active!=null){await ResetSitePermissions(active);await PublishBrowserTools("site");}break;
    case "extensionChoose":_ = Dispatcher.BeginInvoke(async()=>{var folder=new OpenFolderDialog{Title="Choose an unpacked extension folder"};if(folder.ShowDialog(this)==true)try{await StageExtension(folder.FolderName);}catch(Exception ex){Toast(ex.Message);}});break;
    case "extensionCancel":extensionCandidate=null;extensionCandidatePath=null;await PublishBrowserTools("extensions");break;
    case "extensionInstall":if(!extensionInstalling){extensionInstalling=true;try{await InstallExtension();}catch(IOException ex){Toast(ex.Message);}finally{extensionInstalling=false;}}break;

@@ -22,13 +22,37 @@ public partial class MainWindow
  (() => {
   const streams = new Set(), peers = new Set();
   const devices = navigator.mediaDevices;
+  // What the page has on (camera, mic, location) goes to Still as it changes, for the dot on the Permissions button.
+  // Only the top page can tell Still; a frame's camera keeps its own counsel.
+  const captures = new Set(); let geo = 0, sent = '';
+  const tell = () => {
+   let camera = false, mic = false;
+   for (const ref of captures) {
+    const stream = ref.deref();
+    if (!stream) { captures.delete(ref); continue; }
+    for (const t of stream.getTracks()) if (t.readyState === 'live') t.kind === 'video' ? camera = true : mic = true;
+   }
+   const use = [camera && 'camera', mic && 'mic', geo > 0 && 'location'].filter(Boolean).join(',');
+   if (use !== sent && window.top === window && window.chrome?.webview) { sent = use; window.chrome.webview.postMessage({ kind: 'still-in-use', use }); }
+  };
   for (const name of ['getUserMedia', 'getDisplayMedia']) {
    const original = devices?.[name];
    if (!original) continue;
    devices[name] = async function (...args) {
     const stream = await original.apply(this, args);
-    streams.add(new WeakRef(stream)); return stream;
+    streams.add(new WeakRef(stream));
+    if (name === 'getUserMedia') { captures.add(new WeakRef(stream)); for (const t of stream.getTracks()) t.addEventListener('ended', tell); tell(); }
+    return stream;
    };
+  }
+  const stop = window.MediaStreamTrack?.prototype.stop;
+  if (stop) MediaStreamTrack.prototype.stop = function () { stop.call(this); setTimeout(tell); };
+  const where = navigator.geolocation, watches = new Set();
+  if (where) {
+   const watch = where.watchPosition.bind(where), clear = where.clearWatch.bind(where), once = where.getCurrentPosition.bind(where);
+   where.watchPosition = (...args) => { const id = watch(...args); watches.add(id); geo = watches.size; tell(); return id; };
+   where.clearWatch = id => { clear(id); watches.delete(id); geo = watches.size; tell(); };
+   where.getCurrentPosition = (...args) => { geo++; tell(); setTimeout(() => { geo = Math.max(watches.size, geo - 1); tell(); }, 3000); return once(...args); };
   }
   const Peer = window.RTCPeerConnection;
   if (Peer) window.RTCPeerConnection = class extends Peer {

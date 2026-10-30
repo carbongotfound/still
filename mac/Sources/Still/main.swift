@@ -111,6 +111,8 @@ final class PageView: WKWebView {
 final class Tab: NSObject {
  var id = UUID().uuidString
  var title = "New tab", url = "", pinned = false, isPrivate = false, loading = false, muted = false
+ var ruleMuted = false // muted by the site's Autoplay and sound rule, not by the user
+ var inUse = "" // "camera,mic" while the page has them on (the Permissions button's dot)
  var group = "" // a tab group's id, "" = none
  var chatId: String? // a chat tab: shows this AI chat instead of a page
  var pageOpen = false // a chat tab showing its AI's page beside the conversation
@@ -141,6 +143,7 @@ final class Download {
  var path: URL?
  var status = "InProgress"
  var isPrivate = false
+ let started = Date()
  var observer: NSKeyValueObservation?
  init(task: WKDownload) { self.task = task }
 }
@@ -175,6 +178,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var privateHidden: [String: [String]] = [:]
  // Browser tools (Tools.swift, Vault.swift)
  var permissions: [PendingPermission] = []
+ var privateSitePermissions: [String: [String: String]] = [:] // a private window's site rules, never written down
  var upload: UploadRequest?
  var loginOffer: LoginOffer?
  var importBatch: ImportBatch?
@@ -301,7 +305,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let tabList: [[String: Any]] = tabs.map { tab in
    var row: [String: Any] = [
     "id": tab.id, "group": tab.group, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "agent": tab.agent ?? "", "aiGroup": tab.aiGroup,
-    "isPrivate": tab.isPrivate, "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted,
+    "isPrivate": tab.isPrivate, "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted, "inUse": tab.inUse,
     "favicon": tab.favicon, "secure": tab.url.hasPrefix("https://"), "certificateError": false
    ]
    if let chat = tab.runChat { row["runChat"] = chat }
@@ -386,7 +390,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "pin": if let target { target.pinned.toggle(); if target.pinned { leaveGroup(target) }; saveLater() }
   case "duplicate": if let target { newTab(target.url, isPrivate: target.isPrivate, prompt: false) }
   case "sleep": if let target { unload(target); if target === active { newTab(prompt: false) }; saveLater() }
-  case "mute": if let target { target.muted.toggle(); target.view?.evaluateJavaScript("document.querySelectorAll('video,audio').forEach(m=>m.muted=\(target.muted))") }
+  case "mute": if let target { target.muted.toggle(); target.ruleMuted = false; target.view?.evaluateJavaScript(muteScript(target.muted)) }
   case "reorder":
    if let move = tabs.first(where: { $0.id == text("id") }), let before = tabs.first(where: { $0.id == text("before") }), move !== before {
     tabs.removeAll { $0 === move }
@@ -626,7 +630,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    },
    view.observe(\.isLoading) { [weak self, weak tab] view, _ in tab?.loading = view.isLoading; self?.schedulePublish() },
    view.observe(\.canGoBack) { [weak self] _, _ in self?.schedulePublish() },
-   view.observe(\.canGoForward) { [weak self] _, _ in self?.schedulePublish() }
+   view.observe(\.canGoForward) { [weak self] _, _ in self?.schedulePublish() },
+   view.observe(\.cameraCaptureState) { [weak self, weak tab] view, _ in self?.captureChanged(tab, view) },
+   view.observe(\.microphoneCaptureState) { [weak self, weak tab] view, _ in self?.captureChanged(tab, view) }
   ]
  }
 
@@ -1000,6 +1006,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
   if tab.restoreScroll > 0 { view.evaluateJavaScript("scrollTo(0, \(tab.restoreScroll))"); tab.restoreScroll = 0 }
   updateFavicon(tab)
+  applySound(tab, page: true)
   guard !tab.isPrivate, let url = view.url?.absoluteString, url.hasPrefix("http") else { return }
   history.removeAll { $0["Url"] as? String == url }
   history.insert(["Title": view.title ?? url, "Url": url, "At": ISO8601DateFormatter().string(from: Date())], at: 0)
@@ -1023,6 +1030,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let opener = tabs.first(where: { $0.view === view }), let who = opener.agent, Date().timeIntervalSince(opener.agentActedAt) < 10 {
    return openAgentTab(who, "", configuration: configuration).view
   }
+  // Pop-ups on Block: a page's scripts open nothing (WebKit already stops the ones no click started).
+  if let opener = tabs.first(where: { $0.view === view }), action.navigationType != .linkActivated, siteRule(opener, "Popups") == "Deny" { return nil }
   let tab = Tab()
   tab.isPrivate = incognito || tabs.first { $0.view === view }?.isPrivate ?? false
   tabs.append(tab)
@@ -1062,6 +1071,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  // MARK: Downloads
 
  func track(_ task: WKDownload) {
+  // Automatic downloads on Block: a second download within 10 seconds of the site's last one is cancelled.
+  if let tab = tabs.first(where: { $0.view === task.webView }), siteRule(tab, "MultipleAutomaticDownloads") == "Deny",
+     downloads.contains(where: { $0.task.webView === task.webView && Date().timeIntervalSince($0.started) < 10 }) {
+   task.cancel(); toast("Blocked more downloads from this site"); return
+  }
   task.delegate = self
   let item = Download(task: task)
   item.isPrivate = incognito || tabs.first { $0.view === task.webView }?.isPrivate == true

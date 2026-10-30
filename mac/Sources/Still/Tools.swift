@@ -66,6 +66,17 @@ extension Browser {
   case "checkUpdate": checkForUpdate(manual: true)
   case "openUpdate", "releaseNotes": if let url = availableUpdate?.url { newTab(url, prompt: false) }
   case "refreshTools": publishBrowserTools(text("name"))
+  case "sitePermission", "sitePermissionsReset":
+   guard let tab = active, let origin = URL(string: tab.url).flatMap(authority) else { break }
+   var rules = siteRules(tab.isPrivate)
+   if op == "sitePermissionsReset" { rules[origin] = nil }
+   else if ["Allow", "Ask", "Deny"].contains(text("state")) {
+    rules[origin, default: [:]][text("kind")] = text("state") == "Ask" ? nil : text("state")
+    if rules[origin]?.isEmpty == true { rules[origin] = nil }
+   }
+   setSiteRules(tab.isPrivate, rules)
+   for each in tabs where each.isPrivate == tab.isPrivate { applySound(each) }
+   publishBrowserTools("site")
   case "profileCreate":
    do { try Profiles.create(text("name")) } catch { toast(error.localizedDescription) }
    publishBrowserTools("profiles")
@@ -105,6 +116,9 @@ extension Browser {
   case "profiles": reply(profileData())
   case "import": reply(importData())
   case "extensions": reply(["extensions": [Any](), "downloading": false])
+  case "site":
+   guard let tab = active, let origin = URL(string: tab.url).flatMap(authority) else { reply([:]); break }
+   reply(["origin": origin, "site": hostName(origin), "isPrivate": tab.isPrivate, "states": siteRules(tab.isPrivate)[origin] ?? [:], "inUse": tab.inUse, "off": Browser.siteKindsOff])
   case "security":
    let engine = Bundle(for: WKWebView.self).infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
    reply(["tracking": pref("Tracking", "Balanced"), "reputationRequested": true, "engine": engine,
@@ -128,25 +142,56 @@ extension Browser {
 
  // MARK: Site permissions
 
- /// Camera and microphone answers kept per site: origin → kind ("Camera", "Microphone") → "Allow" or "Deny".
+ /// The Permissions button's choices kept per site: origin → kind (Camera, Microphone, Popups, MultipleAutomaticDownloads,
+ /// Autoplay) → "Allow" or "Deny"; no entry is Ask.
  var sitePermissions: [String: [String: String]] { pref("SitePermissions", [String: [String: String]]()) }
+ /// What WebKit gives no way to allow or refuse: the Permissions button shows these as not available.
+ static let siteKindsOff = ["Geolocation", "Notifications", "ClipboardRead", "ScreenShare", "MidiSystemExclusiveMessages", "Usb"]
+ /// A private window's rules live only as long as Still runs.
+ func siteRules(_ isPrivate: Bool) -> [String: [String: String]] { isPrivate ? privateSitePermissions : sitePermissions }
+ func setSiteRules(_ isPrivate: Bool, _ rules: [String: [String: String]]) {
+  if isPrivate { privateSitePermissions = rules } else { prefs["SitePermissions"] = rules; saveLater() }
+ }
+ func siteRule(_ tab: Tab, _ kind: String) -> String? { URL(string: tab.url).flatMap(authority).flatMap { siteRules(tab.isPrivate)[$0]?[kind] } }
+
+ /// Sound on Block mutes the site's tabs; unblocking unmutes only what the rule muted, never the user's own mute.
+ /// page: a page just loaded, so its media need muting again.
+ func applySound(_ tab: Tab, page: Bool = false) {
+  let blocked = siteRule(tab, "Autoplay") == "Deny"
+  var changed = false
+  if blocked && !tab.muted { tab.muted = true; tab.ruleMuted = true; changed = true }
+  else if !blocked && tab.ruleMuted { tab.muted = false; tab.ruleMuted = false; changed = true }
+  if changed || page && tab.muted { tab.view?.evaluateJavaScript(muteScript(tab.muted)) }
+  if changed { schedulePublish() }
+ }
+
+ /// Mutes or unmutes the page's media, and keeps muting any that start later while the tab is muted.
+ func muteScript(_ muted: Bool) -> String {
+  "window.__stillMuted=\(muted);document.querySelectorAll('video,audio').forEach(m=>m.muted=\(muted));" +
+  "if(!window.__stillMuteHook){window.__stillMuteHook=1;addEventListener('play',e=>{if(window.__stillMuted)e.target.muted=true},true)}"
+ }
+
+ /// Camera or microphone on: the Permissions button's dot.
+ func captureChanged(_ tab: Tab?, _ view: WKWebView) {
+  tab?.inUse = [view.cameraCaptureState != .none ? "camera" : nil, view.microphoneCaptureState != .none ? "mic" : nil].compactMap { $0 }.joined(separator: ",")
+  schedulePublish()
+ }
 
  /// Shows the request in Still's own permission bar; unanswered requests are denied after 90 seconds or when the tab closes.
  func askPermission(_ tab: Tab, _ origin: WKSecurityOrigin, _ kind: String, _ done: @escaping (Bool) -> Void) {
   let site = authority(origin), kinds = kind == "CameraAndMicrophone" ? ["Camera", "Microphone"] : [kind]
-  let saved = kinds.map { sitePermissions[site]?[$0] }
-  if !tab.isPrivate, saved.allSatisfy({ $0 == "Allow" }) { done(true); return }
-  if !tab.isPrivate, saved.contains("Deny") { done(false); return }
+  let saved = kinds.map { siteRules(tab.isPrivate)[site]?[$0] }
+  if saved.allSatisfy({ $0 == "Allow" }) { done(true); return }
+  if saved.contains("Deny") { done(false); return }
   let label = kind == "Camera" ? "use your camera" : kind == "Microphone" ? "use your microphone" : "use your camera and microphone"
   let pending = PendingPermission(tab: tab, site: origin.host.isEmpty ? "This page" : hostName(site), kind: label)
   pending.answer = { [weak self] allow in
    guard let self else { return }
    self.permissions.removeAll { $0 === pending }
-   if !tab.isPrivate && !tab.closed {
-    var all = self.sitePermissions
+   if !tab.closed {
+    var all = self.siteRules(tab.isPrivate)
     for kind in kinds { all[site, default: [:]][kind] = allow ? "Allow" : "Deny" }
-    self.prefs["SitePermissions"] = all
-    self.saveLater()
+    self.setSiteRules(tab.isPrivate, all)
    }
    self.schedulePublish()
    done(allow)
