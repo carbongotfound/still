@@ -145,7 +145,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Old-name check**: once after an update, a companion with an old stock name asks whether to keep it.
 - ✅ **Outside AI apps' look**: other AI apps working in Still wear their maker's look and color.
 - ✅ **Roles that own outcomes**: Hire picker; Zest, Bloom, Noon, Fizz, Mallow, Rivet, Glint each show what to expect; work interests. Fizz is the Marketer (learns your voice, drafts only, never posts) and Glint the Researcher (short cited briefs).
-- ✅ **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; idle blinks, glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`).
+- ✅ **Rigged, animated companions**: all eight (seven roles and Make your own, tinted to its color) are Blender rigs with 26 clips checked for intersections on every frame, shipped as 2.6–2.8 MB Draco glTF and played by a three.js mixer; blinks are each rig's own Blender blink (lids, eye squash, brow and nod, at its tempo) and the lids always open again after one, the glass eye caps keep only their shine so the lids sit where Blender has them (checked frame by frame against Blender renders); glances and fidgets, the eyes and body follow the cursor, thinking and working look toward the tab, done nods or celebrates, an error shrugs or startles, needs-you waves, talking moves the mouth, hire celebrates, a rename or new look spins, and every move blends in and out (`rig.ts`, `assets/rig`, `companion3d.ts`).
 - 🚧 **Companions act on themselves**: change their look, settings and memory on request, each with Undo (branch `selfact`, uncommitted).
 
 ## Memory
@@ -219,6 +219,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Companions changing themselves (`selfact`, uncommitted) and the intro rebuilt for the blobs (`intro12`) aren't in the build yet.
 - Team chat has no hand-off clip of its own: the sender waves and the receiver nods. Team chats are tested with a fake agent, not live.
 - In a team chat, an attached tab reaches the AI as a link in the message rather than with its tab id. The Mac has no working folders yet, so its builder can't open what it made.
+- Glint's glass eye cap shows through its shut lid mid-blink, in Blender too (the model), and the app's lighting is paler than the Cycles renders.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - Firefox passwords can't be read when a primary password is set; Safari passwords need an export from the Passwords app.
 - Local `main`'s 14 older commits are merged into `team` and kept in its history; their changes were already there in newer form, so `team`'s versions won.
