@@ -249,6 +249,10 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "handle_dialog": return "Answered a dialog"
  case "upload_file": return "Picked a file"
  case "list_profiles": return "Looked at profiles"
+ case "remember": return "Saved to memory"
+ case "recall": return "Checked memory"
+ case "forget": return "Removed from memory"
+ case "plugin_tools": return "Looked at apps"
  default: return tool.replacingOccurrences(of: "_", with: " ") + (arg.isEmpty ? "" : " " + arg)
  }
 }
