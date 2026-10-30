@@ -435,6 +435,13 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-send[data-slot]:hover { background:var(--hue,#7c66f5); opacity:.88; } .ai-send[data-slot]:disabled { background:var(--muted); color:var(--muted-foreground); opacity:1; }
 .ai-send.is-stop[data-slot], .ai-send.is-stop[data-slot]:hover { background:#e5484d; }
 .composer-gap { flex:1; }
+/* Attachments: a file chip shows its kind, name and size; dragging files over the box lights it up. */
+.file-chip > span { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .file-chip small { color:var(--muted-foreground); font-size:11px; }
+.msg-files { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; } .msg-files .skill-chip { background:color-mix(in oklab,var(--foreground) 8%,transparent); }
+.composer { position:relative; } .composer.is-drop { outline:2px dashed color-mix(in oklab,var(--hue,#5c7a76) 70%,var(--foreground)); outline-offset:2px; }
+.composer-drop { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:inherit; pointer-events:none; font-weight:600;
+ background:color-mix(in oklab,var(--hue,#5c7a76) 16%,var(--card)); color:var(--foreground); } .composer-drop svg { width:16px; height:16px; }
+.menu-hint { margin-left:auto; font-size:11px; color:var(--muted-foreground); }
 .composer[data-slot=input-group]:has(:disabled) { opacity:1; background:var(--card); } .ai-send svg { width:15px; height:15px; } .ai-send[aria-label=Stop] svg { width:11px; height:11px; fill:currentColor; }
 /* Chats and setup scroll by wheel, trackpad and keys with no scrollbar; once scrolled, the top edge fades (fadeTop). */
 .ai-log, .ai-pane, .ob-talk, .ob-chat { scrollbar-width:none; } .ai-log::-webkit-scrollbar, .ai-pane::-webkit-scrollbar, .ob-talk::-webkit-scrollbar, .ob-chat::-webkit-scrollbar { display:none; }

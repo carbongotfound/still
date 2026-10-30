@@ -814,6 +814,7 @@ extension Browser {
     return agentOk(list)
    case "web_search": return try await webSearch(who, args)
    case "read_url": return try await readUrl(who, args)
+   case "read_attachment": return readAttachment(who, argText(args, "id"), max(0, (args["offset"] as? NSNumber)?.intValue ?? 0))
    case "open_tab":
     let background = args["background"] as? Bool ?? (runs[who] != nil)
     let url = try agentWebUrl(argText(args, "url")), chat = runs[who] != nil ? who : nil
@@ -1219,6 +1220,7 @@ enum Mcp {
   tool("list_tabs", "List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.", [], []),
   tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.",
        [str("query", "What to search for"), num("count", "How many results, up to 10 (default 8)")], ["query"]),
+  tool("read_attachment", "Read a file the user attached to their message, by the id Still gave you: text and code come back as text (20000 characters at a time), PDFs as their text, images as the image itself.", [str("id", "The attachment's id"), num("offset", "Text position to continue from, for long files")], ["id"]),
   tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.",
        [str("url", "The page's URL"), num("offset", "Text position to continue from, for long pages")], ["url"]),
   tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.",
@@ -1483,7 +1485,7 @@ enum Mcp {
  static func toolResult(_ reply: String) -> [String: Any] {
   let result = jsonObject(reply) ?? [:]
   guard result["ok"] as? Bool == true else { return ["content": [["type": "text", "text": result["error"] as? String ?? "Failed."]], "isError": true] }
-  if let data = result["result"] as? [String: Any], let image = data["image"] as? String { return ["content": [["type": "image", "data": image, "mimeType": "image/png"]]] }
+  if let data = result["result"] as? [String: Any], let image = data["image"] as? String { return ["content": [["type": "image", "data": image, "mimeType": data["mime"] as? String ?? "image/png"]]] }
   return ["content": [["type": "text", "text": plainText(result["result"])]]]
  }
 

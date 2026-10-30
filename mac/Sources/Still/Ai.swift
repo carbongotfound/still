@@ -445,6 +445,21 @@ extension Browser {
   companions.removeAll { $0 === gone }; storeCompanions(); publishOthers()
   try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
  }
+ /// Keeps what was picked, dropped or pasted, and tells the box (to) what it got; anything too big is named in the error.
+ func attach(_ to: String, _ picked: [(name: String, size: Int64, bytes: () -> Data?)]) {
+  var files: [[String: Any]] = [], errors: [String] = []
+  for (raw, size, bytes) in picked {
+   let clean = String((raw as NSString).lastPathComponent.map { "/:\\".contains($0) ? "_" : $0 }.prefix(120)).trimmingCharacters(in: .whitespaces)
+   let name = clean.isEmpty || clean.hasPrefix(".") ? "file" + clean : clean
+   let max = imageMime(name) != nil ? maxImage : maxFile
+   if size > max { errors.append("\(name) is \(sizeText(size)). \(max == maxImage ? "Images" : "Files") can be up to \(max >> 20) MB."); continue }
+   let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)), folder = attachmentsFolder + "/" + id
+   guard let data = bytes(), data.count <= max, (try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)) != nil,
+         (try? data.write(to: URL(fileURLWithPath: folder + "/" + name))) != nil else { errors.append("Couldn't add \(name)."); continue }
+   files.append(["id": id, "name": name, "size": data.count])
+  }
+  send(["kind": "attached", "to": to, "files": files, "error": errors.joined(separator: " ")])
+ }
  func storeCompanions() { prefs["Companions"] = companions.map(\.dict); saveLater() }
  /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.
  @MainActor func offerRoutine(_ who: String, _ args: [String: Any]) async -> String {
@@ -480,7 +495,12 @@ extension Browser {
   if chatsLoaded { return }
   chatsLoaded = true
   if let data = try? Data(contentsOf: chatsFile) {
-   do { aiChats = try fromPascalJSON([AiChat].self, data) } catch { NSLog("Still: couldn't read chats: \(error)") }
+   do {
+    aiChats = try fromPascalJSON([AiChat].self, data)
+    // Files attached but never sent go: the message box doesn't keep them across restarts.
+    let sent = Set(aiChats.flatMap(\.messages).flatMap { $0.files ?? [] }.map(\.id))
+    for dir in (try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder)) ?? [] where !sent.contains(dir) { try? FileManager.default.removeItem(atPath: attachmentsFolder + "/" + dir) }
+   } catch { NSLog("Still: couldn't read chats: \(error)") }
   }
   for c in aiChats { for m in c.messages where (m.role == "ask" || m.role == "tell") && m.status == "working" { m.status = "stopped" } } // Still closed mid-exchange
   let teams = aiChats.filter { !($0.team ?? []).isEmpty }
@@ -566,6 +586,7 @@ extension Browser {
   case "aiOpenChat": v.chat = aiChats.first { $0.id == s("id") } ?? v.chat; v.error = ""
   case "aiDeleteChat":
    guard runs[s("id")] == nil else { break }
+   for gone in aiChats.filter({ $0.id == s("id") }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsFolder + "/" + gone.id) }
    aiChats.removeAll { $0.id == s("id") }
    if v.chat?.id == s("id") { v.chat = nil }
    saveAiChats()
@@ -573,6 +594,7 @@ extension Browser {
   case "aiDeleteAll":
    guard runs.isEmpty else { break }
    aiChats.removeAll(); v.chat = nil; saveAiChats()
+   try? FileManager.default.removeItem(atPath: attachmentsFolder)
    for t in tabs where t.chatId != nil { close(t) }
   case "aiStop": if let stopping = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")] { stopping.queue.removeAll(); stopRun(stopping) }
   case "aiResumeAll": for cut in interruptedChats { cut.running = false; runAi(cut, "Still closed before you finished. Please pick up where you left off.") }
@@ -593,9 +615,26 @@ extension Browser {
    let attached = Array(browsers.flatMap(\.tabs).filter { picked.contains($0.id) && !$0.isPrivate && !$0.closed }.prefix(8))
    if !attached.isEmpty { text += "\n\n" + attached.map { "[\($0.title.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")"))](\($0.url))" }.joined(separator: "\n") }
    let asked = attached.isEmpty ? text : text + "\n\n[Still] The user attached \(attached.count == 1 ? "this tab" : "these tabs"): " + attached.map { "\"\($0.title)\" \($0.url) (tabId \($0.id))" }.joined(separator: "; ") + ". Read each with read_page before you answer."
-   if let target, let working = runs[target.id] { working.queue.append(text); break }
+   // Files from the box: the message names them, and the AI reads each with read_attachment.
+   var seenFiles = Set<String>()
+   let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap(attachment) }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
+   if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); break }
    if active?.chatId != nil || b("home") { v.chat = target }
-   runAi(target, asked, shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"))
+   runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
+  case "aiPickFiles":
+   DispatchQueue.main.async { [self] in
+    let picker = NSOpenPanel()
+    picker.canChooseFiles = true; picker.canChooseDirectories = false; picker.allowsMultipleSelection = true; picker.message = "Add files"
+    let to = s("to")
+    picker.beginSheetModal(for: window) { [self] result in
+     guard result == .OK else { return }
+     attach(to, picker.urls.prefix(maxFiles).map { url in (url.lastPathComponent, ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize).map(Int64.init) ?? 0, { try? Data(contentsOf: url) }) })
+    }
+   }
+  case "aiAttach": // dropped or pasted in the box
+   let dropped = s("data")
+   guard !dropped.isEmpty else { break }
+   attach(s("to"), [(s("name"), Int64(dropped.count / 4 * 3), { Data(base64Encoded: dropped) })])
   case "aiAnswer": // from the chat, or the running tasks list
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))
@@ -787,12 +826,12 @@ extension Browser {
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is nil). asker: the teammate
  /// whose message this is, when one companion asks another (exchange).
- func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, asker: String? = nil) {
+ func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, asker: String? = nil, files: [AiFile] = []) {
   let v = aiView
   var text = text
   let chat = chat ?? {
    let with = companions.first { $0.id == companion } ?? companions.first
-   let line = text.replacingOccurrences(of: #"\r\n|[\r\n]"#, with: " ", options: .regularExpression)
+   let line = (shown ?? text).replacingOccurrences(of: #"\r\n|[\r\n]"#, with: " ", options: .regularExpression)
    let chat = AiChat()
    chat.harness = with.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
    chat.title = line.count > 60 ? String(line.prefix(60)) + "…" : line
@@ -823,7 +862,7 @@ extension Browser {
   if !pref("AgentsEnabled", false) { prefs["AgentsEnabled"] = true; saveLater(); chat.messages.append(AiMessage("note", "Turned on Settings → Let other AI apps use Still, so \(cli.name) can use your tabs.")) }
   approvedAgents.insert(cli.name.lowercased()) // the user started this agent here, so it needs no approval bar
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
-  if !shown.isEmpty { chat.messages.append(AiMessage("user", shown, who: asker)) }
+  if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
   var skills = Skill.invoked(shown)
   if !chat.started { skills += Skill.all.filter { k in who?.skills.contains(k.id) == true && !skills.contains { $0.id == k.id } } }
@@ -975,7 +1014,7 @@ extension Browser {
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
-    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull()] as [String: Any] },
+    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull()] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "routines": c.routines.map(\.shell),
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,

@@ -1,5 +1,5 @@
-import { useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
+import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
@@ -16,7 +16,7 @@ import { Switch } from "@/components/ui/switch"
 import { FALLBACK, Face, hueOf, showProfile, type Companion, type Mode, type Mood } from "./Buddy"
 import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
-import { FileCard, type LibFile } from "./Files"
+import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 import type { PluginsState } from "./Plugins"
 
@@ -35,7 +35,8 @@ export type AiState = {
 }
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who messaged whom, how it's going,
 // the reply and the chat it's in.
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null }
+export type Attached = { id: string; name: string; size: number }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; files?: Attached[] | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
 // A chat at work. Any number run at once.
 export type Run = { id: string; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
@@ -222,20 +223,46 @@ const keepDraft = (key: string | undefined, v: string) => { if (key) try { if (v
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
+// An attached file: its kind, name and size.
+const FileChip = ({ file, onRemove }: { file: Attached; onRemove?: () => void }) => <span className="skill-chip file-chip" title={file.name}><FileIcon path={file.name} /><span>{file.name}</span><small>{sizeText(file.size)}</small>
+ {onRemove && <button type="button" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}</span>
+// Limits match the host's (MainWindow.Ai.cs Attach): 10 files a message, files up to 10 MB, images up to 5 MB.
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10
+const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `${f.name} is ${sizeText(f.size)}. ${IMAGE.test(f.name) ? "Images" : "Files"} can be up to ${IMAGE.test(f.name) ? 5 : 10} MB.` : ""
+
 // The message box. / picks a skill, # attaches an open tab (never a private one) and @ brings in a companion; tabs and
 // companions sit above the text as chips that x or Backspace at the start removes. Arrows, Enter or Tab and Esc work the pickers.
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+// Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const [text, setTextState] = useState(() => readDraft(draft))
  useEffect(() => setTextState(readDraft(draft)), [draft])
  const [pick, setPick] = useState(0)
  const [chips, setChips] = useState<{ tab?: TabRef; mate?: Companion }[]>([])
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
+ const [files, setFiles] = useState<Attached[]>([])
+ const [dropping, setDropping] = useState(false)
+ const me = useId()
+ useEffect(() => { // what Still kept from a pick, drop or paste in this box
+  const got = (e: Event) => { const d = (e as CustomEvent).detail; if (d.to !== me) return; if (d.files?.length) setFiles(had => [...had, ...d.files].slice(0, MAX_FILES)); if (d.error) toast(d.error) }
+  addEventListener("still-attached", got); return () => removeEventListener("still-attached", got)
+ }, [me])
+ const take = (list: FileList | File[]) => {
+  const all = [...list], room = MAX_FILES - files.length
+  if (all.length > room) toast(`You can attach up to ${MAX_FILES} files to a message.`)
+  for (const f of all.slice(0, Math.max(0, room))) {
+   if (tooBig(f)) { toast(tooBig(f)); continue }
+   const read = new FileReader()
+   read.onload = () => send("aiAttach", { to: me, name: f.name || "pasted-image.png", data: String(read.result).slice(String(read.result).indexOf(",") + 1) })
+   read.readAsDataURL(f)
+  }
+ }
  const box = useRef<HTMLTextAreaElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
  const setText = (v: string) => { setTextState(v); keepDraft(draft, v); setPick(0); setShut(null); onTyping?.(!!v.trim()) }
  const attached = chips.flatMap(c => c.tab ? [c.tab.id] : [])
- const message = [...chips.flatMap(c => c.mate ? ["@" + c.mate.name] : []), text.trim()].join(" ").trim()
- const submit = () => { if (!message || disabled) return; onSubmit(message, attached); setText(""); setChips([]) }
+ const typedMessage = [...chips.flatMap(c => c.mate ? ["@" + c.mate.name] : []), text.trim()].join(" ").trim()
+ const message = typedMessage || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
+ const submit = () => { if (!message || disabled) return; onSubmit(message, attached, files.map(f => f.id)); setText(""); setChips([]); setFiles([]) }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(text)?.[2].toLowerCase()
  const tabWord = /(^|\s)#([^\s#]*)$/.exec(text)?.[2].toLowerCase()
@@ -250,22 +277,30 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   : tabWord !== undefined ? ["Tabs", open.filter(t => (t.title + " " + t.url).toLowerCase().includes(tabWord)).slice(0, 6).map(t => ({ key: t.id, icon: <TabIcon tab={t} />, label: t.title || host(t.url), sub: host(t.url), run: () => attach({ tab: t }, /(^|\s)#[^\s#]*$/) }))]
   : mateWord !== undefined ? ["Companions", (ai.companions ?? []).filter(c => !chips.some(x => x.mate?.id === c.id) && c.name.toLowerCase().includes(mateWord)).slice(0, 6).map(c => ({ key: c.id, icon: <Face companion={c} size={22} />, label: c.name, sub: premadeOf(c)?.role ?? "Your own companion", run: () => attach({ mate: c }, /(^|\s)@[\w-]*$/) }))]
   : ["", []]
- return <InputGroup className="composer" style={{ "--hue": hueOf(companion) } as CSSProperties}>
+ const dragging = (e: { dataTransfer: DataTransfer }) => e.dataTransfer.types.includes("Files")
+ return <InputGroup className={"composer" + (dropping ? " is-drop" : "")} style={{ "--hue": hueOf(companion) } as CSSProperties}
+  onDragOver={e => { if (!dragging(e) || disabled) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropping(true) }}
+  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false) }}
+  onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
+  {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
-  {used.length + chips.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+  {used.length + chips.length + files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+   {files.map(f => <FileChip key={f.id} file={f} onRemove={() => setFiles(files.filter(x => x !== f))} />)}
    {chips.map(c => c.tab ? <span key={"t" + c.tab.id} className="skill-chip mention-chip" title={c.tab.url}><TabIcon tab={c.tab} /><span>{c.tab.title || host(c.tab.url)}</span><button type="button" aria-label={"Remove " + (c.tab.title || host(c.tab.url))} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>
     : c.mate && <span key={"m" + c.mate.id} className="skill-chip mention-chip" style={{ "--hue": hueOf(c.mate) } as CSSProperties}><Face companion={c.mate} size={16} /><span>@{c.mate.name}</span><button type="button" aria-label={"Remove " + c.mate.name} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>)}
    {used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}
   </InputGroupAddon>}
-  <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onKeyDown={e => {
+  <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onPaste={e => { if (e.clipboardData.files.length) { e.preventDefault(); take(e.clipboardData.files) } }} onKeyDown={e => {
    if (items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : items.length - 1)); return }
    if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
    if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
-   if (e.key === "Backspace" && chips.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) { e.preventDefault(); setChips(chips.slice(0, -1)); return }
+   if (e.key === "Backspace" && chips.length + files.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) { e.preventDefault(); if (chips.length) setChips(chips.slice(0, -1)); else setFiles(files.slice(0, -1)); return }
    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
   <InputGroupAddon align="block-end">
-   <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
+   <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add files, a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
     <DropdownMenuContent {...add.props} className="w-72">
+     <DropdownMenuItem onSelect={() => send("aiPickFiles", { to: me })}><Paperclip />Add files<span className="menu-hint">or drop them here</span></DropdownMenuItem>
+     <DropdownMenuSeparator />
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
      {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
@@ -384,7 +419,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const chat = ai.chats.find(c => c.id === ai.chatId)
  const [offRecord, setOffRecord] = useState(false)
  const forget = chat ? !!chat.noMemory : offRecord
- const submit = (value: string, tabs: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }) })
+ const submit = (value: string, tabs: string[] = [], files: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
  const you = calledBy(companion)
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
@@ -438,7 +473,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><SkillText text={m.text} skills={ai.skills} /></div> }
-    if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} /></div>
+    if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
     if (m.role === "ask" || m.role === "tell") return <ExchangeCard key={i} m={m} ai={ai} send={send} onLink={openLink} />
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)

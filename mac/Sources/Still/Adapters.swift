@@ -3,6 +3,7 @@
 // through Still's MCP server and nothing else.
 import Darwin
 import Foundation
+import PDFKit
 
 struct AgentModel { let id: String, name: String, efforts: [String] }
 
@@ -29,6 +30,37 @@ enum AgentEvent {
 
 let agentEfforts = ["low", "medium", "high"]
 var aiFolder: String { support.appendingPathComponent("ai").path }
+// Attachments: up to 10 a message, files up to 10 MB and images up to 5 MB (what the AI apps take).
+let maxFiles = 10, maxFile: Int64 = 10 << 20, maxImage: Int64 = 5 << 20
+var attachmentsFolder: String { aiFolder + "/attachments" }
+func imageMime(_ name: String) -> String? { ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"][(name as NSString).pathExtension.lowercased()] }
+func sizeText(_ b: Int64) -> String { b < 1024 ? "\(b) B" : b < 1 << 20 ? String(format: "%.1f KB", Double(b) / 1024) : String(format: "%.1f MB", Double(b) / 1048576) }
+func attachment(_ id: String) -> AiFile? {
+ guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder + "/" + id).first else { return nil }
+ let size = (try? FileManager.default.attributesOfItem(atPath: attachmentsFolder + "/" + id + "/" + name)[.size] as? Int) ?? 0
+ return AiFile(id: id, name: name, size: size)
+}
+func filesNote(_ files: [AiFile]) -> String {
+ "\n\n[Still] The user attached \(files.count == 1 ? "a file" : "\(files.count) files"): " + files.map { "\"\($0.name)\" (\(sizeText(Int64($0.size))), id \($0.id))" }.joined(separator: "; ") + ". Read each with read_attachment before you answer."
+}
+/// read_attachment: text and code as text, a PDF's text, an image as itself.
+func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
+ guard let file = attachment(id) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
+ let url = URL(fileURLWithPath: attachmentsFolder + "/" + id + "/" + file.name)
+ did(who, "Read " + file.name)
+ if let mime = imageMime(file.name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
+ var text: String
+ if url.pathExtension.lowercased() == "pdf" {
+  guard let pdf = PDFDocument(url: url) else { return agentFail("Couldn't read \(file.name) as a PDF. Ask the user for another copy.") }
+  text = pdf.string ?? ""
+ } else {
+  guard let data = try? Data(contentsOf: url), !data.prefix(8000).contains(0) else { return agentFail("\(file.name) isn't text, a PDF or an image Still can show you. Tell the user what you can read.") }
+  text = String(decoding: data, as: UTF8.self)
+ }
+ if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": file.name, "text": "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)"]) }
+ let chars = Array(text), at = min(offset, chars.count), end = min(chars.count, at + 20000)
+ return agentOk(["name": file.name, "text": String(chars[at..<end]), "offset": at, "next": end < chars.count ? end as Any : NSNull(), "length": chars.count])
+}
 /// This app's own binary: what the AI apps start as Still's MCP server.
 let stillExecutable = Bundle.main.executablePath ?? CommandLine.arguments[0]
 

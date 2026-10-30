@@ -13,6 +13,7 @@ internal static class McpServer
  internal static readonly object[] BrowserTools = [
   Tool("list_tabs", "List the open tabs (never private ones) with their tabIds. `yours` marks the tab you're working in.", new { }),
   Tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.", new { query = Str("What to search for"), count = Num("How many results, up to 10 (default 8)") }, "query"),
+  Tool("read_attachment", "Read a file the user attached to their message, by the id Still gave you: text and code come back as text (20000 characters at a time), PDFs as their text, images as the image itself.", new { id = Str("The attachment's id"), offset = Num("Text position to continue from, for long files") }, "id"),
   Tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.", new { url = Str("The page's URL"), offset = Num("Text position to continue from, for long pages") }, "url"),
   Tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.", new { url = Str("URL or search terms"), background = Bool("true (the default in Still's chat): your own tab, kept out of the user's tab strip. false: open it among the user's tabs, only when they asked for it there") }, "url"),
   Tool("navigate", "Load a URL or search terms in your current tab (or tabId).", new { url = Str("URL or search terms"), tabId = Str("Tab id (optional)") }, "url"),
@@ -157,7 +158,7 @@ internal static class McpServer
   var r = JsonNode.Parse(reply)!;
   if (r["ok"]?.GetValue<bool>() != true) return new { content = new[] { new { type = "text", text = r["error"]?.GetValue<string>() ?? "Failed." } }, isError = true };
   var data = r["result"];
-  if (data is JsonObject obj && obj["image"] is { } img) return new { content = new object[] { new { type = "image", data = img.GetValue<string>(), mimeType = "image/png" } } };
+  if (data is JsonObject obj && obj["image"] is { } img) return new { content = new object[] { new { type = "image", data = img.GetValue<string>(), mimeType = obj["mime"]?.GetValue<string>() ?? "image/png" } } };
   return new { content = new[] { new { type = "text", text = PlainText(data) } } };
  }
  static string PlainText(JsonNode? data) => data is JsonObject { Count: 1 } o && o["text"] is JsonValue v && v.TryGetValue<string>(out var text) ? text : data?.ToJsonString(Relaxed) ?? "{}";
