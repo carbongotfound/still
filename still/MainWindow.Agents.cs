@@ -107,6 +107,11 @@ public partial class MainWindow
    for (var paused = DateTime.UtcNow.AddSeconds(40); me.Paused && DateTime.UtcNow < paused;) { await Task.Delay(250); me.Seen = DateTime.UtcNow; }
    if (stoppedAgents.TryGetValue(who, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (me.Paused) return Fail(me.SignIn.Length > 0 ? SigningIn(me.SignIn) : TookOver);
+   // A new companion's first chat opens with its own words: its tools (ask_user too) wait for its hello.
+   if (kickoffs.Contains(who) && runs.GetValueOrDefault(who)?.Chat is { } kick) {
+    for (var wait = DateTime.UtcNow.AddSeconds(1.5); !kick.Messages.Any(m => m.Role == "assistant") && DateTime.UtcNow < wait;) await Task.Delay(100);
+    if (!kick.Messages.Any(m => m.Role == "assistant")) return Fail(HelloFirst);
+   }
    var interrupt = agentInterrupts[who] = new(TaskCreationOptions.RunContinuationsAsynchronously);
    // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
    var gate = Gate(who, tool, args, quick);
@@ -235,6 +240,7 @@ public partial class MainWindow
   });
   return true;
  """;
+ const string HelloFirst = "Write your hello first: greet the user and say in a sentence or two what you'll do for them, then use your tools.";
  const string TookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  static void InterruptAgent(BrowserTab t, object reply)

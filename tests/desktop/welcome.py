@@ -457,7 +457,7 @@ def setup(process):
         check(until(lambda: js(process, "!!document.querySelector('.ob-name-box textarea')"), 3), "Then it asks what it's there to do")
         type_into(process, ".ob-name-box textarea", "Plans my trips and keeps receipts in order.")
         time.sleep(.6)
-        check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Add Miso", "Making your own ends with Add Miso")
+        check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Hire Miso", "Making your own ends with Hire Miso")
         click(process, ".ob-next")
         both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Maya,Miso", 3)
         check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Maya, and setup adds a step to pick the main one")

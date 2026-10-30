@@ -81,6 +81,7 @@ var agentServerStarted = false
 // The user is away from Still: the agent asks them in its own chat and passes the answer on with this code.
 var confirmCodes: [String: (client: String, ask: String, until: Date)] = [:]
 let stopText = "The user pressed Stop. Stop what you are doing and wait for the user's next message."
+let helloFirst = "Write your hello first: greet the user and say in a sentence or two what you'll do for them, then use your tools."
 let tookOver = "The user took over this tab for a moment, so your last action may not have finished. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page."
 func signingIn(_ site: String) -> String { "This is a sign-in page for " + site + ". AIs never type or see passwords, so Still paused you and asked the user to sign in themselves. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page." }
 /// A sign-in page: AIs never type or see passwords, so this one waits, like after Take over, while the user signs in
@@ -488,6 +489,12 @@ extension Browser {
   while me.paused && Date() < paused { try? await Task.sleep(nanoseconds: 250_000_000); me.seen = Date() }
   if let until = stoppedAgents[who], Date() < until { return agentFail(stopText) }
   if me.paused { return agentFail(me.signIn.isEmpty ? tookOver : signingIn(me.signIn)) }
+  // A new companion's first chat opens with its own words: its tools (ask_user too) wait for its hello.
+  if kickoffs.contains(who), let kick = runs[who]?.chat {
+   let wait = Date().addingTimeInterval(1.5)
+   while !kick.messages.contains(where: { $0.role == "assistant" }) && Date() < wait { try? await Task.sleep(nanoseconds: 100_000_000) }
+   if !kick.messages.contains(where: { $0.role == "assistant" }) { return agentFail(helloFirst) }
+  }
   let interrupt = Answer()
   agentInterrupts[who] = interrupt
   defer {

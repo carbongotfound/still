@@ -419,10 +419,10 @@ public partial class MainWindow
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Greet: true } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
     fresh.Greet = false; SaveLater();
-    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = "Getting started with " + fresh.Name, Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
+    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
     AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
     await SelectTab(ChatTab(kick.Id));
-    await RunAi(kick, KickoffAsk, "");
+    await RunAi(kick, KickoffAsk + OpenTabsNote(), ""); // the title comes from its hello
     break; }
    case "aiPickFiles": {
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
@@ -568,7 +568,21 @@ public partial class MainWindow
 
  /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
  // A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
- const string KickoffAsk = "[Still] You just joined the user's team and this is your first chat, so start it yourself now. Never open with a generic \"how can I help\". In two or three short lines, say hi and propose one concrete first task for your role, built on what you know about the user: what you remember, what they told Still in setup, open tabs that aren't private and connected apps. Then call ask_user once with one focused question whose answer changes how you'll do it, and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then start the task. If they skip, start with your best guess and say what you assumed.";
+ const string KickoffAsk = "[Still] You were just hired and this is your first chat, so start it yourself now. The user never sees this note. Never open with a generic \"how can I help\", a tool call or a question: your first words are your own message. Greet the user by name if you know it, then say in one or two sentences what you'll do for them first for your role, built on what you know about them: what you remember, what they told Still in setup, the open tabs below and the apps connected for you. Then start that work right away with your real tools. Only after that, and only if you genuinely need something to go further, call ask_user once with one focused question and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then carry on. If they skip, go on with your best guess and say what you assumed.";
+ /// The tabs a new companion can see as it starts (private ones never show), so its hello can build on them.
+ string OpenTabsNote() => Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Where(t => !t.Private && t.Url.StartsWith("http")).Take(8).Select(t => $"\"{Clip(t.Title, 80)}\" {t.Url}").ToList() is { Count: > 0 } open
+  ? "\n[Still] Tabs they have open: " + string.Join("; ", open) + "." : "";
+ /// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
+ /// from the user's first message.
+ void NameFromHello(AiChat chat, string hello)
+ {
+  var line = hello.Replace("**", "").Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault() ?? "";
+  if (line.Length == 0) return;
+  chat.Title = Clip(line, 60);
+  foreach (var w in Windows) foreach (var t in w.tabs.Where(t => t.ChatId == chat.Id)) t.Title = chat.Title;
+  SaveAiChats(); SaveLater();
+  _ = NameChat(chat, hello);
+ }
  static string RoleSetup(Companion? who)
  {
   if (who is { Instructions.Length: > 0 }) return "\nYour instructions for your role follow, as the user edited them. Where the user's own instructions above differ, theirs win.\n\n" + who.Instructions.ReplaceLineEndings("\n") + "\n";
@@ -735,7 +749,13 @@ public partial class MainWindow
    promptFile = request.PromptFile;
    run = me.Run = await cli.Start(exe, request);
    if (me.Stopped) run.Cancel();
-   await foreach (var e in run.Events()) { said |= ApplyEvent(chat, cli, e); PublishAiEverywhere(); }
+   bool named = shown.Length > 0; // a kickoff (no message of the user's) is named from the companion's hello, once it's written
+   await foreach (var e in run.Events()) {
+    said |= ApplyEvent(chat, cli, e);
+    if (!named && e is not AgentEvent.Message && chat.Messages.Find(m => m.Role == "assistant") is { } hello) { named = true; NameFromHello(chat, hello.Text); }
+    PublishAiEverywhere();
+   }
+   if (!named && chat.Messages.Find(m => m.Role == "assistant") is { } spoke) NameFromHello(chat, spoke.Text);
    chat.Started = chat.Session != null;
    stopped = run.Cancelled && !run.TimedOut;
    bool lost = run.Errors.Any(LostSession) || LostSession(chat.Error);
@@ -1002,7 +1022,8 @@ public partial class MainWindow
   return full.StartsWith(root, StringComparison.OrdinalIgnoreCase) && File.Exists(full) ? full : null;
  }
 
- static void Step(AiChat chat, string label) { if (label.Length > 0) chat.Messages.Add(new() { Role = "tool", Text = label }); }
+ /// A step in the chat. A new companion's first chat opens with its own words: no step shows before its hello.
+ static void Step(AiChat chat, string label) { if (label.Length > 0 && !(kickoffs.Contains(chat.Id) && !chat.Messages.Any(m => m.Role == "assistant"))) chat.Messages.Add(new() { Role = "tool", Text = label }); }
 
  /// ask_user: the question shows in the chat with its options, and the AI waits (up to 10 minutes) for the answer.
  static async Task<string> AskInChat(string who, JsonElement args)

@@ -202,7 +202,24 @@ func official(_ cli: AgentAdapter, _ url: String) -> Bool {
  return cli.domains.contains { host == $0 || host.hasSuffix("." + $0) }
 }
 
-func chatStep(_ chat: AiChat, _ label: String) { if !label.isEmpty { chat.messages.append(AiMessage("tool", label)) } }
+/// A step in the chat. A new companion's first chat opens with its own words: no step shows before its hello.
+func chatStep(_ chat: AiChat, _ label: String) { if !label.isEmpty && !(kickoffs.contains(chat.id) && !chat.messages.contains { $0.role == "assistant" }) { chat.messages.append(AiMessage("tool", label)) } }
+
+/// The tabs a new companion can see as it starts (private ones never show), so its hello can build on them.
+func openTabsNote() -> String {
+ let open = browsers.flatMap(\.tabs).filter { !$0.isPrivate && $0.url.hasPrefix("http") }.prefix(8).map { "\"\(clipped($0.title, 80))\" \($0.url)" }
+ return open.isEmpty ? "" : "\n[Still] Tabs they have open: " + open.joined(separator: "; ") + "."
+}
+
+/// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
+/// from the user's first message.
+@MainActor func nameFromHello(_ chat: AiChat, _ hello: String) {
+ guard let line = hello.replacingOccurrences(of: "**", with: "").components(separatedBy: "\n").map(tidy).first(where: { !$0.isEmpty }) else { return }
+ chat.title = clipped(line, 60); saveAiChats()
+ for browser in browsers { for tab in browser.tabs where tab.chatId == chat.id { tab.title = chat.title }; browser.publishAi() }
+ saveAllLater()
+ Task { await nameChat(chat, hello) }
+}
 
 func toolLabel(_ name: String, _ input: Any?) -> String {
  let tool = name.replacingOccurrences(of: "mcp__still__", with: "").replacingOccurrences(of: "still__", with: "")
@@ -662,10 +679,10 @@ extension Browser {
    guard !incognitoWindow, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else { break }
    fresh.greet = false; storeCompanions()
    let kick = AiChat()
-   kick.companion = fresh.id; kick.title = "Getting started with " + fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
+   kick.companion = fresh.id; kick.title = fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
    aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
    openChatTab(kick.id); v.chat = kick
-   runAi(kick, kickoffAsk, shown: "")
+   runAi(kick, kickoffAsk + openTabsNote(), shown: "") // the title comes from its hello
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
     let picker = NSOpenPanel()
@@ -956,7 +973,13 @@ extension Browser {
    let started = try await cli.start(exe, request)
    run = started; me.run = started
    if me.stopped { started.cancel() }
-   for await e in started.events() { if applyEvent(chat, cli, e) { said = true }; publishAiEverywhere() }
+   var named = !shown.isEmpty // a kickoff (no message of the user's) is named from the companion's hello, once it's written
+   for await e in started.events() {
+    if applyEvent(chat, cli, e) { said = true }
+    if !named { if case .message = e {} else if let hello = chat.messages.first(where: { $0.role == "assistant" }) { named = true; nameFromHello(chat, hello.text) } }
+    publishAiEverywhere()
+   }
+   if !named, let spoke = chat.messages.first(where: { $0.role == "assistant" }) { nameFromHello(chat, spoke.text) }
    chat.started = chat.session != nil
    stopped = started.cancelled && !started.timedOut
    if (started.errors.contains(where: lostSession) || lostSession(chat.error)) && !said && !stopped && cli.namesSession {

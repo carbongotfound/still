@@ -261,7 +261,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   if (!on && main === key) setMain("")
   if (on) react("hired")
  }
- // "Make your own" ends with "Add <name>", back on the crew with it picked.
+ // "Make your own" ends with "Hire <name>", back on the crew with it picked.
  const addOwn = () => {
   const final = look
   const own = { ...draft, name: draft.name.trim(), look: lookKey(final) }
@@ -446,7 +446,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
    <span className="flex-1" />
    {!answered && <button className="ob-not-now" onClick={skip}>{at === "tools" ? "Skip" : "Not now"}</button>}
    {at !== "how" && <Button className="ob-next" disabled={blocked || !answered} onClick={next}>{at === "start" ? (!task && isNo(typed) ? "Finish" : "Let's go") : at === "hello" ? "Let's start" : at === "talk" ? (again ? "Done" : "Looks good")
-    : at === "crew" && making ? (draft.name.trim() ? `Add ${draft.name.trim()}` : "Add them") : "Continue"}<CornerDownLeft /></Button>}
+    : at === "crew" && making ? (draft.name.trim() ? `Hire ${draft.name.trim()}` : "Hire them") : "Continue"}<CornerDownLeft /></Button>}
   </motion.footer>
   {introOn && <IntroLayer at={{ x: innerWidth / 2, y: innerHeight / 2 - 30, r: size / 2 }} hue={look.color} reduced={!!reduce} sound={soundOn} onSound={sound}
    live={() => !!mascotRef.current?.querySelector("canvas[data-live]")} onStart={() => setWoke(true)} onEnd={endIntro} />}

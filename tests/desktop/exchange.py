@@ -47,7 +47,9 @@ FAKE = textwrap.dedent(r'''
     line = lines[min(n, len(lines) - 1)]
     def say(e): print(json.dumps(e), flush=True)
     say({"type": "system", "subtype": "init", "session_id": args[args.index("--resume") + 1] if "--resume" in args else "%s-%d" % (name, time.time_ns())})
+    if line.get("say"): say({"type": "assistant", "message": {"content": [{"type": "text", "text": line["say"]}]}})  # written before its tool calls
     calls = ([{"name": "remember", "arguments": {"fact": line["remember"], "kind": "project"}}] if line.get("remember") else []) + line.get("calls", [])
+    for call in line.get("calls", []) if line.get("steps") else []: say({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": call["name"], "name": "mcp__still__" + call["name"], "input": call["arguments"]}]}})
     results = []
     if calls:
         server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
@@ -67,9 +69,9 @@ FAKE = textwrap.dedent(r'''
             with open(os.path.join(here, "calls.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"name": name, "call": call, "error": r.get("result", {}).get("isError", False), "text": text}) + "\n")
         still.stdin.close()
     time.sleep(line.get("sleep", 0))
-    text = line["text"]
+    text = line.get("text", "")
     for i, r in enumerate(results): text = text.replace("{%d}" % i, r)
-    say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
+    if text: say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
 ''')
 
 
