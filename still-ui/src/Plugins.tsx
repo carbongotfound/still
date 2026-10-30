@@ -1,5 +1,5 @@
 import { useEffect, useState, type CSSProperties } from "react"
-import { Check, Loader2, Unplug } from "lucide-react"
+import { Check, Loader2, Plug, Unplug } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
@@ -26,9 +26,17 @@ export const pluginName = (slug: string) => POPULAR.find(p => p[0] === slug)?.[1
 export const andList = (names: string[]) => names.length < 2 ? names.join("") : names.slice(0, -1).join(", ") + " and " + names.at(-1)
 
 /// A clean name chip: the app's initial on a soft tile, then its name.
+const plugHue = (slug: string) => ({ "--hue": BODY_COLORS[[...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % BODY_COLORS.length][0] }) as CSSProperties
 export function PluginChip({ slug, name, hidden }: { slug: string; name: string; hidden?: boolean }) {
- const hue = BODY_COLORS[[...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % BODY_COLORS.length][0]
- return <span className="plug-chip" aria-hidden={hidden} style={{ "--hue": hue } as CSSProperties}><i aria-hidden>{name.charAt(0)}</i>{name}</span>
+ return <span className="plug-chip" aria-hidden={hidden} style={plugHue(slug)}><i aria-hidden>{name.charAt(0)}</i>{name}</span>
+}
+
+/// The home row's Plugins button: connected apps as overlapping tiles (up to four, or three and +N), a plug when there are none.
+export function PluginStack({ plugins, onOpen }: { plugins?: PluginsState; onOpen: () => void }) {
+ const on = plugins?.key ? plugins.connected : [], shown = on.slice(0, on.length > 4 ? 3 : 4)
+ return <button className="home-plugins" onClick={onOpen} aria-label={on.length ? `Plugins: ${andList(on.map(c => c.name))} connected` : "Plugins: none connected yet"}>
+  <span className={cn("plug-stack", !on.length && "is-empty")} aria-hidden>{on.length ? <>{shown.map(c => <i key={c.id} style={plugHue(c.slug)}>{c.name.charAt(0)}</i>)}
+   {on.length > shown.length && <i className="is-more">+{on.length - shown.length}</i>}</> : <i><Plug /></i>}</span>Plugins</button>
 }
 
 /// Setup's belt: two rows of apps gliding opposite ways, paused under the pointer. Reduced motion gets a still grid (App.css).
