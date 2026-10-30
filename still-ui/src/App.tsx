@@ -6,13 +6,13 @@ import { Button } from "@/components/ui/button"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
-import { PluginsSettings, andList } from "./Plugins"
+import { PluginsSettings } from "./Plugins"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, fromPremade, starters, type Premade } from "./crew"
-import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, TeamPicker, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
+import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
 import { DEFAULT_LOOK } from "./look"
@@ -274,8 +274,6 @@ export default function App() {
  const [editing, setEditing] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
  const [library, setLibrary] = useState(false) // "New companion" opens Still's companion library first
- const [team, setTeam] = useState<string[]>([]) // a team chat about to start on the new tab page
- const [teamPick, setTeamPick] = useState(false)
  const [meeting, setMeeting] = useState<Premade | null>(null) // a library companion, previewed before it's added
  const edit = (c: Companion) => c.id ? setProfile(c.id) : setLibrary(true)
  const hire = (c: Companion, said: string) => { send("companionSave", c); toast(said) }
@@ -412,7 +410,7 @@ export default function App() {
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
  const oldName = state.welcome || state.secondary ? undefined : ai?.companions?.find(c => c.askName) // a companion with an old stock name, asked once
- const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || !!profile || library || !!meeting || teamPick || (!!viewing && !sideViewer) || tasksOpen || replay
+ const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
@@ -697,19 +695,14 @@ export default function App() {
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
-           <CompanionSwitch ai={ai} companion={companion} onPick={id => { setBuddy(id); setTeam([]) }} onEdit={edit} onManage={() => setView("companions")} onTeam={() => setTeamPick(true)} />
-           <TeamPicker ai={ai} open={teamPick} onOpenChange={setTeamPick} onStart={setTeam} />
+           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={edit} onManage={() => setView("companions")} />
 
           </div>
           <div className="home-center">
-           {team.length ? <div className="home-team" role="group" aria-label="Your team">
-            {team.map(id => { const c = companionOf(ai, id); return <button key={id} type="button" className="profile-open home-team-face" aria-label={`${c?.name}'s profile`} onClick={() => setProfile(id)}><Face companion={c} size={team.length > 3 ? 120 : 150} follow mood={typing ? "listening" : "idle"} /></button> })}
-            <button type="button" className="home-team-x" onClick={() => setTeam([])}><X />Just {companion.name}</button>
-           </div>
-           : <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>}
+           <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={() => setProfile(companion.id)}><Face key={companion.id} companion={companion} size={240} follow mood={typing ? "listening" : "idle"} /></button>
            <div className="home-compose"><Composer draft={"tab." + state.activeId} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
-            placeholder={team.length ? `Give ${andList(team.map(id => companionOf(ai, id)?.name ?? ""))} something to work on together…` : `Ask ${companion.name} anything, or hand over a task…`}
-            onSubmit={(text, tabs) => { send("aiSend", { text, home: true, companion: companion.id, ...(team.length && { team }), ...(tabs.length && { tabs }) }); setTeam([]) }} /></div>
+            placeholder={`Ask ${companion.name} anything, or hand over a task…`}
+            onSubmit={(text, tabs) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }) }) }} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
@@ -940,7 +933,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
   <ScrollArea className="chat-side-list">
    {!chats.length && <p className="chat-rail-empty">Your chats show up here.</p>}
    {chats.map(c => <div key={c.id} className={cn("chat-side-item", c.id === activeChat && "is-on")}>
-    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}>{c.team?.length ? <span className="history-team is-small">{c.team.slice(0, 2).map(id => <Face key={id} companion={companionOf(ai, id)} size={18} />)}</span> : <Face companion={companionOf(ai, c.companion)} size={18} />}<span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
+    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
     {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
    </div>)}
   </ScrollArea>
@@ -991,7 +984,7 @@ function ChatInfo({ ai, pages, onEdit, onSettings, onFile }: { ai: AiState; page
  const harness = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  return <aside className="chat-info" aria-label="Chat details">
   <h4>In this chat</h4>
-  {(ai.chatTeam?.length ? ai.chatTeam.map(id => companionOf(ai, id)) : [companion]).map(c => c && <button key={c.id} className="chat-info-row" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={18} /><b>{c.name}</b><Settings /></button>)}
+  {[companion].map(c => c && <button key={c.id} className="chat-info-row" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={18} /><b>{c.name}</b><Settings /></button>)}
   <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
   {files.length > 0 && <><Separator /><h4>Files</h4>{files.map(f => <button key={f.path} className="chat-info-row" title={"Open " + f.name} onClick={() => onFile(f.path)}><FileIcon path={f.path} /><b>{f.name}</b></button>)}</>}

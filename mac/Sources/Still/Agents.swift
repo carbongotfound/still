@@ -505,7 +505,7 @@ extension Browser {
   }
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
-  let limit: Double = tool == "ask_user" || tool == "use_plugin" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
+  let limit: Double = tool == "ask_user" || tool == "use_plugin" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
   switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
   case .done(let reply): return reply ?? agentFail("Failed.")
   case .interrupted(let reply): return reply
@@ -791,6 +791,7 @@ extension Browser {
   do {
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
+   case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "plugin_tools", "use_plugin": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget": return memoryTool(who, tool, args)
    case "save_file":
@@ -1258,6 +1259,12 @@ enum Mcp {
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
         str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),
+  // Teammates: the user's other companions, each with its own role, memory and tools (Ai.swift, exchange).
+  tool("list_companions", "List your teammates: the user's other companions, what each one does, and which one is you.", [], []),
+  tool("ask_companion", "Ask a teammate something and wait for their reply (up to 10 minutes). They answer with their own role, memory and tools, and only they see your message. Say what you need and why, with what they need from you. The user sees the exchange.",
+       [str("name", "The teammate's name, from list_companions"), str("message", "What you're asking them")], ["name", "message"]),
+  tool("tell_companion", "Hand work over to a teammate without waiting: they do it in their own chat, where the user sees it. Give them everything they need to do it.",
+       [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you")], ["name", "message"]),
   // The user's own apps (Gmail, Calendar, Slack…) through Composio, once they connect them (Plugins.swift).
   tool("plugin_tools", "Find tools in the user's connected apps (plugins), like Gmail, Google Calendar, Slack or Notion: each tool's name, what it does, its inputs and whether it asks the user first. Leave plugin empty to search every app connected for you.",
        [str("plugin", "One app, like gmail or googlecalendar (optional)"), str("query", "A few words about what you want to do (optional)")], []),
