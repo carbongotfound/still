@@ -162,8 +162,8 @@ export function fromShared(text: string): Companion | null {
 export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.name, face: "", color: "", job: p.job, tone: p.tone, mode: "default", look: lookKey(p.look), crew: p.id,
  routines: [{ id: p.id, text: p.routine[0], time: p.routine[1], days: p.routine[2], on: false }] })
 
-// The gesture a companion plays when it joins the team.
-const JOINED_GESTURE = "hired"
+// The gesture a companion plays when it joins the team: its Blender "yes!" (looks without one do the hired bounce).
+const JOINED_GESTURE = "yes"
 /// A companion just joined: it celebrates, then the user starts its first chat (it opens with a task and one question)
 /// or carries on.
 export function JoinedCard({ companion, onStart, onLater }: { companion: Companion; onStart: () => void; onLater: () => void }) {

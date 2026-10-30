@@ -1,7 +1,9 @@
 """The companions in 3D: every sample look in every state, live, in light and dark (docs/agentic/compare/mascots-*.png).
   --gifs       one GIF per animation of the default look, posed frame by frame (docs/agentic/mascot/*.gif)
-  --fallbacks  the two pictures shown when WebGL is off (still-ui/src/assets/companion; rebuild the shell afterwards)
+  --fallbacks  the default look's pictures drawn ahead, 3D and 2D (still-ui/src/assets/companion; rebuild the shell afterwards)
   --screens    the companions where people meet them, at the brief's sizes
+Also: the Blender companions hold no prop and each has its "yes!" clip (glb and strip), a companion saved holding its
+role's old prop keeps its rig, and Make your own's props never go into the body or a nub.
 
 Run: python tests/desktop/mascots.py artifacts/Still-QA/Still.exe [--gifs] [--fallbacks] [--screens]
 """
@@ -10,6 +12,7 @@ import io
 import json
 from pathlib import Path
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -126,12 +129,65 @@ def gifs():
         quit(process)
 
 
+# look.ts RIGS: the six roles' looks (no props) and Make your own's, and the model each wears
+RIGS = [({"color": "#f7a26a", "shape": "tall", "prop": ""}, "jonah"), ({"color": "#f2a5c4", "shape": "gumdrop", "prop": ""}, "talia"),
+        ({"color": "#a6cf9c", "shape": "block", "prop": ""}, "nora"), ({"color": "#f6d56a", "shape": "round", "prop": ""}, "leo"),
+        ({"color": "#8cc3ee", "shape": "bump", "prop": ""}, "ivan"), ({"color": "#c0a3ec", "shape": "lean", "prop": ""}, "maya"),
+        ({"color": "#ddd4c6", "shape": "bean", "prop": ""}, "custom")]
+PROPS = ["laptop", "mug", "headphones", "notebook", "phone", "magnifier", "wrench", "paintbrush", "camera", "briefcase"]  # look.ts PROPS
+SHAPES = ["bean", "tall", "gumdrop", "block", "round", "squat", "bump", "lean"]  # look.ts SHAPES
+
+
+def glb(path):
+    b = path.read_bytes()
+    return json.loads(b[20:20 + struct.unpack_from("<I", b, 12)[0]])
+
+
+def art():
+    """Every Blender companion: no prop in its model, and a 1-1.5 s "yes!" clip in its glb and as a chat-size strip."""
+    assets = ROOT / "still-ui" / "src" / "assets"
+    for _, app in RIGS:
+        g = glb(assets / "rig" / f"{app}.glb")
+        held = [n["name"] for n in g["nodes"] if n.get("name", "").startswith("prop")]
+        clips = {a["name"]: max(g["accessors"][x["input"]]["max"][0] for x in a["samplers"]) for a in g["animations"]}
+        yes = clips.get("yes", 0)
+        strip = json.loads((assets / "sprite" / app / f"{app}.json").read_text()).get("yes")
+        check(not held and 1 <= yes <= 1.5 and strip and (assets / "sprite" / app / f"{app}-yes.webp").exists(),
+              f"{app}: holds nothing; a {yes:.2f} s yes clip and its {strip and strip['frames']}-frame strip")
+
+
+def looks():
+    """The roles' looks (no props) wear their own models; a companion saved holding its role's old prop still does; and
+    Make your own's props, on every shape, never go into the body or a nub through any state or gesture."""
+    old = [{"Id": "jonah", "Name": "Jonah", "Job": "Sales.", "Crew": "sales", "Look": json.dumps({"color": "#f7a26a", "shape": "tall", "prop": "chart", "accessory": ""})},
+           {"Id": "maya", "Name": "Maya", "Job": "Research.", "Crew": "research", "Look": json.dumps({"color": "#c0a3ec", "shape": "lean", "prop": "magnifier", "accessory": ""})}]
+    process, _ = window({"AiHarness": "claude", "Companions": old})
+    try:
+        js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: %s }))" % json.dumps({"state": "idle", "size": 120, "looks": [l for l, _ in RIGS]}))
+        worn = until(lambda: js(process, "document.querySelectorAll('.mascot-reel .mascot').length && JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map(m => m.dataset.rig ?? ''))"), 20)
+        check(worn and json.loads(worn) == [a for _, a in RIGS], f"The roles' looks, no props, wear their own models: {worn}")
+        looks = [{"color": "#f7a26a", "shape": sh, "prop": pr, "accessory": ""} for pr in PROPS for sh in SHAPES]
+        t = time.monotonic()
+        js(process, "document.dispatchEvent(new CustomEvent('still-mascot-clashes', { detail: %s }))" % json.dumps(looks))
+        got = until(lambda: js(process, "window.__clashes && JSON.stringify(window.__clashes)"), 300)
+        bad = [f"{l['prop']}/{l['shape']}: {c}" for l, c in zip(looks, json.loads(got or "[]")) if c]
+        check(got and not bad, f"Make your own's {len(PROPS)} props on {len(SHAPES)} shapes clear the body and nubs ({time.monotonic() - t:.0f} s)" + "".join("\n  " + b for b in bad[:12]))
+    finally:
+        quit(process)
+    process, _ = window({"AiHarness": "claude", "Companions": old})
+    try:
+        send(process, "new")
+        until(lambda: js(process, "!!document.querySelector('.home-face .mascot')"), 30)
+        go = "document.querySelector('.mate-portrait') || [...document.querySelectorAll('.home-chips button')].find(b => b.innerText.includes('Companions'))?.click(); "
+        rigs = until(lambda: js(process, go + "document.querySelectorAll('.mate-portrait .mascot').length === 2 && JSON.stringify([...document.querySelectorAll('.mate-portrait .mascot')].map(m => m.dataset.rig ?? ''))"), 20)
+        check(rigs and json.loads(rigs) == ["jonah", "maya"], f"Saved holding their role's old prop (chart, magnifier), they still wear their rigs: {rigs}")
+    finally:
+        quit(process)
+
+
 def blinks():
     """A blink (Blender's, held by the test clock) shuts every rig's eyes, and they open again after it."""
-    looks = [{"color": "#f7a26a", "shape": "tall", "prop": "chart"}, {"color": "#f2a5c4", "shape": "gumdrop", "prop": "badge"},
-             {"color": "#a6cf9c", "shape": "block", "prop": "clipboard"}, {"color": "#f6d56a", "shape": "round", "prop": "megaphone"},
-             {"color": "#8cc3ee", "shape": "bump", "prop": "laptop"},
-             {"color": "#c0a3ec", "shape": "lean", "prop": "magnifier"}, {"color": "#ddd4c6", "shape": "bean", "prop": ""}]  # look.ts: RIGS
+    looks = [l for l, _ in RIGS]
     process, _ = window()
     try:
         js(process, "document.documentElement.dataset.mascotFreeze = '0.5'; document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: %s }))"
@@ -153,25 +209,28 @@ def blinks():
 
 
 def fallbacks():
-    """Without WebGL, Still shows the default look drawn ahead, one picture per framing (whole, and the look editor's top half)."""
+    """Without WebGL, Still shows the default look drawn ahead, one picture per framing (whole, and the look editor's top half),
+    and its 2D one at chat sizes (so a plain window's toolbar companion needs no three.js)."""
     process, _ = window()
     try:
         js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: { state: 'idle' } }))")
         until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
         chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
         look = json.dumps({"color": "#8cc3ee", "shape": "bean", "prop": "", "accessory": ""})  # look.ts: DEFAULT_LOOK
-        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust') }})")
+        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust'), flat: m.picture({look}, 'idle', 144, 'full', true) }})")
         until(lambda: js(process, "!!window.__pics"), 10)
         folder = ROOT / "still-ui" / "src" / "assets" / "companion"
         folder.mkdir(parents=True, exist_ok=True)
-        for frame in ("full", "bust"):
+        for frame in ("full", "bust", "flat"):
             (folder / f"default-{frame}-idle.webp").write_bytes(base64.b64decode(js(process, f"window.__pics.{frame}").split(",", 1)[1]))
-        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 1000 for f in ("full", "bust")), "The two fallback pictures are drawn")
+        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 1000 for f in ("full", "bust", "flat")), "The three fallback pictures are drawn")
     finally:
         quit(process)
 
 
+art()
 plain_window()
+looks()
 blinks()
 quit(gallery("Light"))
 quit(gallery("Dark"))

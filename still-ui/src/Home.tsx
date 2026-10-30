@@ -117,7 +117,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
-    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={118} follow /><Pencil className="mate-edit" /></button>
+    <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={112} follow /><Pencil className="mate-edit" /></button>
     <div className="mate-info">
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>

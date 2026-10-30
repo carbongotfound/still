@@ -437,7 +437,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const face = (i: number) => {
   if (same(i)) return null
   const c = companionOf(ai, whoOf(i)) ?? companion, n = c?.name ?? name
-  return <button type="button" className="ai-turn-face profile-open" title={n} aria-label={`${n}'s profile`} onClick={() => showProfile(c)}><Face companion={c} size={30} mood={i >= items.length - 1 ? mood : "idle"} /></button>
+  return <button type="button" className="ai-turn-face profile-open" title={n} aria-label={`${n}'s profile`} onClick={() => showProfile(c)}><Face companion={c} size={40} mood={i >= items.length - 1 ? mood : "idle"} /></button>
  }
  const turn = (i: number) => same(i) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })

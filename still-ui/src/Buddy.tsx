@@ -1,6 +1,6 @@
-import { createContext, useContext, useMemo } from "react"
-import { Mascot, type MascotState } from "./Mascot"
-import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, isOld, parseLook, type Look } from "./look"
+import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { Mascot, pictureOf, useMascotVersion, type MascotState } from "./Mascot"
+import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, ROLE_PROPS, isOld, parseLook, type Look } from "./look"
 
 // The old companion hues: a companion saved before looks existed keeps its color.
 export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be0", apricot: "#f4c2a8", mint: "#9ed8c6", blush: "#f3b7c1", periwinkle: "#b8c4f0", berry: "#e58fa8", ocean: "#8fb8e8" }
@@ -23,9 +23,13 @@ export const CompanionContext = createContext<Companion | undefined>(undefined)
 export const agentFace = (name = "") => /claude/i.test(name) ? "claude" : /gpt|openai|codex/i.test(name) ? "chatgpt" : /grok/i.test(name) ? "grok" : ""
 export function lookOf(c?: Companion): Look {
  if (!c) return DEFAULT_LOOK
- if (c.look) { // a role's companion saved before the blobs gets the role's own look
+ if (c.look) { // a role's companion saved before the blobs, or holding the prop its role had, gets the role's own look
   const role = c.crew && ROLE_LOOKS[c.crew]
-  if (role) try { if (isOld(JSON.parse(c.look))) return role } catch { /* not JSON: parseLook falls back */ }
+  if (role) try {
+   const o = JSON.parse(c.look)
+   if (isOld(o)) return role
+   if (o.color === role.color && o.shape === role.shape && o.prop === ROLE_PROPS[c.crew!]) return parseLook({ ...o, prop: "" })
+  } catch { /* not JSON: parseLook falls back */ }
   return parseLook(c.look)
  }
  if (c.crew && ROLE_LOOKS[c.crew]) return ROLE_LOOKS[c.crew]
@@ -44,5 +48,22 @@ export function Face({ companion, mood = "idle", size = 56, follow, gesture, ges
   className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face
+
+/// Home's space: the companion you work with, live and big (its body about 40% of the view's height), and the rest of the
+/// team behind it, smaller, as still pictures; a teammate picks it. The view is the scrolling page it stands in.
+const FILL = .6 // a body's share of its canvas: the frame clears every clip's reach and hop
+export function Space({ companion, team = [], mood, onOpen, onPick }: { companion: Companion; team?: Companion[]; mood: Mood; onOpen: () => void; onPick: (id: string) => void }) {
+ const ref = useRef<HTMLDivElement>(null), [view, setView] = useState(innerHeight - 100)
+ useEffect(() => {
+  const page = ref.current?.closest(".home-main"); if (!page) return
+  const o = new ResizeObserver(() => setView(page.clientHeight)); o.observe(page); return () => o.disconnect()
+ }, [])
+ useMascotVersion()
+ const size = Math.round(Math.max(200, view * .4 / FILL)), rest = team.filter(c => c.id !== companion.id).slice(0, 4)
+ return <div ref={ref} className="space" style={{ "--s": `${size}px` } as CSSProperties}>
+  {rest.map((c, i) => { const url = pictureOf(lookOf(c), "idle", 384, "full"); return <button key={c.id} type="button" className="space-mate" data-at={i} title={c.name} aria-label={`Work with ${c.name}`} onClick={() => onPick(c.id)}>{url && <img src={url} alt="" draggable={false} />}</button> })}
+  <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={onOpen}><Face key={companion.id} companion={companion} size={size} follow mood={mood} /></button>
+ </div>
+}
 /// Opens a companion's profile (App listens), from any of its mascots.
 export const showProfile = (c?: Companion) => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: c.id })) }
