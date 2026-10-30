@@ -135,10 +135,10 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onMemory }: {
 
 /// Skills & plugins: one place for what companions can follow (skills) and the apps they can work in (plugins, through
 /// Composio), each turned on for the companions you pick. One search for both, and a filter.
-export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
+export function SkillsPage({ ai, send, start = "" }: { ai: AiState; send: Send; start?: "" | "plugins" }) {
  const [editing, setEditing] = useState<Skill | null>(null)
  const [find, setFind] = useState("")
- const [only, setOnly] = useState<"" | "skills" | "plugins">("")
+ const [only, setOnly] = useState<"" | "skills" | "plugins">(start)
  const q = find.trim().toLowerCase()
  const skills = (ai.skills ?? []).filter(k => `${k.name} ${k.id} ${k.description}`.toLowerCase().includes(q))
  const chip = (key: typeof only, label: string) => <button className="history-chip" aria-pressed={only === key} onClick={() => setOnly(key)}>{label}</button>

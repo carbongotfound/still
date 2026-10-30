@@ -12,6 +12,7 @@ import { Buddy, CompanionContext, Face, FALLBACK, agentFace, hueOf, lookOf, type
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, fromPremade, starters, type Premade } from "./crew"
+import { PluginStack } from "./Plugins"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
@@ -324,6 +325,8 @@ export default function App() {
  const blank = !!active && !active.url && !active.chatId && !active.isPrivate
  const view = views[active?.id ?? ""] ?? "home"
  const setView = (v: HomeView) => { if (active) setViews(m => ({ ...m, [active.id]: v })) }
+ const pluginsFirst = useRef(false) // the home row's Plugins button opens Skills & plugins on its plugins
+ useEffect(() => { if (view !== "skills") pluginsFirst.current = false }, [view])
  const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
  useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
  const idea = state.tabs.find(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && t.id !== active?.id)
@@ -691,7 +694,7 @@ export default function App() {
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
          : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { setBuddy(id); setView("home") }} onMemory={id => { setMemoryFor(id); open("settings", "memory") }} />
-         : view === "skills" ? <SkillsPage ai={ai} send={send} />
+         : view === "skills" ? <SkillsPage ai={ai} send={send} start={pluginsFirst.current ? "plugins" : ""} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
@@ -708,6 +711,7 @@ export default function App() {
             <button onClick={() => setView("companions")}><Users />Companions</button>
             <button onClick={() => setView("library")}><Library />Library</button>
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
+            <PluginStack plugins={ai?.plugins} onOpen={() => { pluginsFirst.current = true; setView("skills") }} />
            </div>
            <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(([Icon, color, label, sub, prompt]) => <button key={label} className="home-idea" onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{sub}</small></button>)}</div></div>
            {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}

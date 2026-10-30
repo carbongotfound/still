@@ -718,7 +718,13 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-center .home-face { margin-bottom:22px; }
 .home-compose [data-slot=input-group] { border-radius:24px; }
 .home-compose .ai-send[data-slot] { width:36px; height:36px; }
-.home-chips { display:flex; flex-wrap:wrap; justify-content:center; gap:6px; margin-top:14px; }
+.home-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; width:min(680px,100%); padding:0 6px; }
+/* Plugins, at the row's right end: connected apps as overlapping tiles, or a dashed plug when there are none. */
+.home-chips .home-plugins { margin-left:auto; padding-left:6px; }
+.plug-stack { display:flex; } .plug-stack i { display:grid; place-items:center; width:20px; height:20px; margin-left:-6px; border-radius:999px; border:2px solid var(--background);
+ font-style:normal; font-size:10px; font-weight:700; background:color-mix(in oklab,var(--hue) 34%,var(--card)); color:color-mix(in oklab,var(--hue) 50%,var(--foreground)); }
+.plug-stack i:first-child { margin-left:0; } .plug-stack i.is-more { background:var(--muted); color:var(--muted-foreground); font-size:9px; }
+.plug-stack.is-empty i { background:none; border:1.5px dashed var(--border); color:var(--muted-foreground); } .home-chips .plug-stack svg { width:11px; height:11px; }
 .home-chips button { display:flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:999px; font-size:12.5px; font-weight:500; color:var(--muted-foreground); transition:background .16s,color .16s; }
 .home-chips button:hover { background:var(--muted); color:var(--foreground); } .home-chips svg { width:14px; height:14px; }
 .home-ideas .home-idea { grid-template-columns:1fr; row-gap:6px; align-items:start; padding:14px 16px; }

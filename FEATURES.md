@@ -98,7 +98,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Replies**: Markdown renderer (no HTML injection), copyable draft cards, next-step suggestions from `>>` lines (`Markdown.tsx`).
 - ✅ **Step cards**: the companion's avatar sits left of a turn's first line, once per turn, its name only as the avatar's tooltip, and every card and paragraph lines up right of it; each run of actions is one card: icon tile, bold verb and muted target (a site shows as its host, the full address on hover), a check, "+ N more" opens the list (`AiSidebar.tsx` `Step`).
 - ✅ **Skills**: Markdown files with front matter in the profile's skills folder; invoke as `/id` or give to a companion (`MainWindow.Ai.cs` `Skill`).
-- 🚧 (skills-plugins) **Skills & plugins page**: the home rail's Skills is now Skills & plugins: one search for skills and apps, an All / Skills / Plugins filter, each skill with a chip per companion that gives it to them, then the plugins section (`Home.tsx` `SkillsPage`, `Plugins.tsx` `PluginsSection`).
+- ✅ **Skills & plugins page**: the home rail's Skills is now Skills & plugins: one search for skills and apps, an All / Skills / Plugins filter, each skill with a chip per companion that gives it to them, then the plugins section (`Home.tsx` `SkillsPage`, `Plugins.tsx` `PluginsSection`).
+- ✅ **Plugins on the home row**: the row under the new tab's message box ends with Plugins: the connected apps as overlapping tiles (their initial on their color; up to four, or three and +N) or a dashed plug when none are, and a label that names them; it opens Skills & plugins showing plugins (`PluginStack`, `SkillsPage` `start`; tests/desktop/plugins.py)
 - ✅ **Library**: files the AI saved with `save_file`, one folder per chat; built-in viewer with CSV grid and Markdown (`Files.tsx`).
 - ✅ **Set me up again**: typing it reopens setup's interview.
 
@@ -167,8 +168,8 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 ## Plugins (Composio)
 
 - ✅ **Plugins**: your apps through Composio with your own project API key (ak_…), stored with DPAPI/Keychain; reads go ahead, writes ask first (`MainWindow.Plugins.cs`, `Plugins.swift`).
-- 🚧 (skills-plugins) **Key kind check**: a Composio Connect key (ck_…, what Composio's For You page shows) or personal key (uak_…) is named as the wrong kind, with where the project key is; it's never sent or kept (`NotProjectKey`).
-- 🚧 (skills-plugins) **Plugins in Skills & plugins**: no key: a connect step (Get a key, then Platform → Settings → Project Settings → API Keys, paste the ak_ key) over the app list, each Needs a key; with a key: Connected (who can use each, Disconnect) and Add an app, each Needs sign-in, Connected or Didn't connect; Composio's own error words instead of an empty list or endless Loading; a key Composio stops accepting says so. Settings → Plugins is only a card that opens the page (`Plugins.tsx`, `App.tsx`).
+- ✅ **Key kind check**: a Composio Connect key (ck_…, what Composio's For You page shows) or personal key (uak_…) is named as the wrong kind, with where the project key is; it's never sent or kept (`NotProjectKey`).
+- ✅ **Plugins in Skills & plugins**: no key: a connect step (Get a key, then Platform → Settings → Project Settings → API Keys, paste the ak_ key) over the app list, each Needs a key; with a key: Connected (who can use each, Disconnect) and Add an app, each Needs sign-in, Connected or Didn't connect; Composio's own error words instead of an empty list or endless Loading; a key Composio stops accepting says so. Settings → Plugins is only a card that opens the page (`Plugins.tsx`, `App.tsx`).
 - ✅ **Setup step**: "Connect your tools" setup step; Connect cards for unlinked apps.
 
 ## Extensions (Windows only)

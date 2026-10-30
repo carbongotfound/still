@@ -340,6 +340,7 @@ def main():
         connect(process)
         reads_and_writes(process)
         missing(process)
+        stack(process)
         secret(process)
         down(process)
         disconnect(process)
@@ -351,7 +352,41 @@ def main():
     setup(env)
 
 
+def home_stack(process, capture=""):
+    """The home row's Plugins button, in a new tab: its label and its tiles."""
+    send(process, "new")
+    until(lambda: js(process, "!!document.querySelector('.home-chips .home-plugins')"), 20)
+    time.sleep(.4)
+    if capture:
+        rpc(process, "capture", name=capture)
+    return js(process, "(b => [b.getAttribute('aria-label'), [...b.querySelectorAll('.plug-stack i')].map(i => i.innerText.trim() || 'icon'), b === b.parentElement.lastElementChild])(document.querySelector('.home-chips .home-plugins'))") or ["", [], False]
+
+
+def stack(process):
+    """Five apps connected: three tiles and +2; the button opens Skills & plugins on its plugins."""
+    user = next(iter(MOCK["accounts"].values()))["_user"]
+    extra = {f"ca_x{i}": {"id": f"ca_x{i}", "status": "ACTIVE", "status_reason": None, "is_disabled": False, "toolkit": {"slug": slug}, "_user": user,
+                          "auth_config": {"id": "ac_" + slug, "auth_scheme": "OAUTH2", "is_composio_managed": True, "is_disabled": False}, "word_id": None, "alias": None}
+             for i, slug in enumerate(["notion", "github", "linear"])}
+    MOCK["accounts"].update(extra)
+    send(process, "pluginRefresh")
+    home_stack(process)
+    until(lambda: js(process, "document.querySelectorAll('.home-chips .plug-stack i').length") == 4, 10)
+    label, tiles, last = home_stack(process, "plugins-stack.png")
+    check(len(tiles) == 4 and tiles[-1] == "+2" and tiles[0] == "G" and last, f"Five apps connected: three tiles, then +2, at the right end of the home row ({tiles})")
+    check(label.startswith("Plugins: Gmail, Slack") and label.endswith(" connected"), f"and it names them for screen readers ({label!r})")
+    js(process, "document.querySelector('.home-chips .home-plugins').click()")
+    check(until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins'] .plug-settings\") && !document.querySelector('.skills-part[aria-label=Skills]') && [...document.querySelectorAll('.home-page .history-chip')].find(b => b.innerText.trim() === 'Plugins')?.getAttribute('aria-pressed') === 'true'"), 10),
+          "It opens Skills & plugins showing plugins")
+    for cid in extra:
+        MOCK["accounts"].pop(cid)
+    send(process, "pluginRefresh")
+    until(lambda: js(process, "document.querySelectorAll('.plug-section .plug-list:not(.is-found) li').length") == 2, 10)
+
+
 def no_key(process):
+    label, tiles, last = home_stack(process, "plugins-stack-empty.png")
+    check(label == "Plugins: none connected yet" and tiles == ["icon"] and last, f"With nothing connected, the home row ends with Plugins and a plain plug ({label!r}, {tiles})")
     check(open_plugins(process), "Plugins live in Skills & plugins, on the home's rail")
     words = page_text(process)
     check(js(process, "document.querySelector(\".plug-settings input[aria-label='Composio API key']\")?.type") == "password", "With no key, it asks for your Composio API key, right there")
