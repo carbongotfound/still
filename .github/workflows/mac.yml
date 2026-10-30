@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   build:
-    runs-on: macos-14
+    runs-on: macos-15 # macos-14 is retired on 2026-11-02
     steps:
       - uses: actions/checkout@v4
         with:
