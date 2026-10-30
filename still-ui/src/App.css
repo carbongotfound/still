@@ -104,8 +104,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .command-footer { display:flex;justify-content:space-between;align-items:center;padding:12px 17px;border-top:1px solid var(--border);font-size:10px;color:var(--muted-foreground); }.command-footer kbd { margin:0 3px;padding:1px 4px;background:var(--muted);border-radius:3px; }
 .app-dialog[data-slot="dialog-content"] { max-width:554px;padding:28px;gap:24px;max-height:calc(100vh - 60px);overflow-y:auto;scrollbar-width:thin; }
 /* Settings: a left nav with search, then one page of grouped cards at a time */
-.settings-dialog[data-slot="dialog-content"] { width:min(880px,calc(100vw - 48px)); max-width:min(880px,calc(100vw - 48px)); height:min(680px,calc(100vh - 60px)); padding:26px 0 0; gap:16px; overflow:hidden; display:flex; flex-direction:column; }
+.settings-dialog[data-slot="dialog-content"] { --font-display:var(--font-ui); width:min(880px,calc(100vw - 48px)); max-width:min(880px,calc(100vw - 48px)); height:min(680px,calc(100vh - 60px)); padding:26px 0 0; gap:16px; overflow:hidden; display:flex; flex-direction:column; }
 .settings-dialog [data-slot="dialog-header"] { padding:0 28px; }
+.settings-dialog [data-slot="dialog-title"] { font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
 .set-shell { flex:1; min-height:0; display:grid; grid-template-columns:214px minmax(0,1fr); border-top:1px solid var(--border); }
 .set-nav { display:flex; flex-direction:column; gap:2px; padding:14px 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 40%,var(--background)); overflow-y:auto; }
 .set-search { display:flex; align-items:center; gap:8px; height:34px; padding:0 10px; margin-bottom:10px; border:1px solid var(--border); border-radius:9px; background:var(--background); color:var(--muted-foreground); transition:border-color .15s; }
@@ -117,7 +118,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .set-nav-item[aria-current=page] { background:var(--background); color:var(--foreground); font-weight:500; box-shadow:0 0 0 1px var(--border),0 1px 2px #0000000f; }
 .set-nav-item svg { width:15px; height:15px; flex:none; }
 .set-main { overflow-y:auto; scrollbar-width:thin; padding:22px 28px 32px; display:flex; flex-direction:column; gap:22px; }
-.set-title { margin:0; font-family:var(--font-display); font-size:24px; font-weight:480; letter-spacing:-.02em; }
+.set-title { margin:0; font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
 .set-group h3 { margin:0 0 8px 2px; font:600 10.5px var(--font-ui); letter-spacing:.07em; text-transform:uppercase; color:var(--muted-foreground); }
 .set-card { border:1px solid var(--border); border-radius:14px; background:var(--card); overflow:hidden; }
 .set-card > * + * { border-top:1px solid var(--border); }
