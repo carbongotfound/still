@@ -357,7 +357,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func handle(_ op: String, _ data: [String: Any]) {
   func text(_ key: String) -> String { data[key] as? String ?? "" }
   func number(_ key: String) -> Double { (data[key] as? NSNumber)?.doubleValue ?? 0 }
-  let target = tabs.first { $0.id == text("id") } ?? active
+  // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.
+  let target = text("id").isEmpty ? active : tabs.first { $0.id == text("id") }
   switch op {
   case "ready":
    ready = true
