@@ -108,7 +108,8 @@ public partial class MainWindow
     string op=data.GetProperty("op").GetString()??"";
     App.Breadcrumb="shell "+op;
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
-    BrowserTab? Target()=>tabs.FirstOrDefault(t=>t.Id==S("id"))??active;
+    // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.
+    BrowserTab? Target()=>S("id") is {Length:>0} id?tabs.FirstOrDefault(t=>t.Id==id):active;
     switch(op) {
      case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();PublishAi();break;
      case "bounds":
