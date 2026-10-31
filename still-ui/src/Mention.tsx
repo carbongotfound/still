@@ -33,12 +33,14 @@ export function live(m: unknown, known: Known): Mention | null {
 }
 
 const esc = (s: string) => s.replace(/[&<>"']/g, c => "&#" + c.charCodeAt(0) + ";")
+/// A tab's title in a mention: at most 10 characters, the ellipsis included; the whole title shows on hover.
+export const clip = (title: string) => { const c = [...title]; return c.length > 10 ? c.slice(0, 9).join("").trimEnd() + "…" : title }
 // A mention's icon: a companion's 2D face, a tab's favicon, an app's logo (its initial on a tile until the logo is in).
 // A tab with no favicon and a skill draw theirs in CSS. Tabs in sent messages are known by their address.
 function look(m: Mention, known: Known): { inner: string; hue?: string } {
  const icon = (src?: string) => src ? `<img src="${esc(src)}" alt="" draggable="false">` : "<i></i>"
  if (m.kind === "mate") { const c = known.companions.find(c => c.id === m.id); return { inner: icon(c && avatarOf(lookOf(c))) + esc(m.name), hue: c && hueOf(c) } }
- if (m.kind === "tab") return { inner: icon(known.tabs.find(t => t.id === m.id || t.url === m.id)?.favicon) + esc(m.name) }
+ if (m.kind === "tab") return { inner: icon(known.tabs.find(t => t.id === m.id || t.url === m.id)?.favicon) + esc(clip(m.name)) }
  if (m.kind === "plugin") { const logo = logoOf(m.id); return { inner: (logo ? icon(logo) : `<i>${esc(m.name.charAt(0))}</i>`) + esc(m.name), hue: plugColor(m.id) } }
  return { inner: icon() + esc(m.name) }
 }
@@ -47,7 +49,7 @@ const mark = (m: Mention, known: Known) => { const l = look(m, known); return { 
 /// A mention as the message box holds it: one piece the caret can't enter.
 export function html(m: Mention, known: Known) {
  const l = mark(m, known)
- return `<span class="mention is-${m.kind}" contenteditable="false" data-mention="${esc(JSON.stringify(m))}" data-sig="${esc(l.sig)}"${l.hue ? ` style="--hue:${esc(l.hue)}"` : ""}>${l.inner}</span>`
+ return `<span class="mention is-${m.kind}" contenteditable="false" data-mention="${esc(JSON.stringify(m))}" data-sig="${esc(l.sig)}"${l.hue ? ` style="--hue:${esc(l.hue)}"` : ""}${m.kind === "tab" && clip(m.name) !== m.name ? ` title="${esc(m.name)}"` : ""}>${l.inner}</span>`
 }
 export const markup = (parts: Part[], known: Known) => parts.map(p => typeof p === "string" ? esc(p).replace(/\n/g, "<br>") : html(p, known)).join("")
 
@@ -120,7 +122,7 @@ export function partsOf(text: string, known: Known): Part[] {
 
 export function MentionView({ m, known }: { m: Mention; known: Known }) {
  const l = look(m, known)
- return <span className={"mention is-" + m.kind} style={l.hue ? { "--hue": l.hue } as CSSProperties : undefined} dangerouslySetInnerHTML={{ __html: l.inner }} />
+ return <span className={"mention is-" + m.kind} title={m.kind === "tab" && clip(m.name) !== m.name ? m.name : undefined} style={l.hue ? { "--hue": l.hue } as CSSProperties : undefined} dangerouslySetInnerHTML={{ __html: l.inner }} />
 }
 export function MessageText({ text, known }: { text: string; known: Known }) {
  useMascotVersion(); usePluginData() // a companion's picture or an app's logo can come in later
