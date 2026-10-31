@@ -380,17 +380,20 @@ enum BrowserLogins {
   return found
  }
 
- /// Chrome, Edge, Brave, Vivaldi, Opera and Arc encrypt each password with a key they keep in your Keychain, so macOS
- /// asks you before it shares it with Still. AES-128-CBC with a key from PBKDF2 over it, as Chromium does on the Mac.
- static func chromium(_ folder: URL) -> Found {
+ /// Chrome, Edge, Brave, Vivaldi, Opera and Arc encrypt each password and cookie with a key they keep in your Keychain,
+ /// so macOS asks you before it shares it with Still. AES-128-CBC with a key from PBKDF2 over it, as Chromium does on the Mac.
+ static func chromium(_ folder: URL) -> (found: Found, cookies: [HTTPCookie]) {
   // A browser signed in to an account keeps that account's passwords in Login Data For Account.
   let rows = ["Login Data", "Login Data For Account"].map { folder.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
    .flatMap { (try? Browser.blobs($0, "SELECT origin_url, username_value, password_value FROM logins WHERE blacklisted_by_user = 0 LIMIT 5000")) ?? [] }
-  guard !rows.isEmpty else { return ([], [], 0) }
+  let jar = [folder.appendingPathComponent("Network/Cookies"), folder.appendingPathComponent("Cookies")].first { FileManager.default.fileExists(atPath: $0.path) }
+   .flatMap { try? Browser.blobs($0, "SELECT host_key, name, value, encrypted_value, path, expires_utc, is_secure, is_httponly, samesite, has_expires, (SELECT value FROM meta WHERE key = 'version') FROM cookies LIMIT 20000") } ?? []
+  guard !rows.isEmpty || !jar.isEmpty else { return (([], [], 0), []) }
   let names = [("Google/Chrome", "Chrome"), ("Microsoft Edge", "Microsoft Edge"), ("BraveSoftware", "Brave"), ("Vivaldi", "Vivaldi"), ("com.operasoftware.Opera", "Opera"), ("Arc/", "Arc"), ("Chromium", "Chromium")]
   let browser = names.first { folder.path.contains($0.0) }?.1 ?? "Chrome"
-  guard let secret = safeStorage(browser + " Safe Storage") else {
-   return ([], ["macOS didn't share \(browser)'s password key with Still. Try again and choose Allow when your Mac asks, or export your passwords to a CSV file from \(browser) and add the file with Passwords CSV."], 0)
+  let (secret, status) = safeStorage(browser + " Safe Storage")
+  guard let secret else {
+   return (([], ["macOS didn't share \(browser)'s key with Still (macOS error \(status)), so its passwords and sign-ins can't come over. Choose \(browser) again and click Always Allow when your Mac asks for your password. Passwords can also come from a CSV file: export them from \(browser) and add the file with Passwords CSV."], 0), [])
   }
   let key = pbkdf2(Array(secret.utf8), Array("saltysalt".utf8), 1003, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA1), 16)
   var found: Found = ([], [], 0)
@@ -400,7 +403,36 @@ enum BrowserLogins {
          let plain = cbc(CCAlgorithm(kCCAlgorithmAES), key, [UInt8](repeating: 0x20, count: 16), Array(sealed.dropFirst(3))), let password = String(bytes: plain, encoding: .utf8) else { found.skipped += 1; continue }
    add(&found, origin, String(decoding: row[1], as: UTF8.self), password)
   }
-  return found
+  var cookies: [HTTPCookie] = []
+  for row in jar { if let cookie = cookie(row, key) { cookies.append(cookie) } else { found.skipped += 1 } }
+  return (found, cookies)
+ }
+
+ /// A Chromium cookie row (host, name, value, sealed value, path, expiry, secure, HttpOnly, SameSite, has expiry,
+ /// database version) as a cookie WebKit can use (Windows: ReadCookies). Expired ones are left out.
+ static func cookie(_ row: [Data], _ key: [UInt8]) -> HTTPCookie? {
+  func text(_ i: Int) -> String { String(decoding: row[i], as: UTF8.self) }
+  var value = text(2)
+  if value.isEmpty {
+   let sealed = Array(row[3])
+   guard sealed.starts(with: Array("v10".utf8)), let plain = cbc(CCAlgorithm(kCCAlgorithmAES), key, [UInt8](repeating: 0x20, count: 16), Array(sealed.dropFirst(3))) else { return nil }
+   // Since Chromium's cookie database version 24, a value starts with SHA-256 of its host.
+   value = String(decoding: (Int(text(10)) ?? 0) >= 24 && plain.count >= 32 ? plain.dropFirst(32) : plain[...], as: UTF8.self)
+  }
+  guard (1...255).contains(text(0).count), text(1).count <= 4096, value.count <= 4096 else { return nil }
+  var properties: [HTTPCookiePropertyKey: Any] = [.domain: text(0), .path: text(4).isEmpty ? "/" : text(4), .name: text(1), .value: value]
+  if text(9) != "0" {
+   // Chromium counts microseconds from 1601.
+   let expires = Date(timeIntervalSince1970: (Double(text(5)) ?? 0) / 1_000_000 - 11_644_473_600)
+   guard expires > Date() else { return nil }
+   properties[.expires] = expires
+  }
+  if text(6) != "0" { properties[.secure] = "TRUE" }
+  if text(7) != "0" { properties[HTTPCookiePropertyKey("HttpOnly")] = "TRUE" }
+  if #available(macOS 10.15, *) {
+   if text(8) == "1" { properties[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteLax } else if text(8) == "2" { properties[.sameSitePolicy] = HTTPCookieStringPolicy.sameSiteStrict }
+  }
+  return HTTPCookie(properties: properties)
  }
 
  static func add(_ found: inout Found, _ origin: String, _ username: String, _ password: String) {
@@ -408,13 +440,14 @@ enum BrowserLogins {
   found.logins.append(Login(origin: origin, username: username, password: password))
  }
 
- /// The browser's key from the Keychain (macOS asks you first). Test builds take it from STILL_QA_SAFE_STORAGE.
- static func safeStorage(_ service: String) -> String? {
-  if isQa { return qaEnv("STILL_QA_SAFE_STORAGE") }
+ /// The browser's key from the Keychain (macOS asks you first), or what macOS answered instead. Test builds take it
+ /// from STILL_QA_SAFE_STORAGE.
+ static func safeStorage(_ service: String) -> (String?, OSStatus) {
+  if isQa { return (qaEnv("STILL_QA_SAFE_STORAGE"), errSecItemNotFound) }
   let query: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
   var out: CFTypeRef?
-  guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-  return String(data: data, encoding: .utf8)
+  let status = SecItemCopyMatching(query as CFDictionary, &out)
+  return ((out as? Data).flatMap { String(data: $0, encoding: .utf8) }, status)
  }
 
  static let pbes2Oid: [UInt8] = [0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x01, 0x05, 0x0d] // 1.2.840.113549.1.5.13

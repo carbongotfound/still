@@ -61,7 +61,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Profiles**: separate logins/cookies/tabs; each opens as its own process (`ProfileCatalog.cs`, `MainWindow.Profiles.cs`).
 - ✅ **Temp profile**: throwaway window with no cookies or history, deleted once closed (`App.xaml.cs`; MCP `profile: "temp"`).
 - ✅ **Import from another browser (Windows)**: Chrome, Edge, Brave, Vivaldi, Opera/GX, Firefox: bookmarks, history, passwords, cookies (sessions), autofill; reviewed before commit. A browser signed in to an account keeps that account's bookmarks and passwords in their own files (`AccountBookmarks`, `Login Data For Account`); both are read. When everything was imported before, the result says how many were already in Still (`ExternalProfileImport.cs`; tests/desktop/browserimport.py).
-- ✅ **Import from another browser (Mac)**: Safari, Chrome, Brave, Edge, Arc, Vivaldi, Opera, Firefox: bookmarks, history and passwords, reviewed first, the signed-in account's bookmarks and passwords too, and the result says how many were already in Still. When macOS's privacy protection keeps Still out of a browser's folder, the panel says so and offers Choose <browser>'s folder (an Open panel already at that folder: one click on Open lets Still in) and Open Full Disk Access (`reviewImport`, `importBlocked`).
+- ✅ **Import from another browser (Mac)**: Safari, Chrome, Brave, Edge, Arc, Vivaldi, Opera, Firefox: bookmarks, history and passwords, reviewed first, the signed-in account's bookmarks and passwords too, and the result says how many were already in Still. From Chromium browsers also cookies, so you stay signed in (one Keychain request covers passwords and cookies; if macOS doesn't share the key, the review says so with macOS's error number) (`BrowserLogins.chromium`, `finishImport`; tests/desktop/passwords.py). When macOS's privacy protection keeps Still out of a browser's folder, the panel says so and offers Choose <browser>'s folder (an Open panel already at that folder: one click on Open lets Still in) and Open Full Disk Access (`reviewImport`, `importBlocked`).
 - ✅ **Close source and retry**: a running Chromium browser locks its cookies; with your OK Still closes it and reads again (`CloseSourceAndRetry`).
 - ✅ **File import/export**: bookmarks HTML/JSON, passwords CSV, Still data JSON (tabs, bookmarks, history) (`MainWindow.Import.cs`).
 
@@ -232,7 +232,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - ✅ **Same interface**: both hosts load the same React shell; page scripts are copied from the Windows app by `mac/build.sh`.
 - ✅ **Mac parity**: chats, companions, memory, MCP/CLI, permissions, tabs, groups, split, private windows, profiles, passwords, import, blocking, downloads.
-- **Windows only**: extensions; cookie/session import; automatic update install; audio output follow; DPAPI vault (Mac uses the Keychain).
+- **Windows only**: extensions; automatic update install; audio output follow; DPAPI vault (Mac uses the Keychain).
 - **Mac only**: Safari import (bookmarks, history; needs Full Disk Access); Touch ID instead of Windows Hello.
 - **Mac blocking**: WebKit content rules (third-party url-filter) instead of request interception (`main.swift`).
 
@@ -246,7 +246,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Known gaps
 
-- Extensions don't exist on Mac; Mac can't import cookies, so sign-ins don't carry over.
+- Extensions don't exist on Mac. Cookies (sign-ins) come over only from Chromium browsers, not from Firefox, or Safari on the Mac.
 - Not code-signed (Windows SmartScreen) or notarized (Mac); no independent security audit.
 - Chat titles is tested with a fake agent; a live title run (Claude) and the Mac build haven't been checked.
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.

@@ -301,9 +301,13 @@ def chrome_profile(folder):
 
 
 def mac_chrome_profile(folder):
-    """A Chrome profile on the Mac with one login, sealed with the key Chrome keeps in the Keychain (AES-128-CBC, v10)."""
+    """A Chrome profile on the Mac with one login and two sign-in cookies for this computer's test site (one only the
+    server sees), sealed with the key Chrome keeps in the Keychain (AES-128-CBC, v10)."""
     key = hashlib.pbkdf2_hmac("sha1", SAFE_STORAGE.encode(), b"saltysalt", 1003, 16)
-    sealed = subprocess.run(["openssl", "enc", "-aes-128-cbc", "-K", key.hex(), "-iv", "20" * 16], input=b"Chrome-keychain-77", capture_output=True, check=True).stdout
+
+    def seal(plain):
+        return b"v10" + subprocess.run(["openssl", "enc", "-aes-128-cbc", "-K", key.hex(), "-iv", "20" * 16], input=plain, capture_output=True, check=True).stdout
+    sealed = seal(b"Chrome-keychain-77")[3:]
     folder.mkdir(parents=True)
     (folder / "Bookmarks").write_text(json.dumps({"roots": {"bookmark_bar": {"children": [{"type": "url", "name": "Chrome page", "url": "https://chrome.example/"}]}}}))
     db = sqlite3.connect(folder / "Login Data")
@@ -312,6 +316,16 @@ def mac_chrome_profile(folder):
     db.commit()
     db.close()
     account_login(folder, b"v10" + sealed)
+    # Since Chrome's cookie database version 24, each value starts with SHA-256 of its host.
+    db = sqlite3.connect(folder / "Cookies")
+    db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+    db.execute("INSERT INTO meta VALUES ('version', '24')")
+    db.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER, has_expires INTEGER)")
+    host, later = b"127.0.0.1", int((time.time() + 86400 + 11_644_473_600) * 1_000_000)
+    db.execute("INSERT INTO cookies VALUES ('127.0.0.1', 'chromesid', '', ?, '/', ?, 0, 0, 1, 1)", (seal(hashlib.sha256(host).digest() + b"Session-keychain-55"),later))
+    db.execute("INSERT INTO cookies VALUES ('127.0.0.1', 'chromehttp', '', ?, '/', 0, 0, 1, -1, 0)", (seal(hashlib.sha256(host).digest() + b"server-only"),))
+    db.commit()
+    db.close()
 
 
 def stage_profile(process, path, name):
@@ -593,9 +607,15 @@ def main():
             chrome = RUN / "Google" / "Chrome" / "Default"
             mac_chrome_profile(chrome)
             external = stage_profile(process, chrome, "Chrome") or {}
-            check(external.get("passwords") == 2 and external.get("bookmarks") == 1, "Chrome passwords (the account's too) import with the key from the Keychain")
-            send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
-            time.sleep(1)
+            check(external.get("passwords") == 2 and external.get("bookmarks") == 1 and external.get("cookies") == 2, f"Chrome passwords (the account's too) and cookies are read with the key from the Keychain ({external.get('cookies')} cookies)")
+            send(process, "externalConfirm", id=external.get("id", ""), passwords=True, cookies=True)
+            done = until(lambda: js(process, "window.__tools.import?.external?.done || null"), 10) or ""
+            check("2 passwords and 2 cookies" in done and "Reload open sites" in done, f"Still says what came over ({done!r})")
+            go(process, SITE + "/welcome")
+            check(page(process, "document.cookie") == "chromesid=Session-keychain-55", "Chrome's sign-in cookie arrives, readable by its site")
+            send(process, "refreshTools", name="cookies")
+            jar = until(lambda: js(process, "window.__tools.cookies?.cookies ?? null"), 5) or []
+            check(any(c["name"] == "chromehttp" and c["httpOnly"] and c["session"] for c in jar), "and a server-only session cookie keeps its HttpOnly flag")
             c = entry(process, "https://chrome.example", "chromie")
             s = entry(process, "https://account.example", "synced")
             check(c and reveal(process, c) == "Chrome-keychain-77" and s and reveal(process, s) == "Chrome-keychain-77", "The Chrome logins arrive with their passwords")
