@@ -31,6 +31,11 @@ const THEMES = [["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const
 const newId = () => "c" + Math.random().toString(36).slice(2, 11)
 const blank = (): Companion => ({ id: newId(), name: "", face: "", color: "", job: "", mode: "default" })
 const seenIntro = () => { try { return !!localStorage.getItem("still.intro") } catch { return false } }
+// How far setup got: kept until it finishes, so closing Still partway through picks up at the same step with the same answers.
+type Kept = { step: number; how: "quick" | "talk"; picks: string[]; made: Companion[]; main: string; crewIds: Record<string, string>; saved: string[]; look: Look
+ you: string; likes: string[]; task: string; typed: string; allowed: "" | "yes" | "no"; tried: boolean; talked: boolean; firstUp: string }
+const KEPT = "still.welcome"
+const readKept = (): Partial<Kept> => { try { return JSON.parse(localStorage.getItem(KEPT) ?? "{}") ?? {} } catch { return {} } }
 // "Nothing right now", "no thanks", "later": a no typed as the first task is a skip, not a task.
 const NO = /^(?:no|nope|nah|nothing|none|not yet|not really|not (?:right )?now|later|maybe later|skip(?: it)?|pass|all good|i'?m (?:good|fine|ok(?:ay)?)|n ?a)(?: (?:thanks?|thank you|for now|right now|now|yet))*$/
 export const isNo = (text: string) => NO.test(text.toLowerCase().replace(/[^a-z' ]/g, " ").replace(/\s+/g, " ").trim())
@@ -145,39 +150,40 @@ function Interview({ who, send, onQuick, onDone }: { who: Companion; send: Send;
 export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidden, sounds = true, soundsBlocked = "", send, onImport }: { isDefault?: boolean; agents: boolean; layout?: string; theme?: string; talk?: boolean; ai?: AiState; noAi?: boolean; hidden?: boolean; sounds?: boolean; soundsBlocked?: string; send: Send; onImport: () => void }) {
  const reduce = useReducedMotion()
  const [again] = useState(!!talk) // "set me up again": straight into the interview
+ const [kept] = useState(() => again ? {} : readKept())
  // The companion the user had before setup (null until the AI state arrives). Not the live list: picks made here land in it.
  const had = useRef<Companion | undefined | null>(null)
  if (had.current === null && ai) had.current = ai.companions?.[0]
  const first = had.current ?? undefined
- const [how, setHow] = useState<"quick" | "talk">(again ? "talk" : "quick")
+ const [how, setHow] = useState<"quick" | "talk">(again ? "talk" : kept.how ?? "quick")
  // The companions picked here: crew ids and the ids of ones made here, in the order picked. A crew pick keeps its id
  // if it's unpicked and picked again; whatever was saved and then unpicked is deleted when the step is left again.
- const [picks, setPicks] = useState<string[]>([])
- const [made, setMade] = useState<Companion[]>([])
- const [main, setMain] = useState("")
- const crewIds = useRef<Record<string, string>>({})
- const saved = useRef(new Set<string>())
+ const [picks, setPicks] = useState<string[]>(kept.picks ?? [])
+ const [made, setMade] = useState<Companion[]>(kept.made ?? [])
+ const [main, setMain] = useState(kept.main ?? "")
+ const crewIds = useRef<Record<string, string>>(kept.crewIds ?? {})
+ const saved = useRef(new Set<string>(kept.saved))
  const chosen = useMemo(() => picks.flatMap(k => {
   const own = made.find(m => m.id === k), p = PREMADES.find(p => p.id === k)
   return own ? [own] : p ? [fromPremade(p, crewIds.current[k] ??= newId())] : []
  }), [picks, made])
  const flow: Step[] = again ? (how === "talk" ? ["talk"] : QUICK) : noAi || !ai ? ["hello", "import", "layout", "charge"]
   : ["hello", "import", "ai", "crew", ...(chosen.length > 1 ? ["main"] as Step[] : []), "tools", "how", ...(how === "talk" ? ["talk"] as Step[] : QUICK), "start"]
- const [step, setStep] = useState(0)
+ const [step, setStep] = useState(kept.step ?? 0)
  const [draft, setDraft] = useState<Companion>(blank) // "Make your own" while it's being made
- const [look, setLook] = useState<Look>(() => first ? lookOf(first) : DEFAULT_LOOK) // what the big companion wears: a friendly face until one is picked; BLANK is for making your own
+ const [look, setLook] = useState<Look>(() => kept.look ?? (first ? lookOf(first) : DEFAULT_LOOK)) // what the big companion wears: a friendly face until one is picked; BLANK is for making your own
  const [making, setMaking] = useState(false) // "Make your own": it grows a color, a face and a name
  const [grown, setGrown] = useState(0)
  const [styling, setStyling] = useState(false)
  const [needOne, setNeedOne] = useState(false) // "Skip setup" before there's a companion
- const [you, setYou] = useState("")
- const [likes, setLikes] = useState<string[]>([])
- const [task, setTask] = useState("")
- const [typed, setTyped] = useState("")
- const [allowed, setAllowed] = useState<"" | "yes" | "no">("")
- const [tried, setTried] = useState(false) // brought their stuff over, or made Still open their links
- const [talked, setTalked] = useState(false) // the interview is done
- const [firstUp, setFirstUp] = useState("") // what the interview heard they want help with first
+ const [you, setYou] = useState(kept.you ?? "")
+ const [likes, setLikes] = useState<string[]>(kept.likes ?? [])
+ const [task, setTask] = useState(kept.task ?? "")
+ const [typed, setTyped] = useState(kept.typed ?? "")
+ const [allowed, setAllowed] = useState<"" | "yes" | "no">(kept.allowed ?? "")
+ const [tried, setTried] = useState(kept.tried ?? false) // brought their stuff over, or made Still open their links
+ const [talked, setTalked] = useState(kept.talked ?? false) // the interview is done
+ const [firstUp, setFirstUp] = useState(kept.firstUp ?? "") // what the interview heard they want help with first
  const [hadIntro] = useState(() => !again && !seenIntro()) // once, on the first run; About can replay it
  const [introOn, setIntroOn] = useState(hadIntro)
  const [introAt, setIntroAt] = useState<{ x: number; y: number }>()
@@ -226,6 +232,11 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
   const r = hadIntro && mascotRef.current?.getBoundingClientRect()
   if (r) setIntroAt({ x: innerWidth / 2 - (r.left + r.width / 2), y: innerHeight / 2 - 30 - (r.top + r.height / 2) })
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => {
+  if (again || leaving) return
+  const keep: Kept = { step, how, picks, made, main, crewIds: crewIds.current, saved: [...saved.current], look, you, likes, task, typed, allowed, tried, talked, firstUp }
+  try { localStorage.setItem(KEPT, JSON.stringify(keep)) } catch { /* no storage: setup starts over next time */ }
+ }, [again, leaving, step, how, picks, made, main, look, you, likes, task, typed, allowed, tried, talked, firstUp])
  const react = (g: string) => setGesture([g, Date.now()])
  const endIntro = (skipped: boolean) => {
   setIntroOn(false)
@@ -238,6 +249,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  // everything else fades away.
  const finish = (firstTask?: string) => {
   if (leaving) return
+  try { localStorage.removeItem(KEPT) } catch { /* no storage */ }
   send("setupEnd")
   if (firstTask) send("aiSend", { text: firstTask, home: true, companion: c.id })
   else if (!again) send("aiKickoff", { companion: c.id }) // no first task: the companion starts its first chat itself

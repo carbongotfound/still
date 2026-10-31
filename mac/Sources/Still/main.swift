@@ -165,6 +165,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var appearanceObserver: NSKeyValueObservation?
  var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found)?
  var importBusy = false, importError = "", importDone = ""
+ var importBlocked: (name: String, folder: URL)? // macOS kept Still out of this browser's folder: the panel offers to choose it
  // Windows (Windows.swift)
  let windowId = newId()
  let secondary: Bool, incognito: Bool
@@ -447,11 +448,13 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "closeWindow": window.close()
   case "externalReview": if let source = importSources().first(where: { $0.id == text("id") }) { reviewImport(source.name, source.folder) }
   case "externalChoose":
-   let picker = NSOpenPanel()
+   let picker = NSOpenPanel(), blocked = data["blocked"] as? Bool == true ? importBlocked : nil
    picker.canChooseDirectories = true; picker.canChooseFiles = false
-   picker.message = "Choose a browser profile folder, such as Chrome's Default folder or ~/Library/Safari."
-   picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(url.lastPathComponent, url) } }
-  case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; publishImport() }
+   picker.directoryURL = blocked?.folder
+   picker.message = blocked.map { "Click Open to let Still read \($0.name)'s bookmarks and history." } ?? "Choose a browser profile folder, such as Chrome's Default folder or ~/Library/Safari."
+   picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(blocked?.folder.standardizedFileURL == url.standardizedFileURL ? blocked!.name : url.lastPathComponent, url) } }
+  case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
+  case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
   default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) { toast(unavailable) }
   }
@@ -646,6 +649,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   schedulePublish()
  }
 
+ /// A link from another app, or a sign-in page: while setup covers this window, it opens in a window of its own, in front.
+ func openOutside(_ url: String) {
+  guard welcome && !secondary && !incognito else { newTab(url, prompt: false); window.makeKeyAndOrderFront(nil); return }
+  let tab = Tab()
+  tab.url = url
+  _ = Browser(moving: tab, temporary: true)
+ }
+
  @discardableResult
  func newTab(_ url: String = "", isPrivate: Bool = false, prompt: Bool = true) -> Tab {
   let tab = Tab()
@@ -825,6 +836,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func importData() -> [String: Any] {
   var external: [String: Any] = ["busy": importBusy, "error": importError, "done": importDone, "profile": Profiles.currentName,
                                  "sources": importSources().map { ["id": $0.id, "name": $0.name] }]
+  if let blocked = importBlocked { external["blocked"] = blocked.name }
   if let preview = pendingImport {
    external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
                           "passwords": preview.logins.logins.count, "cookies": 0, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings]
@@ -840,7 +852,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  /// Reads bookmarks, history and saved passwords (not cookies, which macOS keeps locked to each browser) for review first.
  func reviewImport(_ name: String, _ folder: URL) {
   guard !importBusy else { return }
-  importBusy = true; importError = ""; importDone = ""; pendingImport = nil
+  importBusy = true; importError = ""; importDone = ""; pendingImport = nil; importBlocked = nil
   publishImport()
   DispatchQueue.global(qos: .userInitiated).async {
    let safari = FileManager.default.fileExists(atPath: folder.appendingPathComponent("Bookmarks.plist").path) || folder.lastPathComponent == "Safari"
@@ -853,10 +865,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     switch result {
     case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty && logins.logins.isEmpty && logins.warnings.isEmpty: self.importError = "No bookmarks, history or passwords were found in \(name)."
     case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history, logins)
-    case .failure(let error):
-     let denied = (error as NSError).code == NSFileReadNoPermissionError || (error as NSError).domain == NSPOSIXErrorDomain
-     self.importError = safari && denied ? "macOS keeps Safari's data private. Turn on Still in System Settings → Privacy & Security → Full Disk Access, then try again."
-      : "Couldn't read \(name): \(error.localizedDescription)"
+    case .failure(let error) where Browser.denied(error as NSError):
+     // macOS privacy protection: a folder the user picks in an Open panel is theirs to give, or Full Disk Access opens them all.
+     self.importBlocked = (name, folder)
+     self.importError = "macOS keeps \(name)'s data private until you let Still in. Choose \(name)'s folder and click Open, or turn on Full Disk Access for Still."
+    case .failure(let error): self.importError = "Couldn't read \(name): \(error.localizedDescription)"
     }
     self.publishImport()
    }
@@ -941,6 +954,12 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   return (marks, visits)
  }
 
+ /// macOS's privacy protection said no (not a missing or broken file).
+ static func denied(_ error: NSError) -> Bool {
+  error.domain == NSCocoaErrorDomain && [NSFileReadNoPermissionError, NSFileWriteNoPermissionError].contains(error.code)
+   || error.domain == NSPOSIXErrorDomain && [Int(EPERM), Int(EACCES)].contains(error.code)
+   || (error.userInfo[NSUnderlyingErrorKey] as? NSError).map(denied) == true
+ }
  /// Queries a copy of a browser's database, so a running browser's lock doesn't get in the way and its file is never touched.
  static func rows(_ file: URL, _ sql: String) throws -> [[String]] { try blobs(file, sql).map { $0.map { String(decoding: $0, as: UTF8.self) } } }
  static func blobs(_ file: URL, _ sql: String) throws -> [[Data]] {
@@ -948,8 +967,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   try FileManager.default.createDirectory(at: temp, withIntermediateDirectories: true)
   defer { try? FileManager.default.removeItem(at: temp) }
   let copy = temp.appendingPathComponent(file.lastPathComponent)
-  try FileManager.default.copyItem(at: file, to: copy)
-  for suffix in ["-wal", "-shm", "-journal"] { try? FileManager.default.copyItem(atPath: file.path + suffix, toPath: copy.path + suffix) }
+  // Read, then write: copying the file would also copy its metadata, which can fail on its own.
+  try Data(contentsOf: file).write(to: copy)
+  for suffix in ["-wal", "-shm", "-journal"] { if let part = try? Data(contentsOf: URL(fileURLWithPath: file.path + suffix)) { try? part.write(to: URL(fileURLWithPath: copy.path + suffix)) } }
   var db: OpaquePointer?
   defer { sqlite3_close(db) }
   var statement: OpaquePointer?
@@ -1172,15 +1192,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   if PluginKey.exists { Task { @MainActor in await browser.refreshPlugins() } }
   NSApp.mainMenu = menu()
   watchKeys()
-  for url in pending { browser.newTab(url.absoluteString, prompt: false) }
+  for url in pending { browser.openOutside(url.absoluteString) }
   pending = []
   if !isQa { NSApp.activate(ignoringOtherApps: true) }
  }
 
  func application(_ application: NSApplication, open urls: [URL]) {
   guard started, let browser = homeBrowser else { pending += urls; return } // a normal window, never a sign-in one
-  for url in urls { browser.newTab(url.absoluteString, prompt: false) }
-  browser.window.makeKeyAndOrderFront(nil)
+  for url in urls { browser.openOutside(url.absoluteString) }
  }
 
  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }

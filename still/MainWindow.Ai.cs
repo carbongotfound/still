@@ -944,7 +944,7 @@ public partial class MainWindow
       string host = Host(aiSignInUrl);
       tabsBefore = Windows.SelectMany(w => w.tabs).Count(t => Host(t.Url) == host);
       if (cli.Id != "grok") await Task.Delay(2500);
-      if (Windows.SelectMany(w => w.tabs).Count(t => Host(t.Url) == host) <= tabsBefore) await NewTab(aiSignInUrl, false, false);
+      if (Windows.SelectMany(w => w.tabs).Count(t => Host(t.Url) == host) <= tabsBefore && !OpenOverSetup(aiSignInUrl)) await NewTab(aiSignInUrl, false, false);
      } else if (aiSignInCode.Length == 0 && Regex.Match(line, @"^\s*([A-Z0-9]{4}-[A-Z0-9]{4,6})\s*$") is { Success: true } code) { aiSignInCode = code.Groups[1].Value; PublishAiEverywhere(); }
     }
    }
