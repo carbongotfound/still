@@ -1,6 +1,6 @@
 # Still: feature map
 
-Everything Still has today, read from the code. ✅ shipped in 2.0.1 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
+Everything Still has today, read from the code. ✅ shipped in 2.0.2 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
 Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React interface both hosts load, `mac/Sources/Still/` = Mac host (AppKit, WebKit).
 
 **Rule:** any commit that adds, changes or removes a feature updates this file in the same commit.
