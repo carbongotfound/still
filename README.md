@@ -105,7 +105,7 @@ Settings has **Copy config** with your real path filled in, and `Still.exe --cli
 2. Still isn't code-signed yet, so SmartScreen may warn the first time. Choose **More info > Run anyway**.
 3. Setup walks you through importing your old browser, picking your AI and hiring your first companions.
 
-Still updates itself after that. Prefer a portable copy? Download `Still.exe` from the [latest release](https://github.com/carbongotfound/still/releases/latest).
+Still updates itself after that.
 
 ### macOS
 
