@@ -746,13 +746,17 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-top { z-index:1; } /* over the space's empty top, which only a raised arm or a hop reaches */
 .home-center .space { position:relative; width:100%; height:var(--s); margin:calc(var(--s) * -.16) 0 6px; display:flex; justify-content:center; overflow-x:clip; }
 /* the team stands behind, smaller and back (higher up), two each side: near ones inside, far ones out */
-.space-mate { position:absolute; bottom:calc(var(--s) * .2); left:50%; width:calc(var(--s) * .4); height:calc(var(--s) * .4); opacity:.8; filter:saturate(.75); transition:opacity .2s,filter .2s,transform .25s var(--ease-spring,ease); }
-.space-mate:hover, .space-mate:focus-visible { opacity:1; filter:none; transform:translateY(-4px); }
-.space-mate img { display:block; width:100%; height:100%; }
+.space-mate { position:absolute; bottom:calc(var(--s) * .2); left:50%; width:calc(var(--s) * .4); height:calc(var(--s) * .4); opacity:.8; filter:saturate(.75); transition:opacity .2s,filter .2s; }
+.space-mate:hover, .space-mate:focus-visible { opacity:1; filter:none; }
+.space-mate img { display:block; width:100%; height:100%; transition:transform .25s var(--ease-spring,ease); }
+.space-mate:hover img, .space-mate:focus-visible img { transform:translateY(-4px); } /* the button's own transform is the swap's */
 .space-mate[data-at="0"] { margin-left:calc(var(--s) * -.66); } .space-mate[data-at="1"] { margin-left:calc(var(--s) * .26); }
 .space-mate[data-at="2"] { margin-left:calc(var(--s) * -.92); bottom:calc(var(--s) * .26); width:calc(var(--s) * .32); height:calc(var(--s) * .32); }
 .space-mate[data-at="3"] { margin-left:calc(var(--s) * .6); bottom:calc(var(--s) * .26); width:calc(var(--s) * .32); height:calc(var(--s) * .32); }
 .space .home-face { position:relative; }
+/* Only a companion's body takes the pointer: each picture's clear corners overlap the next companion and caught its hover and clicks */
+.space .home-face, .space-mate { pointer-events:none; }
+.space .home-face::after, .space-mate::after { content:""; position:absolute; inset:24% 22% 12%; border-radius:40%; pointer-events:auto; }
 .home-compose [data-slot=input-group] { border-radius:24px; }
 .home-compose .ai-send[data-slot] { width:36px; height:36px; }
 .home-chips { display:flex; flex-wrap:wrap; gap:6px; margin-top:14px; width:min(680px,100%); padding:0 6px; }
@@ -771,10 +775,15 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 /* The switcher pill, top center */
 .mate-switch { display:flex; align-items:center; gap:2px; height:40px; padding:4px; border-radius:999px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); }
 .dark .mate-switch { box-shadow:0 0 0 1px var(--border); }
-.mate-switch-on { display:flex; align-items:center; gap:8px; height:32px; padding:0 12px 0 4px; border-radius:999px; background:color-mix(in oklab,var(--hue) 14%,transparent); font-size:13px; }
-.mate-switch-on b { font-weight:560; }
-.mate-switch-face { display:grid; place-items:center; width:32px; height:32px; border-radius:50%; opacity:.75; transition:opacity .15s,transform .25s var(--ease-spring); }
+/* A pick opens that face into the pill with its name while the last one closes, so nothing jumps */
+.mate-switch-face { display:flex; align-items:center; gap:0; height:32px; padding:0 4px; border-radius:999px; font-size:13px; opacity:.75; background:transparent; transition:opacity .2s,background-color .35s,gap .4s var(--ease-flow),padding .4s var(--ease-flow),transform .25s var(--ease-spring); }
 .mate-switch-face:hover { opacity:1; transform:translateY(-1px); }
+/* The name opens on a 0fr to 1fr column, so it grows at the pill's pace whatever its length (max-width would rush it) */
+.mate-switch-face b { display:grid; grid-template-columns:0fr; font-weight:560; opacity:0; transition:grid-template-columns .4s var(--ease-flow),opacity .15s; }
+.mate-switch-face b > span { min-width:0; overflow:hidden; white-space:nowrap; }
+.mate-switch-face.mate-switch-on { gap:8px; padding:0 12px 0 4px; opacity:1; background:color-mix(in oklab,var(--hue) 14%,transparent); transform:none; }
+.mate-switch-on b { grid-template-columns:1fr; opacity:1; transition:grid-template-columns .4s var(--ease-flow),opacity .3s .1s; }
+@media (prefers-reduced-motion: reduce) { .mate-switch-face, .mate-switch-face b { transition:none; } }
 .mate-switch-more { display:grid; place-items:center; width:30px; height:30px; border-radius:50%; color:var(--muted-foreground); transition:background .15s,color .15s; }
 .mate-switch-more:hover, .mate-switch-more[data-state=open] { background:var(--muted); color:var(--foreground); } .mate-switch-more svg { width:15px; height:15px; }
 

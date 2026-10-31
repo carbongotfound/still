@@ -28,7 +28,7 @@ body:
     attributes:
       label: Still version
       description: Settings > About shows it.
-      placeholder: "2.0.1"
+      placeholder: "2.0.2"
     validations:
       required: true
   - type: dropdown

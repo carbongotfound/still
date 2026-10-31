@@ -5,7 +5,7 @@
   <Authors>Still</Authors><Product>Still</Product>
   <DefineConstants Condition="'$(StillQa)' == 'true'">$(DefineConstants);STILL_QA</DefineConstants>
   <Deterministic>true</Deterministic>
-  <Version>2.0.1</Version>
+  <Version>2.0.2</Version>
   <RuntimeIdentifier>win-x64</RuntimeIdentifier><SelfContained>true</SelfContained>
   <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><ConcurrentGarbageCollection>false</ConcurrentGarbageCollection><StartupObject>Still.Program</StartupObject>

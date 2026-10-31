@@ -1,4 +1,5 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
+import { motion } from "motion/react"
 import { Mascot, pictureOf, useMascotVersion, type MascotState } from "./Mascot"
 import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, ROLE_PROPS, isOld, parseLook, type Look } from "./look"
 
@@ -52,6 +53,8 @@ export const Buddy = Face
 /// Home's space: the companion you work with, live (its body about a fifth of the view's height, 120 to 192px), and the rest of the
 /// team behind it, smaller, as still pictures; a teammate picks it. The view is the scrolling page it stands in.
 const FILL = .6 // a body's share of its canvas: the frame clears every clip's reach and hop
+// Picking a teammate swaps places: it grows into the middle while the last one shrinks back into the row.
+const SWAP = { duration: .5, ease: [.22, 1, .36, 1] as const }
 export function Space({ companion, team = [], mood, onOpen, onPick }: { companion: Companion; team?: Companion[]; mood: Mood; onOpen: () => void; onPick: (id: string) => void }) {
  const ref = useRef<HTMLDivElement>(null), [view, setView] = useState(innerHeight - 100)
  useEffect(() => {
@@ -61,8 +64,8 @@ export function Space({ companion, team = [], mood, onOpen, onPick }: { companio
  useMascotVersion()
  const size = Math.round(Math.min(320, Math.max(200, view * .2 / FILL))), rest = team.filter(c => c.id !== companion.id).slice(0, 4)
  return <div ref={ref} className="space" style={{ "--s": `${size}px` } as CSSProperties}>
-  {rest.map((c, i) => { const url = pictureOf(lookOf(c), "idle", 384, "full"); return <button key={c.id} type="button" className="space-mate" data-at={i} title={c.name} aria-label={`Work with ${c.name}`} onClick={() => onPick(c.id)}>{url && <img src={url} alt="" draggable={false} />}</button> })}
-  <button type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={onOpen}><Face key={companion.id} companion={companion} size={size} follow mood={mood} /></button>
+  {rest.map((c, i) => { const url = pictureOf(lookOf(c), "idle", 384, "full"); return <motion.button key={c.id} layoutId={"space-" + c.id} transition={SWAP} type="button" className="space-mate" data-at={i} title={c.name} aria-label={`Work with ${c.name}`} onClick={() => onPick(c.id)}>{url && <img src={url} alt="" draggable={false} />}</motion.button> })}
+  <motion.button key={companion.id} layoutId={"space-" + companion.id} transition={SWAP} type="button" className="profile-open home-face" aria-label={`${companion.name}'s profile`} onClick={onOpen}><Face companion={companion} size={size} follow mood={mood} /></motion.button>
  </div>
 }
 /// Opens a companion's profile (App listens), from any of its mascots.
