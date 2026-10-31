@@ -878,25 +878,28 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool, passwords takePasswords: Bool, autofill: Bool) {
   guard let preview = pendingImport, !importBusy else { return }
-  var added = 0, visits = 0, saved = 0
+  var added = 0, visits = 0, saved = 0, already = 0
   if takeBookmarks {
    var have = Set(bookmarks.compactMap { $0["Url"] as? String })
    for mark in preview.bookmarks { if let url = mark["Url"] as? String, have.insert(url).inserted { bookmarks.append(mark); added += 1 } }
+   already += preview.bookmarks.count - added
   }
   if takeHistory {
    let have = Set(history.compactMap { $0["Url"] as? String })
    let fresh = preview.history.filter { !have.contains($0["Url"] as? String ?? "") }
    visits = fresh.count
+   already += preview.history.count - visits
    history = Array((history + fresh).sorted { ($0["At"] as? String ?? "") > ($1["At"] as? String ?? "") }.prefix(5000))
   }
   if takePasswords {
    var entries = Vault.read()
    for login in preview.logins.logins where !entries.contains(where: { $0.origin == login.origin && $0.username == login.username }) { entries.append(login); saved += 1 }
+   already += preview.logins.logins.count - saved
    Vault.write(entries)
    if autofill { prefs["AutoFillPasswords"] = true; prefs["OfferPasswordSave"] = true; prefs["OfferPasswordUpdate"] = true }
   }
   pendingImport = nil
-  importDone = "Imported \(added) bookmarks, \(visits) history entries and \(saved) passwords from \(preview.name)."
+  importDone = "Imported \(added) bookmarks, \(visits) history entries and \(saved) passwords from \(preview.name)." + (already > 0 ? " \(already) were already in Still." : "")
   save()
   publishImport()
   schedulePublish()
@@ -905,15 +908,18 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  static let stamp = ISO8601DateFormatter()
 
  static func readChromium(_ folder: URL) throws -> (bookmarks: [[String: Any]], history: [[String: Any]]) {
-  var marks: [[String: Any]] = []
+  var marks: [[String: Any]] = [], seen = Set<String>()
   func walk(_ node: Any?) {
    guard let node = node as? [String: Any] else { return }
-   if node["type"] as? String == "url", let url = node["url"] as? String { marks.append(["Title": node["name"] as? String ?? url, "Url": url]) }
+   if node["type"] as? String == "url", let url = node["url"] as? String, seen.insert(url).inserted { marks.append(["Title": node["name"] as? String ?? url, "Url": url]) }
    for child in node["children"] as? [Any] ?? [] { walk(child) }
   }
-  if let data = try? Data(contentsOf: folder.appendingPathComponent("Bookmarks")),
-     let roots = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["roots"] as? [String: Any] {
-   for root in roots.values { walk(root) }
+  // A browser signed in to an account keeps that account's bookmarks in AccountBookmarks.
+  for name in ["Bookmarks", "AccountBookmarks"] {
+   if let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
+      let roots = (try? JSONSerialization.jsonObject(with: data) as? [String: Any])?["roots"] as? [String: Any] {
+    for root in roots.values { walk(root) }
+   }
   }
   let file = folder.appendingPathComponent("History")
   guard FileManager.default.fileExists(atPath: file.path) else { return (marks, []) }

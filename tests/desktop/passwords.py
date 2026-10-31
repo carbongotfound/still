@@ -267,6 +267,15 @@ def plain_text_anywhere(needle):
     return None
 
 
+def account_login(folder, sealed):
+    """Chrome signed in to an account keeps that account's passwords in a second file."""
+    db = sqlite3.connect(folder / "Login Data For Account")
+    db.execute("CREATE TABLE logins (origin_url TEXT, username_value TEXT, password_value BLOB, blacklisted_by_user INTEGER)")
+    db.execute("INSERT INTO logins VALUES ('https://account.example/', 'synced', ?, 0)", (sealed,))
+    db.commit()
+    db.close()
+
+
 def chrome_profile(folder):
     """A Chrome profile with one login Windows can decrypt and one locked by Chrome's app-bound encryption."""
     import ctypes
@@ -288,6 +297,7 @@ def chrome_profile(folder):
     db.execute("INSERT INTO logins VALUES ('https://bound.example/', 'locked', ?, 0)", (b"v20" + os.urandom(60),))
     db.commit()
     db.close()
+    account_login(folder, sealed)
 
 
 def mac_chrome_profile(folder):
@@ -301,6 +311,7 @@ def mac_chrome_profile(folder):
     db.execute("INSERT INTO logins VALUES ('https://chrome.example/login', 'chromie', ?, 0)", (b"v10" + sealed,))
     db.commit()
     db.close()
+    account_login(folder, b"v10" + sealed)
 
 
 def stage_profile(process, path, name):
@@ -582,21 +593,23 @@ def main():
             chrome = RUN / "Google" / "Chrome" / "Default"
             mac_chrome_profile(chrome)
             external = stage_profile(process, chrome, "Chrome") or {}
-            check(external.get("passwords") == 1 and external.get("bookmarks") == 1, "Chrome passwords import with the key from the Keychain")
+            check(external.get("passwords") == 2 and external.get("bookmarks") == 1, "Chrome passwords (the account's too) import with the key from the Keychain")
             send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
             time.sleep(1)
             c = entry(process, "https://chrome.example", "chromie")
-            check(c and reveal(process, c) == "Chrome-keychain-77", "The Chrome login arrives with its password")
+            s = entry(process, "https://account.example", "synced")
+            check(c and reveal(process, c) == "Chrome-keychain-77" and s and reveal(process, s) == "Chrome-keychain-77", "The Chrome logins arrive with their passwords")
         else:
             chrome = RUN / "chrome"
             chrome_profile(chrome)
             external = stage_profile(process, chrome, "Chrome") or {}
-            check(external.get("passwords") == 1 and any("locked to the browser" in w and "Export your passwords" in w for w in external.get("warnings", [])),
+            check(external.get("passwords") == 2 and any("locked to the browser" in w and "Export your passwords" in w for w in external.get("warnings", [])),
                   "Chrome passwords import, and app-bound ones point to Chrome's own CSV export")
             send(process, "externalConfirm", id=external.get("id", ""), passwords=True)
             time.sleep(1)
             c = entry(process, "https://chrome.example", "chromie")
-            check(c and reveal(process, c) == "Chrome-dpapi-77", "The Chrome login arrives with its password")
+            s = entry(process, "https://account.example", "synced")
+            check(c and reveal(process, c) == "Chrome-dpapi-77" and s and reveal(process, s) == "Chrome-dpapi-77", "The Chrome logins (the account's too) arrive with their passwords")
 
         # ---- AIs never get a password ----
         js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")

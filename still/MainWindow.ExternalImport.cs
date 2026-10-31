@@ -68,19 +68,19 @@ public partial class MainWindow
   if(!bookmarks&&!history&&!passwords&&!cookies){Toast("Choose something to import.");return;}
   var snapshot=externalImport;
   externalImportBusy=true;await PublishBrowserTools("import");
-  var parts=new List<string>();
+  var parts=new List<string>();int already=0;
   try{
    // Commit exactly the reviewed snapshot into the current profile; never re-read source files.
-   if(bookmarks){int n=0;var known=state.Bookmarks.Select(b=>b.Url).ToHashSet();foreach(var b in snapshot.Bookmarks)if(known.Add(b.Url)){state.Bookmarks.Add(b);n++;}parts.Add($"{n} bookmarks");}
+   if(bookmarks){int n=0;var known=state.Bookmarks.Select(b=>b.Url).ToHashSet();foreach(var b in snapshot.Bookmarks)if(known.Add(b.Url)){state.Bookmarks.Add(b);n++;}parts.Add($"{n} bookmarks");already+=snapshot.Bookmarks.Count-n;}
    if(history){
     var known=state.History.Select(h=>h.Url).ToHashSet();int n=0;
     foreach(var h in snapshot.History)if(known.Add(h.Url)){state.History.Add(h);n++;}
-    state.History=state.History.OrderByDescending(v=>v.At).Take(2000).ToList();parts.Add($"{n} history entries");
+    state.History=state.History.OrderByDescending(v=>v.At).Take(2000).ToList();parts.Add($"{n} history entries");already+=snapshot.History.Count-n;
    }
    if(passwords){
     var entries=Vault.Read();int n=0;
     foreach(var login in snapshot.Logins)if(!entries.Any(v=>v.Origin==login.Origin&&v.Username==login.Username)){entries.Add(login);n++;}
-    Vault.Write(entries);parts.Add($"{n} passwords");
+    Vault.Write(entries);parts.Add($"{n} passwords");already+=snapshot.Logins.Count-n;
     if(autofill){Prefs.AutoFillPasswords=true;Prefs.OfferPasswordSave=true;Prefs.OfferPasswordUpdate=true;}
    }
    if(cookies){
@@ -97,7 +97,7 @@ public partial class MainWindow
     parts.Add($"{n} cookies");
    }
    SaveLater();RenderTabs();
-   externalImportDone="Imported "+string.Join(", ",parts)+" from "+externalImportName+".";
+   externalImportDone="Imported "+string.Join(", ",parts)+" from "+externalImportName+"."+(already>0?$" {already} were already in Still.":"");
    Toast(externalImportDone+(cookies?" Reload open sites to use your signed-in sessions.":""));
   }catch(Exception ex) when(ex is IOException or UnauthorizedAccessException or System.Security.Cryptography.CryptographicException){
    App.Log(ex);externalImportError="The import couldn't be saved. Nothing sensitive was written outside Still's encrypted vault.";
