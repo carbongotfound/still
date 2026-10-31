@@ -75,6 +75,13 @@ const initial: State = { profileName:"Default",maximized:false,activeId: "empty"
 // "Try one of these": a look per kind of idea (suggestions.ts homeIdeas).
 const IDEA_LOOKS: Record<HomeIdea["kind"], [LucideIcon, string]> = { project: [Flag, "amber"], app: [Plug, "green"], tab: [FileText, "sky"], role: [Sparkles, "rose"] }
 const HELP = "https://github.com/carbongotfound/still#readme"
+// Still's own pages by address, typed in the address bar: still://chats and so on. A home page, a panel, or Help.
+const STILL_PAGES: [name: string, label: string, home?: HomeView][] = [["new", "New chat", "home"], ["chats", "Chat history", "chats"], ["library", "Library", "library"],
+ ["companions", "Companions", "companions"], ["skills", "Skills & plugins", "skills"], ["settings", "Settings"], ["history", "History"], ["bookmarks", "Bookmarks"],
+ ["downloads", "Downloads"], ["passwords", "Passwords"], ["profiles", "Profiles"], ["import", "Import"], ["extensions", "Extensions"], ["about", "About Still"], ["help", "Help"]]
+const STILL_ALIASES: Record<string, string> = { "chat-history": "chats", "new-chat": "new", home: "new", plugins: "skills", "skills-and-plugins": "skills" }
+/// The page a still:// address names (any case; spaces read as dashes), "" for an unknown one, undefined for any other address.
+const stillPage = (url: string) => { const m = /^still:\/*(.*?)\/*$/i.exec(url.trim()); if (!m) return undefined; const name = m[1].toLowerCase().replace(/[\s_]+/g, "-"); return STILL_PAGES.find(p => p[0] === (STILL_ALIASES[name] ?? name)) ?? null }
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") || url } catch { return url } }
 // Shortcut hints in the native spelling: Cmd and Shift symbols on a Mac.
@@ -408,7 +415,8 @@ export default function App() {
  const addressItems = useMemo(() => {
   if (pane !== "address") return []
   const q = query.trim(), items: { key: string; icon: React.ReactNode; title: string; sub: string; value?: string; run: () => void }[] = []
-  if (q && q !== active?.url && !completion) items.push({ key: "go", icon: <Search size={15} />, title: q, sub: /^[^\s]+\.[^\s]+$/.test(q) || /^https?:/.test(q) ? "Go to address" : "Search " + state.preferences.search, run: () => go(q) })
+  if (/^still:/i.test(q)) { const lower = q.toLowerCase(); STILL_PAGES.filter(p => ("still://" + p[0]).startsWith(lower) || lower.startsWith("still://" + p[0])).forEach(p => items.push({ key: "still." + p[0], icon: <Globe2 size={15} />, title: "still://" + p[0], sub: p[1], run: () => go("still://" + p[0]) })) }
+  else if (q && q !== active?.url && !completion) items.push({ key: "go", icon: <Search size={15} />, title: q, sub: /^[^\s]+\.[^\s]+$/.test(q) || /^https?:/.test(q) ? "Go to address" : "Search " + state.preferences.search, run: () => go(q) })
   // Anything that isn't an address can go to the AI as a task.
   if (q && !state.noAi && !/^[^\s]+\.[^\s]+$/.test(q) && !/^[a-z]+:/i.test(q)) items.push({ key: "ai", icon: <Face size={16} />, title: q, sub: "Start a chat", run: () => { send("aiAsk", { text: q }); close() } })
   suggestions.forEach(v => items.push({ key: "s" + v.url, icon: <Globe2 size={15} />, title: v.host, sub: v.bookmark ? v.title + " · Bookmark" : "Visited", value: prettyUrl(v.url), run: () => { learn(v.url); go(v.url) } }))
@@ -461,7 +469,14 @@ export default function App() {
 
  function open(name: string, value = "") { if (window.chrome?.webview) { send("openPanel", { name, value }); return } setQuery(value); setFilter(""); setDisplayPane(name); setPane(name) }
  function close() { setPane(""); send("panel", { name: "" }) }
- function go(url: string) { close(); send("navigate", { url }) }
+ function go(url: string) {
+  const page = stillPage(url)
+  if (page === undefined) { close(); send("navigate", { url }) }
+  else if (!page) { close(); toast("Still has no page called " + url.trim() + ". Try still://chats or still://settings.") }
+  else if (page[2]) { close(); goHome(page[2]) }
+  else if (page[0] === "help") { close(); send("new", { url: HELP }) }
+  else open(page[0])
+ }
  function action(op: string, payload: Record<string, unknown> = {}) { close(); send(op, payload) }
  function preference(key: string, value: string) { send("preference", { key, value }) }
 
