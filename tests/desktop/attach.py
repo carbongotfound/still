@@ -120,7 +120,7 @@ def main():
     try:
         until(lambda: js(p, "!!document.body.innerText.length"), 20)
         send(p, "new")
-        until(lambda: js(p, "!!document.querySelector('.home-compose textarea')"), 10)
+        until(lambda: js(p, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
         time.sleep(.4)
         js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         home = ".home-compose"
@@ -145,7 +145,7 @@ def main():
         check(js(p, f"[...document.querySelectorAll('{home} .file-chip .file-icon svg')].length") == 2, "Each chip has the file's icon")
 
         # Paste an image.
-        js(p, f"document.querySelector('{home} textarea').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: {files_js([('dot.png', 'image/png', base64.b64encode(PNG).decode())])} }}))")
+        js(p, f"document.querySelector('{home} [aria-label=Message]').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: {files_js([('dot.png', 'image/png', base64.b64encode(PNG).decode())])} }}))")
         got = until(lambda: len(chips(p, home)) == 3 and chips(p, home), 10) or chips(p, home)
         check(got[-1:] == [f"dot.png {len(PNG)} B"], f"Pasting an image adds it too ({got})")
 
@@ -157,13 +157,13 @@ def main():
         # x removes one.
         js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove dot.png\"]').click()")
         check(until(lambda: len(chips(p, home)) == 2, 3), "x removes a file")
-        js(p, f"document.querySelector('{home} textarea').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: {files_js([('dot.png', 'image/png', base64.b64encode(PNG).decode())])} }}))")
+        js(p, f"document.querySelector('{home} [aria-label=Message]').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: {files_js([('dot.png', 'image/png', base64.b64encode(PNG).decode())])} }}))")
         until(lambda: len(chips(p, home)) == 3, 10)
         rpc(p, "capture", name="attach-chips.png")
 
         # Send: the AI is told about each file and reads it.
-        js(p, f"(t => {{ Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'What should I do first?'); t.dispatchEvent(new Event('input', {{ bubbles: true }})) }})(document.querySelector('{home} textarea'))")
-        js(p, f"document.querySelector('{home} textarea').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
+        js(p, f"(t => {{ t.focus(); document.execCommand('insertText', false, 'What should I do first?') }})(document.querySelector('{home} [aria-label=Message]'))")
+        js(p, f"document.querySelector('{home} [aria-label=Message]').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
         until(lambda: len(lines("results.jsonl")) >= 3, 30)
         prompt = (lines("prompts.jsonl") or [{}])[-1].get("prompt", "")
         check(re.search(r'\[Still\] The user attached 3 files: "notes.txt" \(' + str(len(NOTES.encode())) + r' B, id [a-f0-9]{16}\); "brief.pdf" \([\d.]+ (B|KB), id [a-f0-9]{16}\); "dot.png" \(' + str(len(PNG)) + r' B, id [a-f0-9]{16}\)\. Read each with read_attachment', prompt),
@@ -184,12 +184,12 @@ def main():
 
         # A follow-up from the chat's own box, with only a file: it says what to do with it, and a bad id fails cleanly.
         box = ".chat-view"
-        until(lambda: js(p, f"!!document.querySelector('{box} .composer textarea')"), 10)
+        until(lambda: js(p, f"!!document.querySelector('{box} [aria-label=Message]')"), 10)
         done = len(lines("results.jsonl"))
         js(p, f"document.querySelector('{box} .composer').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: {files_js([('plan.md', 'text/markdown', base64.b64encode(b'# Plan\\nShip it').decode())])} }}))")
         check(until(lambda: chips(p, box) == ["plan.md 15 B"], 10), "The chat's own box takes files too")
-        js(p, f"(t => {{ Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(t, 'TRY A BAD ID'); t.dispatchEvent(new Event('input', {{ bubbles: true }})) }})(document.querySelector('{box} textarea'))")
-        js(p, f"document.querySelector('{box} textarea').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
+        js(p, f"(t => {{ t.focus(); document.execCommand('insertText', false, 'TRY A BAD ID') }})(document.querySelector('{box} [aria-label=Message]'))")
+        js(p, f"document.querySelector('{box} [aria-label=Message]').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
         until(lambda: len(lines("results.jsonl")) >= done + 2, 30)
         later = lines("results.jsonl")[done:]
         check(any(r["type"] == "text" and "Ship it" in r["text"] for r in later), "and the AI reads a file sent from there")

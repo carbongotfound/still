@@ -467,10 +467,10 @@ def queue_and_question(process):
     """A follow-up waits while the AI works; Send now interrupts; a question can be answered from the panel."""
     ask(process, f"SLOW {SITE}/slow-c 30")
     until(lambda: slow("slow-c"), 20)
-    until(lambda: js(process, "!!document.querySelector('.chat-pane textarea')"), 5)
+    until(lambda: js(process, "!!document.querySelector('.chat-pane [aria-label=Message]')"), 5)
     send(process, "aiSend", text="ASK please")
     check(until(lambda: "ASK please" in (js(process, "document.querySelector('.ai-queued')?.innerText ?? ''") or ""), 5), "A message sent while it works waits as Up next")
-    check(js(process, "document.querySelector('.chat-pane textarea')?.placeholder") == "Add to what's up next…", "The box says it adds to what's up next")
+    check(js(process, "document.querySelector('.chat-pane [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Add to what's up next…", "The box says it adds to what's up next")
     click(process, ".ai-queued [data-slot=button]")
     check(until(lambda: js(process, "!!document.querySelector('.ask-card')"), 20), "Send now stops the run and sends the follow-up, which asks a question")
     check(until(lambda: js(process, "!!document.querySelector('.tasks-button .is-needs')"), 5), "The running tasks button shows that a chat needs you")

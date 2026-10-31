@@ -457,7 +457,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-compose { padding:4px 14px 14px; } /* with the log's 12px: 16px above the composer */
 .ai-compose [data-slot=input-group] { border-radius:18px; background:var(--card); border-color:var(--input); box-shadow:0 1px 2px #2a20140a,0 10px 28px -16px #2a201440; }
 .dark .ai-compose [data-slot=input-group] { box-shadow:0 10px 28px -14px #000c; }
-.ai-compose textarea { max-height:180px; }
+.ai-compose .composer-input { max-height:180px; }
 .ai-send[data-slot] { width:34px; height:34px; border-radius:50%; background:var(--hue,#7c66f5); color:#fff; }
 .ai-send[data-slot]:hover { background:var(--hue,#7c66f5); opacity:.88; } .ai-send[data-slot]:disabled { background:var(--muted); color:var(--muted-foreground); opacity:1; }
 .ai-send.is-stop[data-slot], .ai-send.is-stop[data-slot]:hover { background:#e5484d; }
@@ -610,7 +610,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .chat-view[data-mode=tab] .ai-compose { padding:6px 44px 20px; }
 .is-split .chat-view[data-mode=tab] .ai-log { padding:56px 28px 14px; } .is-split .chat-view[data-mode=tab] .ai-compose { padding:4px 28px 16px; }
 .chat-view[data-mode=tab] .composer[data-slot=input-group] { border-radius:24px; }
-.chat-view[data-mode=tab] .composer textarea { min-height:64px; padding:16px 18px 4px; font-size:14.5px; }
+.chat-view[data-mode=tab] .composer-input { min-height:64px; padding:16px 18px 4px; font-size:14.5px; }
 .chat-view[data-mode=tab] .composer [data-slot=input-group-addon] { padding:4px 10px 10px; }
 .chat-hello { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; }
 .chat-hello h3 { margin:10px 0 0; font-family:var(--font-display); font-size:30px; font-weight:430; letter-spacing:-.02em; }
@@ -646,7 +646,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-compose { width:min(680px,100%); }
 .home-compose [data-slot=input-group] { border-radius:22px; background:var(--card); border-color:var(--input); box-shadow:0 1px 2px #2a20140a,0 16px 40px -20px #2a201455; }
 .dark .home-compose [data-slot=input-group] { box-shadow:0 16px 40px -18px #000e; }
-.home-compose textarea { min-height:68px; max-height:200px; padding:15px 17px 4px; font-size:14px; }
+.home-compose .composer-input { min-height:68px; max-height:200px; padding:15px 17px 4px; font-size:14px; }
 .home-ideas { width:min(680px,100%); margin-top:30px; }
 .home-ideas h2 { margin:0 0 10px 4px; font-size:12px; font-weight:600; color:var(--muted-foreground); }
 .home-ideas > div { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:10px; }
@@ -810,9 +810,23 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-menu button { display:flex; align-items:center; gap:9px; height:36px; padding:0 9px; border-radius:9px; font-size:13px; text-align:left; }
 .skill-menu button[aria-selected=true], .skill-menu button:hover { background:var(--muted); }
 .skill-menu svg { width:14px; height:14px; flex:none; color:var(--muted-foreground); } .skill-menu b { flex:none; max-width:60%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-weight:560; }
-.skill-menu button > img, .skill-menu button > .mascot, .mention-chip > img, .mention-chip > .mascot { flex:none; width:16px; height:16px; border-radius:4px; } .skill-menu button > .mascot { width:22px; height:22px; }
-.mention-chip > span { max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .skill-menu span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
+.skill-menu button > img, .skill-menu button > .mascot, .skill-menu .plug-logo { flex:none; width:16px; height:16px; border-radius:4px; } .skill-menu button > .mascot { width:22px; height:22px; }
+.skill-menu .plug-logo { display:grid; place-items:center; overflow:hidden; font-style:normal; font-size:9px; font-weight:700; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); } .skill-menu .plug-logo.is-image { background:#fff; }
+.skill-menu span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
 .skill-chips[data-slot] { flex-wrap:wrap; gap:6px; padding:10px 12px 0; }
+/* The message box: text with mentions in it (Mention.tsx). */
+.composer-input { position:relative; flex:1; width:100%; min-height:4rem; padding:8px 10px; overflow-y:auto; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; outline:none; cursor:text; }
+.composer-input[data-empty]::before { content:attr(aria-placeholder); position:absolute; color:var(--muted-foreground); pointer-events:none; }
+.composer-input[aria-disabled] { cursor:not-allowed; opacity:.5; }
+.mention { white-space:nowrap; border-radius:5px; font-weight:550; }
+.mention > img, .mention > i { display:inline-block; width:16px; height:16px; margin:0 4px 0 1px; vertical-align:-3px; border-radius:4px; object-fit:contain; font-style:normal; }
+.mention.is-mate { color:color-mix(in oklab,var(--hue,currentColor) 72%,var(--foreground)); font-weight:600; } .mention.is-mate > img { border-radius:50%; }
+.mention.is-tab, .mention.is-plugin, .mention.is-skill { padding:0 4px 0 2px; background:color-mix(in oklab,var(--foreground) 7%,transparent); }
+.mention.is-plugin > img { background:#fff; }
+.mention.is-plugin > i { display:inline-grid; place-items:center; font-size:9px; font-weight:700; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); }
+.mention.is-tab > i:empty, .mention.is-skill > i { background:currentColor; opacity:.6; border-radius:0; -webkit-mask:var(--glyph) center/contain no-repeat; mask:var(--glyph) center/contain no-repeat;
+ --glyph:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Ccircle cx='12' cy='12' r='10'/%3E%3Cpath d='M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20M2 12h20'/%3E%3C/svg%3E"); }
+.mention.is-skill > i { --glyph:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='black' stroke-width='2'%3E%3Cpath d='M12 7v14M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z'/%3E%3C/svg%3E"); }
 .skill-chip { display:inline-flex; align-items:center; gap:5px; height:24px; padding:0 8px; border-radius:7px; background:color-mix(in oklab,var(--hue,#5c7a76) 14%,var(--muted)); font-size:12px; font-weight:550; vertical-align:middle; }
 .skill-chip svg { width:12px; height:12px; } .skill-chip button { display:grid; place-items:center; margin-right:-3px; opacity:.6; } .skill-chip button:hover { opacity:1; }
 .is-unread { display:inline-block; flex:none; width:8px; height:8px; border-radius:50%; background:#678fff; }

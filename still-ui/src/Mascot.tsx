@@ -98,6 +98,8 @@ const AVATAR = new Map(RIGS.map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/
 const strips = import.meta.glob("./assets/sprite/*/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>
 const sheets = import.meta.glob("./assets/sprite/*/*.json", { eager: true, import: "default" }) as Record<string, Record<string, { frames: number; fps: number; rows?: number }>>
 const RIG = new Map(RIGS.map(([l, f]) => [lookKey(l), f]))
+/// A look's 2D face as a picture, for an <img> (a mention in the message box).
+export const avatarOf = (look: Look) => AVATAR.get(lookKey(look))?.[0] ?? pictureOf(look, "idle", 96, "full", true, true)
 const STRIP: Partial<Record<MascotState, string>> = { working: "working", thinking: "thinking", done: "nod", error: "shrug", needs: "wave" } // the rest idle
 function strip(look: Look, state: MascotState, gesture = "") {
  const id = RIG.get(lookKey(look)), clip = gesture === "yes" ? "yes" : STRIP[state] ?? "idle_a", url = strips[`./assets/sprite/${id}/${id}-${clip}.webp`], info = sheets[`./assets/sprite/${id}/${id}.json`]?.[clip]

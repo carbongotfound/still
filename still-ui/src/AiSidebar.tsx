@@ -1,8 +1,8 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type CSSProperties, type ReactElement, type ReactNode } from "react"
+import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { InputGroup, InputGroupAddon, InputGroupButton, InputGroupTextarea } from "@/components/ui/input-group"
+import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
@@ -18,7 +18,9 @@ import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
-import type { PluginsState } from "./Plugins"
+import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
+import { useMascotVersion } from "./Mascot"
+import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
 export type AiState = {
@@ -185,13 +187,6 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
  </DropdownMenu>
 }
 
-// "/" in the message box picks a skill. A skill named in the text (/id) shows as a chip above it.
-const skillToken = (id: string) => new RegExp(`(^|\\s)/${id}(?=\\s|$)`)
-export function SkillText({ text, skills }: { text: string; skills?: Skill[] }) {
- const ids = new Set(skills?.map(k => k.id))
- return <>{text.split(/(?<=^|\s)(\/[a-z0-9-]+)(?=\s|$)/).map((part, i) => part.startsWith("/") && ids.has(part.slice(1)) ? <span key={i} className="skill-chip"><BookOpen />{skills?.find(k => k.id === part.slice(1))?.name}</span> : part)}</>
-}
-
 // The message box: the model on the right, then send, or a red stop while the AI works (Enter then queues a follow-up).
 // How the companion looks through a run: thinking until its first step, working through steps, waiting on the user's
 // answer, a small celebration when it finishes, a droop on an error. Listening while the user types to it.
@@ -229,14 +224,14 @@ const FileChip = ({ file, onRemove }: { file: Attached; onRemove?: () => void })
 const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10
 const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `${f.name} is ${sizeText(f.size)}. ${IMAGE.test(f.name) ? "Images" : "Files"} can be up to ${IMAGE.test(f.name) ? 5 : 10} MB.` : ""
 
-// The message box. / picks a skill, # attaches an open tab (never a private one) and @ brings in a companion; tabs and
-// companions sit above the text as chips that x or Backspace at the start removes. Arrows, Enter or Tab and Esc work the pickers.
+// The message box. / picks a skill, # an open tab (never a private one) or a connected app, and @ a companion: each goes
+// into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
+const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
 export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
- const [text, setTextState] = useState(() => readDraft(draft))
- useEffect(() => setTextState(readDraft(draft)), [draft])
+ const [parts, setParts] = useState<Part[]>([])
+ const [before, setBefore] = useState("") // the text just before the caret: what the pickers look at
  const [pick, setPick] = useState(0)
- const [chips, setChips] = useState<{ tab?: TabRef; mate?: Companion }[]>([])
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
  const [dropping, setDropping] = useState(false)
@@ -255,27 +250,103 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    read.readAsDataURL(f)
   }
  }
- const box = useRef<HTMLTextAreaElement>(null)
+ const box = useRef<HTMLDivElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
- const setText = (v: string) => { setTextState(v); keepDraft(draft, v); setPick(0); setShut(null); onTyping?.(!!v.trim()) }
- const attached = chips.flatMap(c => c.tab ? [c.tab.id] : [])
- const typedMessage = [...chips.flatMap(c => c.mate ? ["@" + c.mate.name] : []), text.trim()].join(" ").trim()
- const message = typedMessage || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
- const submit = () => { if (!message || disabled) return; onSubmit(message, attached, files.map(f => f.id)); setText(""); setChips([]); setFiles([]) }
+ const known: Known = { companions: ai.companions ?? [], tabs: tabs ?? [], plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
+ const knownRef = useRef(known)
+ useMascotVersion(); usePluginData(send) // a companion's picture, or an app's logo, can come in after it's mentioned
+ useEffect(() => { knownRef.current = known; if (box.current) dress(box.current, known) })
+ // The draft: what was typed in this chat or tab before, its mentions too while they're still there.
+ useLayoutEffect(() => {
+  const kept = readDraft(draft), el = box.current
+  let p: Part[] = [kept]
+  try { if (kept.startsWith('{"parts":')) p = (JSON.parse(kept).parts as unknown[]).map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "") } catch { /* plain text */ }
+  if (el) el.innerHTML = markup(p, knownRef.current)
+  setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
+ }, [draft])
+ // The caret at the end of the box (it isn't in the box yet).
+ const end = () => { const el = box.current, s = getSelection(); if (!el || !s) return; el.focus(); s.selectAllChildren(el); s.collapseToEnd() }
+ useEffect(() => { if (autoFocus) end() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => {
+  const el = box.current; if (!el) return
+  const caret = () => { const s = getSelection(), n = s?.anchorNode; if (n && el.contains(n)) setBefore(n.nodeType === Node.TEXT_NODE ? n.textContent!.slice(0, s.anchorOffset) : "") }
+  const plain = (e: InputEvent) => { if (e.inputType.startsWith("format")) e.preventDefault() } // no bold or italics in a message
+  document.addEventListener("selectionchange", caret); el.addEventListener("beforeinput", plain)
+  return () => { document.removeEventListener("selectionchange", caret); el.removeEventListener("beforeinput", plain) }
+ }, [])
+ const text = textOf(parts)
+ const sync = () => {
+  const el = box.current; if (!el) return
+  dress(el, known)
+  const p = read(el), t = textOf(p)
+  setParts(p); keepDraft(draft, mentions(p).length ? JSON.stringify({ parts: p }) : t); setPick(0); setShut(null); onTyping?.(!!t.trim())
+ }
+ const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
+ const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
+ const submit = () => {
+  if (!message || disabled) return
+  onSubmit(message, attached, files.map(f => f.id))
+  if (box.current) box.current.innerHTML = ""
+  setParts([]); setBefore(""); setFiles([]); keepDraft(draft, ""); onTyping?.(false)
+ }
  const skills = ai.skills ?? []
- const typed = /(^|\s)\/([\w-]*)$/.exec(text)?.[2].toLowerCase()
- const tabWord = /(^|\s)#([^\s#]*)$/.exec(text)?.[2].toLowerCase()
- const mateWord = /(^|\s)@([\w-]*)$/.exec(text)?.[2].toLowerCase()
- const used = skills.filter(k => skillToken(k.id).test(text))
- const pickSkill = (k: Skill) => { setText(typed === undefined ? `/${k.id} ${text}` : text.replace(/(^|\s)\/[\w-]*$/, `$1/${k.id} `)); box.current?.focus() }
- const attach = (chip: { tab?: TabRef; mate?: Companion }, token?: RegExp) => { setChips([...chips, chip]); if (token) setText(text.replace(token, "$1")); box.current?.focus() }
- const open = (tabs ?? []).filter(t => t.url && !t.isPrivate && !t.chatId && !t.inChat && !attached.includes(t.id))
+ const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
+ const tabWord = /(^|\s)#([^\s#]*)$/.exec(before)?.[2].toLowerCase()
+ const mateWord = /(^|\s)@([\w-]*)$/.exec(before)?.[2].toLowerCase()
+ // Markup in place of the selection, as one step to undo, and the caret after it (Chrome would leave it before a mention).
+ const insert = (h: string) => {
+  const el = box.current!, s = getSelection()!, at = s.getRangeAt(0), rest = document.createRange()
+  rest.setStart(at.endContainer, at.endOffset); rest.setEnd(el, el.childNodes.length)
+  const after = units(read(rest.cloneContents()))
+  document.execCommand("insertHTML", false, h)
+  caretAt(el, units(read(el)) - after)
+ }
+ // A pick goes in where the caret is, in place of what was typed to find it (#lamp), with a space after.
+ const put = (m: Mention, token?: RegExp) => {
+  const el = box.current, s = getSelection(); if (!el || !s) return
+  if (document.activeElement !== el || !s.anchorNode || !el.contains(s.anchorNode)) end()
+  const n = s.anchorNode, hit = token && n?.nodeType === Node.TEXT_NODE ? token.exec(n.textContent!.slice(0, s.anchorOffset)) : null
+  if (n && hit) s.setBaseAndExtent(n, s.anchorOffset - hit[0].length + hit[1].length, n, s.anchorOffset)
+  insert(html(m, known) + " ")
+ }
+ const pickSkill = (k: Skill) => put({ kind: "skill", id: k.id, name: k.name }, /(^|\s)\/[\w-]*$/)
+ const putTab = (t: TabRef) => put({ kind: "tab", id: t.id, name: t.title || host(t.url) }, /(^|\s)#[^\s#]*$/)
+ const open = (tabs ?? []).filter(t => shareable(t) && !attached.includes(t.id))
  const pages = open.slice(0, 6)
+ const apps = known.plugins.filter(p => !mentions(parts).some(m => m.kind === "plugin" && m.id === p.slug))
  const [menuLabel, items]: [string, { key: string; icon: ReactNode; label: string; sub: string; run: () => void }[]] = shut === text ? ["", []]
   : typed !== undefined ? ["Skills", skills.filter(k => k.id.startsWith(typed) || k.name.toLowerCase().includes(typed)).slice(0, 6).map(k => ({ key: k.id, icon: <BookOpen />, label: "/" + k.id, sub: k.description || k.name, run: () => pickSkill(k) }))]
-  : tabWord !== undefined ? ["Tabs", open.filter(t => (t.title + " " + t.url).toLowerCase().includes(tabWord)).slice(0, 6).map(t => ({ key: t.id, icon: <TabIcon tab={t} />, label: t.title || host(t.url), sub: host(t.url), run: () => attach({ tab: t }, /(^|\s)#[^\s#]*$/) }))]
-  : mateWord !== undefined ? ["Companions", (ai.companions ?? []).filter(c => !chips.some(x => x.mate?.id === c.id) && c.name.toLowerCase().includes(mateWord)).slice(0, 6).map(c => ({ key: c.id, icon: <Face companion={c} size={22} />, label: c.name, sub: premadeOf(c)?.role ?? "Your own companion", run: () => attach({ mate: c }, /(^|\s)@[\w-]*$/) }))]
+  : tabWord !== undefined ? [apps.length ? "Tabs and apps" : "Tabs", [...open.filter(t => (t.title + " " + t.url).toLowerCase().includes(tabWord)).slice(0, 6).map(t => ({ key: t.id, icon: <TabIcon tab={t} />, label: t.title || host(t.url), sub: host(t.url), run: () => putTab(t) })),
+   ...apps.filter(p => p.name.toLowerCase().includes(tabWord)).slice(0, 4).map(p => ({ key: "app." + p.slug, icon: <PluginLogo slug={p.slug} name={p.name} />, label: p.name, sub: "Connected app", run: () => put({ kind: "plugin", id: p.slug, name: p.name }, /(^|\s)#[^\s#]*$/) }))]]
+  : mateWord !== undefined ? ["Companions", (ai.companions ?? []).filter(c => !mentions(parts).some(m => m.kind === "mate" && m.id === c.id) && c.name.toLowerCase().includes(mateWord)).slice(0, 6).map(c => ({ key: c.id, icon: <Face companion={c} size={22} />, label: c.name, sub: premadeOf(c)?.role ?? "Your own companion", run: () => put({ kind: "mate", id: c.id, name: c.name }, /(^|\s)@[\w-]*$/) }))]
   : ["", []]
+ // Backspace just after a mention (Delete just before one) takes it out whole, as one step to undo.
+ const unmention = (forward: boolean) => {
+  const s = getSelection(), n = s?.anchorNode; if (!s?.isCollapsed || !n || !box.current?.contains(n)) return false
+  const at = s.anchorOffset, next = n.nodeType === Node.TEXT_NODE ? (forward ? at === n.textContent!.length ? n.nextSibling : null : at === 0 ? n.previousSibling : null) : n.childNodes[forward ? at : at - 1]
+  if (!(next instanceof HTMLElement) || !next.dataset.mention) return false
+  const r = document.createRange(); r.selectNode(next); s.removeAllRanges(); s.addRange(r)
+  return document.execCommand("delete")
+ }
+ const atStart = () => {
+  const s = getSelection(), el = box.current; if (!el || !s?.isCollapsed || !s.anchorNode || !el.contains(s.anchorNode)) return false
+  const r = document.createRange(); r.setStart(el, 0); r.setEnd(s.anchorNode, s.anchorOffset)
+  return !textOf(read(r.cloneContents()))
+ }
+ const copy = (e: PasteEvent<HTMLDivElement>, cut: boolean) => {
+  const s = getSelection(); if (!s?.rangeCount || s.isCollapsed) return
+  const p = read(s.getRangeAt(0).cloneContents())
+  e.preventDefault(); e.clipboardData.setData("text/plain", textOf(p)); e.clipboardData.setData(KEPT, JSON.stringify(p))
+  if (cut) document.execCommand("delete")
+ }
+ const paste = (e: PasteEvent<HTMLDivElement>) => {
+  e.preventDefault()
+  if (e.clipboardData.files.length) { take(e.clipboardData.files); return }
+  let p: unknown = null
+  try { p = JSON.parse(e.clipboardData.getData(KEPT)) } catch { /* from somewhere else: plain text */ }
+  if (Array.isArray(p)) insert(markup(p.map(x => typeof x === "string" ? x : live(x, known) ?? String((x as Mention)?.name ?? "")), known))
+  else document.execCommand("insertText", false, e.clipboardData.getData("text/plain"))
+ }
  const dragging = (e: { dataTransfer: DataTransfer }) => e.dataTransfer.types.includes("Files")
  return <InputGroup className={"composer" + (dropping ? " is-drop" : "")} style={{ "--hue": hueOf(companion) } as CSSProperties}
   onDragOver={e => { if (!dragging(e) || disabled) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropping(true) }}
@@ -283,28 +354,37 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
-  {used.length + chips.length + files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+  {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
    {files.map(f => <FileChip key={f.id} file={f} onRemove={() => setFiles(files.filter(x => x !== f))} />)}
-   {chips.map(c => c.tab ? <span key={"t" + c.tab.id} className="skill-chip mention-chip" title={c.tab.url}><TabIcon tab={c.tab} /><span>{c.tab.title || host(c.tab.url)}</span><button type="button" aria-label={"Remove " + (c.tab.title || host(c.tab.url))} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>
-    : c.mate && <span key={"m" + c.mate.id} className="skill-chip mention-chip" style={{ "--hue": hueOf(c.mate) } as CSSProperties}><Face companion={c.mate} size={16} /><span>@{c.mate.name}</span><button type="button" aria-label={"Remove " + c.mate.name} onClick={() => setChips(chips.filter(x => x !== c))}><X /></button></span>)}
-   {used.map(k => <span key={k.id} className="skill-chip"><BookOpen />{k.name}<button type="button" aria-label={"Don't use " + k.name} onClick={() => setText(text.replace(skillToken(k.id), "$1").trim())}><X /></button></span>)}
   </InputGroupAddon>}
-  <InputGroupTextarea ref={box} aria-label="Message" placeholder={placeholder} rows={2} autoFocus={autoFocus} disabled={disabled} value={text} onChange={e => setText(e.target.value)} onPaste={e => { if (e.clipboardData.files.length) { e.preventDefault(); take(e.clipboardData.files) } }} onKeyDown={e => {
-   if (items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : items.length - 1)); return }
-   if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
-   if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
-   if (e.key === "Backspace" && chips.length + files.length && e.currentTarget.selectionStart === 0 && e.currentTarget.selectionEnd === 0) { e.preventDefault(); if (chips.length) setChips(chips.slice(0, -1)); else setFiles(files.slice(0, -1)); return }
-   if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); submit() } }} />
+  <div ref={box} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
+   contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
+   onInput={sync} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
+   onDrop={e => { // text dropped on the box comes in as plain text
+    if (dragging(e)) return
+    e.preventDefault()
+    const at = document.caretRangeFromPoint?.(e.clientX, e.clientY), s = getSelection()
+    if (at && s) { s.removeAllRanges(); s.addRange(at) }
+    document.execCommand("insertText", false, e.dataTransfer.getData("text/plain"))
+   }}
+   onKeyDown={e => {
+    if (e.nativeEvent.isComposing) return
+    if (items.length && (e.key === "ArrowDown" || e.key === "ArrowUp")) { e.preventDefault(); setPick(pick + (e.key === "ArrowDown" ? 1 : items.length - 1)); return }
+    if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
+    if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
+    if ((e.key === "Backspace" || e.key === "Delete") && unmention(e.key === "Delete")) { e.preventDefault(); return }
+    if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); return }
+    if (e.key === "Enter") { e.preventDefault(); if (e.shiftKey) document.execCommand("insertLineBreak"); else submit() } }} />
   <InputGroupAddon align="block-end">
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add files, a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
-    <DropdownMenuContent {...add.props} className="w-72">
+    <DropdownMenuContent {...add.props} className="w-72" onCloseAutoFocus={e => e.preventDefault()}>
      <DropdownMenuItem onSelect={() => send("aiPickFiles", { to: me })}><Paperclip />Add files<span className="menu-hint">or drop them here</span></DropdownMenuItem>
      <DropdownMenuSeparator />
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
      {!skills.length && <p className="mode-none">No skills yet. Make one on the new tab page, under Skills.</p>}
      {pages.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Add a tab</DropdownMenuLabel>
-      {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => attach({ tab: t })}><TabIcon tab={t} /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
+      {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => putTab(t)}><TabIcon tab={t} /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
     </DropdownMenuContent></DropdownMenu>
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
@@ -395,6 +475,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const queued = ai.queued ?? []
  const log = useRef<HTMLDivElement>(null)
  const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
+ const known: Known = { companions: ai.companions ?? [], tabs, plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
  const fresh = !ai.messages.length
  const companion = companionOf(ai, fresh && picked ? picked : ai.chatCompanion)
  const name = companion?.name ?? "your AI"
@@ -471,8 +552,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
     if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
-     <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><SkillText text={m.text} skills={ai.skills} /></div> }
-    if (m.role === "user") return <div key={i} className="ai-msg is-user"><SkillText text={m.text} skills={ai.skills} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
+     <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
+    if (m.role === "user") return <div key={i} className="ai-msg is-user"><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
     if (m.role === "ask" || m.role === "tell") return <ExchangeCard key={i} m={m} ai={ai} send={send} onLink={openLink} />
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)

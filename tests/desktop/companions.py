@@ -52,6 +52,7 @@ def click_text(process, selector, words):
 def type_into(process, selector, value):
     """Types like a user would: React sees an input event with the new value."""
     return js(process, f"""(() => {{ const e = document.querySelector({json.dumps(selector)}); if (!e) return false
+     if (e.isContentEditable) {{ e.focus(); getSelection().selectAllChildren(e); document.execCommand({json.dumps(value)} ? 'insertText' : 'delete', false, {json.dumps(value)}); return true }}
      const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e), 'value').set; set.call(e, {json.dumps(value)})
      e.dispatchEvent(new Event('input', {{ bubbles: true }})); e.focus(); return true }})()""")
 
@@ -101,7 +102,7 @@ def main():
         check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
               and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" not in shown
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
+        check(js(process, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
 
         # Create a companion: Hire a companion opens the library, then Make your own.
         click(process, ".mate-switch-more[aria-label='Hire a companion']")
@@ -126,12 +127,12 @@ def main():
 
         # Switching companions changes the accent right away.
         hue = lambda: js(process, "getComputedStyle(document.querySelector('.home-compose .ai-send')).backgroundColor")
-        type_into(process, ".home-compose textarea", "hello")  # an empty box greys out the send button
+        type_into(process, ".home-compose [aria-label=Message]", "hello")  # an empty box greys out the send button
         before = hue()
         click(process, f".mate-switch-face[aria-label=Ines]")
         check(until(lambda: hue() == "rgb(167, 181, 240)", 5) and before != "rgb(167, 181, 240)", f"Switching to Ines turns the send button periwinkle ({hue()})")
-        check(js(process, "document.querySelector('.home-compose textarea')?.placeholder") == "Ask Ines anything, or hand over a task…", "The message box now asks Ines")
-        type_into(process, ".home-compose textarea", "")
+        check(js(process, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Ask Ines anything, or hand over a task…", "The message box now asks Ines")
+        type_into(process, ".home-compose [aria-label=Message]", "")
 
         # The mode menu: companions, the three modes, Advanced.
         open_menu(process, ".home-compose .mode-chip")
@@ -185,16 +186,16 @@ def main():
         skill = PROFILE / "skills" / "trip-plan.md"
         check(until(lambda: skill.exists(), 5) and "name: Trip plan" in skill.read_text() and "SKILL-BODY" in skill.read_text(), "A skill is saved as a Markdown file with front matter")
         click(process, ".home-rail-item[aria-label='New chat']")
-        until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 5)
-        type_into(process, ".home-compose textarea", "/tri")
+        until(lambda: js(process, "!!document.querySelector('.home-compose [aria-label=Message]')"), 5)
+        type_into(process, ".home-compose [aria-label=Message]", "/tri")
         check(until(lambda: "/trip-plan" in js(process, "document.querySelector('.skill-menu')?.innerText ?? ''"), 5), "Typing / lists matching skills")
-        key(process, ".home-compose textarea", "Enter")
-        check(until(lambda: "Trip plan" in js(process, "document.querySelector('.home-compose .skill-chip')?.innerText ?? ''"), 5), "Enter turns it into a /skill chip")
+        key(process, ".home-compose [aria-label=Message]", "Enter")
+        check(until(lambda: "Trip plan" in js(process, "document.querySelector('.home-compose .mention.is-skill')?.innerText ?? ''"), 5), "Enter puts the skill in the text")
         if "--shots" in sys.argv:
-            type_into(process, ".home-compose textarea", "/trip-plan Three days in Lisbon in May")
+            type_into(process, ".home-compose [aria-label=Message]", "/trip-plan Three days in Lisbon in May")
             rpc(process, "capture", name="skill-chip.png")
-        type_into(process, ".home-compose textarea", "/trip-plan Three days in Lisbon in May")
-        key(process, ".home-compose textarea", "Enter")
+        type_into(process, ".home-compose [aria-label=Message]", "/trip-plan Three days in Lisbon in May")
+        key(process, ".home-compose [aria-label=Message]", "Enter")
         prompts = BIN / "prompts.jsonl"
         sent = until(lambda: prompts.exists() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
@@ -205,7 +206,7 @@ def main():
         check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Quick mode runs another AI app with --effort low and its own model")
         reply = until(lambda: "Done, fake reply." in text(process) and text(process), 20) or ""
         check("Loaded skill Trip plan" in reply, "The chat shows a Loaded skill row")
-        check(js(process, "!!document.querySelector('.ai-msg.is-user .skill-chip')"), "The user's message shows the skill as a chip")
+        check(js(process, "!!document.querySelector('.ai-msg.is-user .mention.is-skill')"), "The user's message shows the skill inline")
 
         # Chat History: unread, archive, search, the companion filter.
         until(lambda: not js(process, "!!document.querySelector('[aria-label=Stop]')"), 10)
@@ -280,7 +281,7 @@ def screens():
         until(lambda: js(p, "!!document.querySelector('.mate-switch-face[aria-label=Ines]')"), 5)
     def modes(p):
         newtab(p)
-        type_into(p, ".home-compose textarea", "Help me plan a three-day trip to Lisbon in May")
+        type_into(p, ".home-compose [aria-label=Message]", "Help me plan a three-day trip to Lisbon in May")
         open_menu(p, ".home-compose .mode-chip")
         until(lambda: js(p, "!!document.querySelector('.mode-menu')"), 5)
     def companions(p):

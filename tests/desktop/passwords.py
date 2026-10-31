@@ -650,7 +650,7 @@ def main():
         # Companions' memory never keeps a saved password.
         results = BIN / "results.jsonl"
         send(process, "new")
-        until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 10)
+        until(lambda: js(process, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
         js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         send(process, "aiSend", text="REMEMBER: Loves maple syrup pancakes forever", home=True, companion="rosa")
         said = until(lambda: results.exists() and json.loads(results.read_text(encoding="utf-8").splitlines()[0]), 30) or {}

@@ -37,7 +37,7 @@ const changed = () => heard.forEach(f => f())
 addEventListener("still-pluginCatalog", e => { catalog = ((e as CustomEvent).detail ?? []).map((a: PluginApp) => ({ ...a, cats: [...new Set(a.cats.map(shortCat))] })); asked.clear(); changed() }) // a new catalog may know logos an older one didn't
 addEventListener("still-pluginLogos", e => { logos = { ...logos, ...(e as CustomEvent).detail }; changed() })
 /// Re-renders when the catalog or a logo comes in.
-function usePluginData(send?: Send) {
+export function usePluginData(send?: Send) {
  const [, tick] = useState(0)
  useEffect(() => { if (send) sender = send; const f = () => tick(n => n + 1); heard.add(f); return () => { heard.delete(f) } }, [send])
  return catalog
@@ -49,8 +49,11 @@ function wantLogo(slug: string) {
  if (wanted.size === 1) setTimeout(() => { sender?.("pluginLogos", { slugs: [...wanted] }); wanted.clear() }, 60)
 }
 
+export const plugColor = (slug: string) => BODY_COLORS[[...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % BODY_COLORS.length][0]
+const plugHue = (slug: string) => ({ "--hue": plugColor(slug) }) as CSSProperties
+/// The logo's address once it's in (asking for it if it isn't).
+export const logoOf = (slug: string): string | undefined => { wantLogo(slug); return logos[slug] }
 /// An app's logo from Composio's catalog, or its initial on a soft tile until there is one.
-const plugHue = (slug: string) => ({ "--hue": BODY_COLORS[[...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % BODY_COLORS.length][0] }) as CSSProperties
 export function PluginLogo({ slug, name, className }: { slug: string; name: string; className?: string }) {
  useEffect(() => wantLogo(slug), [slug])
  return logos[slug] ? <i className={cn("plug-logo is-image", className)} aria-hidden><img src={logos[slug]} alt="" /></i>
