@@ -67,13 +67,14 @@ def escape(process):
 
 def type_into(process, selector, value):
     return js(process, f"""(() => {{ const e = document.querySelector({q(selector)}); if (!e) return false
+     if (e.isContentEditable) {{ e.focus(); getSelection().selectAllChildren(e); document.execCommand({q(value)} ? 'insertText' : 'delete', false, {q(value)}); return true }}
      const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(e), 'value').set; set.call(e, {q(value)})
      e.dispatchEvent(new Event('input', {{ bubbles: true }})); e.focus(); return true }})()""")
 
 
 def submit(process, words):
-    type_into(process, ".ai-sidebar .composer textarea", words)
-    js(process, "document.querySelector('.ai-sidebar .composer textarea').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))")
+    type_into(process, ".ai-sidebar [aria-label=Message]", words)
+    js(process, "document.querySelector('.ai-sidebar [aria-label=Message]').dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }))")
 
 
 def inside(process, name, selector):
@@ -150,9 +151,9 @@ def popovers(process, layout, theme):
     box = menu(process, "Add a skill or a tab menu", ".ai-sidebar .composer-add")
     if box:
         above(process, "Add a skill or a tab menu", box, "l")
-    type_into(process, ".ai-sidebar .composer textarea", "/")
+    type_into(process, ".ai-sidebar [aria-label=Message]", "/")
     inside(process, "Skill picker (/)", ".ai-sidebar .skill-menu")
-    type_into(process, ".ai-sidebar .composer textarea", "")
+    type_into(process, ".ai-sidebar [aria-label=Message]", "")
     send(process, "aiAdvanced", on=True)
     if until(lambda: js(process, "!!document.querySelector('.ai-sidebar .ai-model')"), 5):
         menu(process, "Model picker", ".ai-sidebar .ai-model", "[data-slot=select-content]")
@@ -207,7 +208,7 @@ def start(name, width, height):
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, profile)
     send(process, "aiToggle")
-    until(lambda: js(process, "!!document.querySelector('.ai-sidebar .composer textarea')"), 30)
+    until(lambda: js(process, "!!document.querySelector('.ai-sidebar [aria-label=Message]')"), 30)
     return process
 
 

@@ -51,7 +51,7 @@ def tab_id(p, path):
 
 def home(p):
     send(p, "new")
-    until(lambda: js(p, "!!document.querySelector('.home-compose textarea')"), 15)
+    until(lambda: js(p, "!!document.querySelector('.home-compose [aria-label=Message]')"), 15)
 
 
 def main():

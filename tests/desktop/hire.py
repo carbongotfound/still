@@ -195,7 +195,7 @@ def hiring():
         W.key(p, "Escape")
         nora = until(lambda: mates(profile).get("Nora", {}).get("Id"), 5)
         send(p, "new")
-        until(lambda: shown(p, ".home-compose textarea"), 10)
+        until(lambda: shown(p, ".home-compose [aria-label=Message]"), 10)
         send(p, "aiSend", text="Hello Nora", home=True, companion=nora)
         until(lambda: any(q["name"] == "Nora" for q in X.prompts()), 20)
         say_hi(p, "Nora")

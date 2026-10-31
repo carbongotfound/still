@@ -107,7 +107,7 @@ def ask(process, text, **extra):
     """A new chat with Maya from a new tab; returns the chat and what the tool said."""
     done = len(lines("results.jsonl"))
     send(process, "new")
-    until(lambda: js(process, "!!document.querySelector('.home-compose textarea')"), 10)
+    until(lambda: js(process, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
     js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
     send(process, "aiSend", text=text, home=True, companion="maya", **extra)
     chat = until(lambda: next((c for c in chats() if c["Title"] == text and not c.get("Running") and any(m["Role"] == "assistant" for m in c["Messages"])), None), 30)

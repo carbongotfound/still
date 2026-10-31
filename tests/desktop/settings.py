@@ -105,7 +105,7 @@ def namings():
 def new_chat(p, text):
     before = {c["Id"] for c in chats()}
     send(p, "new")
-    until(lambda: js(p, "!!document.querySelector('.home-compose textarea')"), 10)
+    until(lambda: js(p, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
     send(p, "aiSend", text=text, home=True)
     return until(lambda: next((c for c in chats() if c["Id"] not in before), None), 10) or {}
 

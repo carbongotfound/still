@@ -143,23 +143,48 @@ def new_chat(text, **extra):
     """A new chat from a new tab; returns its id once it exists."""
     before = {c["Id"] for c in chats()}
     send(P, "new")
-    until(lambda: js(P, "!!document.querySelector('.home-compose textarea')"), 10)
+    until(lambda: js(P, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
     js(P, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
     send(P, "aiSend", text=text, home=True, **extra)
     return until(lambda: next((c["Id"] for c in chats() if c["Id"] not in before and not c.get("From")), None), 10) or ""
 
 
-def type_in(text):
-    """Types into the message box without sending."""
-    js(P, f"""(() => {{ const e = document.querySelector('.chat-view textarea, .home-compose textarea'); e.focus();
-        Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set.call(e, {json.dumps(text)}); e.setSelectionRange(e.value.length, e.value.length); e.dispatchEvent(new Event('input', {{ bubbles: true }})) }})()""")
+BOX = ".chat-view [aria-label=Message], .home-compose [aria-label=Message]"
+
+
+def type_in(text, more=False):
+    """Types into the message box without sending: in place of what's there, or (more) after it."""
+    js(P, f"""(() => {{ const e = document.querySelector('{BOX}'), s = getSelection(); e.focus(); s.selectAllChildren(e); {'s.collapseToEnd();' if more else ''}
+        document.execCommand({json.dumps('insertText' if text else 'delete')}, false, {json.dumps(text)}) }})()""")
     time.sleep(.25)
 
 
 def key(name, caret=None):
-    js(P, f"""(() => {{ const e = document.querySelector('.chat-view textarea, .home-compose textarea'); e.focus(); {f'e.setSelectionRange({caret}, {caret});' if caret is not None else ''}
+    """A key the box handles itself (pickers, Enter, Backspace), with the caret at the end or at the start (caret=0)."""
+    js(P, f"""(() => {{ const e = document.querySelector('{BOX}'), s = getSelection(); e.focus(); {'s.selectAllChildren(e); s.collapse' + ('ToStart' if caret == 0 else 'ToEnd') + '();' if caret is not None else ''}
         e.dispatchEvent(new KeyboardEvent('keydown', {{ key: {json.dumps(name)}, bubbles: true, cancelable: true }})) }})()""")
     time.sleep(.25)
+
+
+KEYS = {"Backspace": 8, "Delete": 46, "ArrowLeft": 37, "ArrowRight": 39}
+
+
+def press(name):
+    """A real key press, as the keyboard sends it."""
+    for kind in ("rawKeyDown", "keyUp"):
+        rpc(P, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": kind, "key": name, "code": name, "windowsVirtualKeyCode": KEYS[name]})
+    time.sleep(.25)
+
+
+def box_text():
+    """The box's text, a mention as its name."""
+    return js(P, f"document.querySelector('{BOX}').innerText.replace(/\\u00a0/g, ' ')")
+
+
+def before_caret():
+    """What's before the caret: its text and how many mentions."""
+    return json.loads(js(P, f"""JSON.stringify((() => {{ const e = document.querySelector('{BOX}'), s = getSelection(), r = document.createRange()
+        r.setStart(e, 0); r.setEnd(s.anchorNode, s.anchorOffset); const d = r.cloneContents(); return [d.textContent.replace(/\\u00a0/g, ' '), d.querySelectorAll('[data-mention]').length] }})())"""))
 
 
 def picker():
@@ -168,7 +193,8 @@ def picker():
 
 
 def chips():
-    return json.loads(js(P, "JSON.stringify([...document.querySelectorAll('.chat-view .mention-chip, .home-compose .mention-chip')].map(c => c.innerText.trim()))") or "[]")
+    """The mentions in the box, by name, in order."""
+    return json.loads(js(P, f"JSON.stringify([...document.querySelectorAll('{BOX}')].flatMap(b => [...b.querySelectorAll('.mention')].map(c => c.innerText.trim())))") or "[]")
 
 
 def shown_cards():
@@ -229,7 +255,7 @@ def main():
     try:
         until(lambda: js(P, "!!document.body.innerText.length"), 20)
         send(P, "new")
-        until(lambda: js(P, "!!document.querySelector('.home-compose textarea')"), 10)
+        until(lambda: js(P, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
         js(P, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         time.sleep(.5)
         check(not js(P, "!!document.querySelector('.mate-switch-team')") and "Team chat" not in (js(P, "document.body.innerText") or ""), "There's no Team chat button any more")
@@ -245,7 +271,7 @@ def main():
               "In each, the other companion's lines keep their face")
         plan({"Jonah": [{"text": "Still here: the pitch was No glare. Warm light. Fair price."}]})
         send(P, "chatOpen", id=mine["Id"])
-        until(lambda: js(P, "!!document.querySelector('.chat-view textarea')"), 10)
+        until(lambda: js(P, "!!document.querySelector('.chat-view [aria-label=Message]')"), 10)
         shot("migrated.png")
         send(P, "aiSend", text="What was the pitch again?")
         check(settled(mine["Id"], 3), "Jonah answers in its migrated chat")
@@ -360,7 +386,7 @@ def main():
         talk = new_chat("Hi Nora.", companion="nora")
         settled(talk, 1)
 
-        # Mentions: # lists the open tabs (never a private one) and attaches one as a chip; the AI is told to read it.
+        # Mentions: # lists the open tabs (never a private one) and puts one in the text; the AI is told to read it.
         type_in("Sum up #")
         got = picker()
         check(got and got[0] == "Tabs" and any("Desk lamp review" in o for o in got[1]) and not any("Secret" in o for o in got[1]), f"# lists the open tabs, never a private one ({got})")
@@ -368,45 +394,73 @@ def main():
         got = picker()
         check(got and len(got[1]) == 1 and got[1][0].startswith("Desk lamp review"), f"Typing after # filters the tabs ({got})")
         key("Enter")
-        check(chips() == ["Desk lamp review"] and js(P, "document.querySelector('.chat-view textarea').value") == "Sum up " and not picker(), "Enter attaches it as a chip and takes #lamp out of the text")
-        key("Backspace", 0)
-        check(chips() == [], "Backspace at the start of the box removes the last chip")
+        check(chips() == ["Desk lamp review"] and box_text() == "Sum up Desk lamp review " and not picker(), "Enter puts the tab in the text where #lamp was")
+        pill = json.loads(js(P, f"JSON.stringify((m => m && [m.className, !!m.querySelector('img, i'), m.contentEditable, getComputedStyle(m).borderTopWidth, !!m.querySelector('button')])(document.querySelector('.chat-view .composer-input .mention')))"))
+        check(pill == ["mention is-tab", True, "false", "0px", False], f"Inline: an icon and the title, one piece, no box and no x ({pill})")
+        check(not js(P, "!!document.querySelector('.chat-view .mention-chip')"), "No chip row above the box")
+        press("Backspace")
+        check(chips() == ["Desk lamp review"] and box_text() == "Sum up Desk lamp review", f"Backspace takes the space after it first ({box_text()!r})")
+        press("Backspace")
+        check(chips() == [] and box_text().strip() == "Sum up", f"Backspace right after it deletes the whole mention ({box_text()!r})")
+        js(P, "document.execCommand('undo')"); time.sleep(.25)
+        check(chips() == ["Desk lamp review"], "Undo brings it back whole")
         type_in("Sum up #lamp")
         key("Tab")
         check(chips() == ["Desk lamp review"], "Tab picks too")
-        type_in("Sum up this review.")
+        press("ArrowLeft")
+        press("ArrowLeft")
+        check(before_caret() == ["Sum up ", 0], f"The arrow keys step over it as one piece ({before_caret()})")
+        press("ArrowRight")
+        check(before_caret() == ["Sum up Desk lamp review", 1], f"...both ways ({before_caret()})")
+        press("Delete")
+        check(chips() == ["Desk lamp review"], "Delete takes the space after it, not the mention")
+        js(P, "document.execCommand('undo')"); time.sleep(.25)
+        clip = json.loads(js(P, f"""JSON.stringify((() => {{ const e = document.querySelector('{BOX}'), d = new DataTransfer(); e.focus(); getSelection().selectAllChildren(e)
+            e.dispatchEvent(new ClipboardEvent('copy', {{ bubbles: true, cancelable: true, clipboardData: d }})); window.__clip = d; return [d.getData('text/plain'), d.types.length] }})())"""))
+        check(clip == ["Sum up Desk lamp review ", 2], f"Copy gives the text, and the mention for Still ({clip})")
+        type_in("")
+        js(P, f"(e => {{ e.focus(); e.dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: window.__clip }})) }})(document.querySelector('{BOX}'))"); time.sleep(.25)
+        check(chips() == ["Desk lamp review"] and box_text().rstrip() == "Sum up Desk lamp review", f"Paste brings it back as a mention ({chips()}, {box_text()!r})")
+        type_in("")
+        js(P, f"(e => {{ const d = new DataTransfer(); d.setData('text/plain', 'Plain words'); e.focus(); e.dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: d }})) }})(document.querySelector('{BOX}'))"); time.sleep(.25)
+        check(chips() == [] and box_text() == "Plain words", "Text from elsewhere pastes as plain text")
+        type_in("Sum up #lamp")
+        key("Enter")
+        type_in("please.", more=True)
         key("Enter")
         check(settled(talk, 2), "Nora answers")
         asked = [m["Text"] for m in chat(talk)["Messages"] if m["Role"] == "user"][-1]
-        check(asked == f"Sum up this review.\n\n[Desk lamp review]({site}/review)", f"The message shows the tab as a link ({asked!r})")
+        check(asked == f"Sum up Desk lamp review please.\n\n[Desk lamp review]({site}/review)", f"The message has the tab inline, and its link as before ({asked!r})")
         last = prompts()[-1]["prompt"]
         check(f'[Still] The user attached this tab: "Desk lamp review" {site}/review (tabId ' in last and "Read each with read_page" in last, "The AI is told which tab it is and to read it")
-        check(chips() == [], "Sending clears the chips")
+        check(chips() == [] and box_text().strip() == "", "Sending empties the box")
+        sent = json.loads(js(P, "JSON.stringify((m => m && [m.innerText.replace(/\\u00a0/g, ' '), [...m.querySelectorAll('.mention')].map(x => [x.className, x.innerText])])([...document.querySelectorAll('.chat-view .ai-msg.is-user')].at(-1)))"))
+        check(sent == ["Sum up Desk lamp review please.", [["mention is-tab", "Desk lamp review"]]], f"The sent message shows it inline too ({sent})")
         send(P, "aiSend", text="And this one?", tabs=[secret])
         check(settled(talk, 3), "Nora answers again")
         check("Secret plans" not in json.dumps(chat(talk)["Messages"]) and "Secret plans" not in prompts()[-1]["prompt"] and "/secret" not in prompts()[-1]["prompt"], "A private tab is never attached")
 
-        # @ lists companions with their role; Esc closes it, arrows move, Enter picks; x removes a chip.
+        # @ lists companions with their role; Esc closes it, arrows move, Enter picks.
         type_in("What do you think @")
         got = picker()
         check(got and got[0] == "Companions" and "Jonah · Sales" in got[1] and "Maya · Research" in got[1], f"@ lists companions with their role ({got})")
         key("Escape")
-        check(not picker() and js(P, "document.querySelector('.chat-view textarea').value") == "What do you think @", "Esc closes the picker and keeps the text")
+        check(not picker() and box_text() == "What do you think @", "Esc closes the picker and keeps the text")
         type_in("What do you think @ro")
         key("Enter")
-        check(chips() == ["@Rosa"], "Enter picks the companion as a chip")
-        js(P, "document.querySelector('.chat-view .mention-chip button[aria-label=\"Remove Rosa\"]').click()")
-        time.sleep(.2)
-        check(chips() == [], "x removes it")
+        check(chips() == ["Rosa"] and box_text() == "What do you think Rosa ", "Enter puts the companion in the text")
+        rosa = json.loads(js(P, "JSON.stringify((m => [m.className, m.querySelector('img')?.src.length > 0, getComputedStyle(m).color !== getComputedStyle(m.parentElement).color, getComputedStyle(m).backgroundColor])(document.querySelector('.chat-view .composer-input .mention')))"))
+        check(rosa[:3] == ["mention is-mate", True, True] and rosa[3] in ("rgba(0, 0, 0, 0)", "transparent"), f"A companion: their face and their name in their color, no highlight ({rosa})")
+        type_in("@ro", more=True)
+        check(not picker() or not any(o.startswith("Rosa") for o in picker()[1]), f"A companion already in the text isn't offered again ({picker()})")
         type_in("What do you think @")
         names = [o.split(" · ")[0] for o in picker()[1]]
         key("ArrowDown")
         key("Enter")
-        check(chips() == ["@" + names[1]], f"Arrows move through the list ({chips()})")
-        key("Backspace", 0)
-        type_in("What do you think @jonah")
+        check(chips() == [names[1]], f"Arrows move through the list ({chips()})")
+        type_in("@jonah")
         key("Enter")
-        type_in("is this a good pitch?")
+        type_in("is this a good pitch?", more=True)
         key("Enter")
         check(settled(talk, 4), "Nora answers")
         c = chat(talk)
@@ -416,6 +470,8 @@ def main():
         check("[Still] The user mentioned Jonah: bring them in with ask_companion" in nora["prompt"], "Nora is told to bring Jonah in")
         check(cards(c) == [("ask", "nora", "jonah", "replied")] and said(c)[-1] == "Jonah says: " + calls("Nora", "ask_companion")[-1]["text"], f"@Jonah: Nora asks Jonah and uses the reply ({cards(c)})")
         check(c["Companion"] == "nora" and not c.get("Team"), "The chat stays Nora's")
+        jonah = json.loads(js(P, "JSON.stringify([...[...document.querySelectorAll('.chat-view .ai-msg.is-user')].at(-1).querySelectorAll('.mention')].map(x => [x.className, x.innerText]))"))
+        check(jonah == [["mention is-mate", "Jonah"]], f"@Jonah shows inline in the sent message ({jonah})")
         shot("mention.png")
 
         errors = js(P, "JSON.stringify(window.__errors || [])")

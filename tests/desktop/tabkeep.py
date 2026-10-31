@@ -68,7 +68,7 @@ def type_shell(p, selector, words):
     time.sleep(.3)
 
 
-BOX = "textarea[aria-label=Message]"
+BOX = "[role=textbox][aria-label=Message]"
 LOG = ".ai-log"
 chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started": True, "Companion": "maya",
           "Messages": [{"Role": "user" if k % 2 == 0 else "assistant", "Text": f"Line {k} of chat {i}. " * 12} for k in range(40)]} for i in (1, 2)]
@@ -101,22 +101,22 @@ try:
     shell(process, f"document.querySelector('{LOG}').scrollTop = 600")
     time.sleep(.3)
     send(process, "chatOpen", id="chat2"); time.sleep(1)
-    check(shell(process, f"document.querySelector('{BOX}').value") == "", "Another chat's box starts empty (no draft carried over)")
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "", "Another chat's box starts empty (no draft carried over)")
     type_shell(process, BOX, "Something else for chat two")
     send(process, "chatOpen", id="chat1"); time.sleep(1)
-    check(shell(process, f"document.querySelector('{BOX}').value") == "A long thought for chat one", "Chat one's draft comes back")
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "A long thought for chat one", "Chat one's draft comes back")
     top = shell(process, f"Math.round(document.querySelector('{LOG}').scrollTop)")
     check(abs((top or 0) - 600) <= 2, f"Chat one's scroll comes back ({top})")
     select(process, "w1")
     send(process, "chatOpen", id="chat1"); time.sleep(1)
-    check(shell(process, f"document.querySelector('{BOX}').value") == "A long thought for chat one", "The draft survives a trip to a web tab")
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "A long thought for chat one", "The draft survives a trip to a web tab")
     rpc(process, "capture", name="chat.png"); shutil.copy(PROFILE / "chat.png", RUN / "chat.png")
 
     # 3. Closed and opened again
     chat_tab = next(t["Id"] for t in rpc(process)["tabs"] if t.get("ChatId") == "chat1")
     send(process, "closeTab", id=chat_tab); time.sleep(.8)
     send(process, "chatOpen", id="chat1"); time.sleep(1)
-    check(shell(process, f"document.querySelector('{BOX}').value") == "A long thought for chat one", "The draft is still there after closing and reopening the chat")
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "A long thought for chat one", "The draft is still there after closing and reopening the chat")
 
     # 4. The new tab page's box
     send(process, "new"); time.sleep(1)
@@ -125,7 +125,7 @@ try:
     until(lambda: shell(process, f"!!document.querySelector('.home-compose {BOX}')"), 20)
     type_shell(process, f".home-compose {BOX}", "Plan a weekend")
     select(process, "w2"); select(process, home)
-    check(shell(process, f"document.querySelector('.home-compose {BOX}')?.value") == "Plan a weekend", "The new tab page keeps its box")
+    check(shell(process, f"document.querySelector('.home-compose {BOX}')?.innerText") == "Plan a weekend", "The new tab page keeps its box")
 
     # 5. Memory pressure (from the new tab page): the untouched tab unloads, the one with typed text stays
     select(process, "w2"); page(process, "w2", "scrollTo(0, 900)")
