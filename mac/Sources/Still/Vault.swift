@@ -383,9 +383,10 @@ enum BrowserLogins {
  /// Chrome, Edge, Brave, Vivaldi, Opera and Arc encrypt each password with a key they keep in your Keychain, so macOS
  /// asks you before it shares it with Still. AES-128-CBC with a key from PBKDF2 over it, as Chromium does on the Mac.
  static func chromium(_ folder: URL) -> Found {
-  let file = folder.appendingPathComponent("Login Data")
-  guard FileManager.default.fileExists(atPath: file.path),
-        let rows = try? Browser.blobs(file, "SELECT origin_url, username_value, password_value FROM logins WHERE blacklisted_by_user = 0 LIMIT 5000"), !rows.isEmpty else { return ([], [], 0) }
+  // A browser signed in to an account keeps that account's passwords in Login Data For Account.
+  let rows = ["Login Data", "Login Data For Account"].map { folder.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+   .flatMap { (try? Browser.blobs($0, "SELECT origin_url, username_value, password_value FROM logins WHERE blacklisted_by_user = 0 LIMIT 5000")) ?? [] }
+  guard !rows.isEmpty else { return ([], [], 0) }
   let names = [("Google/Chrome", "Chrome"), ("Microsoft Edge", "Microsoft Edge"), ("BraveSoftware", "Brave"), ("Vivaldi", "Vivaldi"), ("com.operasoftware.Opera", "Opera"), ("Arc/", "Arc"), ("Chromium", "Chromium")]
   let browser = names.first { folder.path.contains($0.0) }?.1 ?? "Chrome"
   guard let secret = safeStorage(browser + " Safe Storage") else {

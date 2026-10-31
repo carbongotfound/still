@@ -59,10 +59,11 @@ public sealed class ExternalProfileImport : IDisposable
     return result;
    }
    result.key=ReadKey(folder);
-   if(File.Exists(bookmarks))result.Section("Bookmarks",()=>result.ReadBookmarks(bookmarks));
+   // A browser signed in to an account keeps that account's bookmarks and passwords in separate files.
+   foreach(var file in new[]{bookmarks,Path.Combine(folder,"AccountBookmarks")})if(File.Exists(file))result.Section("Bookmarks",()=>result.ReadBookmarks(file));
    if(File.Exists(history))result.Section("History",()=>result.ReadHistory(Copy(history,snapshot)));
-   string logins=Path.Combine(folder,"Login Data");
-   if(File.Exists(logins))result.Section("Passwords",()=>result.ReadLogins(Copy(logins,snapshot)));
+   foreach(var logins in new[]{Path.Combine(folder,"Login Data"),Path.Combine(folder,"Login Data For Account")})
+    if(File.Exists(logins))result.Section("Passwords",()=>result.ReadLogins(Copy(logins,snapshot)));
    string cookies=Path.Combine(folder,"Network","Cookies");if(!File.Exists(cookies))cookies=Path.Combine(folder,"Cookies");
    if(File.Exists(cookies))result.Section("Cookies",()=>result.ReadCookies(Copy(cookies,snapshot)));
   }finally{
@@ -140,7 +141,7 @@ public sealed class ExternalProfileImport : IDisposable
  {
   using var source=new FileStream(path,FileMode.Open,FileAccess.Read,FileShare.ReadWrite|FileShare.Delete);
   if(source.Length>10*1024*1024)throw new IOException("Bookmarks exceed 10 MB.");
-  using var json=JsonDocument.Parse(source,new(){MaxDepth=64});var seen=new HashSet<string>(StringComparer.Ordinal);
+  using var json=JsonDocument.Parse(source,new(){MaxDepth=64});var seen=Bookmarks.Select(b=>b.Url).ToHashSet(StringComparer.Ordinal);
   void Walk(JsonElement item)
   {
    if(Bookmarks.Count>=5000)return;
