@@ -163,7 +163,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  let youTube = (try? String(contentsOf: resources.appendingPathComponent("youtube.js"))) ?? ""
  var publishQueued = false, overlayVersion = 0
  var appearanceObserver: NSKeyValueObservation?
- var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found)?
+ var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found, cookies: [HTTPCookie])?
  var importBusy = false, importError = "", importDone = ""
  var importBlocked: (name: String, folder: URL)? // macOS kept Still out of this browser's folder: the panel offers to choose it
  // Windows (Windows.swift)
@@ -455,7 +455,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(blocked?.folder.standardizedFileURL == url.standardizedFileURL ? blocked!.name : url.lastPathComponent, url) } }
   case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
-  case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
+  case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, cookies: data["cookies"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
   default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) { toast(unavailable) }
   }
  }
@@ -839,7 +839,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let blocked = importBlocked { external["blocked"] = blocked.name }
   if let preview = pendingImport {
    external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
-                          "passwords": preview.logins.logins.count, "cookies": 0, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings]
+                          "passwords": preview.logins.logins.count, "cookies": preview.cookies.count, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings]
   }
   var data: [String: Any] = ["external": external]
   if let batch = importBatch {
@@ -849,7 +849,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   return data
  }
 
- /// Reads bookmarks, history and saved passwords (not cookies, which macOS keeps locked to each browser) for review first.
+ /// Reads bookmarks, history, saved passwords and (from Chromium browsers) cookies for review first.
  func reviewImport(_ name: String, _ folder: URL) {
   guard !importBusy else { return }
   importBusy = true; importError = ""; importDone = ""; pendingImport = nil; importBlocked = nil
@@ -858,13 +858,15 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    let safari = FileManager.default.fileExists(atPath: folder.appendingPathComponent("Bookmarks.plist").path) || folder.lastPathComponent == "Safari"
    let firefox = ["places.sqlite", "key4.db"].contains { FileManager.default.fileExists(atPath: folder.appendingPathComponent($0).path) }
    let result = Result { try safari ? Browser.readSafari(folder) : firefox ? Browser.readFirefox(folder) : Browser.readChromium(folder) }
+   let chromium = safari || firefox ? nil : BrowserLogins.chromium(folder)
    let logins: BrowserLogins.Found = safari ? ([], ["Safari keeps its passwords in the Passwords app. To bring them over, choose File → Export All Passwords there, then add the file with Passwords CSV."], 0)
-    : firefox ? BrowserLogins.firefox(folder) : BrowserLogins.chromium(folder)
+    : chromium?.found ?? BrowserLogins.firefox(folder)
+   let cookies = chromium?.cookies ?? []
    DispatchQueue.main.async {
     self.importBusy = false
     switch result {
-    case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty && logins.logins.isEmpty && logins.warnings.isEmpty: self.importError = "No bookmarks, history or passwords were found in \(name)."
-    case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history, logins)
+    case .success(let data) where data.bookmarks.isEmpty && data.history.isEmpty && logins.logins.isEmpty && logins.warnings.isEmpty && cookies.isEmpty: self.importError = "No bookmarks, history or passwords were found in \(name)."
+    case .success(let data): self.pendingImport = (UUID().uuidString, name, data.bookmarks, data.history, logins, cookies)
     case .failure(let error) where Browser.denied(error as NSError):
      // macOS privacy protection: a folder the user picks in an Open panel is theirs to give, or Full Disk Access opens them all.
      self.importBlocked = (name, folder)
@@ -876,7 +878,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   }
  }
 
- func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool, passwords takePasswords: Bool, autofill: Bool) {
+ func finishImport(bookmarks takeBookmarks: Bool, history takeHistory: Bool, passwords takePasswords: Bool, cookies takeCookies: Bool, autofill: Bool) {
   guard let preview = pendingImport, !importBusy else { return }
   var added = 0, visits = 0, saved = 0, already = 0
   if takeBookmarks {
@@ -899,10 +901,21 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if autofill { prefs["AutoFillPasswords"] = true; prefs["OfferPasswordSave"] = true; prefs["OfferPasswordUpdate"] = true }
   }
   pendingImport = nil
-  importDone = "Imported \(added) bookmarks, \(visits) history entries and \(saved) passwords from \(preview.name)." + (already > 0 ? " \(already) were already in Still." : "")
   save()
+  let sessions = takeCookies ? preview.cookies.count : 0
+  func finish() {
+   importDone = "Imported \(added) bookmarks, \(visits) history entries, \(saved) passwords and \(sessions) cookies from \(preview.name)."
+    + (already > 0 ? " \(already) were already in Still." : "") + (sessions > 0 ? " Reload open sites to use your sign-ins." : "")
+   publishImport()
+   schedulePublish()
+  }
+  guard sessions > 0 else { return finish() }
+  // Cookies go into this profile's store (not private windows'); the import is done once WebKit has them all.
+  importBusy = true
   publishImport()
-  schedulePublish()
+  let group = DispatchGroup()
+  for cookie in preview.cookies { group.enter(); pageStore.httpCookieStore.setCookie(cookie) { group.leave() } }
+  group.notify(queue: .main) { self.importBusy = false; finish() }
  }
 
  static let stamp = ISO8601DateFormatter()
