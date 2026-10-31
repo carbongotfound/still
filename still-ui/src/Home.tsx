@@ -1,9 +1,9 @@
-import { useEffect, useState, type CSSProperties } from "react"
+import { useEffect, useRef, useState, type CSSProperties } from "react"
 import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiLogo } from "./AiLogo"
 import { Face, hueOf, type Companion, type Mode } from "./Buddy"
@@ -36,21 +36,18 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
  </nav>
 }
 
-/// Top center of the home: who you're working with, the others as small faces, and a way to add one.
-export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage }: { ai: AiState; companion: Companion; onPick: (id: string) => void; onEdit: (c: Companion) => void; onManage: () => void }) {
- const others = ai.companions?.filter(c => c.id !== companion.id).slice(0, 5) ?? []
+/// Top center of the home: who you're working with, every other companion as a small face, and a way to add one. When
+/// they don't all fit, the row scrolls sideways and keeps the one you're with in view.
+export function CompanionSwitch({ ai, companion, onPick, onEdit }: { ai: AiState; companion: Companion; onPick: (id: string) => void; onEdit: (c: Companion) => void }) {
+ const row = useRef<HTMLDivElement>(null)
+ useEffect(() => { row.current?.querySelector(".mate-switch-on")?.scrollIntoView({ block: "nearest", inline: "nearest" }) }, [companion.id])
  // In the team's order, so a pick opens into the name pill where it stands and the last one closes (App.css)
- const shown = ai.companions?.filter(c => c.id === companion.id || others.includes(c)) ?? []
+ const shown = [...ai.companions ?? []]
  if (!shown.includes(companion)) shown.unshift(companion)
- return <div className="mate-switch" role="radiogroup" aria-label="Who to work with">
+ return <div ref={row} className="mate-switch" role="radiogroup" aria-label="Who to work with">
   {shown.map(c => c === companion
    ? <button key={c.id} role="radio" aria-checked className="mate-switch-face mate-switch-on" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={24} /><b><span>{c.name}</span></b></button>
    : <button key={c.id} role="radio" aria-checked={false} className="mate-switch-face" title={c.name} aria-label={c.name} onClick={() => onPick(c.id)}><Face companion={c} size={24} /><b aria-hidden><span>{c.name}</span></b></button>)}
-  <DropdownMenu><DropdownMenuTrigger asChild><button className="mate-switch-more" aria-label="All companions"><ChevronDown /></button></DropdownMenuTrigger>
-   <DropdownMenuContent align="center" className="w-56">
-    {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => onPick(c.id)}><Face companion={c} size={20} />{c.name}</DropdownMenuItem>)}
-    <DropdownMenuSeparator /><DropdownMenuItem onSelect={onManage}><Users />Manage companions</DropdownMenuItem>
-   </DropdownMenuContent></DropdownMenu>
   <button className="mate-switch-more" aria-label="Hire a companion" title="Hire a companion" onClick={() => onEdit(randomCompanion())}><Plus /></button>
  </div>
 }

@@ -36,6 +36,8 @@ Lucide icons (lucide-react) ............... ISC, Lucide Icons and Contributors
 AI app logos .............................. MIT, LobeHub Icons, Copyright 2023 LobeHub
 The Claude, ChatGPT/OpenAI and Grok marks belong to Anthropic, OpenAI and xAI. Still uses
 them only to show which app you're talking to and is not affiliated with or endorsed by them.
+App logos on the Plugins page and in setup come from Composio's app catalog and belong to
+their owners. Still shows them only to name the app and is not affiliated with or endorsed by them.
 
 WINDOWS APP
 .NET 10 runtime and Windows Desktop ....... MIT, .NET Foundation and Contributors

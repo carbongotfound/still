@@ -91,7 +91,50 @@ enum CompanionMemory {
   } catch { NSLog("Still: couldn't save memory of \(id): \(error)") }
  }
 
- static func drop(_ id: String) { cache[id] = nil } // the companion is gone, folder and all
+ static func drop(_ id: String) { cache[id] = nil; notesCache[id] = nil } // the companion is gone, folder and all
+
+ // Knowledge files: the working notes of a companion's job, Markdown it keeps up as it works (its role's kit seeds them
+ // empty). Each has a name and what it holds in its front matter. They're in its folder, so they go when it does.
+ struct Note { let id: String, name: String, about: String, body: String }
+ static var notesCache: [String: [Note]] = [:]
+ static func notesFolder(_ id: String) -> URL { folder(id).appendingPathComponent("knowledge") }
+ static func equipped(_ id: String) -> Bool { FileManager.default.fileExists(atPath: notesFolder(id).path) }
+ static func seed(_ id: String, _ file: String, _ text: String) {
+  notesCache[id] = nil
+  let url = notesFolder(id).appendingPathComponent(file + ".md")
+  do {
+   try FileManager.default.createDirectory(at: notesFolder(id), withIntermediateDirectories: true)
+   if !FileManager.default.fileExists(atPath: url.path) { try text.write(to: url, atomically: true, encoding: .utf8) }
+  } catch { NSLog("Still: couldn't start \(file) for \(id): \(error)") }
+ }
+ static func notes(_ id: String) -> [Note] {
+  if id.isEmpty { return [] }
+  if let list = notesCache[id] { return list }
+  let names = ((try? FileManager.default.contentsOfDirectory(atPath: notesFolder(id).path)) ?? []).filter { $0.hasSuffix(".md") }.sorted().prefix(20)
+  let list = names.compactMap { file -> Note? in
+   guard let raw = try? String(contentsOf: notesFolder(id).appendingPathComponent(file), encoding: .utf8) else { return nil }
+   let (head, body) = frontMatter(raw), fid = (file as NSString).deletingPathExtension
+   return Note(id: fid, name: head["name"].flatMap { $0.isEmpty ? nil : $0 } ?? fid, about: head["about"] ?? "", body: body)
+  }
+  notesCache[id] = list
+  return list
+ }
+ /// Rewrites a knowledge file's notes, keeping its name and what it holds.
+ static func write(_ id: String, _ file: String, _ text: String) -> Note? {
+  guard let note = notes(id).first(where: { $0.id == file }) else { return nil }
+  let body = String(text.replacingOccurrences(of: "\r\n", with: "\n").trimmingCharacters(in: .whitespacesAndNewlines).prefix(12000))
+  do { try "---\nname: \(note.name)\nabout: \(note.about)\n---\n\n\(body)\n".write(to: notesFolder(id).appendingPathComponent(file + ".md"), atomically: true, encoding: .utf8) }
+  catch { NSLog("Still: couldn't write \(file) for \(id): \(error)"); return nil }
+  notesCache[id] = nil
+  return Note(id: note.id, name: note.name, about: note.about, body: body)
+ }
+ /// The knowledge files as the companion's prompt has them, each with what it holds so far.
+ static func notesBrief(_ id: String) -> String {
+  let list = notes(id)
+  if list.isEmpty { return "" }
+  return "Your knowledge files, kept on the user's computer. Use what's in them. When you learn something one of them should hold, rewrite that file with update_knowledge: short and tidy, keeping what's still true.\n"
+   + list.map { n in "\n## \(n.name) (file \"\(n.id)\"): \(n.about)\n" + (n.body.isEmpty ? "(Empty so far.)" : n.body.count > 4000 ? String(n.body.prefix(4000)) + "\n(…)" : n.body) + "\n" }.joined() + "\n"
+ }
 
  static func squash(_ text: String) -> String { text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces) }
 
@@ -207,6 +250,27 @@ func memoryRefuses(_ run: ChatRun?, _ text: String) -> String? {
  return nil
 }
 
+/// A companion hired from the crew comes with its role's kit (Assets/roles/<role>/, in the app's resources), once: its
+/// skills, added to the user's skills unless there's one by that id already, and turned on for it; and its knowledge
+/// files, empty to start. True when it got them.
+@discardableResult func equip(_ c: Companion) -> Bool {
+ guard !c.crew.isEmpty, !CompanionMemory.equipped(c.id) else { return false }
+ let kit = resources.appendingPathComponent("roles").appendingPathComponent(c.crew)
+ func files(_ kind: String) -> [URL] {
+  let dir = kit.appendingPathComponent(kind)
+  return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { $0.hasSuffix(".md") }.sorted().map { dir.appendingPathComponent($0) }
+ }
+ for file in files("skills") {
+  let id = file.deletingPathExtension().lastPathComponent
+  guard let text = try? String(contentsOf: file, encoding: .utf8) else { continue }
+  do { try Skill.add(id, text); if !c.skills.contains(id) { c.skills.append(id) } } catch { NSLog("Still: couldn't add skill \(id): \(error)") }
+ }
+ for file in files("knowledge") {
+  if let text = try? String(contentsOf: file, encoding: .utf8) { CompanionMemory.seed(c.id, file.deletingPathExtension().lastPathComponent, text) }
+ }
+ return CompanionMemory.equipped(c.id)
+}
+
 /// The remember, recall and forget tools: Still's own chat only, on the memory of the companion it's with.
 func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
  guard let run = runs[who], let me = companions.first(where: { $0.id == run.chat.companion }) else { return agentFail("Memory belongs to Still's own companions, in their chats.") }
@@ -218,6 +282,13 @@ func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String 
   guard let kept = CompanionMemory.remember(me.id, fact, argText(args, "kind"), run.chat.id) else { return agentFail("Pass one short fact.") }
   publishAiEverywhere()
   return agentOk(["remembered": kept.text, "id": kept.id])
+ case "update_knowledge":
+  if run.chat.noMemory { return agentFail("This chat is off the record: the user asked you not to keep anything from it.") }
+  let text = argText(args, "text")
+  if let why = memoryRefuses(run, text) { return agentFail(why) }
+  guard let note = CompanionMemory.write(me.id, tidy(argText(args, "file")), text) else { return agentFail("There's no knowledge file by that id. Yours are listed at the start of the chat.") }
+  publishAiEverywhere()
+  return agentOk(["updated": note.name])
  case "recall":
   let day = DateFormatter()
   day.locale = Locale(identifier: "en_US_POSIX"); day.dateFormat = "yyyy-MM-dd"

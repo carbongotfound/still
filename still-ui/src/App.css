@@ -773,9 +773,10 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-ideas .home-idea small { white-space:normal; }
 
 /* The switcher pill, top center */
-.mate-switch { display:flex; align-items:center; gap:2px; height:40px; padding:4px; border-radius:999px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); }
+.mate-switch { display:flex; align-items:center; gap:2px; height:40px; min-width:0; max-width:min(100%,600px); padding:4px; overflow:auto hidden; overscroll-behavior-x:contain; scrollbar-width:none; border-radius:999px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06),0 2px 4px rgb(0 0 0/.04); }
 .dark .mate-switch { box-shadow:0 0 0 1px var(--border); }
 /* A pick opens that face into the pill with its name while the last one closes, so nothing jumps */
+.mate-switch::-webkit-scrollbar { display:none; } .mate-switch > * { flex:none; } /* every companion in the row; it scrolls sideways when they don't fit */
 .mate-switch-face { display:flex; align-items:center; gap:0; height:32px; padding:0 4px; border-radius:999px; font-size:13px; opacity:.75; background:transparent; transition:opacity .2s,background-color .35s,gap .4s var(--ease-flow),padding .4s var(--ease-flow),transform .25s var(--ease-spring); }
 .mate-switch-face:hover { opacity:1; transform:translateY(-1px); }
 /* The name opens on a 0fr to 1fr column, so it grows at the pill's pace whatever its length (max-width would rush it) */
@@ -1260,7 +1261,8 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-interview-foot button { display:inline-flex; align-items:center; gap:5px; padding:4px 8px; border-radius:99px; font-size:12.5px; color:var(--ob-soft); transition:background .15s,color .15s; } .ob-interview-foot button:hover:not(:disabled) { background:var(--ob-hover); color:inherit; }
 .ob-interview-foot button:disabled { opacity:.45; } .ob-interview-foot svg { width:13px; height:13px; }
 .ob-bubble.is-you.is-skip { background:transparent; border-color:var(--ob-line); color:var(--ob-soft); font-style:italic; }
-[data-slot=dialog-overlay]:has(~ .crew-dialog) { z-index:85; } .crew-dialog { z-index:90; }
+[data-slot=dialog-overlay]:has(~ .crew-dialog), [data-slot=dialog-overlay]:has(~ .hire-profile) { z-index:85; } .crew-dialog, .hire-profile { z-index:90; }
+[data-slot=dialog-overlay]:has(~ .hire-profile) { background:rgb(0 0 0 / .28); backdrop-filter:blur(3px); }
 [data-slot=dialog-overlay]:has(~ .look-dialog) { z-index:85; } .look-dialog { z-index:90; }
 @media (max-width:760px) { .ob-stage { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); justify-items:center; } .ob-companion { justify-self:center; } .ob-companion .mascot { --s:180px !important; } .ob-talk { width:100%; } }
 @media (prefers-reduced-motion: reduce) { .ob, .ob * { animation:none !important; transition:none !important; } }
@@ -1317,10 +1319,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .mate-chat { height:30px; padding:0 14px; border-radius:99px; background:color-mix(in oklab,var(--hue) 32%,var(--card)); color:var(--foreground); font-size:12.5px; font-weight:580; transition:background-color .15s; } .mate-chat:hover { background:color-mix(in oklab,var(--hue) 46%,var(--card)); }
 .crew-dialog { max-width:440px; max-height:calc(100vh - 48px); overflow-y:auto; --font-display:var(--font-ui); } .crew-dialog-hero { display:grid; place-items:center; height:176px; border-radius:14px; background:radial-gradient(circle at 50% 40%,color-mix(in oklab,var(--hue) 36%,var(--card)),color-mix(in oklab,var(--hue) 14%,var(--card))); }
 .crew-dialog [data-slot=dialog-title] { display:flex; align-items:center; gap:10px; } .crew-dialog [data-slot=dialog-title] .role-tag { padding:3px 9px; border-radius:99px; background:color-mix(in oklab,var(--hue) 24%,transparent); }
-.crew-dialog-body { display:flex; flex-direction:column; gap:14px; } .crew-dialog-body h4 { margin:0 0 5px; font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
-.crew-dialog-body p, .crew-dialog-body ul { margin:0; font-size:13.5px; line-height:1.5; } .crew-dialog-body ul { padding-left:18px; list-style:disc; }
-.crew-dialog-body ul.crew-asks { display:flex; flex-direction:column; gap:5px; padding:0; list-style:none; } .crew-asks li { padding:6px 10px; border-radius:10px; background:var(--muted); font-size:13px; }
-.crew-dialog-pick[data-slot=button] { width:100%; border-radius:99px; }
 /* A companion joined: its hero with a check badge, then Not now and Start chatting. */
 .joined-card .crew-dialog-hero { position:relative; height:248px; }
 .joined-badge { position:absolute; left:calc(50% + 64px); bottom:28px; display:grid; place-items:center; width:30px; height:30px; border-radius:99px; background:var(--primary); color:var(--primary-foreground); box-shadow:0 0 0 3px var(--card); animation:joined-pop .45s .5s cubic-bezier(.34,1.56,.64,1) both; }
@@ -1404,7 +1402,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }
 @keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
 .ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
-.crew-asks b { display:block; margin-bottom:2px; font-size:12.5px; font-weight:620; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
 .mate-memory { display:flex; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
 /* Settings > Memory */
@@ -1541,13 +1538,14 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-modes b { font-size:14px; font-weight:600; } .profile-modes small { font-size:12px; color:var(--muted-foreground); }
 .profile-routine { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border); border-radius:12px; }
 .profile-routine textarea { border:0; padding:4px; resize:none; }
-/* A library companion's preview: the same panel, with what it does and an Add bar at the foot. */
-.profile-switch.is-static { cursor:default; } .profile-switch.is-static:hover { background:none; }
-.profile-role { flex:none; padding:2px 9px; border-radius:99px; font-size:12px; background:color-mix(in oklab,var(--hue) 22%,transparent); }
-.profile-will { display:flex; flex-direction:column; gap:6px; margin:0; padding:0; list-style:none; }
-.profile-will li { padding:8px 12px; border-radius:10px; background:color-mix(in oklab,var(--hue) 8%,var(--muted)); font-size:13.5px; line-height:1.45; }
-.profile-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
-.profile-add[data-slot=button] { border-radius:99px; }
+/* A hired companion's knowledge files, under its memory: each one's name, what it holds and what's in it so far. */
+.profile-knowledge { display:flex; flex-direction:column; gap:8px; margin:10px 0 0; padding:0; list-style:none; }
+.profile-knowledge > li { display:flex; gap:10px; padding:10px 12px; border:1px solid var(--border); border-radius:12px; }
+.profile-knowledge > li > svg { flex:none; width:16px; height:16px; margin-top:2px; color:color-mix(in oklab,var(--hue) 70%,var(--foreground)); }
+.profile-knowledge > li > div { display:flex; flex:1; min-width:0; flex-direction:column; gap:2px; }
+.profile-knowledge b { font-size:14px; font-weight:600; } .profile-knowledge small { font-size:12px; color:var(--muted-foreground); }
+.profile-knowledge-text { max-height:180px; margin-top:6px; padding:8px 10px; overflow-y:auto; border-radius:8px; background:var(--muted); font-size:12.5px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; outline:none; }
+.profile-knowledge .profile-note { margin-top:4px; }
 /* "New companion": Still's library, then make your own or paste one. */
 .profile-routine-row { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .profile-routine-row input[type=time] { width:120px; } .profile-routine-row [type=submit] { margin-left:auto; }
 .profile-days { display:flex; gap:4px; }
@@ -1617,5 +1615,66 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 .library-paste textarea { margin-top:4px; padding:9px 11px; border:1px solid var(--input); border-radius:12px; background:var(--background); font:14px/1.5 var(--font-ui); resize:none; outline:none; }
 .library-paste textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
 .library-bad { color:var(--destructive); font-size:13px; }
+/* The library's cards: the companion big on a soft glow of its color, its name with its role, one line, then a white
+   Hire button with View profile beside it (Hired, quietly, once it's on the team). */
+.library-card.role-card.is-art, .library-card.role-card.is-on { background:var(--card); border-color:var(--border); }
+.library-card .role-art { background:radial-gradient(60% 62% at 50% 62%,color-mix(in oklab,var(--hue) 24%,transparent),transparent),color-mix(in oklab,var(--hue) 4%,var(--card)); border-bottom-color:var(--border); }
+.library-card .role-body { gap:6px; }
+.library-card .role-expect p { font-size:14px; }
+.library-card.is-art .role-act { justify-content:flex-start; gap:14px; padding-top:10px; }
+.role-hire { height:34px; padding:0 20px; border-radius:99px; background:#fff; color:#18181b; font:600 13.5px var(--font-ui); box-shadow:0 0 0 1px rgb(0 0 0 / .12),0 1px 3px rgb(0 0 0 / .14); transition:transform .15s,box-shadow .15s; }
+.role-hire:hover { transform:translateY(-1px); box-shadow:0 0 0 1px rgb(0 0 0 / .14),0 4px 10px -4px rgb(0 0 0 / .3); }
+.role-hire:focus-visible, .hire-profile-hire:focus-visible { outline:none; box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 55%,transparent); }
+.library-added { display:inline-flex; align-items:center; gap:4px; height:34px; font:500 13px var(--font-ui); color:var(--soft); } .library-added svg { width:14px; height:14px; }
+
+/* A companion's profile before hiring: its card on the left stays put while the sections on the right scroll. One column,
+   scrolling as a whole, when the window is narrow. */
+.hire-profile[data-slot=dialog-content] { --font-display:var(--font-ui); display:grid; grid-template-columns:300px minmax(0,1fr); gap:16px; width:min(980px,calc(100vw - 32px)); max-width:min(980px,calc(100vw - 32px)); height:min(780px,calc(100vh - 48px)); padding:16px; overflow:hidden; border-radius:24px; background:var(--background); font-family:var(--font-ui); }
+.hire-profile-card { position:relative; display:flex; min-height:0; flex-direction:column; gap:12px; padding:0 20px 20px; overflow-y:auto; scrollbar-width:none; border:1px solid var(--border); border-radius:18px; background:var(--card); }
+.hire-profile-art { display:grid; place-items:end center; flex:none; height:270px; margin:0 -20px 4px; background:radial-gradient(58% 56% at 50% 60%,color-mix(in oklab,var(--hue) 34%,transparent),transparent); }
+.hire-profile-close { position:absolute; top:12px; right:12px; display:grid; place-items:center; width:30px; height:30px; border-radius:50%; color:var(--soft); transition:background .15s,color .15s; }
+.hire-profile-close:hover, .hire-profile-close:focus-visible { background:var(--muted); color:var(--foreground); outline:none; } .hire-profile-close svg { width:16px; height:16px; }
+.hire-profile-card [data-slot=dialog-title] { font-size:24px; font-weight:600; letter-spacing:-.02em; line-height:1.2; }
+.hire-profile-card [data-slot=dialog-description] { margin:-4px 0 4px; font-size:14px; line-height:1.5; color:var(--soft); }
+.hire-profile-hire { flex:none; height:44px; border-radius:99px; background:#fff; color:#18181b; font:600 15px var(--font-ui); box-shadow:0 0 0 1px rgb(0 0 0 / .12),0 2px 8px -3px rgb(0 0 0 / .3); transition:transform .15s; }
+.hire-profile-hire:hover { transform:translateY(-1px); }
+.hire-profile-hired { display:flex; flex:none; justify-content:center; align-items:center; gap:6px; height:44px; border-radius:99px; background:color-mix(in oklab,var(--hue) 14%,transparent); color:color-mix(in oklab,var(--hue) 70%,var(--foreground)); font:600 15px var(--font-ui); }
+.hire-profile-hired svg { width:17px; height:17px; stroke-width:2.5; }
+.hire-profile-works { display:flex; flex-direction:column; gap:8px; margin-top:6px; }
+.hire-profile-works h4, .hire-profile-section h3 { margin:0; font-size:13px; font-weight:600; letter-spacing:.01em; color:var(--soft); }
+.hire-profile-works > div { display:flex; flex-wrap:wrap; gap:6px; }
+.plug-chip.is-web svg { width:16px; height:16px; margin:4px; color:var(--soft); }
+.hire-profile-main { display:flex; min-height:0; flex-direction:column; gap:12px; overflow-y:auto; scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }
+.hire-profile-section { display:flex; flex:none; flex-direction:column; gap:12px; padding:18px 20px; border:1px solid var(--border); border-radius:18px; background:var(--card); }
+.hire-profile-counts { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:8px; }
+.hire-profile-counts div { display:flex; flex-direction:column; gap:2px; padding:12px 14px; border-radius:14px; background:color-mix(in oklab,var(--hue) 7%,var(--muted)); }
+.hire-profile-counts b { font-size:26px; font-weight:600; letter-spacing:-.02em; line-height:1.1; } .hire-profile-counts span { font-size:12.5px; color:var(--soft); }
+.hire-profile-skills { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; }
+.hire-profile-skill { display:grid; grid-template-columns:auto minmax(0,1fr); grid-template-rows:auto 1fr; gap:2px 12px; padding:12px; border-radius:14px; background:var(--muted); }
+.hire-profile-skill > span { grid-row:span 2; display:grid; place-items:center; width:38px; height:38px; border-radius:11px; background:color-mix(in oklab,var(--tile) 18%,transparent); color:var(--tile); }
+.hire-profile-skill > span svg { width:19px; height:19px; }
+.hire-profile-skill b, .hire-profile-routine b, .hire-profile-files b { font-size:14px; font-weight:600; line-height:1.35; }
+.hire-profile-skill small, .hire-profile-routine small, .hire-profile-files small { font-size:12.5px; line-height:1.45; color:var(--soft); }
+.hire-profile-routine { display:flex; gap:12px; } .hire-profile-routine > div { display:flex; min-width:0; flex-direction:column; gap:2px; }
+.hire-profile-routine > span { display:grid; flex:none; place-items:center; width:38px; height:38px; border-radius:11px; background:color-mix(in oklab,var(--hue) 16%,transparent); color:color-mix(in oklab,var(--hue) 70%,var(--foreground)); }
+.hire-profile-routine > span svg { width:19px; height:19px; }
+.hire-profile-routine p { margin:4px 0 0; font-size:13.5px; line-height:1.5; }
+.hire-profile-note { margin:0; font-size:12.5px; line-height:1.5; color:var(--soft); }
+.hire-profile-files { display:flex; flex-direction:column; gap:10px; margin:0; padding:0; list-style:none; }
+.hire-profile-files li { display:flex; gap:12px; } .hire-profile-files li > div { display:flex; min-width:0; flex-direction:column; gap:1px; }
+.hire-profile-files li > svg { flex:none; width:18px; height:18px; margin-top:1px; color:color-mix(in oklab,var(--hue) 70%,var(--foreground)); }
+.hire-profile-say { display:flex; align-items:flex-start; gap:10px; } .hire-profile-say > :first-child { flex:none; }
+.hire-profile-say > div { display:flex; min-width:0; flex-direction:column; gap:6px; }
+.hire-profile-say p { margin:0; padding:9px 13px; border-radius:4px 16px 16px 16px; background:color-mix(in oklab,var(--hue) 10%,var(--muted)); font-size:14px; line-height:1.55; }
+.hire-profile-full { display:flex; justify-content:space-between; align-items:center; width:100%; font:600 14px var(--font-ui); color:var(--foreground); outline:none; }
+.hire-profile-full svg { width:17px; height:17px; color:var(--soft); transition:rotate .2s; } .hire-profile-full[aria-expanded=true] svg { rotate:180deg; }
+.hire-profile-full:focus-visible { border-radius:6px; box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
+.hire-profile-instructions { max-height:none; }
+@media (max-width: 760px) {
+ .hire-profile[data-slot=dialog-content] { grid-template-columns:minmax(0,1fr); height:auto; max-height:calc(100vh - 32px); overflow-y:auto; }
+ .hire-profile-card, .hire-profile-main { overflow:visible; }
+ .hire-profile-counts { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media (max-width: 520px) { .hire-profile-skills { grid-template-columns:minmax(0,1fr); } }
 /* Setup speaks in the same typeface as the rest of Still's UI. */
 .welcome.ob { --font-display:var(--font-ui); }

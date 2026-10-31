@@ -116,13 +116,15 @@ def main():
             else:
                 print("capture:", got)
 
-        # Model: Thorough is saved. Skills: the switch adds the skill.
+        # Model: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
         click(p, ".profile-modes button", "Thorough")
         check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
         press(p, ".profile-tablist [role=tab][id$='-trigger-skills']", "mousedown")
         until(lambda: shown(p, ".profile-list [role=switch]"), 3)
-        js(p, "document.querySelector('.profile-list [role=switch]')?.click()")
-        check(until(lambda: len(mates().get("Jonah", {}).get("Skills", [])) == 1, 5), "Skills: turning one on saves it for Jonah")
+        kit = mates().get("Jonah", {}).get("Skills") or []
+        check(sorted(kit) == ["call-brief", "follow-up", "lead-list", "pipeline-check"], f"Skills: Jonah, hired before roles had kits, gets the Sales kit's four when Still starts ({kit})")
+        js(p, "document.querySelector('.profile-list [role=switch][aria-checked=true]')?.click()")
+        check(until(lambda: len(mates().get("Jonah", {}).get("Skills", [])) == 3, 5), "and turning one off saves it for Jonah")
 
         # General: rename on blur; instructions autosave.
         press(p, ".profile-tablist [role=tab][id$='-trigger-general']", "mousedown")

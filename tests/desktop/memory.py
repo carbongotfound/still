@@ -4,6 +4,7 @@ agents folder) connects to Still's MCP server and runs the command on the last l
   REMEMBER: <fact>   calls remember
   RECALL: <words>    calls recall
   FORGET: <words>    calls forget
+  KNOW: <file> | <text>  calls update_knowledge
 Every tool result goes to results.jsonl, every prompt to prompts.jsonl.
 
 Run: python tests/desktop/memory.py artifacts/Still-QA/Still.exe
@@ -75,9 +76,10 @@ FAKE = textwrap.dedent(r'''
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
     last = prompt.strip().splitlines()[-1]
     verb, _, rest = last.partition(": ")
-    tool = {"REMEMBER": ("remember", "fact"), "RECALL": ("recall", "query"), "FORGET": ("forget", "about")}.get(verb)
+    tool = {"REMEMBER": ("remember", "fact"), "RECALL": ("recall", "query"), "FORGET": ("forget", "about"), "KNOW": ("update_knowledge", "file")}.get(verb)
     if tool:
-        r = request("tools/call", {"name": tool[0], "arguments": {tool[1]: rest, "kind": "preference"} if tool[0] == "remember" else {tool[1]: rest}})["result"]
+        file, _, text = rest.partition(" | ")
+        r = request("tools/call", {"name": tool[0], "arguments": {tool[1]: rest, "kind": "preference"} if tool[0] == "remember" else {"file": file, "text": text} if verb == "KNOW" else {tool[1]: rest}})["result"]
         with open(os.path.join(here, "results.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"ask": last, "error": bool(r.get("isError")), "text": r["content"][0]["text"]}) + "\n")
     say({"type": "assistant", "message": {"content": [{"type": "text", "text": "Okay, done."}]}})
     still.stdin.close()
@@ -123,7 +125,7 @@ def main():
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "AiHarness": "fake",
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": [{**c, "Crew": "research"} if c["Id"] == "maya" else c for c in CREW], "AgentsEnabled": True, "AiHarness": "fake",
         "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}]}, "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     process = launch(EXE, PROFILE)
     try:
@@ -148,6 +150,22 @@ def main():
         _, said = ask(process, "FORGET: aisle seats")
         check("aisle seats" in said.get("text", "") and not any("aisle seats" in f["Text"] and f["Kind"] != "chat" for f in facts()), "forget forgets it")
 
+        # Knowledge files: Maya came with her role's three, empty, and her chats start out with them. update_knowledge
+        # rewrites one, keeping its name, and the next chat knows it. Only her own files, and never off the record.
+        notes = PROFILE / "companions" / "maya" / "knowledge"
+        check(sorted(f.stem for f in notes.glob("*.md")) == ["findings", "market", "sources"], "Maya has her role's three knowledge files")
+        check('## Findings (file "findings")' in prompt and "(Empty so far.)" in prompt and "update_knowledge" in prompt, "and her chats start out with them, empty so far")
+        _, said = ask(process, "KNOW: findings | - Most suppliers ship in 6 weeks (source: the 2026 survey)")
+        body = (notes / "findings.md").read_text(encoding="utf-8")
+        check(not said.get("error") and "Findings" in said.get("text", "") and body.startswith("---\nname: Findings\nabout: ") and body.rstrip().endswith("- Most suppliers ship in 6 weeks (source: the 2026 survey)"),
+              "update_knowledge rewrites a file, keeping its name and what it holds")
+        ask(process, "RECALL: suppliers")
+        check("Most suppliers ship in 6 weeks" in lines("prompts.jsonl")[-1]["prompt"], "The next chat starts out knowing it")
+        _, said = ask(process, "KNOW: diary | anything")
+        check(said.get("error") and "no knowledge file" in said.get("text", "") and not (notes / "diary.md").exists(), "A file that isn't one of hers is refused")
+        _, said = ask(process, "KNOW: findings | Allergic to peanuts", noMemory=True)
+        check(said.get("error") and "off the record" in said.get("text", "") and "peanuts" not in (notes / "findings.md").read_text(encoding="utf-8"), "An off-the-record chat can't write one")
+
         # Off the record: from the start, and switched on for a chat that already ran.
         c, said = ask(process, "REMEMBER: Allergic to peanuts", noMemory=True)
         check(said.get("error") and "off the record" in said.get("text", ""), "An off-the-record chat can't remember")
@@ -167,6 +185,9 @@ def main():
         _, said = ask(process, f"REMEMBER: Planning the {SECRET} party")
         check(said.get("error") and "private tab" in said.get("text", ""), "A fact naming a private tab is refused")
         check(not any(SECRET.lower() in f["Text"].lower() for f in facts()), "and nothing from it is kept, not even the chat's title")
+        _, said = ask(process, f"KNOW: findings | The {SECRET} party is on Friday")
+        check(said.get("error") and "private tab" in said.get("text", "") and SECRET not in (PROFILE / "companions" / "maya" / "knowledge" / "findings.md").read_text(encoding="utf-8"),
+              "and so is a knowledge file naming it")
         _, said = ask(process, "RECALL: garden party")
         check(SECRET not in said.get("text", "") and SECRET not in lines("prompts.jsonl")[-1]["prompt"], "Later chats never see it")
         check(all(SECRET not in "\n".join(p["prompt"].strip().splitlines()[:-1]) for p in lines("prompts.jsonl")), "No prompt carries the private tab, beyond what the user typed")

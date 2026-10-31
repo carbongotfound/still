@@ -291,6 +291,8 @@ def tools(process):
     until(lambda: js(process, "!!document.querySelector('.plug-row')"), 3)
     names = js(process, "[...document.querySelectorAll('.plug-row .plug-chip')].map(c => c.lastChild.textContent)") or []
     check(all(n in names for n in ("Gmail", "Google Calendar", "Slack", "Notion", "GitHub", "Google Drive", "Linear", "HubSpot")), "Gmail, Calendar, Slack, Notion, GitHub, Drive, Linear and HubSpot are on it, as name chips")
+    shipped = "[...document.querySelectorAll('.plug-row .plug-chip:not([aria-hidden=true]) .plug-logo img')].filter(i => i.complete && i.naturalWidth > 0 && i.src.includes('/apps/') && i.src.endsWith('.svg')).length"
+    check(until(lambda: js(process, shipped) == 24, 5), f"each with its real logo, shipped with Still, with no key ({js(process, shipped)})")
     check(js(process, "document.querySelector(\"input[aria-label='Composio API key']\")?.type") == "password", "Below it, a field for your Composio API key")
     words = talk_text(process)
     check("Get a key" in words and "Project Settings" in words and "ak_" in words and "third-party service" in words and "pricing" not in words, "With where to get a project key (ak_), and a note that Composio is a third party (no pricing)")
@@ -427,10 +429,10 @@ def setup(process):
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") == 8, 4)
         rpc(process, "capture", name="pick-none.png")
         crew = js(process, "[...document.querySelectorAll('.crew-card .role-title')].map(h => h.innerText.trim())") or []
-        check(crew == ["Jonah", "Talia", "Nora", "Leo", "Ivan", "Maya", "Make your own"], f"Step 4: six roles to hire, then Make your own ({', '.join(crew)})")
-        check(js(process, """[...document.querySelectorAll('.crew-card')].every(c => c.querySelector('.role-tag')?.innerText && c.querySelector('.role-expect h4')?.innerText === 'What to expect'
+        check(crew == ["Sales Jonah", "Growth Talia", "Planner Nora", "Marketing Leo", "Engineer Ivan", "Research Maya", "Make your own"], f"Step 4: six roles to hire, then Make your own ({', '.join(crew)})")
+        check(js(process, """[...document.querySelectorAll('.crew-card')].every(c => (c.classList.contains('is-own') || !c.querySelector('.role-tag')) && c.querySelector('.role-expect h4')?.innerText === 'What to expect'
               && c.querySelectorAll('.role-expect li').length === 3 && ['Hire', 'Make'].includes(c.querySelector('.crew-pick')?.innerText.trim()))"""),
-              "Each card has its role, three things to expect and Hire, like the library's")
+              "Each card has its role-first name, three things to expect and Hire")
         check(not js(process, "/\\bI'll\\b|\\bI will\\b/.test([...document.querySelectorAll('.crew-card')].map(c => c.innerText).join(' '))"), "No card makes a first-person promise")
         check(js(process, "document.querySelector('.crew-card .role-bubble')?.textContent") == "Give me your toughest lead. I like a challenge."
               and js(process, "document.querySelector('.crew-card.is-own .role-expect li')?.innerText") == "Any job you describe, in your words", "Each one has its own line for when you hover it, and Make your own lists what you get")
@@ -441,8 +443,8 @@ def setup(process):
         click(process, ".ob-skip-all")
         check(until(lambda: "Hire at least one companion first" in talk_text(process), 3) and js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')"), "Skip setup asks for a companion first")
         time.sleep(.8)
-        click(process, ".crew-pick[aria-label='Hire Maya']")
-        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked .role-title')?.innerText.trim() == 'Maya'"), 3)
+        click(process, ".crew-pick[aria-label='Hire Research Maya']")
+        check(until(lambda: js(process, "!document.querySelector('.ob-next').disabled && document.querySelector('.crew-card.is-picked .role-title')?.innerText.trim() == 'Research Maya'"), 3)
               and js(process, "document.querySelector('.crew-card.is-picked .crew-pick')?.innerText.trim()") == "Hired", "Hiring Maya turns its button into Hired and lets you continue")
         time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Make your own")
@@ -461,7 +463,7 @@ def setup(process):
         time.sleep(.6)
         check(js(process, "document.querySelector('.ob-next')?.innerText.trim()") == "Hire Miso", "Making your own ends with Hire Miso")
         click(process, ".ob-next")
-        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Maya,Miso", 3)
+        both = until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).join()") == "Research Maya,Miso", 3)
         check(both and js(process, "document.querySelector('.ob-dots')?.getAttribute('aria-valuemax')") == "12", "Miso joins the crew, picked with Maya, and setup adds a step to pick the main one")
         time.sleep(1.2)
         next_step(process)  # -> main
@@ -825,9 +827,9 @@ def shots():
                 shutil.copy(profile / f"{name}-{theme.lower()}.png", out / f"{name}-{theme.lower()}.png")
         time.sleep(1.5)
         shoot("pick-0")
-        click(process, ".crew-pick[aria-label='Hire Maya']")
+        click(process, ".crew-pick[aria-label='Hire Research Maya']")
         shoot("pick-1")
-        for name in ("Jonah", "Leo"):
+        for name in ("Sales Jonah", "Marketing Leo"):
             click(process, f".crew-pick[aria-label='Hire {name}']")
             time.sleep(.3)
         shoot("pick-3")
@@ -852,7 +854,7 @@ def shots():
         back(process)
         check(until(lambda: js(process, "document.querySelector('.ob-mains [aria-checked=true] strong')?.innerText.trim()") == "Jonah", 4), "With the same lead picked")
         back(process)
-        check(js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).sort().join()") == "Jonah,Leo,Maya",
+        check(js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).sort().join()") == "Marketing Leo,Research Maya,Sales Jonah",
               "And the same three hired")
         next_step(process)
         next_step(process)

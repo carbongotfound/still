@@ -46,6 +46,7 @@ public partial class MainWindow : Window
   if(state.UiVersion<5){MigrateAgentIds(state.Preferences);state.UiVersion=5;}
   if(state.UiVersion<6){state.Welcome=true;DropUntouchedDefaults(state.Preferences);state.UiVersion=6;} // 1.9: everyone makes their own companion, once
   MoveOldCrew(state.Preferences);
+  foreach(var c in state.Preferences.Companions)Equip(c); // hired before the roles came with skills and knowledge files
   if(!state.Preferences.NamesChecked)FlagOldNames(state.Preferences); // Still's old stock names: ask once whether to keep one
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));

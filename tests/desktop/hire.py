@@ -89,13 +89,16 @@ def say_hi(p, name):
     return until(lambda: js(p, f"(() => {{ const b = [...document.querySelectorAll('.mate-card')].find(c => c.querySelector('h3')?.innerText === {json.dumps(name)})?.querySelector('.mate-chat'); b?.click(); return !!b }})()"), 5)
 
 
+ROLES = {"Leo": "Marketing", "Talia": "Growth", "Nora": "Planner", "Ivan": "Engineer"}  # each one is introduced role first
+
+
 def library_add(p, name):
     send(p, "new")
     until(lambda: shown(p, ".home-face"), 15)
     js(p, "document.querySelector('.mate-switch-more[aria-label=\"Hire a companion\"]')?.click()")
     until(lambda: shown(p, ".companion-library"), 5)
-    click(p, ".library-add", "Hire " + name)
-    return until(lambda: (card(p) or {}).get("title") == name + " joined your team", 5)
+    click(p, ".library-add", f"Hire {ROLES[name]} {name}")
+    return until(lambda: (card(p) or {}).get("title") == f"{ROLES[name]} {name} joined your team", 5)
 
 
 def asked(p):
@@ -231,7 +234,7 @@ def after_setup():
             until(lambda: not shown(p, ".intro"), 3)
         time.sleep(1)
         W.to_crew(p)
-        js(p, "document.querySelector(\".crew-pick[aria-label='Hire Maya']\")?.click()")
+        js(p, "document.querySelector(\".crew-pick[aria-label='Hire Research Maya']\")?.click()")
         time.sleep(.6)
         W.next_step(p, .8)  # -> tools
         W.not_now(p, .8)  # -> how
@@ -268,7 +271,12 @@ def main():
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     hiring()
     for f in ("prompts.jsonl", "calls.jsonl"):
-        (BIN / f).unlink(missing_ok=True)
+        for _ in range(50):  # the last companion's agent may still be letting go of it
+            try:
+                (BIN / f).unlink(missing_ok=True)
+                break
+            except PermissionError:
+                time.sleep(0.2)
     after_setup()
     # No test stub ships: the fake agent and its plan line exist only in test profiles.
     stub = [str(f.relative_to(SRC)) for f in [*SRC.glob("still/Shell/assets/*.js"), *SRC.glob("still/*.cs"), *SRC.glob("still/Agents/*.cs"), *SRC.glob("mac/Sources/Still/*.swift"), *SRC.glob("still-ui/src/*.tsx")]

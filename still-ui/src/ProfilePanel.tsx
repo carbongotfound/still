@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, FolderOpen, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react"
+import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, FileText, FolderOpen, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Trash2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -28,13 +28,10 @@ const when = (r: Routine) => (r.days.length === 7 ? "Every day" : r.days.join() 
 /// What Share copies: the companion without anything personal (no memory, folder, plugins or keys).
 const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name: c.name, look: c.look ?? "", job: c.job, tone: c.tone ?? "", mode: c.mode ?? "default", crew: c.crew ?? "" })
 
-/// `preview`: a companion from the library, not hired yet. Changes stay here until Hire, and only the tabs that make
-/// sense before hiring show.
-const PREVIEW_TABS = ["general", "skills", "routines", "model"]
-export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, onOpenFile, onSkills }: {
- ai: AiState; id: string; preview?: Companion; send: Send; onPick: (id: string) => void; onClose: () => void; onAdd?: (c: Companion) => void; onOpenFile: (path: string) => void; onSkills: () => void
+export function ProfilePanel({ ai, id, send, onPick, onClose, onOpenFile, onSkills }: {
+ ai: AiState; id: string; send: Send; onPick: (id: string) => void; onClose: () => void; onOpenFile: (path: string) => void; onSkills: () => void
 }) {
- const saved: (Companion & { instructions?: string }) | undefined = preview ?? ai.companions?.find(c => c.id === id)
+ const saved: (Companion & { instructions?: string }) | undefined = ai.companions?.find(c => c.id === id)
  const [c, setC] = useState(saved)
  const [tab, setTab] = useState("general")
  const [styling, setStyling] = useState(false)
@@ -56,7 +53,6 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
  if (!saved || !c) return null
  const save = (next: Companion & { instructions?: string }, later = false) => {
   setC(next); clearTimeout(typing.current)
-  if (preview) return
   const go = () => send("companionSave", { ...next })
   if (later) typing.current = window.setTimeout(go, 500); else go()
  }
@@ -71,9 +67,8 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
  const share = () => navigator.clipboard.writeText(shareOf(c)).then(() => toast(`Copied ${c.name}. Paste it on anyone's Companions page in Still to add them. Nothing they remember about you is in it.`), () => toast("Couldn't copy. Try again."))
  return <>
   <div className={cn("profile-scrim", closing && "is-closing")} onClick={close} />
-  <aside className={cn("profile-panel", closing && "is-closing", preview && "is-preview")} role="dialog" aria-modal aria-label={preview ? `Meet ${saved.name}` : `${c.name}'s profile`} style={{ "--hue": hueOf(c) } as CSSProperties}>
+  <aside className={cn("profile-panel", closing && "is-closing")} role="dialog" aria-modal aria-label={`${c.name}'s profile`} style={{ "--hue": hueOf(c) } as CSSProperties}>
    <header className="profile-head">
-    {preview ? <span className="profile-switch is-static"><Face companion={c} size={28} /><b>{c.name}</b>{premade && <small className="profile-role">{premade.role}</small>}</span> : <>
     <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label="Switch companion"><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
      <DropdownMenuContent align="start" className="w-56">{ai.companions?.map(x => <DropdownMenuItem key={x.id} onSelect={() => onPick(x.id)}><Face companion={x} size={20} />{x.name}{x.id === c.id && <Check className="ml-auto" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
@@ -83,17 +78,17 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
       {premade && <DropdownMenuItem onSelect={() => setAsk("reset")}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={() => setAsk("fire")}><Trash2 />{premade ? "Fire" : "Delete"} {c.name}</DropdownMenuItem>
-     </DropdownMenuContent></DropdownMenu></>}
-    <Button variant="ghost" size="icon-sm" className={preview ? "ml-auto" : undefined} aria-label="Close" onClick={close}><X /></Button>
+     </DropdownMenuContent></DropdownMenu>
+    <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button>
    </header>
    <Tabs value={tab} onValueChange={setTab} className="profile-tabs">
-    <TabsList className="profile-tablist">{TABS.filter(([v]) => !preview || PREVIEW_TABS.includes(v)).map(([v, t]) => <TabsTrigger key={v} value={v}>{t}</TabsTrigger>)}</TabsList>
+    <TabsList className="profile-tablist">{TABS.map(([v, t]) => <TabsTrigger key={v} value={v}>{t}</TabsTrigger>)}</TabsList>
     <div className="profile-body">
      <TabsContent value="general">
       <div className="profile-stage"><Face companion={c} size={196} follow />
        <div className="profile-stage-actions">
         <Button size="sm" variant="secondary" onClick={() => setStyling(true)}><Palette />Edit look</Button>
-        {!preview && <Button size="sm" variant="secondary" onClick={share}><Share2 />Share</Button>}
+        <Button size="sm" variant="secondary" onClick={share}><Share2 />Share</Button>
        </div>
       </div>
       <label className="profile-field"><span>Name</span><Input ref={name} maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} onBlur={() => c.name.trim() ? save({ ...c, name: c.name.trim() }) : setC(saved)} /></label>
@@ -111,7 +106,6 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
        <div className="profile-instructions-foot"><p className="profile-note">{c.instructions ? "Your edit." : `Still's version for ${premade.role}.`} {label} follows these in every chat.</p>
         {!!c.instructions && <Button size="sm" variant="ghost" onClick={() => save({ ...c, instructions: "" })}><RotateCcw />Reset to Still's version</Button>}</div>
       </>}
-      {preview && premade && <section className="profile-section"><h4>What to expect</h4><ul className="profile-will">{premade.expect.map(w => <li key={w}>{w}</li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="skills">
       <section className="profile-section"><h4>Skills</h4>
@@ -121,7 +115,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
        <Switch checked={on} aria-label={`${k.name} for ${c.name}`} onCheckedChange={v => save({ ...c, skills: v ? [...(c.skills ?? []), k.id] : (c.skills ?? []).filter(x => x !== k.id) })} />
       </li> })}</ul> : <Empty text="No skills yet. Write one in Skills & plugins, then turn it on here." action="Open Skills & plugins" onAction={onSkills} />}
       </section>
-      {!preview && <section className="profile-section is-plugins"><h4>Plugins</h4>
+      <section className="profile-section is-plugins"><h4>Plugins</h4>
       {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={onSkills} />
        : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading is free. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
         <ul className="profile-list">{plugins!.connected.map(p => { const on = !saved.pluginsOff?.includes(p.slug); return <li key={p.id}>
@@ -129,7 +123,7 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
          <Switch checked={on} aria-label={`${p.name} for ${c.name}`} onCheckedChange={v => send("pluginToggle", { companion: c.id, slug: p.slug, on: v })} />
         </li> })}</ul></>
        : <Empty text="No apps connected yet." action="Connect an app" onAction={onSkills} />}
-      </section>}
+      </section>
      </TabsContent>
      <TabsContent value="routines">
       <p className="profile-lead">Things {label} does on a schedule, each in a new chat, while Still is open. Anything that sends, posts or changes data still asks you first.</p>
@@ -152,7 +146,12 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
         : <p className="profile-note">Nothing yet. Files {label} saves in a chat show up here.</p>}
       </section>
      </TabsContent>
-     <TabsContent value="memory"><MemorySettings companions={[saved]} send={send} /></TabsContent>
+     <TabsContent value="memory"><MemorySettings companions={[saved]} send={send} />
+      {!!saved.knowledge?.length && <section className="profile-section"><h4>Knowledge files</h4>
+       <p className="profile-lead">The working notes of {label}'s job, kept on this computer. {label} fills them in as you work together and reads them at the start of every chat.</p>
+       <ul className="profile-knowledge">{saved.knowledge.map(n => <li key={n.id}><FileText aria-hidden /><div><b>{n.name}</b><small>{n.about}</small>
+        {n.text ? <div className="profile-knowledge-text" tabIndex={0}>{n.text}</div> : <p className="profile-note">Empty so far.</p>}</div></li>)}</ul></section>}
+     </TabsContent>
      <TabsContent value="model">
       <label className="profile-field"><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
        <option value="">Your AI{harness && !c.ai ? ` (${harness.name})` : ""}</option>
@@ -165,10 +164,6 @@ export function ProfilePanel({ ai, id, preview, send, onPick, onClose, onAdd, on
      </TabsContent>
     </div>
    </Tabs>
-   {preview && <footer className="profile-foot">
-    <Button variant="ghost" onClick={close}>Back to the library</Button>
-    <Button className="profile-add" onClick={() => onAdd?.({ ...c, name: c.name.trim() || saved.name })}><Plus />Hire {c.name.trim() || saved.name}</Button>
-   </footer>}
   </aside>
   {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { save({ ...c, look }); setStyling(false) }} />}
   <AlertDialog open={!!ask} onOpenChange={o => { if (!o) setAsk(null) }}>

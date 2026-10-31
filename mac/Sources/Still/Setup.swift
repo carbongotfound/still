@@ -249,7 +249,7 @@ extension Browser {
   for crew in texts("hire", 3, 24) where !companions.contains(where: { $0.crew == crew }) {
    guard let entry = talk.library.first(where: { $0["crew"] as? String == crew }) else { continue }
    let c = saveCompanion(entry); hired[crew] = c
-   change("hire:" + crew, "New on your team", "\(c.name), \(entry["role"] as? String ?? "") · \(entry["area"] as? String ?? "")", owner: c.id) { [self] in dropCompanion(c) }
+   change("hire:" + crew, "New on your team", "\(entry["role"] as? String ?? "") \(c.name) · \(entry["area"] as? String ?? "")", owner: c.id) { [self] in dropCompanion(c) }
   }
   func find(_ id: String) -> Companion? { hired[id] ?? companions.first { $0.id == id } ?? companions.first { !id.isEmpty && $0.crew == id } }
   func whose(_ c: Companion, _ mine: String, _ theirs: String) -> String { c === who ? mine : theirs.replacingOccurrences(of: "{0}", with: c.name) }

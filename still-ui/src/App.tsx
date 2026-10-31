@@ -11,7 +11,7 @@ import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
-import { CompanionLibrary, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
+import { CompanionLibrary, CompanionProfile, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginKeySetting, PluginStack } from "./Plugins"
 import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
@@ -744,7 +744,7 @@ export default function App() {
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
-           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={edit} onManage={() => setView("companions")} />
+           <CompanionSwitch ai={ai} companion={companion} onPick={setBuddy} onEdit={edit} />
 
           </div>
           <div className="home-center">
@@ -959,10 +959,10 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !editing && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
   {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onSkills={() => { setProfile(""); goHome("skills") }} />}
-  {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onPreview={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
-   onOpen={id => { setLibrary(false); setProfile(id) }} onOwn={() => { setLibrary(false); setEditing(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
-  {meeting && ai && <ProfilePanel key={meeting.id} ai={ai} id="" preview={fromPremade(meeting)} send={send} onPick={setProfile} onClose={() => { setMeeting(null); setLibrary(true) }}
-   onAdd={c => { hire(c); setMeeting(null); setLibrary(true) }} onOpenFile={openFile} onSkills={() => { setMeeting(null); goHome("skills") }} />}
+  {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onProfile={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
+   onOwn={() => { setLibrary(false); setEditing(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
+  {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
+   onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
   {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id} only={(ai?.companions?.length ?? 0) <= 1} onClose={() => setEditing(null)} onSave={c => { if (c.id) send("companionSave", c); else hire(c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
   {joined && <JoinedCard companion={joined} onLater={() => setJoined(null)} onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
