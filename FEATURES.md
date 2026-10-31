@@ -1,6 +1,6 @@
 # Still: feature map
 
-Everything Still has today, read from the code. ✅ shipped in 2.0.2 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
+Everything Still has today, read from the code. ✅ shipped in 2.0.0 (`main`) · 🚧 in progress (branch named) · 🧪 experimental.
 Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React interface both hosts load, `mac/Sources/Still/` = Mac host (AppKit, WebKit).
 
 **Rule:** any commit that adds, changes or removes a feature updates this file in the same commit.
@@ -217,7 +217,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Chat titles**: Settings → Models picks what names a new chat from its first message: the quickest model of the chat's AI (default), any model of the installed AIs grouped by AI, or Off (use first message). One short run in the background; quotes, "Title:" and a full stop are dropped; private windows keep the first message. Test builds only name by default with `STILL_QA_TITLES` (`NameChat`, `Ai.swift` `nameChat`, Preferences `ChatTitles`; tests/desktop/settings.py). Mac typechecked only
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
-- ✅ **About**: version (2.0.2, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
+- ✅ **About**: version (2.0.0, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
 - ✅ **Address-bar notice**: a notice ends when the page or tab changes.
 
 ## Updates and install

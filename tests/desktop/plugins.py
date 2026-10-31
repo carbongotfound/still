@@ -437,6 +437,8 @@ def no_key(process):
     listed = tiles(process)
     check(len(listed) == 24 and all(t.endswith(": Connect") for t in listed), f"With no key the apps still show, each with Connect ({len(listed)})")
     check(not js(process, "!!document.querySelector('.plug-tile small, .plug-tile p')"), "Tiles have no description under the name")
+    until(lambda: js(process, "[...document.querySelectorAll('.plug-page .plug-logo img')].every(i => i.complete)"), 5)
+    rpc(process, "capture", name="plugins-page.png")  # the page with no key: every app with the logo that ships with Still
     js(process, "document.querySelector('.plug-tile[data-slug=gmail] .plug-go')?.click()")
     check(until(lambda: js(process, "document.activeElement?.getAttribute('aria-label')") == "Composio API key", 3), "Connect with no key takes you to the key field")
     type_into(process, SEARCH, "sla")
