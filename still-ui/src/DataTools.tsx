@@ -37,6 +37,7 @@ function ExternalImport({data,send}:{data:ToolData;send:Send}){
   <div className="external-sources">{external?.sources?.map(source=><Button key={source.id} variant="outline" size="sm" disabled={external.busy} onClick={()=>send("externalReview",{id:source.id})}><Import/>{source.name}</Button>)}<Button variant="outline" size="sm" disabled={external?.busy} onClick={()=>send("externalChoose")}><FolderOpen/>Choose profile folder</Button></div>
   {external?.busy&&<p role="status" className="import-progress"><Loader2 className="animate-spin"/>Reading your browser data…</p>}
   {external?.error&&<p role="alert" className="import-error">{external.error}</p>}
+  {external?.blocked&&!external.busy&&<div className="tool-toolbar"><Button size="sm" onClick={()=>send("externalChoose",{blocked:true})}><FolderOpen/>Choose {external.blocked}'s folder</Button><Button size="sm" variant="ghost" onClick={()=>send("externalFullDisk")}>Open Full Disk Access</Button></div>}
   {preview&&<ExternalReview key={preview.id} preview={preview} busy={!!external?.busy} send={send}/>}
   {external?.done&&!preview&&<div className="extension-review" role="status"><strong><Check/> {external.done}</strong><p>Reload open websites to use imported sign-ins. The source browser was not changed.</p></div>}
   <p className="tool-caption">Passwords are decrypted with your account on this computer and immediately re-encrypted in Still's vault. Nothing leaves this computer. Extensions and browser settings are not transferred.</p>

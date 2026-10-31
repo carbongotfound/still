@@ -114,9 +114,16 @@ public partial class MainWindow : Window
   if (closing) return;
   if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
   Activate(); Topmost = !Topmost; Topmost = !Topmost;
-  if (url.Length == 0) return;
+  if (url.Length == 0 || OpenOverSetup(url)) return;
   externalLinks.Enqueue(url);
   try { await DrainExternalLinks(); } catch (Exception ex) { App.Log(ex); Toast("Couldn't open that link."); }
+ }
+ /// A link from another app, or a sign-in page: while setup covers this window, it opens in a window of its own, in front.
+ internal bool OpenOverSetup(string url)
+ {
+  if (!state.Welcome || secondary || incognito) return false;
+  var page = new MainWindow(new BrowserTab { Url = url }, null) { temporary = true }; page.Show(); page.Activate();
+  return true;
  }
  async Task DrainExternalLinks()
  {

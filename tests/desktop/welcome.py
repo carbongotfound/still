@@ -9,6 +9,8 @@ from the window itself. Then setup runs again and is skipped ("Nothing right now
 runs: the fake app asks one question, then picks settings, which apply, show in a summary and undo one by one.
 
 A second fresh profile lets the intro play out, then shoots the crew with 0, 1 and 3 picked and the main pick, light and dark.
+Closed partway, setup opens again at the same step with the same picks, and a link from another app (like a sign-in page
+an AI app opens) comes up in a window of its own in front of setup, not as a tab behind it.
 
 Run: python tests/desktop/welcome.py artifacts/Still-QA/Still.exe
 Out: docs/agentic/mascot/look-*.png (the look editor for 6 companions), artifacts/welcome-*/setup.mp4 (the recording),
@@ -836,9 +838,40 @@ def shots():
         shoot("tools")
         shutil.copy(profile / "intro-mark.png", out / "intro-mark.png")
         check(len(list(out.glob("pick-*.png"))) == 8 and len(list(out.glob("tools-*.png"))) == 2, "Screenshots of the roles with 0, 1 and 3 hired, the lead pick and Connect your tools, light and dark")
+        def hired():
+            try:
+                return sorted(c["Name"] for c in json.loads((profile / "state.json").read_text(encoding="utf-8")).get("Preferences", {}).get("Companions") or [])
+            except (OSError, ValueError):
+                return []
+        at, before = step_now(process), hired()
+        rpc(process, "quit")
+        process.wait(timeout=20)
+        process = launch(EXE, profile)
+        check(until(lambda: step_now(process) == at, 10) and "Want the team to work in your apps?" in talk_text(process),
+              f"Closed partway, setup opens again at the same step ({step_now(process)} of 11, was {at})")
+        back(process)
+        check(until(lambda: js(process, "document.querySelector('.ob-mains [aria-checked=true] strong')?.innerText.trim()") == "Jonah", 4), "With the same lead picked")
+        back(process)
+        check(js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).sort().join()") == "Jonah,Leo,Maya",
+              "And the same three hired")
+        next_step(process)
+        next_step(process)
+        time.sleep(1.5)  # saved a moment after
+        check(before == hired() == ["Jonah", "Leo", "Maya"], f"Hiring them again saves no copies ({hired()})")
+        link = SITE + "/page?signin"
+        subprocess.run([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile), link], timeout=30)
+        ok = until(lambda: any(w["temporary"] and link in w["tabs"] for w in rpc(process).get("windows", [])), 10)
+        check(ok and not any(t["Url"] == link for t in rpc(process).get("tabs", [])), "A link from another app during setup opens in a window of its own, not behind setup")
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
+
+
+def back(process):
+    at = step_now(process)
+    click_text(process, ".ob-foot button", "Back")
+    until(lambda: step_now(process) == at - 1, 5)
+    time.sleep(1)
 
 
 if __name__ == "__main__":

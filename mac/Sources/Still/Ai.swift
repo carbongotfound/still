@@ -847,7 +847,7 @@ extension Browser {
      // Claude and ChatGPT also open the default browser. If that's Still, the page is already here; otherwise open it here too.
      let host = hostName(link), before = browsers.flatMap(\.tabs).filter { hostName($0.url) == host }.count
      DispatchQueue.main.asyncAfter(deadline: .now() + (cli.id == "grok" ? 0 : 2.5)) { [self] in
-      if browsers.flatMap(\.tabs).filter({ hostName($0.url) == host }).count <= before { newTab(link) }
+      if browsers.flatMap(\.tabs).filter({ hostName($0.url) == host }).count <= before { openOutside(link) }
      }
     } else if aiSignInCode.isEmpty, let code = matchText(#"^\s*([A-Z0-9]{4}-[A-Z0-9]{4,6})\s*$"#, line, 1) { aiSignInCode = code; publishAiEverywhere() }
    }
