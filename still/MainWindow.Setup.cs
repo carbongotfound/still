@@ -232,7 +232,7 @@ public partial class MainWindow
   foreach (var crew in Texts(st, "hire", 3, 24))
    if (!Companions.Any(c => c.Crew == crew) && s.Crew.FirstOrDefault(x => Field(x, "crew") == crew) is { ValueKind: JsonValueKind.Object } entry) {
     var c = hired[crew] = SaveCompanion(entry);
-    changes.Add(new("hire:" + crew, "New on your team", $"{c.Name}, {Field(entry, "role")} · {Field(entry, "area")}", () => DropCompanion(c), owner: c.Id));
+    changes.Add(new("hire:" + crew, "New on your team", $"{Field(entry, "role")} {c.Name} · {Field(entry, "area")}", () => DropCompanion(c), owner: c.Id));
    }
   Companion? Find(string id) => hired.GetValueOrDefault(id) ?? Companions.FirstOrDefault(c => c.Id == id) ?? Companions.FirstOrDefault(c => id.Length > 0 && c.Crew == id);
   string Whose(Companion c, string mine, string theirs) => c == who ? mine : string.Format(theirs, c.Name);

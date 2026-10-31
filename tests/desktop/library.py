@@ -1,9 +1,10 @@
-"""The companion library: Hire a companion opens Still's six first, three across: each card a tall stage in its color
-with the live character big and whole, then name, role, what to expect, Hire or Hired and View profile. Then Make your
-own and Paste a shared companion. A card opens a preview in the profile panel, with its full instructions; Hire there
-hires it, with its routine, off.
+"""The companion library: Hire a companion opens Still's six first, three across: each card the live character big on a
+soft glow of its color, its role-first name, one line, Hire (or Hired) and View profile. Then Make your own and Paste a
+shared companion. Hiring one adds its skills, knowledge files and routine (off). View profile opens its profile: its card
+on the left, what's included, skills, routine, knowledge files, About, tips and its full instructions on the right. Then
+the switcher: every companion's face, scrolling sideways when they don't fit.
 
-Run: python tests/desktop/library.py artifacts/Still-QA/Still.exe [OUTDIR]  (screenshots of the library and a preview)
+Run: python tests/desktop/library.py artifacts/Still-QA/Still.exe [OUTDIR]  (screenshots of the library, a profile and the switcher)
 """
 import json
 from pathlib import Path
@@ -20,7 +21,7 @@ RUN = ROOT / "artifacts" / ("library-" + uuid.uuid4().hex[:8])
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 else RUN / "shots"
 PROFILE = RUN / "profile"
 FAILED = []
-SIX = ["Jonah", "Talia", "Nora", "Leo", "Ivan", "Maya"]
+SIX = ["Sales Jonah", "Growth Talia", "Planner Nora", "Marketing Leo", "Engineer Ivan", "Research Maya"]
 
 
 def check(ok, name):
@@ -83,18 +84,23 @@ def main():
         time.sleep(.4)
         escape(p)  # a new tab opens with the address bar's suggestions
 
-        # The library: six cards in order, each a live mascot with a role and what to expect; the two you have say Hired.
+        # The library: six cards in order, each a live mascot with its role-first name and one line; the two you have say Hired.
         check(open_library(p), "Hire a companion opens the library")
+        check(js(p, "document.querySelector('.companion-library [data-slot=dialog-description]')?.innerText") == "Each one comes with instructions and skills for its role, and starts working as soon as you hire it.",
+              "The header says what hiring one gives you")
         names = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card .role-title')].map(e => e.innerText))") or "[]")
-        check(names == SIX, f"Still's six come first, in order ({names})")
-        check(js(p, "[...document.querySelectorAll('.library-card')].every(c => c.querySelector('.role-art .mascot') && c.querySelector('.role-tag')?.innerText && c.querySelector('.role-expect h4')?.innerText === 'What to expect' && c.querySelectorAll('.role-expect li').length === 3 && c.querySelector('.role-act .role-profile')?.innerText === 'View profile')"),
-              "Every card has its character, its role, three things to expect and View profile")
-        check(js(p, "document.querySelector('.library-card:nth-child(6) .role-expect')?.innerText.includes('Deep research with cited sources')"), "Maya's list starts with deep research with cited sources")
+        check(names == SIX, f"Still's six come first, in order, each with its role in front ({names})")
+        check(js(p, "[...document.querySelectorAll('.library-card')].every(c => c.querySelector('.role-art .mascot') && !c.querySelector('.role-tag') && !c.querySelector('.role-expect h4') && c.querySelectorAll('.role-expect p').length === 1 && c.querySelector('.role-act .role-profile')?.innerText === 'View profile')"),
+              "Every card has its character, its name, one line and View profile: no role tag, no list")
+        check(js(p, "document.querySelector('.library-card:nth-child(6) .role-expect p')?.innerText") == "Researches anything and backs every claim with a source.", "Maya's line says what she does")
         check(not js(p, "/\\bI'(ll|m)\\b|\\bI will\\b/.test(document.querySelector('.companion-library').innerText)"), "No card speaks in the first person")
         added = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card.is-added .role-title')].map(e => e.innerText))") or "[]")
-        check(added == ["Jonah", "Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 4, f"The ones you have are marked Hired; the rest have Hire ({added})")
-        check(js(p, "[...document.querySelectorAll('.library-card .library-add')].every(b => b.innerText.trim() === 'Hire' && b.getAttribute('aria-label').startsWith('Hire ')) && [...document.querySelectorAll('.library-card .library-added')].every(b => b.innerText.trim() === 'Hired')"),
-              "The buttons say Hire and Hired, like hiring a colleague")
+        check(added == ["Sales Jonah", "Research Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 4, f"The ones you have are marked Hired; the rest have Hire ({added})")
+        check(js(p, "[...document.querySelectorAll('.library-card .library-add')].every(b => b.innerText.trim() === 'Hire' && b.getAttribute('aria-label').startsWith('Hire ')) && [...document.querySelectorAll('.library-card .library-added')].every(b => b.innerText.trim() === 'Hired' && b.querySelector('svg'))"),
+              "The buttons say Hire, and hired ones say Hired with a check")
+        btn = json.loads(js(p, """JSON.stringify((() => { const a = document.querySelector('.library-card .library-add'), b = getComputedStyle(a), l = getComputedStyle(a.nextElementSibling)
+            return [b.backgroundColor, a.nextElementSibling.className, l.backgroundColor, Math.round(a.getBoundingClientRect().left - a.closest('.role-body').getBoundingClientRect().left)] })())""") or "[]")
+        check(btn == ["rgb(255, 255, 255)", "role-profile", "rgba(0, 0, 0, 0)", 18], f"Hire is a solid white button on the left, with View profile beside it as a plain link ({btn})")
         # Built around the character: the stage is at least 40% of the card, the character about 70% of the stage; three
         # across at this width, two when the library is narrower.
         size = json.loads(js(p, """JSON.stringify([...document.querySelectorAll('.library-card')].map(c => { const r = c.getBoundingClientRect(), a = c.querySelector('.role-art').getBoundingClientRect(), m = c.querySelector('.role-art .mascot').getBoundingClientRect()
@@ -114,59 +120,86 @@ def main():
         js(p, "document.querySelector('.library-card:nth-child(6)').scrollIntoView({ block: 'center' })")
         check(until(lambda: js(p, "!!document.querySelector('.library-card:nth-child(6) .role-art canvas[data-live]')"), 10), "and Maya's starts when it scrolls into view")
         js(p, "document.querySelector('.companion-library').scrollTop = 0")
-        # The look: one UI typeface, the card tinted in its companion's color, the character on a soft tinted stage.
+        # The look: one UI typeface, plain cards, each character on a soft glow of its color.
         look = json.loads(js(p, """JSON.stringify((() => { const d = document.querySelector('.companion-library'), t = getComputedStyle(d.querySelector('[data-slot=dialog-title]')),
-            c = document.querySelector('.library-card:nth-child(2)'), cs = getComputedStyle(c), n = getComputedStyle(c.querySelector('.role-title')), li = getComputedStyle(c.querySelector('.role-expect li')),
-            g = getComputedStyle(c.querySelector('.role-art')), body = getComputedStyle(c.querySelector('.role-body')), tag = getComputedStyle(c.querySelector('.role-tag')), own = getComputedStyle(document.querySelector('.library-own')), ds = getComputedStyle(d)
-            return { title: [t.fontFamily, t.fontSize, t.fontWeight], name: [n.fontFamily, n.fontSize, n.fontWeight], body: [li.fontSize, li.lineHeight], card: [cs.borderRadius, body.paddingTop], tinted: cs.backgroundColor !== ds.backgroundColor && cs.backgroundColor !== getComputedStyle(document.querySelector('.library-card:nth-child(3)')).backgroundColor && cs.borderTopColor !== getComputedStyle(document.querySelector('.library-card:nth-child(3)')).borderTopColor,
-             gap: getComputedStyle(document.querySelector('.library-grid')).rowGap, glow: [g.backgroundImage.startsWith('radial-gradient'), g.boxShadow], tag: [tag.fontVariantCaps, tag.backgroundColor], own: own.borderTopStyle,
-             dialog: [ds.paddingTop, ds.borderTopLeftRadius] } })())""") or "{}")
+            c = document.querySelector('.library-card:nth-child(2)'), cs = getComputedStyle(c), n = getComputedStyle(c.querySelector('.role-title')), line = getComputedStyle(c.querySelector('.role-expect p')),
+            g = getComputedStyle(c.querySelector('.role-art')), g3 = getComputedStyle(document.querySelector('.library-card:nth-child(3) .role-art')), body = getComputedStyle(c.querySelector('.role-body')), own = getComputedStyle(document.querySelector('.library-own')), ds = getComputedStyle(d)
+            return { title: [t.fontFamily, t.fontSize, t.fontWeight], name: [n.fontFamily, n.fontSize, n.fontWeight], body: [line.fontSize, line.lineHeight], card: [cs.borderRadius, body.paddingTop],
+             plain: cs.backgroundColor === getComputedStyle(document.querySelector('.library-card:nth-child(3)')).backgroundColor, gap: getComputedStyle(document.querySelector('.library-grid')).rowGap,
+             glow: [g.backgroundImage.startsWith('radial-gradient'), g.backgroundImage !== g3.backgroundImage, g.boxShadow], own: own.borderTopStyle, dialog: [ds.paddingTop, ds.borderTopLeftRadius] } })())""") or "{}")
         check(all("Geist" in look.get(k, ["serif"])[0] for k in ("title", "name")) and look["title"][1:] == ["26px", "600"] and look["name"][1:] == ["18px", "600"] and look["body"] == ["14px", "21px"],
               f"Geist throughout: a 26px title, 18px names, 14px body at 1.5 ({look.get('title')}, {look.get('name')}, {look.get('body')})")
-        check(look.get("card") == ["18px", "16px"] and look.get("gap") == "16px" and look.get("tinted"),
-              f"Cards: 18px corners, 16px padding under the art, 16px apart, tinted in their color ({look.get('card')}, {look.get('gap')})")
-        check(look.get("glow") == [True, "none"] and look.get("tag", [""])[0] == "all-small-caps" and look["tag"][1] == "rgba(0, 0, 0, 0)" and look.get("own") == "dashed" and look.get("dialog") == ["28px", "24px"],
-              f"The character stands on a soft tinted stage, the role is small caps with no pill, Make your own is dashed, the dialog has 28px padding and 24px corners ({look})")
+        check(look.get("card") == ["18px", "16px"] and look.get("gap") == "16px" and look.get("plain"), f"Cards: 18px corners, 16px padding under the art, 16px apart, all on the same plain card ({look.get('card')}, {look.get('gap')})")
+        check(look.get("glow") == [True, True, "none"] and look.get("own") == "dashed" and look.get("dialog") == ["28px", "24px"],
+              f"Each character stands on a soft glow of its own color, Make your own is dashed, the dialog has 28px padding and 24px corners ({look})")
         time.sleep(1.5)
         capture(p, "library.png")
 
-        # Hire straight from a card.
-        click(p, ".library-add", "Hire Leo")
+        # Hire straight from a card: it comes with its role's four skills, its three knowledge files and its routine, off.
+        click(p, ".library-add", "Hire Marketing Leo")
         check(until(lambda: mates().get("Leo", {}).get("Crew") == "marketing", 5), "Hire on a card hires that companion")
-        check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "It says Leo joined; Not now goes back to the library")
-        routines = mates().get("Leo", {}).get("Routines") or []
-        check(len(routines) == 1 and routines[0].get("On") is False and routines[0].get("Days") == [5] and "Don't post" in routines[0].get("Text", ""), f"Leo comes with its routine, off until you turn it on ({routines})")
-        check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Leo')"), 5), "and its card turns to Hired")
+        check(until(lambda: shown(p, ".joined-card"), 3) and js(p, "document.querySelector('.joined-card [data-slot=dialog-title]')?.innerText") == "Marketing Leo joined your team"
+              and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "It says Marketing Leo joined; Not now goes back to the library")
+        leo = mates().get("Leo", {})
+        routines = leo.get("Routines") or []
+        check(len(routines) == 1 and routines[0].get("On") is False and routines[0].get("Days") == [5] and routines[0].get("Text", "").startswith("/post-set ") and "Don't post" in routines[0].get("Text", ""),
+              f"Leo comes with its routine, off until you turn it on, and it runs Leo's post set skill ({routines})")
+        kit = ["launch-post", "newsletter", "post-set", "voice-match"]
+        check(sorted(leo.get("Skills") or []) == kit and all((PROFILE / "skills" / (k + ".md")).exists() for k in kit), f"and its four skills, added and turned on ({leo.get('Skills')})")
+        notes = sorted(f.stem for f in (PROFILE / "companions" / leo.get("Id", "?") / "knowledge").glob("*.md"))
+        check(notes == ["audience", "landed", "voice"], f"and its three knowledge files, empty to start ({notes})")
+        check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Marketing Leo')"), 5), "and its card turns to Hired")
 
-        # A card opens the preview: the profile panel, before anything is saved.
-        click(p, ".library-card .role-art", "Meet Talia")
-        check(until(lambda: shown(p, ".profile-panel.is-preview[aria-label='Meet Talia']"), 5) and not shown(p, ".companion-library"), "A card opens Talia's preview in the profile panel")
-        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Model", "The preview has the tabs that make sense before hiring")
-        check(until(lambda: shown(p, ".profile-panel .profile-stage .mascot"), 5) and js(p, "document.querySelectorAll('.profile-will li').length") == 3, "It shows the live mascot and what Talia does")
+        # View profile opens Talia's profile, before anything is saved: her card on the left, what hiring her gives you on the right.
+        js(p, "[...document.querySelectorAll('.library-card')].find(c => c.querySelector('.role-title')?.innerText === 'Growth Talia')?.querySelector('.role-profile')?.click()")
+        check(until(lambda: shown(p, ".hire-profile"), 5) and until(lambda: not shown(p, ".companion-library"), 3), "View profile opens Talia's profile in place of the library")
+        prof = json.loads(js(p, """JSON.stringify((() => { const d = document.querySelector('.hire-profile'), q = s => d.querySelector(s)?.innerText.trim(), all = s => [...d.querySelectorAll(s)].map(e => e.innerText.trim().replace(/\\s+/g, ' '))
+            const part = h => [...d.querySelectorAll('.hire-profile-section')].find(s => s.querySelector('h3')?.innerText === h)
+            return { title: q('[data-slot=dialog-title]'), font: getComputedStyle(d.querySelector('[data-slot=dialog-title]')).fontFamily, line: q('[data-slot=dialog-description]'), hire: q('.hire-profile-hire'), apps: all('.hire-profile-works .plug-chip').length, web: all('.hire-profile-works .plug-chip').at(-1),
+             counts: all('.hire-profile-counts div'), skills: all('.hire-profile-skill b'), lines: all('.hire-profile-skill small').every(Boolean), icons: d.querySelectorAll('.hire-profile-skill > span svg').length,
+             routine: q('.hire-profile-routine b'), when: q('.hire-profile-routine small'), files: all('.hire-profile-files b'), notes: all('.hire-profile-note'), sections: all('.hire-profile-section h3'),
+             about: part('About')?.innerText, tips: part('Tips')?.querySelectorAll('p').length, full: q('.hire-profile-full'), mascot: Math.round(d.querySelector('.hire-profile-art .mascot')?.getBoundingClientRect().height ?? 0) } })())""") or "{}")
+        check(prof.get("title") == "Growth Talia" and "Geist" in prof.get("font", "") and prof.get("hire") == "Hire Growth Talia" and prof.get("mascot", 0) >= 200 and len(prof.get("line") or "") > 40,
+              f"Her card: the character big, Growth Talia, a short summary and Hire Growth Talia ({prof.get('title')}, {prof.get('hire')}, {prof.get('mascot')})")
+        check(prof.get("apps") == 4 and prof.get("web") == "Any website", f"Works in: her three apps and any website ({prof.get('apps')}, {prof.get('web')})")
+        check(prof.get("sections") == ["What's included", "Skills", "Routines", "Knowledge files", "About", "Tips"], f"One card per section ({prof.get('sections')})")
+        check(prof.get("counts") == ["4 Skills", "1 Routine", "3 Knowledge files", "3 Apps"], f"What's included counts what she really comes with ({prof.get('counts')})")
+        check(prof.get("skills") == ["Experiment plan", "Funnel audit", "Lifecycle emails", "Weekly numbers"] and prof.get("lines") and prof.get("icons") == 4, f"Her four skills as tiles, each with an icon and a line ({prof.get('skills')})")
+        check(prof.get("routine") == "Check this week's growth numbers" and prof.get("when") == "Every Monday at 9:00 · uses Weekly numbers", f"Her routine, when it runs and the skill it uses ({prof.get('routine')}, {prof.get('when')})")
+        check(any("off until you turn them on" in n and "suggests" in n for n in prof.get("notes", [])) and any("fill in as you work" in n for n in prof.get("notes", [])),
+              "Routines stay off until turned on; knowledge files fill in as you work")
+        check(prof.get("files") == ["Experiments", "Your numbers", "Your product"], f"Her knowledge files and what each holds ({prof.get('files')})")
+        check((prof.get("about") or "").rstrip().endswith("I won't send, post or change anything without your OK.") and "I'm Talia" in (prof.get("about") or "") and prof.get("tips") == 3,
+              "About in her own words, promising nothing goes out without your OK, then three tips")
+        check(prof.get("full") == "See full instructions" and not shown(p, ".hire-profile-instructions"), "The full instructions wait behind See full instructions")
+        stay = json.loads(js(p, """JSON.stringify((() => { const d = document.querySelector('.hire-profile'), c = d.querySelector('.hire-profile-card').getBoundingClientRect(), m = d.querySelector('.hire-profile-main'), r = m.getBoundingClientRect()
+            m.scrollTop = 400; return [Math.round(c.right) <= Math.round(r.left), m.scrollTop > 0, Math.round(d.querySelector('.hire-profile-card').getBoundingClientRect().top - c.top)] })())""") or "[]")
+        check(stay == [True, True, 0], f"Two columns, and the card stays put while the right side scrolls ({stay})")
+        js(p, "document.querySelector('.hire-profile-main').scrollTop = 0")
         check("Talia" not in mates(), "Nothing is saved while you look")
-        js(p, """(() => { const e = document.querySelector('.profile-field input'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(e, 'Blossom'); e.dispatchEvent(new Event('input', { bubbles: true })) })()""")
-        time.sleep(1)
-        check("Blossom" not in mates(), "Changing the name in the preview saves nothing yet")
-        time.sleep(1)
-        capture(p, "library-preview.png")
-        click(p, ".profile-foot button", "Hire Blossom")
-        check(until(lambda: mates().get("Blossom", {}).get("Crew") == "growth", 5), "Hire in the preview hires Talia, with your changes")
-        check(until(lambda: shown(p, ".joined-card"), 3) and "Blossom joined your team" in (js(p, "document.querySelector('.joined-card')?.innerText") or ""), "and says Blossom joined")
-        click(p, ".joined-card button", "Not now")
-        check(until(lambda: shown(p, ".companion-library") and not shown(p, ".profile-panel"), 5), "and goes back to the library")
-        check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Talia')"), 5), "where Talia is Hired")
+        time.sleep(1.5)
+        capture(p, "profile.png")
+        click(p, ".hire-profile-full")
+        check(until(lambda: "## When you join the team" in (js(p, "document.querySelector('.hire-profile-instructions')?.innerText") or ""), 3)
+              and js(p, "document.querySelector('.hire-profile-full').getAttribute('aria-expanded')") == "true", "See full instructions opens the whole job brief")
+        escape(p)
+        check(until(lambda: shown(p, ".companion-library") and not shown(p, ".hire-profile"), 5) and "Talia" not in mates(), "Esc goes back to the library without hiring")
 
-        # View profile opens the preview too, with Nora's full instructions. Esc goes back to the library; a hired card opens
-        # the real profile.
-        js(p, "[...document.querySelectorAll('.library-card')].find(c => c.querySelector('.role-title')?.innerText === 'Nora')?.querySelector('.role-profile')?.click()")
-        check(until(lambda: shown(p, ".profile-panel.is-preview[aria-label='Meet Nora']"), 5), "View profile opens Nora's preview")
-        check(until(lambda: "## When you join the team" in (js(p, "document.querySelector('.profile-field.is-instructions textarea')?.value") or ""), 5), "with its full instructions")
+        # Hire from a profile: Nora joins and the library is back, with her card Hired.
+        js(p, "[...document.querySelectorAll('.library-card')].find(c => c.querySelector('.role-title')?.innerText === 'Planner Nora')?.querySelector('.role-art')?.click()")
+        check(until(lambda: shown(p, ".hire-profile-hire"), 5) and click(p, ".hire-profile-hire", "Hire Planner Nora"), "The art opens Nora's profile too")
+        check(until(lambda: mates().get("Nora", {}).get("Crew") == "planner", 5), "Hire on her profile hires Nora")
+        check(until(lambda: shown(p, ".joined-card"), 3) and "Planner Nora joined your team" in (js(p, "document.querySelector('.joined-card')?.innerText") or ""), "and says Planner Nora joined")
+        click(p, ".joined-card button", "Not now")
+        check(until(lambda: shown(p, ".companion-library") and not shown(p, ".hire-profile"), 5), "and goes back to the library")
+        check(until(lambda: js(p, "[...document.querySelectorAll('.library-card.is-added .role-title')].some(e => e.innerText === 'Planner Nora')"), 5), "where Nora is Hired")
+        js(p, "[...document.querySelectorAll('.library-card')].find(c => c.querySelector('.role-title')?.innerText === 'Sales Jonah')?.querySelector('.role-profile')?.click()")
+        check(until(lambda: shown(p, ".hire-profile-hired"), 5) and not shown(p, ".hire-profile-hire") and js(p, "document.querySelector('.hire-profile-hired').innerText.trim()") == "Hired",
+              "A companion you have says Hired, with a check, on its profile")
         escape(p)
-        check(until(lambda: shown(p, ".companion-library") and not shown(p, ".profile-panel"), 5) and "Nora" not in mates(), "Esc in the preview goes back to the library without adding")
-        click(p, ".library-card .role-art", "Open Jonah's profile")
-        check(until(lambda: shown(p, ".profile-panel[aria-label=\"Jonah's profile\"]") and not shown(p, ".profile-panel.is-preview"), 5), "A card you already have opens its profile")
+        until(lambda: shown(p, ".companion-library") and not shown(p, ".hire-profile"), 5)
         escape(p)
-        until(lambda: not shown(p, ".profile-panel"), 3)
+        until(lambda: not shown(p, ".companion-library"), 3)
 
         # Paste a shared companion: a wrong paste says so, a right one adds them.
         check(open_library(p), "The library opens again")
@@ -190,6 +223,24 @@ def main():
         click(p, ".home-new", "Hire a companion")
         check(until(lambda: shown(p, ".companion-library"), 5), "The Companions page's Hire a companion opens the library")
         escape(p)
+
+        # The switcher: every companion's face (the one you're with by name), then +, and no menu. When they don't all
+        # fit, the row scrolls sideways.
+        until(lambda: not shown(p, ".companion-library"), 3)
+        send(p, "new")
+        until(lambda: shown(p, ".home-face") and shown(p, ".mate-switch"), 10)
+        time.sleep(.4)
+        escape(p)  # the new tab's address bar suggestions
+        time.sleep(1)
+        sw = json.loads(js(p, """JSON.stringify((() => { const s = document.querySelector('.mate-switch')
+            return { faces: s.querySelectorAll('.mate-switch-face').length, on: s.querySelector('.mate-switch-on')?.innerText.trim(), last: s.lastElementChild?.getAttribute('aria-label'), menu: !!s.querySelector('[aria-haspopup]') } })())""") or "{}")
+        check(sw.get("faces") == len(mates()) and sw.get("on") and sw.get("last") == "Hire a companion" and not sw.get("menu"), f"The switcher shows every companion, the one you're with by name, then +, and no menu ({sw})")
+        capture(p, "switcher.png")
+        js(p, "document.querySelector('.mate-switch').style.maxWidth = '150px'")
+        time.sleep(.3)
+        check(js(p, "(() => { const s = document.querySelector('.mate-switch'); return s.scrollWidth > s.clientWidth && getComputedStyle(s).overflowX === 'auto' && s.getBoundingClientRect().height < 42 })()"),
+              "When they don't fit, the row scrolls sideways on one line")
+        js(p, "document.querySelector('.mate-switch').style.maxWidth = ''")
 
         errors = js(p, "JSON.stringify(window.__errors || [])")
         check(errors in (None, "[]"), f"No script errors ({errors})")

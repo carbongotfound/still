@@ -801,7 +801,7 @@ extension Browser {
    case "offer_routine": return await offerRoutine(who, args)
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action": return await pluginTool(who, tool, args)
-   case "remember", "recall", "forget": return memoryTool(who, tool, args)
+   case "remember", "recall", "forget", "update_knowledge": return memoryTool(who, tool, args)
    case "save_file":
     let reply = saveFile(who, args)
     if let done = (jsonObject(reply)?["result"] as? [String: Any])?["done"] as? String, let space = done.firstIndex(of: " "), let end = done.range(of: " in the user's Library") {
@@ -1265,6 +1265,8 @@ enum Mcp {
   tool("remember", "Keep one short, lasting fact about the user in your memory, like \"Prefers aisle seats\" or \"Sister Maya lives in Lisbon\". It's saved with today's date and this chat. A fact that repeats one you have updates it. Never pass passwords, codes, card or account numbers, form data or anything from private tabs: Still refuses them.",
        [str("fact", "The fact, in one short sentence"), str("kind", "fact, preference, habit, person or project")], ["fact"]),
   tool("recall", "Look up what you remember about the user: the facts that best match the words given, with their ids and dates. Leave query empty for the most important ones.", [str("query", "A few words about what you're looking for")], []),
+  tool("update_knowledge", "Rewrite one of your knowledge files (listed at the start of the chat) with what it should hold now. Pass its whole new text in short, tidy Markdown, keeping what's still true. Never put passwords, codes, card or account numbers, form data or anything from private tabs in it: Still refuses them.",
+       [str("file", "The file's id, like \"deals\""), str("text", "The file's full new text, in Markdown")], ["file", "text"]),
   tool("forget", "Forget a fact: pass its id from recall, or a few words that every fact to forget contains. Use it when the user asks you to forget something.", [str("id", "The fact's id"), str("about", "Or: words in the facts to forget")], []),
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),

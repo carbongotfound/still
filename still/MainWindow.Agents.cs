@@ -743,7 +743,7 @@ public partial class MainWindow
    case "offer_routine": return await OfferRoutine(who, args);
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
-   case "remember" or "recall" or "forget": return Remembering(who, tool, args);
+   case "remember" or "recall" or "forget" or "update_knowledge": return Remembering(who, tool, args);
    case "save_file": {
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");
     string ext = Path.GetExtension(name).ToLowerInvariant();

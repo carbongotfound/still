@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import type { AiState } from "./AiSidebar"
 import type { Companion } from "./Buddy"
 import { BODY_COLORS } from "./look"
+import SHIPPED from "./assets/apps.json"
 
 // Plugins: the user's apps through Composio, a third-party service, with their own project API key (MainWindow.Plugins.cs
 // and Plugins.swift). The key goes in here once and never comes back: the shell only hears that there is one, and its
@@ -42,21 +43,25 @@ export function usePluginData(send?: Send) {
  useEffect(() => { if (send) sender = send; const f = () => tick(n => n + 1); heard.add(f); return () => { heard.delete(f) } }, [send])
  return catalog
 }
+// Every app's logo ships with Still (public/apps, from Composio's catalog when Still is built), so logos show with no key
+// and never need Composio. Only an app newer than this build asks the host for one, which it fetches once plugins are on.
+const shipped = new Set<string>(SHIPPED)
 /// Asks for a logo once; the asks of one render go out together.
 function wantLogo(slug: string) {
- if (logos[slug] || asked.has(slug) || !sender) return
+ if (shipped.has(slug) || logos[slug] || asked.has(slug) || !sender) return
  asked.add(slug); wanted.add(slug)
  if (wanted.size === 1) setTimeout(() => { sender?.("pluginLogos", { slugs: [...wanted] }); wanted.clear() }, 60)
 }
 
 export const plugColor = (slug: string) => BODY_COLORS[[...slug].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) % 997, 7) % BODY_COLORS.length][0]
 const plugHue = (slug: string) => ({ "--hue": plugColor(slug) }) as CSSProperties
-/// The logo's address once it's in (asking for it if it isn't).
-export const logoOf = (slug: string): string | undefined => { wantLogo(slug); return logos[slug] }
-/// An app's logo from Composio's catalog, or its initial on a soft tile until there is one.
+/// The logo's address: the one Still ships, or the host's once it's in (asking for it if it isn't).
+export const logoOf = (slug: string): string | undefined => { wantLogo(slug); return shipped.has(slug) ? `apps/${slug}.svg` : logos[slug] }
+/// An app's logo, or its initial on a soft tile when there isn't one.
 export function PluginLogo({ slug, name, className }: { slug: string; name: string; className?: string }) {
  useEffect(() => wantLogo(slug), [slug])
- return logos[slug] ? <i className={cn("plug-logo is-image", className)} aria-hidden><img src={logos[slug]} alt="" /></i>
+ const src = shipped.has(slug) ? `apps/${slug}.svg` : logos[slug]
+ return src ? <i className={cn("plug-logo is-image", className)} aria-hidden><img src={src} alt="" /></i>
   : <i className={cn("plug-logo", className)} aria-hidden style={plugHue(slug)}>{name.charAt(0)}</i>
 }
 /// A clean name chip: the app's logo, then its name.

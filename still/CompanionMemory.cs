@@ -49,7 +49,48 @@ static partial class CompanionMemory
   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
 
- internal static void Drop(string id) => cache.Remove(id); // the companion is gone, folder and all
+ internal static void Drop(string id) { cache.Remove(id); notes.Remove(id); } // the companion is gone, folder and all
+
+ // Knowledge files: the working notes of a companion's job, Markdown it keeps up as it works (its role's kit seeds them
+ // empty). Each has a name and what it holds in its front matter. They're in its folder, so they go when it does.
+ internal sealed record Note(string Id, string Name, string About, string Body);
+ static readonly Dictionary<string, List<Note>> notes = [];
+ static string NotesFolder(string id) => Path.Combine(Folder(id), "knowledge");
+ internal static bool Equipped(string id) => Directory.Exists(NotesFolder(id));
+ internal static void Seed(string id, string file, string text)
+ {
+  Directory.CreateDirectory(NotesFolder(id)); notes.Remove(id);
+  if (!File.Exists(Path.Combine(NotesFolder(id), file + ".md"))) File.WriteAllText(Path.Combine(NotesFolder(id), file + ".md"), text);
+ }
+ internal static List<Note> Notes(string id)
+ {
+  if (notes.TryGetValue(id, out var list)) return list;
+  list = [];
+  try {
+   if (id.Length > 0 && Directory.Exists(NotesFolder(id))) foreach (var file in Directory.EnumerateFiles(NotesFolder(id), "*.md").Order().Take(20)) {
+    var (head, body) = Skill.Split(File.ReadAllText(file));
+    string fid = Path.GetFileNameWithoutExtension(file);
+    list.Add(new(fid, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : fid, head.GetValueOrDefault("about", ""), body));
+   }
+  } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+  return notes[id] = list;
+ }
+ /// Rewrites a knowledge file's notes, keeping its name and what it holds.
+ internal static Note? Write(string id, string file, string body)
+ {
+  if (Notes(id).FirstOrDefault(n => n.Id == file) is not { } note) return null;
+  body = body.ReplaceLineEndings("\n").Trim();
+  if (body.Length > 12000) body = body[..12000];
+  try { File.WriteAllText(Path.Combine(NotesFolder(id), file + ".md"), $"---\nname: {note.Name}\nabout: {note.About}\n---\n\n{body}\n"); }
+  catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); return null; }
+  notes.Remove(id);
+  return note with { Body = body };
+ }
+ /// The knowledge files as the companion's prompt has them, each with what it holds so far.
+ internal static string NotesBrief(string id) => Notes(id) is { Count: > 0 } list
+  ? "Your knowledge files, kept on the user's computer. Use what's in them. When you learn something one of them should hold, rewrite that file with update_knowledge: short and tidy, keeping what's still true.\n"
+   + string.Concat(list.Select(n => $"\n## {n.Name} (file \"{n.Id}\"): {n.About}\n{(n.Body.Length == 0 ? "(Empty so far.)" : n.Body.Length > 4000 ? n.Body[..4000] + "\n(…)" : n.Body)}\n")) + "\n"
+  : ""; 
 
  /// Keeps a fact, or freshens the one it repeats. Null when it's refused: it looks like a secret, or it's empty.
  internal static Fact? Remember(string id, string text, string kind = "fact", string chat = "", string key = "")
@@ -153,6 +194,14 @@ public partial class MainWindow
     if (CompanionMemory.Remember(me.Id, fact, S(args, "kind"), run.Chat.Id) is not { } kept) return Fail("Pass one short fact.");
     PublishAiEverywhere();
     return Reply(new { remembered = kept.Text, id = kept.Id });
+   }
+   case "update_knowledge": {
+    if (run.Chat.NoMemory) return Fail("This chat is off the record: the user asked you not to keep anything from it.");
+    string text = S(args, "text");
+    if (MemoryRefuses(run, text) is { } why) return Fail(why);
+    if (CompanionMemory.Write(me.Id, S(args, "file").Trim(), text) is not { } note) return Fail("There's no knowledge file by that id. Yours are listed at the start of the chat.");
+    PublishAiEverywhere();
+    return Reply(new { updated = note.Name });
    }
    case "recall":
     return Reply(new { facts = CompanionMemory.Relevant(me.Id, S(args, "query"), 12).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, date = f.At.ToLocalTime().ToString("yyyy-MM-dd") }) });

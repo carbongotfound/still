@@ -25,6 +25,19 @@ final class Companion {
  var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions, "Greet": greet] }
 }
 
+/// A Markdown file's front matter (its keys in lowercase) and its body.
+func frontMatter(_ raw: String) -> (head: [String: String], body: String) {
+ let text = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
+ var body = text, head: [String: String] = [:]
+ if text.hasPrefix("---\n"), let end = text.range(of: "\n---", range: text.index(text.startIndex, offsetBy: 4)..<text.endIndex) {
+  for line in text[text.index(text.startIndex, offsetBy: 4)..<end.lowerBound].split(separator: "\n") {
+   if let at = line.firstIndex(of: ":"), at > line.startIndex { head[tidy(line[..<at]).lowercased()] = tidy(line[line.index(after: at)...]) }
+  }
+  body = tidy(text[end.upperBound...].drop { $0 == "-" })
+ }
+ return (head, body)
+}
+
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
 /// invokes it as /id in a message, or gives it to a companion; its body goes into the AI's prompt.
 struct Skill {
@@ -36,17 +49,17 @@ struct Skill {
   let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasSuffix(".md") }.sorted().prefix(200)
   return names.compactMap { file in
    guard let raw = try? String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8) else { return nil }
-   let text = raw.replacingOccurrences(of: "\r\n", with: "\n").replacingOccurrences(of: "\r", with: "\n")
-   var body = text, head: [String: String] = [:]
-   if text.hasPrefix("---\n"), let end = text.range(of: "\n---", range: text.index(text.startIndex, offsetBy: 4)..<text.endIndex) {
-    for line in text[text.index(text.startIndex, offsetBy: 4)..<end.lowerBound].split(separator: "\n") {
-     if let at = line.firstIndex(of: ":"), at > line.startIndex { head[tidy(line[..<at]).lowercased()] = tidy(line[line.index(after: at)...]) }
-    }
-    body = tidy(text[end.upperBound...].drop { $0 == "-" })
-   }
+   let (head, body) = frontMatter(raw)
    let id = (file as NSString).deletingPathExtension
    return Skill(id: id, name: head["name"].flatMap { $0.isEmpty ? nil : $0 } ?? id, description: head["description"] ?? "", when: head["when"] ?? "", body: body)
   }
+ }
+ /// Adds a skill file as it is, unless there's one by that id already (the user's own stays as it is).
+ static func add(_ id: String, _ text: String) throws {
+  if all.contains(where: { $0.id == id }) { return }
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  try text.write(to: folder.appendingPathComponent(id + ".md"), atomically: true, encoding: .utf8)
+  cache = nil
  }
  /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line.
  static func save(_ id: String, _ name: String, _ description: String, _ when: String, _ body: String) throws -> String {
@@ -250,6 +263,7 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "upload_file": return "Picked a file"
  case "list_profiles": return "Looked at profiles"
  case "remember": return "Saved to memory"
+ case "update_knowledge": return "Updated a knowledge file"
  case "recall": return "Checked memory"
  case "forget": return "Removed from memory"
  case "list_connected_plugins", "find_plugins": return "Looked at apps"
@@ -495,6 +509,7 @@ extension Browser {
   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
   if data["instructions"] != nil { c.instructions = String(s("instructions").trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000)) }
   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
+  equip(c)
   c.askName = false // saved, renamed or kept: it's the user's name now
   storeCompanions()
   return c
@@ -580,6 +595,7 @@ extension Browser {
    if fnv(c.crew) == fixer { c.look = ""; c.routines = [] } // its look and its support routine were the fixer's
    c.crew = to.role
   }
+  if companions.map(equip).contains(true) { storeCompanions() } // hired before the roles came with skills and knowledge files
   if !pref("NamesChecked", false) { // once: a companion with an old stock name, not picked from the crew, asks whether to keep it
    for c in companions where c.crew.isEmpty && oldName(c.name) { c.askName = true }
    prefs["NamesChecked"] = true; storeCompanions()
@@ -945,6 +961,7 @@ extension Browser {
   let memory = who.map { CompanionMemory.brief($0.id, shown) } ?? ""
   let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work) + "\n\n"
    + (memory.isEmpty ? "" : "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n")
+   + (who.map { CompanionMemory.notesBrief($0.id) } ?? "")
    + (chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
   let prompt = intro + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
@@ -1093,6 +1110,7 @@ extension Browser {
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
+    "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body] },
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
    "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "from": $0.from.map { $0 as Any } ?? NSNull(), "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }

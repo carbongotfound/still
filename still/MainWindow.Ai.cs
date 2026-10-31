@@ -87,18 +87,25 @@ public sealed partial record Skill(string Id, string Name, string Description, s
   List<Skill> list = [];
   try {
    if (Directory.Exists(Folder)) foreach (var file in Directory.EnumerateFiles(Folder, "*.md").Order().Take(200)) {
-    string text = File.ReadAllText(file).ReplaceLineEndings("\n"), body = text;
-    Dictionary<string, string> head = [];
-    if (text.StartsWith("---\n") && text.IndexOf("\n---", 4) is var end and > 0) {
-     foreach (var line in text[4..end].Split('\n')) if (line.IndexOf(':') is var at and > 0) head[line[..at].Trim().ToLowerInvariant()] = line[(at + 1)..].Trim();
-     body = text[(end + 4)..].TrimStart('-').Trim();
-    }
+    var (head, body) = Split(File.ReadAllText(file));
     string id = Path.GetFileNameWithoutExtension(file);
     list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body));
    }
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
   return list;
  }
+ /// A Markdown file's front matter (its keys in lowercase) and its body.
+ internal static (Dictionary<string, string> Head, string Body) Split(string text)
+ {
+  text = text.ReplaceLineEndings("\n"); string body = text; Dictionary<string, string> head = [];
+  if (text.StartsWith("---\n") && text.IndexOf("\n---", 4) is var end and > 0) {
+   foreach (var line in text[4..end].Split('\n')) if (line.IndexOf(':') is var at and > 0) head[line[..at].Trim().ToLowerInvariant()] = line[(at + 1)..].Trim();
+   body = text[(end + 4)..].TrimStart('-').Trim();
+  }
+  return (head, body);
+ }
+ /// Adds a skill file as it is, unless there's one by that id already (the user's own stays as it is).
+ internal static void Add(string id, string text) { if (All.Any(s => s.Id == id)) return; Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, id + ".md"), text); all = null; }
  /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line.
  internal static string Save(string id, string name, string description, string when, string body)
  {
@@ -354,6 +361,7 @@ public partial class MainWindow
   sensitiveSites = Prefs.SensitiveSites,
   plugins = PluginsPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
+   knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
 
@@ -735,6 +743,7 @@ public partial class MainWindow
   string memory = who == null ? "" : CompanionMemory.Brief(who.Id, shown);
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n"
    + (memory.Length > 0 ? "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n" : "")
+   + (who == null ? "" : CompanionMemory.NotesBrief(who.Id))
    + (chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : ""))
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
@@ -832,9 +841,28 @@ public partial class MainWindow
   if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
   if (data.TryGetProperty("instructions", out _)) c.Instructions = S("instructions").Trim() is var ins && ins.Length > 8000 ? ins[..8000] : ins;
   if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
+  Equip(c);
   c.AskName = false; // saved, renamed or kept: it's the user's name now
   Prefs.Companions = list; SaveLater();
   return c;
+ }
+
+ /// A companion hired from the crew comes with its role's kit (Assets/roles/<role>/), once: its skills, added to the
+ /// user's skills unless there's one by that id already, and turned on for it; and its knowledge files, empty to start.
+ static void Equip(Companion c)
+ {
+  if (c.Crew.Length == 0 || CompanionMemory.Equipped(c.Id)) return;
+  var assembly = typeof(AppContent).Assembly; string root = "Still.Content.Assets/roles/" + c.Crew + "/";
+  foreach (var res in assembly.GetManifestResourceNames()) {
+   string path = res.Replace('\\', '/');
+   if (!path.StartsWith(root, StringComparison.Ordinal)) continue;
+   string id = Path.GetFileNameWithoutExtension(path), kind = path[root.Length..].Split('/')[0];
+   try {
+    using var reader = new StreamReader(assembly.GetManifestResourceStream(res)!);
+    if (kind == "skills") { Skill.Add(id, reader.ReadToEnd()); if (!c.Skills.Contains(id)) c.Skills.Add(id); }
+    else if (kind == "knowledge") CompanionMemory.Seed(c.Id, id, reader.ReadToEnd());
+   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+  }
  }
 
  /// Lets a companion go, its folder and memory with it.
@@ -1007,7 +1035,7 @@ public partial class MainWindow
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
-   "remember" => "Saved to memory", "recall" => "Checked memory", "forget" => "Removed from memory", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
+   "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
    _ => tool.Replace('_', ' ') + (arg.Length > 0 ? " " + arg : ""),
   };
   static string? o2(JsonNode? n, string k) => n?[k]?.ToString() is { Length: > 0 } v ? "“" + v + "”" : null;

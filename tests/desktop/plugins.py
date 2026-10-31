@@ -12,7 +12,8 @@ A fake AI app plays a companion that uses them.
 The stand-in answers like Composio's v3.1 API: x-api-key takes a project key (ak_) and nothing else, so the Connect key
 (ck_) that Composio's For You page hands out gets a 401, as it does there; lists come paged ({items, next_cursor, ...}),
 the catalog over two pages; errors are { error: { message, code, slug, status, ... } }; connected accounts don't echo
-user_id back; logos come from their own addresses, one with no image type and one missing.
+user_id back. Every app Composio had when Still was built shows the logo that ships with Still; only the two newer
+apps here (Self Hosted Thing and Weather) get theirs from the stand-in, one with no image type and one missing.
 
 Checks: the Plugins page (Skills & plugins on the home's rail) is titled Plugins with what's connected at the top, one
 search for apps and skills, category chips with the rest under More, Recommended first and then a section per category
@@ -103,8 +104,8 @@ class Composio(http.server.BaseHTTPRequestHandler):
         parts = url.path.strip("/").split("/")
         if parts[0] in ("oauth", "page", "logos"):  # what a browser opens: Composio's sign-in, a plain page, and logos
             MOCK["pages"].append({"path": url.path, "key": self.headers.get("x-api-key")})
-            if parts[0] == "logos":  # Stripe's is missing, and GitHub's doesn't say it's an image
-                return self.send(404, "Not found", "text/plain") if parts[1] == "stripe" else self.send(200, LOGO, "application/octet-stream" if parts[1] == "github" else "image/svg+xml")
+            if parts[0] == "logos":  # Weather's is missing, and Self Hosted Thing's doesn't say it's an image
+                return self.send(404, "Not found", "text/plain") if parts[1] == "weather" else self.send(200, LOGO, "application/octet-stream" if parts[1] == "selfhosted" else "image/svg+xml")
             if parts[0] == "page":
                 return self.send(200, "<!doctype html><title>A page</title><p>Still works.", "text/html")
             account = MOCK["accounts"].get(parts[1])
@@ -485,11 +486,14 @@ def keys(process):
     check(chips == ["All", "Productivity", "Communication", "Design", "Developer tools", "Finance", "Marketing", "More"], f"Category chips: All, the main categories, the rest under More ({chips})")
     groups = js(process, "[...document.querySelectorAll('.plug-page .plug-group')].map(g => g.getAttribute('aria-label') + ':' + g.querySelectorAll('.plug-tile').length)") or []
     check(groups[:3] == ["Recommended:8", "Skills:0", "Productivity:4"] and groups[-1] == "Other:1" and len(groups) == 12, f"Then the skills, and a section per category with up to four apps ({groups})")
-    check(until(lambda: js(process, "(i => !!i && i.src.startsWith('data:image/svg+xml') && i.naturalWidth > 0)(document.querySelector('.plug-tile[data-slug=gmail] .plug-logo img'))"), 10), "Each app shows its logo from Composio's catalog")
-    check(until(lambda: js(process, "!!document.querySelector('.plug-tile[data-slug=github] .plug-logo img')"), 5), "even when its server doesn't say it's an image")
-    check(js(process, "document.querySelector('.plug-tile[data-slug=stripe] .plug-logo')?.innerText") == "S", "A logo that doesn't load keeps the app's initial")
-    fetched = [p for p in MOCK["pages"] if p["path"].startswith("/logos/")]
-    check(fetched and not any(p["key"] for p in fetched) and (PROFILE / "Cache" / "PluginLogos" / "gmail").exists(), "Logos come without the key and stay on this computer")
+    check(until(lambda: js(process, "(imgs => imgs.length >= 3 && imgs.every(i => i.src.endsWith('/apps/' + i.closest('.plug-tile').dataset.slug + '.svg') && i.naturalWidth > 0))([...document.querySelectorAll('.plug-tile[data-slug=gmail] .plug-logo img, .plug-tile[data-slug=github] .plug-logo img, .plug-tile[data-slug=stripe] .plug-logo img')])"), 10),
+          "Each app shows the logo that ships with Still")
+    check(until(lambda: js(process, "(i => !!i && i.src.startsWith('data:image/svg+xml') && i.naturalWidth > 0)(document.querySelector('.plug-tile[data-slug=selfhosted] .plug-logo img'))"), 10),
+          "An app newer than this build gets its logo from Composio's catalog, even when its server doesn't say it's an image")
+    check(js(process, "document.querySelector('.plug-tile[data-slug=weather] .plug-logo')?.innerText") == "W", "A logo that doesn't load keeps the app's initial")
+    fetched = sorted({p["path"] for p in MOCK["pages"] if p["path"].startswith("/logos/")})
+    check(fetched == ["/logos/selfhosted", "/logos/weather"] and not any(p["key"] for p in MOCK["pages"] if p["path"].startswith("/logos/")) and (PROFILE / "Cache" / "PluginLogos" / "selfhosted").exists(),
+          f"Only those two are fetched, without the key, and they stay on this computer ({fetched})")
     js(process, "document.querySelector(\".plug-group[aria-label='Productivity'] .plug-all\")?.click()")
     check(until(lambda: len(tiles(process, "Productivity")) == 7 and js(process, "[...document.querySelectorAll('.history-chip')].find(b => b.innerText.trim() === 'Productivity')?.getAttribute('aria-pressed')") == "true", 5),
           "View all shows the whole category, with its chip on")
@@ -703,7 +707,7 @@ def setup(env):
         time.sleep(1)
         forward()  # -> crew
         until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 8, 5)
-        js(process, "document.querySelector(\".crew-pick[aria-label='Hire Jonah']\")?.click()")
+        js(process, "document.querySelector(\".crew-pick[aria-label='Hire Sales Jonah']\")?.click()")
         time.sleep(.6)
         forward()  # -> tools
         check(until(lambda: js(process, "!!document.querySelector('.plug-belt')"), 5), "Setup: Connect your tools shows the belt")
