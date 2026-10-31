@@ -179,6 +179,11 @@ def places():
         team = js(p, "document.querySelectorAll('.space-mate').length")
         check(me and .15 <= me[0].get("body", 0) / view <= .25 and team == len(crew) - 1,
               f"Home's space: the companion is {me and me[0].get('body', 0) / view:.0%} of the view's height, {team} teammates behind")
+        # A teammate's body where the companion's picture overlaps it takes the pointer, and the picture's clear corner takes nothing
+        hits = js(p, """(() => { const at = (x, y) => document.elementFromPoint(x, y)?.closest('button'), m = document.querySelector('.home-face').getBoundingClientRect()
+            return [...document.querySelectorAll('.space-mate')].every(e => { const b = e.getBoundingClientRect(); return at(b.left + b.width * (b.left < m.left ? .7 : .3), b.top + b.height * .55) === e })
+              && !at(m.left + m.width * .08, m.top + m.height * .1) })()""")
+        check(hits, "Home's space: only a body takes the pointer, so a teammate behind the companion's picture still gets its click")
         js(p, "[...document.querySelectorAll('.home-chips button')].find(b => b.innerText.includes('Companions'))?.click()")
         until(lambda: js(p, "document.querySelectorAll('.mate-portrait canvas[data-live]').length") == len(crew), 20)
         time.sleep(1)

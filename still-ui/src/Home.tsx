@@ -38,9 +38,14 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
 
 /// Top center of the home: who you're working with, the others as small faces, and a way to add one.
 export function CompanionSwitch({ ai, companion, onPick, onEdit, onManage }: { ai: AiState; companion: Companion; onPick: (id: string) => void; onEdit: (c: Companion) => void; onManage: () => void }) {
+ const others = ai.companions?.filter(c => c.id !== companion.id).slice(0, 5) ?? []
+ // In the team's order, so a pick opens into the name pill where it stands and the last one closes (App.css)
+ const shown = ai.companions?.filter(c => c.id === companion.id || others.includes(c)) ?? []
+ if (!shown.includes(companion)) shown.unshift(companion)
  return <div className="mate-switch" role="radiogroup" aria-label="Who to work with">
-  <button role="radio" aria-checked className="mate-switch-on" title={"Edit " + companion.name} onClick={() => onEdit(companion)}><Face companion={companion} size={24} /><b>{companion.name}</b></button>
-  {ai.companions?.filter(c => c.id !== companion.id).slice(0, 5).map(c => <button key={c.id} role="radio" aria-checked={false} className="mate-switch-face" title={c.name} aria-label={c.name} onClick={() => onPick(c.id)}><Face companion={c} size={24} /></button>)}
+  {shown.map(c => c === companion
+   ? <button key={c.id} role="radio" aria-checked className="mate-switch-face mate-switch-on" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={24} /><b><span>{c.name}</span></b></button>
+   : <button key={c.id} role="radio" aria-checked={false} className="mate-switch-face" title={c.name} aria-label={c.name} onClick={() => onPick(c.id)}><Face companion={c} size={24} /><b aria-hidden><span>{c.name}</span></b></button>)}
   <DropdownMenu><DropdownMenuTrigger asChild><button className="mate-switch-more" aria-label="All companions"><ChevronDown /></button></DropdownMenuTrigger>
    <DropdownMenuContent align="center" className="w-56">
     {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => onPick(c.id)}><Face companion={c} size={20} />{c.name}</DropdownMenuItem>)}
