@@ -219,6 +219,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Open Still at sign-in**: per-user `HKCU\…\Run` entry (`StartupRegistration.cs`).
 - ✅ **Default browser**: per-user HKCU registration; opens Windows Default apps for you to confirm (`BrowserRegistration.cs`).
 - ✅ **About**: version (2.0.0, from `Still.csproj`; the Mac reads it from the same file), release notes, check for updates, replay the intro.
+- ✅ **License**: Still is now licensed under the GNU AGPL v3.0 or later (`LICENSE`, SPDX `AGPL-3.0-or-later`), replacing MIT; README badge, CONTRIBUTING, THIRD-PARTY-NOTICES (Still's own line only) and the Windows About sheet say so. Bundled third-party licenses in `Licenses/` are unchanged.
 - ✅ **Address-bar notice**: a notice ends when the page or tab changes.
 
 ## Updates and install

@@ -1,4 +1,4 @@
-Still, Copyright (c) 2026 Carbon. Released under the MIT license (see LICENSE).
+Still, Copyright (c) 2026 Carbon. Released under the GNU Affero General Public License v3.0 or later (see LICENSE).
 
 ORIGINAL WORK
 The companion mascots are Still's own: the 3D models and animations in
@@ -6,7 +6,7 @@ still-ui/public/companion (*.glb, fit.json), the portraits in still-ui/src/asset
 the faces the app draws on them, and the Blender scripts that build and render them
 (tools/mascot). So are the app icon (still/Assets/still.ico, still.png) and the favicon.
 They contain no third-party models, textures, fonts or art, and they are covered by
-Still's MIT license like the rest of the code. The same goes for the sounds in
+Still's AGPL-3.0-or-later license like the rest of the code. The same goes for the sounds in
 still-ui/public/sounds (*.ogg): tools/sound/build.py synthesizes every one of them
 from sine waves and noise, with nothing sampled or downloaded.
 

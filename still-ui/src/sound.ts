@@ -1,4 +1,4 @@
-// Still's own two sounds (tools/sound makes them, MIT like the rest): the intro, and a jingle at the end of setup.
+// Still's own two sounds (tools/sound makes them, AGPL-3.0-or-later like the rest): the intro, and a jingle at the end of setup.
 // Setup's steps, buttons and picks, the look editor, and companions talking or typing make none. Browsing never does.
 // They stay off with the Sounds setting off, the system's "no sounds", or reduced motion.
 const reduce = matchMedia("(prefers-reduced-motion: reduce)")

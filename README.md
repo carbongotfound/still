@@ -7,7 +7,7 @@
 [**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**Features**](#features) · [**Install**](#install) · [**Connect your AI**](#connect-your-ai) · [**Contributing**](#contributing)
 
 [![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
-[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
+[![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
 ![Windows 10 | 11](https://img.shields.io/badge/Windows-10%20%7C%2011-0078D4)
 ![macOS 12+](https://img.shields.io/badge/macOS-12%2B-111111)
 [![Good first issues](https://img.shields.io/github/issues/carbongotfound/still/good%20first%20issue?label=good%20first%20issues&color=7057ff)](https://github.com/carbongotfound/still/labels/good%20first%20issue)
@@ -165,6 +165,6 @@ See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md
 
 ## License
 
-Still is open source under the [MIT license](LICENSE), © 2026 Carbon.
+Still is open source under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later), © 2026 Carbon. Versions released before this change stay available under the MIT license.
 
 The companions, their animations and props, the app icon and the two setup sounds are original work made for Still and covered by the same license. Everything Still bundles from others keeps its own license: the list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Claude, ChatGPT and Grok and their logos belong to Anthropic, OpenAI and xAI. Still isn't affiliated with them.
