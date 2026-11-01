@@ -96,7 +96,7 @@ On the Mac, `sh mac/build.sh` builds `Still.app`, `Still-<version>.dmg` and `Sti
 ## Code style
 
 - **Match the code around you**: its naming, its comment density and its idioms. A change should read like the rest of the file.
-- **Keep it small.** Reuse what's already there before adding a helper, and prefer the platform over a new dependency. A new dependency needs a reason in the PR and an MIT-compatible license, added to `THIRD-PARTY-NOTICES.txt` and `Licenses/`.
+- **Keep it small.** Reuse what's already there before adding a helper, and prefer the platform over a new dependency. A new dependency needs a reason in the PR and an AGPL-3.0-compatible license, added to `THIRD-PARTY-NOTICES.txt` and `Licenses/`.
 - **Comments say why**, in plain sentences, when the code can't.
 - **Interface:** use the shadcn/ui components in `still-ui/src/components/ui`, keep light and dark themes and reduced motion working, and give every control a keyboard path and a label.
 - **Words in the app** are short, plain and confident. Say what a thing does. Companions are hired (Hire and Hired). No em dashes.
@@ -162,4 +162,4 @@ Everyone taking part in Still follows the [Code of Conduct](CODE_OF_CONDUCT.md).
 
 ## License
 
-By contributing, you agree that your contributions are licensed under the [MIT license](LICENSE).
+By contributing, you agree that your contributions are licensed under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later).
