@@ -1,5 +1,5 @@
 """Makes the welcome flow's two sounds. Every one is synthesized here from sines, harmonics and filtered noise: nothing is
-sampled or downloaded, so they're Still's own work under its MIT license.
+sampled or downloaded, so they're Still's own work under its AGPL-3.0-or-later license.
 
 Run: python tools/sound/build.py   (numpy, scipy, and ffmpeg built with libopus on PATH)
 Writes still-ui/public/sounds/<name>.ogg (Opus, 48 kHz mono) and prints each one's length, size, true peak and loudness.
