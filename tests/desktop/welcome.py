@@ -861,12 +861,22 @@ def shots():
         time.sleep(1.5)  # saved a moment after
         check(before == hired() == ["Jonah", "Leo", "Maya"], f"Hiring them again saves no copies ({hired()})")
         link = SITE + "/page?signin"
-        subprocess.run([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile), link], timeout=30)
+        if MAC:  # started from the command line, a second copy on the Mac runs on its own; a link from another app comes through Launch Services
+            subprocess.run(["open", "-a", str(EXE.parents[2]), link], timeout=30)
+        else:
+            subprocess.run([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile), link], timeout=30)
         ok = until(lambda: any(w["temporary"] and link in w["tabs"] for w in rpc(process).get("windows", [])), 10)
         check(ok and not any(t["Url"] == link for t in rpc(process).get("tabs", [])), "A link from another app during setup opens in a window of its own, not behind setup")
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
+        close_all(profile)
+
+
+def close_all(profile):
+    """Nothing this suite started outlives it: a copy still running on the profile would answer the next suite's AI apps."""
+    if MAC:
+        subprocess.run(["pkill", "-f", "--", "--profile " + str(profile)], capture_output=True)
 
 
 def back(process):
@@ -881,6 +891,7 @@ if __name__ == "__main__":
         main()
     finally:
         SERVER.shutdown()
+        close_all(RUN)  # both profiles live under it
         RUN.mkdir(parents=True, exist_ok=True)
         (RUN / "result.json").write_text(json.dumps(RESULT, indent=2))
         failed = [c["name"] for c in RESULT["checks"] if not c["passed"]]

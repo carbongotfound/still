@@ -79,8 +79,6 @@ chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started"
 process = launch(EXE, PROFILE)
 try:
     until(lambda: page(process, "w1", "document.readyState") == "complete", 30)
-    # The Mac's interface keeps its storage per app, not per profile: drafts from an earlier run would come back
-    shell(process, "Object.keys(localStorage).filter(k => k.startsWith('still.draft.')).forEach(k => localStorage.removeItem(k))")
     # 1. A web tab: typed text in a textarea and an editable box, scroll, the page itself
     page(process, "w1", "document.getElementById('t').focus()")
     rpc(process, "pageCdp", method="Input.insertText", parameters={"text": "Typed into the textarea"})
