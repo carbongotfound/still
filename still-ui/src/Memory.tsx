@@ -25,7 +25,7 @@ export function MemorySettings({ companions, first, send }: { companions: Compan
     <Button type="submit" size="sm" disabled={!editing.text.trim()}>Save</Button><Button type="button" size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
    </form>
   : <div key={f.id} className="memory-row" data-kind={f.kind}>
-    <div><p>{f.text}</p><small>{[KINDS[f.kind], day(f.at), f.kind !== "chat" && f.chatTitle && `from "${f.chatTitle}"`].filter(Boolean).join(" · ")}</small></div>
+    <div><p>{f.text}</p><small>{[KINDS[f.kind], f.guessed && "Guessed, not confirmed", day(f.at), f.kind !== "chat" && f.chatTitle && `from "${f.chatTitle}"`].filter(Boolean).join(" · ")}</small></div>
     {f.kind !== "chat" && <Button variant="ghost" size="icon-xs" aria-label={"Edit: " + f.text} title="Edit" onClick={() => setEditing({ id: f.id, text: f.text })}><Pencil /></Button>}
     <Button variant="ghost" size="icon-xs" aria-label={"Forget: " + f.text} title="Forget" onClick={() => send("memoryForget", { companion: who.id, id: f.id })}><Trash2 /></Button>
    </div>

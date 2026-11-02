@@ -13,6 +13,7 @@ public sealed record AgentModel(string Id, string Name, string[] Efforts);
 public sealed record RunRequest(string Prompt, string Model, string Effort, string Folder, IReadOnlyList<string> Mcp, string? Session, bool Resume)
 {
  public string WorkFolder { get; init; } = ""; // the user's working folder: the app's own file tools, for that folder only
+ public bool Forget { get; init; } // an incognito chat: the app saves no session (only where it has a documented option)
  public string PromptFile => Path.Combine(Folder, "prompt-" + (Session ?? "run") + ".txt");
 }
 
@@ -34,6 +35,8 @@ public abstract class AgentAdapter
  public virtual bool PromptOnStdin => true;
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
  public virtual bool NamesSession => false;
+ /// It can run without saving the session on this computer (incognito chats): each turn is then a new session that carries the chat so far.
+ public virtual bool Forgets => false;
 
  /// Signed in? null when the app can't say. Uses none of the user's AI usage.
  public abstract Task<bool?> Detect(string exe);
@@ -80,6 +83,7 @@ public abstract class AgentAdapter
 sealed class ClaudeAdapter : AgentAdapter
 {
  public override bool NamesSession => true;
+ public override bool Forgets => true; // --no-session-persistence
  static readonly string[] Levels = ["low", "medium", "high", "xhigh", "max"];
  public override async Task<bool?> Detect(string exe)
  {
@@ -93,7 +97,9 @@ sealed class ClaudeAdapter : AgentAdapter
  {
   string config = Path.Combine(r.Folder, "mcp.json");
   File.WriteAllText(config, JsonSerializer.Serialize(new { mcpServers = new { still = new { command = Environment.ProcessPath, args = r.Mcp } } }));
-  List<string> args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.Resume ? "--resume" : "--session-id", r.Session!];
+  List<string> args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.Resume ? "--resume" : "--session-id", r.Session!,
+   "--disable-slash-commands", "--setting-sources", "project,local"]; // none of the user's own skills, commands, plugins or settings
+  if (r.Forget) args.Add("--no-session-persistence");
   // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
   if (r.WorkFolder.Length > 0) args.AddRange(["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.WorkFolder, "--permission-mode", "acceptEdits"]);
   else args.AddRange(["--tools", ""]);
@@ -114,7 +120,7 @@ sealed class GrokAdapter : AgentAdapter
  {
   List<AgentModel> list = [new("", "Default", MainWindow.Efforts)];
   foreach (System.Text.RegularExpressions.Match m in System.Text.RegularExpressions.Regex.Matches(await Output(exe, MainWindow.AiFolder, "models") ?? "", @"^\s*[*-]\s+(\S+)", System.Text.RegularExpressions.RegexOptions.Multiline))
-   list.Add(new(m.Groups[1].Value, m.Groups[1].Value, MainWindow.Efforts));
+   list.Add(new(m.Groups[1].Value, m.Groups[1].Value, [])); // its effort levels per model aren't listed: default effort only
   return [.. list];
  }
  public override async Task<List<string>> Args(string exe, RunRequest r)
@@ -134,6 +140,7 @@ sealed class GrokAdapter : AgentAdapter
 /// ChatGPT, through OpenAI's agent CLI signed in with the user's ChatGPT plan. The UI only ever calls it ChatGPT.
 sealed class ChatGptAdapter : AgentAdapter
 {
+ public override bool Forgets => true; // exec --ephemeral
  public override async Task<bool?> Detect(string exe)
  {
   if (await Output(exe, MainWindow.AiFolder, "login", "status") is not { } text) return null;
@@ -155,7 +162,7 @@ sealed class ChatGptAdapter : AgentAdapter
   // TOML literal strings ('...') need no escaping but can't hold an apostrophe; cmd.exe eats "!".
   if (r.Mcp.Append(Environment.ProcessPath!).Any(a => a.Contains('\'') || a.Contains('!'))) throw new InvalidOperationException("ChatGPT can't run Still from a folder whose name has an apostrophe or !.");
   static string Q(string v) => "'" + v + "'";
-  List<string> args = ["exec", .. r.Resume ? new[] { "resume" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
+  List<string> args = ["exec", .. r.Resume ? new[] { "resume" } : [], .. r.Forget ? new[] { "--ephemeral" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
    "-c", "mcp_servers.still.command=" + Q(Environment.ProcessPath!), "-c", "mcp_servers.still.args=[" + string.Join(",", r.Mcp.Select(Q)) + "]"];
   if (r.Model.Length > 0) args.AddRange(["-c", "model=" + Q(r.Model)]);
   if (r.Effort.Length > 0) args.AddRange(["-c", "model_reasoning_effort=" + Q(r.Effort)]);

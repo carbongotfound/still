@@ -770,6 +770,16 @@ public partial class MainWindow
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget" or "update_knowledge": return Remembering(who, tool, args);
+   case "load_skill": {
+    // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
+    var run = runs.GetValueOrDefault(who);
+    var mine = run == null ? null : Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
+    string id = S(args, "id").Trim().TrimStart('/');
+    if (mine == null || !mine.Skills.Contains(id) || Skill.All.FirstOrDefault(k => k.Id == id) is not { } skill)
+     return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
+    Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();
+    return Reply(new { skill = skill.Name, instructions = skill.Body });
+   }
    case "save_file": {
     if (Incognito(who)) return Fail(KeepsNothing);
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");

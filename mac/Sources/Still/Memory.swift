@@ -10,7 +10,8 @@ final class Fact: Codable {
  var at = Date()
  var chat = "" // the chat it came from; "" = setup, or the user typed it
  var key = "" // a slot that holds one fact ("name", "interests", "chat:<id>"): a new one replaces it
- enum CodingKeys: String, CodingKey { case id, text, kind, at, chat, key }
+ var guessed = false // worked out from what the user did, not something they said: kept apart until they confirm it
+ enum CodingKeys: String, CodingKey { case id, text, kind, at, chat, key, guessed }
  init(_ text: String, _ kind: String, _ chat: String, _ key: String) { self.text = text; self.kind = kind; self.chat = chat; self.key = key }
  init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -20,6 +21,7 @@ final class Fact: Codable {
   at = try c.decodeIfPresent(Date.self, forKey: .at) ?? Date()
   chat = try c.decodeIfPresent(String.self, forKey: .chat) ?? ""
   key = try c.decodeIfPresent(String.self, forKey: .key) ?? ""
+  guessed = try c.decodeIfPresent(Bool.self, forKey: .guessed) ?? false
  }
 }
 
@@ -139,11 +141,11 @@ enum CompanionMemory {
  static func squash(_ text: String) -> String { text.replacingOccurrences(of: #"\s+"#, with: " ", options: .regularExpression).trimmingCharacters(in: .whitespaces) }
 
  /// Keeps a fact, or freshens the one it repeats. Nil when it's refused: it looks like a secret, or it's empty.
- @discardableResult static func remember(_ id: String, _ text: String, _ kind: String = "fact", _ chat: String = "", _ key: String = "") -> Fact? {
+ @discardableResult static func remember(_ id: String, _ text: String, _ kind: String = "fact", _ chat: String = "", _ key: String = "", guessed: Bool = false) -> Fact? {
   let text = squash(text)
   if id.isEmpty || text.count < 3 || secret(text) { return nil }
   var list = of(id)
-  let fact = add(&list, text.count > 300 ? String(text.prefix(300)) + "…" : text, kind, chat, key)
+  let fact = add(&list, text.count > 300 ? String(text.prefix(300)) + "…" : text, kind, chat, key, guessed: guessed)
   // A long memory keeps everything the user told it and the 60 latest chats.
   let old = list.filter { $0.kind == "chat" }.sorted { $0.at > $1.at }.dropFirst(60)
   list.removeAll { f in old.contains { $0 === f } }
@@ -152,17 +154,18 @@ enum CompanionMemory {
   return fact
  }
 
- static func add(_ list: inout [Fact], _ text: String, _ kind: String, _ chat: String, _ key: String) -> Fact? {
+ static func add(_ list: inout [Fact], _ text: String, _ kind: String, _ chat: String, _ key: String, guessed: Bool = false) -> Fact? {
   if text.count < 3 { return nil }
   let kind = kinds.contains(kind) ? kind : "fact"
   let w = words(text)
   let same = !key.isEmpty ? list.first { $0.key == key } : list.first { $0.key.isEmpty && ($0.kind == "chat") == (kind == "chat") && similar(words($0.text), w) }
   if let same {
-   same.text = text; same.kind = kind; same.at = Date()
+   same.text = text; same.kind = kind; same.at = Date(); same.guessed = same.guessed && guessed // once confirmed, it stays confirmed
    if !chat.isEmpty { same.chat = chat }
    return same
   }
   let fact = Fact(text, kind, chat, key)
+  fact.guessed = guessed
   list.append(fact)
   return fact
  }
@@ -170,7 +173,7 @@ enum CompanionMemory {
  static func edit(_ id: String, _ factId: String, _ text: String) -> Bool {
   let text = squash(text)
   guard let f = of(id).first(where: { $0.id == factId }), text.count >= 3, !secret(text) else { return false }
-  f.text = String(text.prefix(300)); f.at = Date(); save(id)
+  f.text = String(text.prefix(300)); f.at = Date(); f.guessed = false; save(id) // the user wrote it: confirmed
   return true
  }
 
@@ -193,7 +196,8 @@ enum CompanionMemory {
  }
 
  /// The facts that fit what the user just asked, best first: shared words, then the core things (who they are, what
- /// they like), then the newest. Past chats come last, the related ones first.
+ /// they like), then the newest. Only facts that share a word with it or are core make it (and everything the user wrote
+ /// in setup or on the memory page); past chats only when related.
  static func relevant(_ id: String, _ query: String, _ count: Int = 14) -> [Fact] {
   let q = words(query), now = Date()
   func score(_ f: Fact) -> Double {
@@ -204,8 +208,9 @@ enum CompanionMemory {
   }
   // Stable sorts, like LINQ's OrderBy: ties keep the file's order.
   let list = Array(of(id).enumerated())
-  let facts: [(Int, Fact, Double)] = list.filter { $0.element.kind != "chat" }.map { ($0.offset, $0.element, score($0.element)) }
-  let chats: [(Int, Fact, Int)] = list.filter { $0.element.kind == "chat" }.map { ($0.offset, $0.element, words($0.element.text).intersection(q).count) }
+  func related(_ f: Fact) -> Bool { !f.key.isEmpty || f.kind == "preference" || f.kind == "person" || f.chat.isEmpty && !f.guessed || !words(f.text).isDisjoint(with: q) }
+  let facts: [(Int, Fact, Double)] = list.filter { $0.element.kind != "chat" && related($0.element) }.map { ($0.offset, $0.element, score($0.element)) }
+  let chats: [(Int, Fact, Int)] = list.filter { $0.element.kind == "chat" }.map { ($0.offset, $0.element, words($0.element.text).intersection(q).count) }.filter { $0.2 > 0 }
   let best = facts.sorted { (a: (Int, Fact, Double), b: (Int, Fact, Double)) -> Bool in a.2 != b.2 ? a.2 > b.2 : a.0 < b.0 }
   let past = chats.sorted { (a: (Int, Fact, Int), b: (Int, Fact, Int)) -> Bool in
    if a.2 != b.2 { return a.2 > b.2 }
@@ -218,7 +223,10 @@ enum CompanionMemory {
  static func brief(_ id: String, _ query: String) -> String {
   let day = DateFormatter()
   day.locale = Locale(identifier: "en_US_POSIX"); day.dateFormat = "yyyy-MM-dd"
-  return relevant(id, query).map { "- \($0.kind == "chat" ? "A past chat: " : "")\($0.text) (\(day.string(from: $0.at)), id \($0.id))" }.joined(separator: "\n")
+  let facts = relevant(id, query)
+  func line(_ f: Fact) -> String { "- \(f.kind == "chat" ? "A past chat: " : "")\(f.text) (\(day.string(from: f.at)), id \(f.id))" }
+  let told = facts.filter { !$0.guessed }.map(line), guessed = facts.filter { $0.guessed }.map(line)
+  return told.joined(separator: "\n") + (guessed.isEmpty ? "" : (told.isEmpty ? "" : "\n") + "Guessed from what they did, not confirmed (check before relying on them):\n" + guessed.joined(separator: "\n"))
  }
 
  /// Never kept: passwords, codes, keys, card and account numbers.
@@ -280,7 +288,7 @@ func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String 
   if run.chat.noMemory { return agentFail("This chat is off the record: the user asked you not to remember it.") }
   let fact = argText(args, "fact").trimmingCharacters(in: .whitespacesAndNewlines)
   if let why = memoryRefuses(run, fact) { return agentFail(why) }
-  guard let kept = CompanionMemory.remember(me.id, fact, argText(args, "kind"), run.chat.id) else { return agentFail("Pass one short fact.") }
+  guard let kept = CompanionMemory.remember(me.id, fact, argText(args, "kind"), run.chat.id, guessed: argFlag(args, "guessed")) else { return agentFail("Pass one short fact.") }
   publishAiEverywhere()
   return agentOk(["remembered": kept.text, "id": kept.id])
  case "update_knowledge":

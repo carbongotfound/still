@@ -16,7 +16,7 @@ export type Routine = { id: string; text: string; time: string; days: number[]; 
 /// One of a companion's knowledge files (still/Assets/roles/<role>/knowledge): the working notes of its job, filled in as it works.
 export type Note = { id: string; name: string; about: string; text: string }
 /// One thing a companion remembers about the user. A "chat" is a past chat it learned from.
-export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null }
+export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null; guessed?: boolean }
 export type Mood = MascotState | "sleep"
 export const FALLBACK: Companion = { id: "", name: "Still", face: "", color: "", job: "" }
 // The companion the user is working with, for faces that don't name one.

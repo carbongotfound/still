@@ -12,6 +12,7 @@ struct AgentModel { let id: String, name: String, efforts: [String] }
 struct RunRequest {
  var prompt: String, model: String, effort: String, folder: String, mcp: [String], session: String?, resume: Bool
  var workFolder = "" // the user's working folder: the app's own file tools, for that folder only
+ var forget = false // an incognito chat: the app saves no session (only where it has a documented option)
  var promptFile: String { (folder as NSString).appendingPathComponent("prompt-" + (session ?? "run") + ".txt") }
 }
 
@@ -85,6 +86,8 @@ class AgentAdapter {
  var promptOnStdin: Bool { true }
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
  var namesSession: Bool { false }
+ /// It can run without saving the session on this computer (incognito chats): each turn is then a new session that carries the chat so far.
+ var forgets: Bool { false }
 
  /// Signed in? nil when the app can't say. Uses none of the user's AI usage.
  func detect(_ exe: String) async -> Bool? { nil }
@@ -161,6 +164,7 @@ class AgentAdapter {
 }
 
 final class ClaudeAdapter: AgentAdapter {
+ override var forgets: Bool { true } // --no-session-persistence
  override var namesSession: Bool { true }
  static let levels = ["low", "medium", "high", "xhigh", "max"]
  override func detect(_ exe: String) async -> Bool? {
@@ -172,7 +176,9 @@ final class ClaudeAdapter: AgentAdapter {
  }
  override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
   let config = try AgentAdapter.writeMcpConfig(r)
-  var args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.resume ? "--resume" : "--session-id", r.session ?? ""]
+  var args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.resume ? "--resume" : "--session-id", r.session ?? "",
+   "--disable-slash-commands", "--setting-sources", "project,local"] // none of the user's own skills, commands, plugins or settings
+  if r.forget { args.append("--no-session-persistence") }
   // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
   if !r.workFolder.isEmpty { args += ["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.workFolder, "--permission-mode", "acceptEdits"] }
   else { args += ["--tools", ""] }
@@ -195,7 +201,7 @@ final class GrokAdapter: AgentAdapter {
   let text = await AgentAdapter.output(exe, aiFolder, ["models"]) ?? ""
   let pattern = try! NSRegularExpression(pattern: #"^\s*[*-]\s+(\S+)"#, options: .anchorsMatchLines)
   for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-   if let range = Range(match.range(at: 1), in: text) { list.append(AgentModel(id: String(text[range]), name: String(text[range]), efforts: agentEfforts)) }
+   if let range = Range(match.range(at: 1), in: text) { list.append(AgentModel(id: String(text[range]), name: String(text[range]), efforts: [])) } // its effort levels per model aren't listed: default effort only
   }
   return list
  }
@@ -214,6 +220,7 @@ final class GrokAdapter: AgentAdapter {
 
 /// ChatGPT, through OpenAI's agent CLI signed in with the user's ChatGPT plan. The UI only ever calls it ChatGPT.
 final class ChatGptAdapter: AgentAdapter {
+ override var forgets: Bool { true } // exec --ephemeral
  override func detect(_ exe: String) async -> Bool? {
   guard let text = await AgentAdapter.output(exe, aiFolder, ["login", "status"]) else { return nil }
   // An API key login would bill an API account: only a ChatGPT sign-in counts.
@@ -233,7 +240,7 @@ final class ChatGptAdapter: AgentAdapter {
   // TOML literal strings ('...') need no escaping but can't hold an apostrophe.
   if (r.mcp + [stillExecutable]).contains(where: { $0.contains("'") }) { throw AgentError("ChatGPT can't run Still from a folder whose name has an apostrophe.") }
   func quoted(_ value: String) -> String { "'" + value + "'" }
-  var args = ["exec"] + (r.resume ? ["resume"] : []) + ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
+  var args = ["exec"] + (r.resume ? ["resume"] : []) + (r.forget ? ["--ephemeral"] : []) + ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
    "-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + r.mcp.map(quoted).joined(separator: ",") + "]"]
   if !r.model.isEmpty { args += ["-c", "model=" + quoted(r.model)] }
   if !r.effort.isEmpty { args += ["-c", "model_reasoning_effort=" + quoted(r.effort)] }

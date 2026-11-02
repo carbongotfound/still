@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, chatOf, companionOf, isRunning, type AiState } from "./AiSidebar"
+import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
@@ -129,6 +129,7 @@ const SETTINGS_FIND: Finding[] = [
  ["theme", "appearance", "Theme", "dark light black system mode colors"], ["layout", "appearance", "Tab layout", "classic modern side vertical tabs"], ["tearoff", "appearance", "Drag tabs into their own window", "tear off new window"],
  ["team", "companions", "Companions", "team add edit hire look"], ["memory", "companions", "What companions remember", "memory forget facts"],
  ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"],
+ ["aiAdvanced", "models", "Advanced", "model effort pick by hand override"], ["tiers", "models", "Quick, Everyday and Thorough", "model effort tier mode haiku opus default reset plan"],
  ["mcp", "models", "Let other AI apps use Still", "mcp claude desktop code cursor agents"], ["askInChat", "models", "Ask me in the AI's chat when I'm away", "agents away"],
  ["dev", "models", "Connect an AI app by hand", "mcp config cli developer command line prompt"],
  ["skills", "skills", "Skills & plugins", "composio gmail slack apps connect"], ["composio", "skills", "Composio API key", "plugins key change delete remove"],
@@ -894,6 +895,10 @@ export default function App() {
        <SetCard title="What they remember"><div className="set-pad" id="set-memory"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></div></SetCard>
       </>}
       {settingsPage === "models" && <>
+       {hasAi && <SetCard title="Quick, Everyday and Thorough">
+        <SetRow id="aiAdvanced" title="Advanced" help={ai.advanced ? "On: every chat uses the model and effort picked in the message box, whatever its mode." : "Off: each chat uses its mode's model and effort below."}><Switch checked={!!ai.advanced} aria-label="Advanced" onCheckedChange={on => send("aiAdvanced", { on })} /></SetRow>
+        <div className="set-pad" id="set-tiers"><TierSettings ai={ai} send={send} /></div>
+       </SetCard>}
        {hasAi && <SetCard title="Your AI">
         <SetRow id="ai" title="AI and model" help={`${ai.harnesses?.find(h => h.id === ai.harness)?.name ?? "No AI picked yet"}. Pick your AI, sign in, and choose its model and how hard it thinks.`}><Button variant="outline" size="sm" onClick={() => { close(); openAiSettings() }}><Bot />Open</Button></SetRow>
         <SetRow id="titles" title="Chat titles" help="A new chat gets a short name from its first message, written by the model you pick here."><Select value={state.preferences.chatTitles || "quick"} onValueChange={v => preference("chatTitles", v === "quick" ? "" : v)}><SelectTrigger className="w-48" aria-label="Chat titles"><SelectValue /></SelectTrigger><SelectContent className="titles-list">
