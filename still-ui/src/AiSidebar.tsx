@@ -21,9 +21,10 @@ import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
+import type { ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; forgets?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
@@ -40,6 +41,7 @@ export type AiState = {
  tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState
+ apis?: ApiState
 }
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
 // how it's going, the result and the child task (chat) doing it.
@@ -67,7 +69,7 @@ export const calledBy = (c?: Companion) => c?.memory?.find(f => f.key === "name"
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
-const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(statusOf(h))
+const ready = (h: Harness) => h.installed && !["missing", "signedOut", "needsKey", "badKey"].includes(statusOf(h))
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts.
@@ -99,7 +101,9 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
  const row = (h: Harness) => {
   const s = statusOf(h), chosen = ai.harness === h.id
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">Signed in with your plan</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? "Uses your API key" : "Signed in with your plan"}</span><Check aria-hidden /></>
+   : s === "needsKey" ? "API provider · Needs a key"
+   : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
    : s === "signedOut" ? (send ? "Installed" : "Installed · Sign in with your plan")
    : h.installed ? "Installed" : "Checking…"
@@ -109,7 +113,18 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
     <span className="byo-name"><strong>{h.name}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
-   {s === "signedOut" && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}
+   {s === "signedOut" && send && !h.terminalSignIn && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}
+   {s === "signedOut" && h.terminalSignIn && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to sign in<ChevronDown /></Button>}
+   {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => send("openPanel", { name: "settings", value: "models" })}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
+   {howTo === h.id && s === "signedOut" && h.terminalSignIn && <div className="byo-how">
+    <p>{h.app} signs in from a terminal. Run this in PowerShell, sign in with your plan in the browser it opens, then come back:</p>
+    <code className="byo-cmd">{h.terminalSignIn}</code>
+    <div className="ai-row">
+     <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
+     {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
+    </div>
+   </div>}
+   {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {s === "missing" && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to install<ChevronDown /></Button>}
    {howTo === h.id && s === "missing" && <div className="byo-how">
     <p>Run this in PowerShell, then come back:</p>
@@ -500,7 +515,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
   <h3>Bring your own AI</h3>
-  <p>Still runs on the AI you already pay for, through its own app on this computer. No API keys, no credits, no extra plan. Your chats go only to your AI provider.</p>
+  <p>Still runs on the AI you already pay for, through its own app on this computer. No API key needed, no credits, no extra plan. Your chats go only to your AI provider.</p>
   <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
  </div>
@@ -675,10 +690,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, {provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows.</p>
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
-    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && !provider.api && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
    </div></>}
   </div></div>}
  </section>
@@ -729,7 +744,7 @@ function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState;
 // AI apps, what the AI can see, and the saved chats.
 function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => void }) {
  return <div className="ai-pane">
-  <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for. Switch between them in the model list under the message box.</p>
+  <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for, or with your own API key (Settings → Models → API providers). Switch between them in the model list under the message box.</p>
    <AiPicker ai={ai} send={send} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
   <Separator />
   <section><h4>What it can see</h4><p>{ai.incognito ? "Only the private tabs it opens in this window. Never your other tabs, saved passwords or cookies." : <>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</>}</p></section>

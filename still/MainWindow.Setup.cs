@@ -88,13 +88,14 @@ public partial class MainWindow
   AgentRun? run = null; RunRequest? request = null;
   try {
    if (cli.NamesSession) s.Session ??= Guid.NewGuid().ToString();
-   request = new RunRequest(prompt, model, effort, folder, mcp, s.Session, s.Started && s.Session != null);
+   request = new RunRequest(prompt, model, effort, folder, mcp, s.Session, s.Started && s.Session != null) { Job = "setup" };
    run = await cli.Start(exe, request);
    using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(120));
    await foreach (var e in run.Events(limit.Token)) switch (e) {
     case AgentEvent.Message { Join: { } join } m: said += join + m.Text; break;
     case AgentEvent.Message m: said += (said.Length > 0 ? "\n" : "") + m.Text; break;
     case AgentEvent.Session session: s.Session ??= session.Id; break;
+    case AgentEvent.Spent spent: Spend(cli, spent); break;
    }
    s.Started = s.Session != null;
    if (said.Length == 0) s.Error = run.Errors.LastOrDefault(l => l.Trim().Length > 0) is { } why && SignedOutError().IsMatch(why) ? $"{cli.Name} isn't signed in." : $"{cli.App} didn't answer.";

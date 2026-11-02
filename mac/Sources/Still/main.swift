@@ -466,7 +466,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, cookies: data["cookies"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
-  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) { toast(unavailable) }
+  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) && !handleApi(op, data) { toast(unavailable) }
   }
  }
 

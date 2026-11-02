@@ -93,7 +93,8 @@ extension Browser {
   var said = "", request: RunRequest?
   do {
    if cli.namesSession && s.session == nil { s.session = UUID().uuidString.lowercased() }
-   let r = RunRequest(prompt: prompt, model: model, effort: effort, folder: folder, mcp: mcp, session: s.session, resume: s.started && s.session != nil)
+   var r = RunRequest(prompt: prompt, model: model, effort: effort, folder: folder, mcp: mcp, session: s.session, resume: s.started && s.session != nil)
+   r.job = "setup"
    request = r
    let run = try await cli.start(exe, r)
    let limit = DispatchWorkItem { run.cancel() }
@@ -102,6 +103,7 @@ extension Browser {
     switch e {
     case .message(let m, let join): said += join.map { $0 + m } ?? (said.isEmpty ? "" : "\n") + m
     case .session(let id): if s.session == nil { s.session = id }
+    case .spent(let i, let o, let c, let job): spend(cli, i, o, c, job)
     default: break
     }
    }

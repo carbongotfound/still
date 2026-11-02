@@ -3,6 +3,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { ApiProviders } from "./ApiProviders"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
@@ -128,7 +129,7 @@ const SETTINGS_FIND: Finding[] = [
  ["profiles", "general", "Profiles", "spaces accounts separate"], ["extensions", "general", "Extensions", "chrome web store add-ons"],
  ["theme", "appearance", "Theme", "dark light black system mode colors"], ["layout", "appearance", "Tab layout", "classic modern side vertical tabs"], ["tearoff", "appearance", "Drag tabs into their own window", "tear off new window"],
  ["team", "companions", "Companions", "team add edit hire look"], ["memory", "companions", "What companions remember", "memory forget facts"],
- ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"],
+ ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"], ["apis", "models", "API providers", "api key openai anthropic compatible base url provider price cost spending limit"],
  ["aiAdvanced", "models", "Advanced", "model effort pick by hand override"], ["tiers", "models", "Quick, Everyday and Thorough", "model effort tier mode haiku opus default reset plan"],
  ["mcp", "models", "Let other AI apps use Still", "mcp claude desktop code cursor agents"], ["askInChat", "models", "Ask me in the AI's chat when I'm away", "agents away"],
  ["dev", "models", "Connect an AI app by hand", "mcp config cli developer command line prompt"],
@@ -907,6 +908,7 @@ export default function App() {
          <SelectSeparator /><SelectItem value="off">Off (use first message)</SelectItem>
         </SelectContent></Select></SetRow>
        </SetCard>}
+       {hasAi && <SetCard title="API providers"><div className="set-pad" id="set-apis"><ApiProviders api={ai.apis} send={send} /></div></SetCard>}
        <SetCard title="Other AI apps">
         <SetRow id="mcp" title="Let other AI apps use Still" help="Apps like Claude Desktop, Claude Code or Cursor can open, read and click pages for you (MCP). Each app asks you first, and you can stop it anytime. Private tabs, passwords and cookies stay off-limits."><Switch aria-label="Let other AI apps use Still" checked={!!state.preferences.agents} onCheckedChange={enabled => preference("agents", String(enabled))} /></SetRow>
         {state.preferences.agents && <SetRow id="askInChat" title="Ask me in the AI's chat when I'm away" help="If you don't answer the bar here, the AI app asks you instead, or the AI asks you in its chat and passes your answer on. Turn this off to only allow agents from this window."><Switch aria-label="Ask me in the AI's chat when I'm away" checked={state.preferences.askInChat !== false} onCheckedChange={enabled => preference("askInChat", String(enabled))} /></SetRow>}

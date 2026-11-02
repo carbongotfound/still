@@ -13,6 +13,7 @@ struct RunRequest {
  var prompt: String, model: String, effort: String, folder: String, mcp: [String], session: String?, resume: Bool
  var workFolder = "" // the user's working folder: the app's own file tools, for that folder only
  var forget = false // an incognito chat: the app saves no session (only where it has a documented option)
+ var job = "chats" // what the run is for (chats, titles, setup or test): an API provider's spending is split by it
  var promptFile: String { (folder as NSString).appendingPathComponent("prompt-" + (session ?? "run") + ".txt") }
 }
 
@@ -27,6 +28,10 @@ enum AgentEvent {
  case session(String)
  case usage(String)
  case error(String)
+ /// A line in the chat from Still about the run (a rate limit pause, a model swapped for the default, the step cap).
+ case note(String)
+ /// One API call's tokens and estimated cost (0 without prices), for the provider's monthly total.
+ case spent(input: Int64, output: Int64, cost: Double, job: String)
 }
 
 let agentEfforts = ["low", "medium", "high"]
@@ -79,6 +84,7 @@ class AgentAdapter {
  var signIn: [String] = []
  var domains: [String] = [] // the only sites a sign-in page may be on
  var secondary = false      // a manifest agent: listed under "More agents"
+ var terminalSignIn = ""    // no sign-in command: the user runs this in a terminal to sign in
 
  init(id: String, name: String, app: String, command: String) { self.id = id; self.name = name; self.app = app; self.command = command }
  func with(_ setup: (AgentAdapter) -> Void) -> Self { setup(self); return self }
@@ -88,6 +94,10 @@ class AgentAdapter {
  var namesSession: Bool { false }
  /// It can run without saving the session on this computer (incognito chats): each turn is then a new session that carries the chat so far.
  var forgets: Bool { false }
+ /// Extra environment for its runs (never a key).
+ var env: [String: String] { [:] }
+ /// What it can't do that the others can, said plainly in AI settings.
+ var gaps: [String] { [] }
 
  /// Signed in? nil when the app can't say. Uses none of the user's AI usage.
  func detect(_ exe: String) async -> Bool? { nil }
@@ -98,11 +108,11 @@ class AgentAdapter {
  /// A line that isn't JSON. Agents with plain output speak in lines.
  func plain(_ line: String) -> [AgentEvent] { [] }
 
- func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { try await AgentRun.start(self, exe, r) }
+ func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { try await CliRun.start(self, exe, r) }
 
  // Keys that would bill an API account instead of the user's plan. The app's own sign-in is used instead.
  static let apiKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"]
 
  /// What Still's helpers run with: the user's own PATH (a GUI app starts with a bare one) and no API keys.
  static var environment: [String: String] {
@@ -159,8 +169,99 @@ class AgentAdapter {
   GrokAdapter(id: "grok", name: "Grok", app: "Grok Build", command: "grok").with {
    $0.maker = "xAI"; $0.installer = "https://x.ai/cli/install.sh"; $0.installCommand = "curl -fsSL https://x.ai/cli/install.sh | bash"
    $0.site = "https://x.ai/cli"; $0.signIn = ["login", "--device-auth"]; $0.domains = ["x.ai"]
-  }
+  },
+  // Signed in from a terminal: Gemini CLI has no sign-in command of its own.
+  GeminiAdapter(id: "gemini", name: "Gemini", app: "Gemini CLI", command: "gemini").with {
+   $0.maker = "Google"; $0.installCommand = "npm install -g @google/gemini-cli"; $0.site = "https://github.com/google-gemini/gemini-cli"; $0.terminalSignIn = "gemini"
+  },
+  OpenCodeAdapter(id: "opencode", name: "OpenCode", app: "OpenCode", command: "opencode").with {
+   $0.maker = "OpenCode"; $0.installCommand = "npm install -g opencode-ai"; $0.site = "https://opencode.ai"; $0.secondary = true
+  },
  ]
+}
+
+/// Gemini CLI, signed in with Google. Still's MCP server in the run folder's settings and a policy that denies every tool
+/// but Still's, so no shell, file, web, skill or sub-agent tool runs and nothing waits on a terminal prompt.
+final class GeminiAdapter: AgentAdapter {
+ override var namesSession: Bool { true }
+ // It reads the run folder's settings (Still's MCP server) only in a folder it trusts: this one, for the run.
+ override var env: [String: String] { ["GEMINI_CLI_TRUST_WORKSPACE": "true"] }
+ override var gaps: [String] { ["To sign in, run gemini in a terminal and pick Sign in with Google.", "No effort setting, so modes pick a model only.",
+  "Gemini keeps its own record of incognito chats on this computer. It has no option to turn that off."] }
+ static var home: String { (ProcessInfo.processInfo.environment["GEMINI_CLI_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()) + "/.gemini" }
+ /// Signed in with Google: its settings pick that sign-in and it has saved one. Still reads which sign-in, never the login.
+ override func detect(_ exe: String) async -> Bool? {
+  let settings = (try? Data(contentsOf: URL(fileURLWithPath: Self.home + "/settings.json"))).flatMap { try? JSONSerialization.jsonObject(with: $0, options: [.json5Allowed]) } as? [String: Any]
+  let auth = ((settings?["security"] as? [String: Any])?["auth"] as? [String: Any])?["selectedType"] as? String ?? settings?["selectedAuthType"] as? String
+  return auth == "oauth-personal" && FileManager.default.fileExists(atPath: Self.home + "/oauth_creds.json")
+ }
+ // Its own model names (checked with 0.66.0); auto lets Gemini pick.
+ override func models(_ exe: String) async -> [AgentModel] {
+  [("", "Default"), ("auto", "Auto"), ("pro", "Pro"), ("flash", "Flash"), ("flash-lite", "Flash Lite")].map { AgentModel(id: $0.0, name: $0.1, efforts: []) }
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let dir = r.folder + "/.gemini", policy = dir + "/still-policy.toml"
+  try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+  let settings: [String: Any] = ["mcpServers": ["still": ["command": stillExecutable, "args": r.mcp, "trust": true, "timeout": 660000]]] // ask_user waits for the user
+  try JSONSerialization.data(withJSONObject: settings, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: dir + "/settings.json"))
+  try "[[rule]]\ntoolName = \"*\"\ndecision = \"deny\"\npriority = 100\n\n[[rule]]\ntoolName = \"mcp_still_*\"\ndecision = \"allow\"\npriority = 900\n".write(toFile: policy, atomically: true, encoding: .utf8)
+  var args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--policy", policy, r.resume ? "--resume" : "--session-id", r.session ?? ""]
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.gemini(e) }
+}
+
+/// OpenCode, on whichever provider the user set up inside it: a plan sign-in, that provider's key kept by OpenCode, or
+/// OpenCode's free models. Still never sees which. Its own tools, skills and sub-agents stay off.
+final class OpenCodeAdapter: AgentAdapter {
+ var version = ""
+ override var gaps: [String] { ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal), or its free models.",
+  "OpenCode keeps its own record of incognito chats on this computer. It has no option to turn that off."]
+  + (!version.isEmpty && !version.hasPrefix("1.") ? ["Still was checked with OpenCode 1. This is \(version), so it may not work."] : []) }
+ static func modelLine(_ line: String) -> Bool { line.range(of: #"^[A-Za-z0-9][\w.@-]*/\S+$"#, options: .regularExpression) != nil }
+ // Ready once it lists a model: its free ones need no sign-in.
+ override func detect(_ exe: String) async -> Bool? {
+  if let v = await AgentAdapter.printed(exe, aiFolder, ["--version"]) { version = v[0].trimmingCharacters(in: .whitespacesAndNewlines) }
+  guard let p = await AgentAdapter.printed(exe, aiFolder, ["models"]) else { return nil }
+  return p[0].components(separatedBy: "\n").contains { Self.modelLine($0.trimmingCharacters(in: .whitespaces)) }
+ }
+ /// Its catalog: each model's line, then its details, whose variants are its effort levels. Models without tool calls are left out.
+ override func models(_ exe: String) async -> [AgentModel] {
+  var list = [AgentModel(id: "", name: "Default", efforts: [])]
+  guard let p = await AgentAdapter.printed(exe, aiFolder, ["models", "--verbose"]) else { return list }
+  let order = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+  var id = "", details = ""
+  func add() {
+   guard !id.isEmpty else { return }
+   guard let m = jsonObject(details) else { list.append(AgentModel(id: id, name: id, efforts: [])); return }
+   if (m["capabilities"] as? [String: Any])?["toolcall"] as? Bool == false { return }
+   let name = (m["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
+   let variants = ((m["variants"] as? [String: Any])?.keys).map(Array.init) ?? []
+   list.append(AgentModel(id: id, name: name + " · " + (id.split(separator: "/").first.map(String.init) ?? ""),
+    efforts: variants.sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }))
+  }
+  for raw in p[0].components(separatedBy: "\n") {
+   let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
+   if Self.modelLine(line) { add(); id = line; details = "" } else { details += line + "\n" }
+  }
+  add()
+  return list
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  // Still's MCP server in the run folder's config (v1 shape) and every tool off but Still's. Its MCP calls time out after
+  // 5 seconds unless told otherwise; ask_user waits for the user.
+  let config: [String: Any] = ["$schema": "https://opencode.ai/config.json", "mcp": ["still": ["type": "local", "command": [stillExecutable] + r.mcp, "enabled": true, "timeout": 660000]],
+   "tools": ["*": false, "still_*": true]]
+  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
+  try JSONSerialization.data(withJSONObject: config, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: r.folder + "/opencode.json"))
+  var args = ["run", "--format", "json", "--dir", r.folder, "--title", "Still"] // a title of its own would cost a model call
+  if r.resume, let session = r.session { args += ["--session", session] }
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  if !r.effort.isEmpty { args += ["--variant", r.effort] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.openCode(e) }
 }
 
 final class ClaudeAdapter: AgentAdapter {
@@ -339,7 +440,7 @@ final class ManifestAdapter: AgentAdapter {
    guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
          let json = (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) as? [String: Any] else { NSLog("Still: skipped agents/\(name)"); continue }
    let s = Spec(json)
-   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex"].contains(s.id),
+   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode"].contains(s.id),
          !s.command.isEmpty, !s.run.isEmpty else { continue }
    let adapter = ManifestAdapter(id: s.id, name: s.name.isEmpty ? s.id : s.name, app: s.name.isEmpty ? s.command : s.name, command: s.command)
    adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.signIn = s.signin; adapter.domains = s.domains; adapter.secondary = true
@@ -508,67 +609,38 @@ func readLines(_ handle: FileHandle, _ each: (String) -> Void) {
  if !buffer.isEmpty { each(String(decoding: buffer, as: UTF8.self)) }
 }
 
-/// A running agent. Its processes share a process group, so cancel ends every child at once; Still quitting ends them too.
-final class AgentRun {
+/// A running agent: an app (CliRun) or Still's own loop for an API provider (ApiRun), with the same events. Still quitting ends every one.
+class AgentRun {
  static let limit: TimeInterval = 3600
  static var launched = 0 // runs started since Still opened: each one uses the user's plan (tests check Quick setup uses none)
  private static var live: [ObjectIdentifier: AgentRun] = [:]
  private static let liveLock = NSLock()
  let adapter: AgentAdapter
  let started = Date()
- private let process: Spawned
  private let lock = NSLock()
  private var errorLines: [String] = []
- private let stderrDone = DispatchGroup()
- private(set) var cancelled = false, timedOut = false
- private(set) var exitCode: Int32 = 0
+ var cancelled = false, timedOut = false
+ var exitCode: Int32 = 0
 
- private init(_ adapter: AgentAdapter, _ process: Spawned) {
-  self.adapter = adapter; self.process = process
-  stderrDone.enter()
-  Thread.detachNewThread { [self] in readLines(process.errors) { self.keep($0) }; stderrDone.leave() }
+ init(_ adapter: AgentAdapter) {
+  self.adapter = adapter
   AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = self; AgentRun.liveLock.unlock()
  }
+ /// It's over: Still quitting no longer needs to end it.
+ func ended() { AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = nil; AgentRun.liveLock.unlock() }
 
- static func start(_ adapter: AgentAdapter, _ exe: String, _ r: RunRequest) async throws -> AgentRun {
-  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
-  let args = try await adapter.args(exe, r)
-  let run = AgentRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment))
-  DispatchQueue.main.async { launched += 1 }
-  // Written from the side, so a big prompt never blocks Still while the app is slow to read it.
-  let prompt = adapter.promptOnStdin ? Data(r.prompt.utf8) : Data(), input = run.process.input
-  DispatchQueue.global().async { try? input.write(contentsOf: prompt); try? input.close() }
-  return run
- }
-
- private func keep(_ line: String) {
+ func keep(_ line: String) {
   lock.lock(); defer { lock.unlock() }
   errorLines.append(line)
   if errorLines.count > 40 { errorLines.removeFirst() }
  }
  var errors: [String] { lock.lock(); defer { lock.unlock() }; return errorLines }
 
- /// The run's events, in order, until the app exits. Lines that aren't JSON go to plain (and are kept for errors).
- func events() -> AsyncStream<AgentEvent> {
-  AsyncStream { continuation in
-   Thread.detachNewThread { [self] in
-    let timer = DispatchWorkItem { [weak self] in self?.timedOut = true; self?.cancel() }
-    DispatchQueue.global().asyncAfter(deadline: .now() + AgentRun.limit, execute: timer)
-    readLines(process.output) { line in
-     if line.hasPrefix("{"), let e = jsonObject(line) { for event in adapter.parse(e) { continuation.yield(event) } }
-     else { keep(line); for event in adapter.plain(line) { continuation.yield(event) } }
-    }
-    stderrDone.wait()
-    exitCode = process.wait()
-    timer.cancel()
-    AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = nil; AgentRun.liveLock.unlock()
-    continuation.finish()
-   }
-  }
- }
+ /// The run's events, in order, until it ends.
+ func events() -> AsyncStream<AgentEvent> { AsyncStream { $0.finish() } }
 
- /// Ends the app and everything it started right away.
- func cancel() { cancelled = true; process.kill() }
+ /// Ends it right away.
+ func cancel() { cancelled = true }
 
  /// Still is quitting: every run ends with it.
  static func endAll() {
@@ -588,6 +660,52 @@ final class AgentRun {
   let old = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).filter { $0.hasSuffix(".log") }.sorted(by: >).dropFirst(20)
   for name in old { try? FileManager.default.removeItem(at: logs.appendingPathComponent(name)) }
  }
+}
+
+/// An app's run. Its processes share a process group, so cancel ends every child at once.
+final class CliRun: AgentRun {
+ private let process: Spawned
+ private let stderrDone = DispatchGroup()
+
+ private init(_ adapter: AgentAdapter, _ process: Spawned) {
+  self.process = process
+  super.init(adapter)
+  stderrDone.enter()
+  Thread.detachNewThread { [self] in readLines(process.errors) { self.keep($0) }; stderrDone.leave() }
+ }
+
+ static func start(_ adapter: AgentAdapter, _ exe: String, _ r: RunRequest) async throws -> AgentRun {
+  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
+  let args = try await adapter.args(exe, r)
+  let run = CliRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment.merging(adapter.env) { $1 }))
+  DispatchQueue.main.async { launched += 1 }
+  // Written from the side, so a big prompt never blocks Still while the app is slow to read it.
+  let prompt = adapter.promptOnStdin ? Data(r.prompt.utf8) : Data(), input = run.process.input
+  DispatchQueue.global().async { try? input.write(contentsOf: prompt); try? input.close() }
+  return run
+ }
+
+ /// The run's events, in order, until the app exits. Lines that aren't JSON go to plain (and are kept for errors).
+ override func events() -> AsyncStream<AgentEvent> {
+  AsyncStream { continuation in
+   Thread.detachNewThread { [self] in
+    let timer = DispatchWorkItem { [weak self] in self?.timedOut = true; self?.cancel() }
+    DispatchQueue.global().asyncAfter(deadline: .now() + AgentRun.limit, execute: timer)
+    readLines(process.output) { line in
+     if line.hasPrefix("{"), let e = jsonObject(line) { for event in adapter.parse(e) { continuation.yield(event) } }
+     else { keep(line); for event in adapter.plain(line) { continuation.yield(event) } }
+    }
+    stderrDone.wait()
+    exitCode = process.wait()
+    timer.cancel()
+    ended()
+    continuation.finish()
+   }
+  }
+ }
+
+ /// Ends the app and everything it started right away.
+ override func cancel() { super.cancel(); process.kill() }
 }
 
 /// Turns each CLI's JSON lines into AgentEvents. Pure functions, so tests can feed them recorded output.
@@ -664,6 +782,54 @@ enum AgentStream {
   return []
  }
 
+ /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
+ /// tool_result, error and a closing result. Still's tools come as mcp_still_<tool>.
+ static func gemini(_ e: [String: Any]) -> [AgentEvent] {
+  switch str(e["type"]) {
+  case "init": if let session = str(e["session_id"]), !session.isEmpty { return [.session(session)] }
+  case "message" where str(e["role"]) == "assistant": if let text = str(e["content"]), !text.isEmpty { return [.message(text, join: isTrue(e["delta"]) ? "" : nil)] }
+  case "tool_use": return [.toolCall(id: str(e["tool_id"]) ?? "", name: bare(str(e["tool_name"]), "mcp_still_"), args: e["parameters"])]
+  case "tool_result": return [.toolResult(id: str(e["tool_id"]) ?? "", ok: str(e["status"]) == "success")]
+  case "error" where str(e["severity"]) == "error": return [.error(str(e["message"]) ?? "failed")]
+  case "result":
+   var events: [AgentEvent] = []
+   if let u = e["stats"] as? [String: Any], long(u["input_tokens"]) + long(u["output_tokens"]) > 0 {
+    events.append(.usage("Last reply: \(tokens(long(u["input_tokens"]))) in (\(tokens(long(u["cached"]))) cached), \(tokens(long(u["output_tokens"]))) out"))
+   }
+   if str(e["status"]) == "error" { events.append(.error(str((e["error"] as? [String: Any])?["message"]) ?? "failed")) }
+   return events
+  default: break
+  }
+  return []
+ }
+
+ /// OpenCode (`run --format json`, checked with 1.19.5): step_start, text (a whole part), tool_use (once it's done),
+ /// step_finish with tokens, and error. Every event has the sessionID. Still's tools come as still_<tool>.
+ static func openCode(_ e: [String: Any]) -> [AgentEvent] {
+  let part = e["part"] as? [String: Any]
+  switch str(e["type"]) {
+  case "step_start": if let session = str(e["sessionID"]), !session.isEmpty { return [.session(session)] }
+  case "text": if let text = str(part?["text"]), !text.isEmpty { return [.message(text, join: nil)] }
+  case "reasoning": return [.thinking]
+  case "tool_use":
+   let id = str(part?["callID"]) ?? "", state = part?["state"] as? [String: Any]
+   var events: [AgentEvent] = [.toolCall(id: id, name: bare(str(part?["tool"]), "still_"), args: state?["input"])]
+   if let status = str(state?["status"]), status == "completed" || status == "error" { events.append(.toolResult(id: id, ok: status == "completed")) }
+   return events
+  case "step_finish":
+   if let t = part?["tokens"] as? [String: Any], long(t["input"]) + long(t["output"]) > 0 {
+    let cached = long((t["cache"] as? [String: Any])?["read"])
+    return [.usage("Last reply: \(tokens(long(t["input"]) + cached)) in (\(tokens(cached)) cached), \(tokens(long(t["output"]))) out")]
+   }
+  case "error":
+   let error = e["error"] as? [String: Any]
+   return [.error(str((error?["data"] as? [String: Any])?["message"]) ?? str(error?["name"]) ?? "failed")]
+  default: break
+  }
+  return []
+ }
+ static func bare(_ tool: String?, _ prefix: String) -> String { guard let tool else { return "" }; return tool.hasPrefix(prefix) ? String(tool.dropFirst(prefix.count)) : tool }
+
  /// A manifest agent's JSON lines, read through its field map. Each map entry is "path" or "path when key=value[,key=value]".
  static func fields(_ e: [String: Any], _ map: [String: String]) -> [AgentEvent] {
   func pick(_ key: String) -> String? {
@@ -732,6 +898,7 @@ func cliDirs() -> [String] {
 
 /// An installed CLI's full path, or nil. A command with a slash is a path already (a manifest may name one).
 func findCli(_ name: String) -> String? {
+ if name.isEmpty { return "" } // an API provider: Still runs it itself
  let files = FileManager.default
  func runnable(_ path: String) -> Bool {
   var folder: ObjCBool = false

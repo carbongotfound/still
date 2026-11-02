@@ -94,7 +94,7 @@ try:
     shown = until(lambda: (t := text(process)) and "More agents" in t and t, 30)
     check(shown and all(n in shown for n in ("ChatGPT", "Grok", "Claude")), "Bring your own AI lists ChatGPT, Grok and Claude")
     check(shown and "Codex" not in shown, "The screen never says Codex")
-    check(shown and "More agents (3)" in shown, "More agents lists the three manifests and skips the broken one")
+    check(shown and "More agents (4)" in shown, "More agents lists OpenCode and the three manifests and skips the broken one")
     rpc(process, "shellEval", script="document.querySelector('.byo-more').click()")
     rows = until(lambda: (t := text(process)) and "Fake missing" in t and "Signed in with your plan" in t and t, 30)
     check(rows and "Fake agent\nSigned in with your plan" in rows, "Signed-in row")

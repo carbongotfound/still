@@ -306,7 +306,7 @@ enum Profiles {
   defer { if lock >= 0 { close(lock) } }
   let folder = folder(id)
   if FileManager.default.fileExists(atPath: folder.path) { try checkTree(folder); try FileManager.default.removeItem(at: folder) }
-  Vault.erase(folder)
+  Vault.erase(folder); ApiKeys.erase(folder)
   if #available(macOS 14.0, *) { for store in [storeId(folder), shellId(folder), companionId(folder)] { WKWebsiteDataStore.remove(forIdentifier: store) { _ in } } }
   if launchId == id { try? setLaunch("default") }
   list.removeAll { $0.id == id }
@@ -316,10 +316,10 @@ enum Profiles {
  static func resetDefault() throws {
   guard let lock = lockClosed("default") else { throw stillError("Open another profile, then close Default before resetting it.") }
   defer { if lock >= 0 { close(lock) } }
-  let paths = ["state.json", "Clipboard"].map { profileHome.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+  let paths = ["state.json", "Clipboard", "api-keys"].map { profileHome.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
   for path in paths { try checkTree(path) }
   for path in paths { try FileManager.default.removeItem(at: path) }
-  Vault.erase(profileHome)
+  Vault.erase(profileHome); ApiKeys.erase(profileHome)
   if #available(macOS 14.0, *) { dataStore(profileHome).removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {} }
  }
 }

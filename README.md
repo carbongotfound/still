@@ -2,7 +2,7 @@
 
 # still.
 
-**An open-source agent browser that works with the Claude, ChatGPT and Grok CLIs you're already signed into. No API keys.**
+**An open-source agent browser that works with the Claude, ChatGPT, Grok and Gemini CLIs you're already signed into. No API key needed.**
 
 [**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**Features**](#features) · [**Install**](#install) · [**Connect your AI**](#connect-your-ai) · [**Contributing**](#contributing)
 
@@ -19,7 +19,7 @@
 
 <p align="center"><img src="docs/screenshots/home.png" alt="Still's new tab: Maya, the companion you work with, with the rest of the team behind her and the message box below" width="900"></p>
 
-Still is a real browser with a team of AI companions built in. Hire the ones you need, give them a task, and they work in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They run on the Claude, ChatGPT or Grok app you already use, signed in to your own plan, so there's nothing new to pay for and no key to paste. Everything stays on your computer.
+Still is a real browser with a team of AI companions built in. Hire the ones you need, give them a task, and they work in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They run on the Claude, ChatGPT, Grok or Gemini app you already use, signed in to your own plan, so there's nothing new to pay for and no key to paste. Everything stays on your computer.
 
 ## Features
 
@@ -116,7 +116,8 @@ Still updates itself after that.
 
 - **Windows** 10 (1809 or later) or 11, x64. Setup installs the Microsoft Edge WebView2 Runtime if it's missing.
 - **macOS** 12 or later.
-- **An AI app** for the companions: Claude Code, ChatGPT's CLI from OpenAI, or Grok Build, signed in to your own account. Setup can install and sign in for you. Still works as a browser without one.
+- Linux isn't supported yet.
+- **An AI app** for the companions: Claude Code, ChatGPT's CLI from OpenAI, Grok Build, Gemini CLI or OpenCode, signed in to your own account. Setup can install and sign in for you. Still works as a browser without one.
 
 ## Connect your AI
 
@@ -127,8 +128,21 @@ Still runs the AI's own command-line app in the background, signed in to your pl
 | **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. **Sign in with Anthropic** opens Claude's own sign-in. |
 | **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
 | **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
+| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
+| **OpenCode** | [OpenCode](https://opencode.ai) | Under **More agents**. It runs on the provider you set up inside OpenCode (`opencode providers login`), or its free models. |
 
 The buttons are on each AI's tile in setup and in the chat's AI picker. If the app is already installed and signed in, Still finds it. Switch AI anytime, even halfway through a chat: the chat moves over with its history.
+
+### Your own API key (optional)
+
+If you'd rather pay per use, add a provider in **Settings > Models > API providers**: any service that speaks the OpenAI Chat Completions or Anthropic Messages format, with your own API key. Still runs the agent itself, with the same approvals and permissions as the apps. It uses your API key and your provider bills you per use.
+
+- The key stays in Windows DPAPI or the macOS Keychain. Still shows only its last four characters, with Replace and Remove.
+- Still sends it only over https (plain http only to `localhost` and `127.0.0.1`), and never to a redirect.
+- Each reply shows its tokens and an estimated cost if you enter prices. Settings shows the month's total, and an optional monthly limit pauses the provider.
+- **Test connection** checks the address, key, model, streaming and tool calls. It sends one tiny request, which your provider may bill.
+
+API providers are labelled **Compatible**: Still checks them against its own test server, not against real providers.
 
 ## Privacy
 

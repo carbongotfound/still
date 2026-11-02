@@ -14,6 +14,7 @@ public sealed record RunRequest(string Prompt, string Model, string Effort, stri
 {
  public string WorkFolder { get; init; } = ""; // the user's working folder: the app's own file tools, for that folder only
  public bool Forget { get; init; } // an incognito chat: the app saves no session (only where it has a documented option)
+ public string Job { get; init; } = "chats"; // what the run is for, in an API provider's spending: chats, titles or setup
  public string PromptFile => Path.Combine(Folder, "prompt-" + (Session ?? "run") + ".txt");
 }
 
@@ -31,7 +32,8 @@ public abstract class AgentAdapter
  public string Site { get; init; } = "";
  public string[] SignIn { get; init; } = [];
  public string[] Domains { get; init; } = [];    // the only sites a sign-in page may be on
- public bool Secondary { get; init; }            // a manifest agent: listed under "More agents"
+ public bool Secondary { get; init; }            // listed under "More agents": OpenCode and manifest agents
+ public string TerminalSignIn { get; init; } = ""; // no sign-in command: the user runs this in a terminal to sign in
  public virtual bool PromptOnStdin => true;
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
  public virtual bool NamesSession => false;
@@ -46,17 +48,23 @@ public abstract class AgentAdapter
  public abstract IEnumerable<AgentEvent> Parse(JsonNode e);
  /// A line that isn't JSON. Agents with plain output speak in lines.
  public virtual IEnumerable<AgentEvent> Plain(string line) => [];
+ /// Settings the app needs for a run, added to its environment. Never one of the stripped keys.
+ public virtual IReadOnlyDictionary<string, string> Env { get; } = new Dictionary<string, string>();
+ /// What it can't do the way the others can, said on its card instead of hidden.
+ public virtual string[] Gaps => [];
 
- public Task<AgentRun> Start(string exe, RunRequest r) => AgentRun.Start(this, exe, r);
+ public virtual Task<AgentRun> Start(string exe, RunRequest r) => CliRun.Start(this, exe, r);
 
  // Keys that would bill an API account instead of the user's plan. The app's own sign-in is used instead.
  static readonly string[] ApiKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"];
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"];
+ internal static bool Stripped(string key) => ApiKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
 
- public static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args)
+ public static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args, IReadOnlyDictionary<string, string>? env = null)
  {
   var start = new ProcessStartInfo { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true };
   foreach (var key in ApiKeys) start.Environment.Remove(key);
+  foreach (var (key, value) in env ?? new Dictionary<string, string>()) if (!Stripped(key)) start.Environment[key] = value;
   if (exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) { start.FileName = exe; foreach (var a in args) start.ArgumentList.Add(a); return start; }
   // npm installs .cmd launchers, which only cmd.exe runs. Every argument is Still's own (paths, flags, ids).
   start.FileName = Path.Combine(Environment.SystemDirectory, "cmd.exe");
@@ -173,6 +181,100 @@ sealed class ChatGptAdapter : AgentAdapter
  public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.Codex(e);
 }
 
+/// Gemini, through Google's Gemini CLI signed in with the user's Google account. It has no sign-in command (the user runs
+/// gemini once in a terminal) and no effort setting, and its own tools, skills, sub-agents and extensions stay off.
+sealed class GeminiAdapter : AgentAdapter
+{
+ public override bool NamesSession => true;
+ // It reads the run folder's settings (Still's MCP server) only in a folder it trusts: this one, for the run.
+ public override IReadOnlyDictionary<string, string> Env { get; } = new Dictionary<string, string> { ["GEMINI_CLI_TRUST_WORKSPACE"] = "true" };
+ public override string[] Gaps => ["To sign in, run gemini in a terminal and pick Sign in with Google.", "No effort setting, so modes pick a model only.",
+  "Gemini keeps its own record of incognito chats on this computer. It has no option to turn that off."];
+ static string Home => Path.Combine(Environment.GetEnvironmentVariable("GEMINI_CLI_HOME") is { Length: > 0 } h ? h : Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".gemini");
+ /// Signed in with Google: its settings pick that sign-in and it has saved one. Still reads which sign-in, never the login.
+ public override Task<bool?> Detect(string exe)
+ {
+  bool google = false;
+  try {
+   var settings = JsonNode.Parse(File.ReadAllText(Path.Combine(Home, "settings.json")), null, new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+   google = (settings?["security"]?["auth"]?["selectedType"] ?? settings?["selectedAuthType"])?.GetValue<string>() == "oauth-personal";
+  } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { }
+  return Task.FromResult<bool?>(google && File.Exists(Path.Combine(Home, "oauth_creds.json")));
+ }
+ // Its own model names (checked with 0.66.0); auto lets Gemini pick.
+ public override Task<AgentModel[]> Models(string exe) => Task.FromResult<AgentModel[]>([new("", "Default", []), new("auto", "Auto", []), new("pro", "Pro", []),
+  new("flash", "Flash", []), new("flash-lite", "Flash Lite", [])]);
+ public override Task<List<string>> Args(string exe, RunRequest r)
+ {
+  // Still's MCP server in the run folder's settings, and a policy that denies every tool but Still's, so no shell, file,
+  // web, skill or sub-agent tool runs and nothing waits on a terminal prompt. -e none: no extensions.
+  string dir = Path.Combine(r.Folder, ".gemini"), policy = Path.Combine(dir, "still-policy.toml");
+  Directory.CreateDirectory(dir);
+  File.WriteAllText(Path.Combine(dir, "settings.json"), JsonSerializer.Serialize(new { mcpServers = new { still = new { command = Environment.ProcessPath, args = r.Mcp, trust = true, timeout = 660000 } } })); // ask_user waits for the user
+  File.WriteAllText(policy, "[[rule]]\ntoolName = \"*\"\ndecision = \"deny\"\npriority = 100\n\n[[rule]]\ntoolName = \"mcp_still_*\"\ndecision = \"allow\"\npriority = 900\n");
+  List<string> args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--policy", policy, r.Resume ? "--resume" : "--session-id", r.Session!];
+  if (r.Model.Length > 0) args.AddRange(["-m", r.Model]);
+  return Task.FromResult(args);
+ }
+ public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.Gemini(e);
+}
+
+/// OpenCode, on whichever provider the user set up inside it: a plan sign-in, that provider's key kept by OpenCode, or
+/// OpenCode's free models. Still never sees which. Its own tools, skills and sub-agents stay off.
+sealed partial class OpenCodeAdapter : AgentAdapter
+{
+ string version = "";
+ public override string[] Gaps => ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal), or its free models.",
+  "OpenCode keeps its own record of incognito chats on this computer. It has no option to turn that off.",
+  .. version.Length > 0 && !version.StartsWith("1.", StringComparison.Ordinal) ? new[] { $"Still was checked with OpenCode 1. This is {version}, so it may not work." } : []];
+ [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][\w.@-]*/\S+$")] private static partial System.Text.RegularExpressions.Regex ModelLine();
+ // Ready once it lists a model: its free ones need no sign-in.
+ public override async Task<bool?> Detect(string exe)
+ {
+  if (await Printed(exe, MainWindow.AiFolder, "--version") is { } v) version = v[0].Trim();
+  return await Printed(exe, MainWindow.AiFolder, "models") is { } p ? p[0].Split('\n').Any(l => ModelLine().IsMatch(l.Trim())) : null;
+ }
+ static readonly string[] Efforts = ["none", "minimal", "low", "medium", "high", "xhigh", "max"];
+ static int Rank(string effort) => Array.IndexOf(Efforts, effort) is var i and >= 0 ? i : 99; // lowest first, as the Mac lists them
+ /// Its catalog: each model's line, then its details, whose variants are its effort levels. Models without tool calls are left out.
+ public override async Task<AgentModel[]> Models(string exe)
+ {
+  List<AgentModel> list = [new("", "Default", [])];
+  if (await Printed(exe, MainWindow.AiFolder, "models", "--verbose") is not { } p) return [.. list];
+  string id = ""; var details = new StringBuilder();
+  void Add() {
+   if (id.Length == 0) return;
+   try {
+    var m = JsonNode.Parse(details.ToString());
+    if (m?["capabilities"]?["toolcall"]?.GetValue<bool>() == false) return;
+    string name = m?["name"]?.GetValue<string>() is { Length: > 0 } n ? n : id;
+    list.Add(new(id, name + " · " + id.Split('/')[0], m?["variants"] is JsonObject v ? [.. v.Select(x => x.Key).OrderBy(Rank).ThenBy(k => k, StringComparer.Ordinal)] : []));
+   } catch (Exception ex) when (ex is JsonException or InvalidOperationException) { list.Add(new(id, id, [])); }
+  }
+  foreach (var raw in p[0].Split('\n')) {
+   string line = raw.TrimEnd('\r');
+   if (ModelLine().IsMatch(line)) { Add(); id = line; details.Clear(); } else details.AppendLine(line);
+  }
+  Add();
+  return [.. list];
+ }
+ public override Task<List<string>> Args(string exe, RunRequest r)
+ {
+  // Still's MCP server in the run folder's config (v1 shape) and every tool off but Still's. Its MCP calls time out after
+  // 5 seconds unless told otherwise; ask_user waits for the user.
+  File.WriteAllText(Path.Combine(r.Folder, "opencode.json"), JsonSerializer.Serialize(new Dictionary<string, object> {
+   ["$schema"] = "https://opencode.ai/config.json",
+   ["mcp"] = new { still = new { type = "local", command = new[] { Environment.ProcessPath! }.Concat(r.Mcp), enabled = true, timeout = 660000 } },
+   ["tools"] = new Dictionary<string, bool> { ["*"] = false, ["still_*"] = true } }));
+  List<string> args = ["run", "--format", "json", "--dir", r.Folder, "--title", "Still"]; // a title of its own would cost a model call
+  if (r.Resume && r.Session != null) args.AddRange(["--session", r.Session]);
+  if (r.Model.Length > 0) args.AddRange(["-m", r.Model]);
+  if (r.Effort.Length > 0) args.AddRange(["--variant", r.Effort]);
+  return Task.FromResult(args);
+ }
+ public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.OpenCode(e);
+}
+
 /// Any other agent CLI, described by a JSON file in Still's agents folder (see docs/agentic/agents.md). Placeholders in
 /// its args: {prompt} (only for .exe commands; .cmd ones go through cmd.exe), {promptFile}, {model}, {effort}, {cwd},
 /// {mcpConfig} (a standard mcp.json for Still) and {session}. Without {prompt} or {promptFile} the prompt goes to stdin.
@@ -193,21 +295,6 @@ sealed class ManifestAdapter : AgentAdapter
 
  // Written once, turned off, for the user to adapt. Not tested by Still: none of these apps is on the build PC.
  static readonly (string Name, string Json)[] Examples = [
-  ("gemini", """
-   {
-    "id": "gemini", "name": "Gemini", "enabled": false,
-    "note": "Example, not tested by Still. Sign in by running gemini once in a terminal. Set enabled to true to use it.",
-    "command": "gemini", "site": "https://github.com/google-gemini/gemini-cli", "install": "npm install -g @google/gemini-cli",
-    "detect": ["--version"], "expect": "\\d+\\.\\d+",
-    "mcpFile": ".gemini/settings.json",
-    "run": ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "--yolo"],
-    "model": ["-m", "{model}"], "models": ["gemini-2.5-pro", "gemini-2.5-flash"],
-    "output": "jsonl",
-    "resume": ["--resume", "{session}"],
-    "fields": { "session": "session_id when type=init", "text": "content when type=message,role=assistant", "delta": "delta",
-     "tool": "tool_name when type=tool_use", "toolId": "tool_id", "toolArgs": "parameters", "error": "message when type=error,severity=error" }
-   }
-   """),
   ("cursor-agent", """
    {
     "id": "cursor-agent", "name": "Cursor Agent", "enabled": false,
@@ -218,16 +305,6 @@ sealed class ManifestAdapter : AgentAdapter
     "run": ["-p", "--output-format", "stream-json", "--approve-mcps", "--force"],
     "resume": ["--resume", "{session}"], "model": ["--model", "{model}"],
     "output": "stream-json"
-   }
-   """),
-  ("opencode", """
-   {
-    "id": "opencode", "name": "OpenCode", "enabled": false,
-    "note": "Example, not tested by Still. Add Still to OpenCode's MCP servers yourself (command: Still.exe --mcp --as OpenCode). Set enabled to true to use it.",
-    "command": "opencode", "site": "https://opencode.ai", "install": "npm install -g opencode-ai",
-    "detect": ["--version"], "expect": "\\d+\\.\\d+",
-    "run": ["run", "--file", "{promptFile}", "Do what the attached file asks."], "model": ["--model", "{model}"],
-    "output": "plain"
    }
    """),
   ("aider", """
@@ -255,7 +332,7 @@ sealed class ManifestAdapter : AgentAdapter
    foreach (var file in Directory.EnumerateFiles(Folder, "*.json").Order()) {
     try {
      var s = JsonSerializer.Deserialize<Spec>(File.ReadAllText(file), new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" || s.Command.Length == 0 || s.Run.Length == 0) continue;
+     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" || s.Command.Length == 0 || s.Run.Length == 0) continue;
      found.Add(new ManifestAdapter { spec = s, Id = s.Id, Name = s.Name.Length > 0 ? s.Name : s.Id, App = s.Name.Length > 0 ? s.Name : s.Command, Command = s.Command,
       Site = s.Site, InstallCommand = s.Install, SignIn = s.Signin, Domains = s.Domains, Secondary = true });
     } catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { Still.App.Log(ex); }
@@ -296,66 +373,26 @@ sealed class ManifestAdapter : AgentAdapter
  public override IEnumerable<AgentEvent> Plain(string line) => spec.Output == "plain" && line.Trim().Length > 0 ? [new AgentEvent.Message(line, "\n")] : [];
 }
 
-/// A running agent. Its process tree lives in a Job Object, so Cancel ends every child at once, and so does Still exiting.
-public sealed class AgentRun : IDisposable
+/// One run of an AI: an app's process (CliRun) or Still's own loop on an API provider (ApiRun). Both speak AgentEvents.
+public abstract class AgentRun(AgentAdapter adapter) : IDisposable
 {
  public static readonly TimeSpan Limit = TimeSpan.FromHours(1);
  public static int Launched; // runs started since Still opened: each one uses the user's plan (tests check Quick setup uses none)
- readonly Process process;
- readonly Job job = new();
- readonly AgentAdapter adapter;
- readonly List<string> errors = [];
- readonly Task stderr;
+ protected readonly AgentAdapter adapter = adapter;
+ protected readonly List<string> errors = [];
  public DateTime Started { get; } = DateTime.UtcNow;
- public bool Cancelled { get; private set; }
- public bool TimedOut { get; private set; }
-
- AgentRun(AgentAdapter adapter, Process process)
- {
-  this.adapter = adapter; this.process = process;
-  job.Add(process);
-  stderr = Task.Run(async () => { while (await process.StandardError.ReadLineAsync() is { } line) lock (errors) { errors.Add(line); if (errors.Count > 40) errors.RemoveAt(0); } });
- }
-
- public static async Task<AgentRun> Start(AgentAdapter adapter, string exe, RunRequest r)
- {
-  Directory.CreateDirectory(r.Folder);
-  var start = AgentAdapter.Launch(exe, r.Folder, await adapter.Args(exe, r));
-  start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
-  start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
-  var run = new AgentRun(adapter, Process.Start(start) ?? throw new InvalidOperationException("couldn't start it."));
-  Interlocked.Increment(ref Launched);
-  if (adapter.PromptOnStdin) await run.process.StandardInput.BaseStream.WriteAsync(new UTF8Encoding(false).GetBytes(r.Prompt));
-  run.process.StandardInput.Close();
-  return run;
- }
-
+ public bool Cancelled { get; protected set; }
+ public bool TimedOut { get; protected set; }
  public string[] Errors { get { lock (errors) return [.. errors]; } }
- public int ExitCode => process.HasExited ? process.ExitCode : 0;
+ public abstract int ExitCode { get; }
+ /// The run's events, in order, until it ends.
+ public abstract IAsyncEnumerable<AgentEvent> Events(CancellationToken token = default);
+ /// Ends it, and everything it started, right away.
+ public abstract void Cancel();
+ public abstract void Dispose();
+ protected void Keep(string line) { lock (errors) { errors.Add(line); if (errors.Count > 40) errors.RemoveAt(0); } }
 
- /// The run's events, in order, until the app exits. Lines that aren't JSON go to Plain (and are kept for errors).
- public async IAsyncEnumerable<AgentEvent> Events([EnumeratorCancellation] CancellationToken token = default)
- {
-  using var limit = new Timer(_ => { TimedOut = true; Cancel(); }, null, Limit, Timeout.InfiniteTimeSpan);
-  while (await process.StandardOutput.ReadLineAsync(token) is { } line) {
-   JsonNode? e = null;
-   if (line.StartsWith('{')) try { e = JsonNode.Parse(line); } catch (JsonException) { }
-   if (e is not JsonObject) { lock (errors) { errors.Add(line); if (errors.Count > 40) errors.RemoveAt(0); } foreach (var p in adapter.Plain(line)) yield return p; continue; }
-   foreach (var ev in adapter.Parse(e)) yield return ev;
-  }
-  await process.WaitForExitAsync(CancellationToken.None);
-  await stderr;
- }
-
- /// Ends the app and everything it started (Still's MCP server, shells, helpers) right away.
- public void Cancel()
- {
-  Cancelled = true;
-  job.Kill();
-  try { if (!process.HasExited) process.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
- }
-
- /// Keeps what the app printed when it failed, so a crash can be looked into later. Prompts are never written.
+ /// Keeps what it printed when it failed, so a crash can be looked into later. Prompts are never written.
  public void SaveLog(string folder, string chatId)
  {
   try {
@@ -366,8 +403,60 @@ public sealed class AgentRun : IDisposable
    foreach (var old in new DirectoryInfo(logs).GetFiles("*.log").OrderByDescending(f => f.Name).Skip(20)) old.Delete();
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Still.App.Log(ex); }
  }
+}
 
- public void Dispose() { process.Dispose(); job.Dispose(); }
+/// A running agent app. Its process tree lives in a Job Object, so Cancel ends every child at once, and so does Still exiting.
+public sealed class CliRun : AgentRun
+{
+ readonly Process process;
+ readonly Job job = new();
+ readonly Task stderr;
+
+ CliRun(AgentAdapter adapter, Process process) : base(adapter)
+ {
+  this.process = process;
+  job.Add(process);
+  stderr = Task.Run(async () => { while (await process.StandardError.ReadLineAsync() is { } line) Keep(line); });
+ }
+
+ public static async Task<AgentRun> Start(AgentAdapter adapter, string exe, RunRequest r)
+ {
+  Directory.CreateDirectory(r.Folder);
+  var start = AgentAdapter.Launch(exe, r.Folder, await adapter.Args(exe, r), adapter.Env);
+  start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
+  start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
+  var run = new CliRun(adapter, Process.Start(start) ?? throw new InvalidOperationException("couldn't start it."));
+  Interlocked.Increment(ref Launched);
+  if (adapter.PromptOnStdin) await run.process.StandardInput.BaseStream.WriteAsync(new UTF8Encoding(false).GetBytes(r.Prompt));
+  run.process.StandardInput.Close();
+  return run;
+ }
+
+ public override int ExitCode => process.HasExited ? process.ExitCode : 0;
+
+ /// Lines that aren't JSON go to Plain (and are kept for errors).
+ public override async IAsyncEnumerable<AgentEvent> Events([EnumeratorCancellation] CancellationToken token = default)
+ {
+  using var limit = new Timer(_ => { TimedOut = true; Cancel(); }, null, Limit, Timeout.InfiniteTimeSpan);
+  while (await process.StandardOutput.ReadLineAsync(token) is { } line) {
+   JsonNode? e = null;
+   if (line.StartsWith('{')) try { e = JsonNode.Parse(line); } catch (JsonException) { }
+   if (e is not JsonObject) { Keep(line); foreach (var p in adapter.Plain(line)) yield return p; continue; }
+   foreach (var ev in adapter.Parse(e)) yield return ev;
+  }
+  await process.WaitForExitAsync(CancellationToken.None);
+  await stderr;
+ }
+
+ /// Ends the app and everything it started (Still's MCP server, shells, helpers) right away.
+ public override void Cancel()
+ {
+  Cancelled = true;
+  job.Kill();
+  try { if (!process.HasExited) process.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { }
+ }
+
+ public override void Dispose() { process.Dispose(); job.Dispose(); }
 
  sealed class Job : IDisposable
  {
