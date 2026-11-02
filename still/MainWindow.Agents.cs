@@ -620,9 +620,11 @@ public partial class MainWindow
   bool marked = Prefs.SensitiveSites.Any(s => OnSite(s, site));
   if (action == "interact" && (why.Length > 0 || marked)) { action = "sensitive"; if (why.Length == 0) why = "You marked " + site + " as sensitive."; }
   var run = runs.GetValueOrDefault(who);
-  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
-  string mode = PermissionMode(run?.Chat.Companion ?? "", site, action) ?? (run != null ? DefaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site;
-  bool granted = mode == "always" || mode == "chat" && (run?.Chat.Allowed.Contains(key) ?? sessionGrants.Contains(who + " " + key));
+  // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
+  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  var up = run == null ? default : ExchangeOf(run.Chat);
+  string mode = run != null ? Delegation.Strictest(up.Chain.Select(c => PermissionMode(c, site, action) ?? DefaultPermission(action))) : PermissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site;
+  bool granted = mode == "always" || mode == "chat" && (run != null ? up.Root.Allowed.Contains(key) : sessionGrants.Contains(who + " " + key));
   if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again
   if (run == null) {
    if (granted) return null;
@@ -638,7 +640,7 @@ public partial class MainWindow
   string answer = await Approve(run, what, site, action, why, countdown: granted);
   if (answer == "always" && run.Chat.Ephemeral) answer = "chat"; // an incognito chat writes no site rules
   if (answer == "always") SetPermission(site, action, "", "always");
-  if (answer == "chat" && !run.Chat.Allowed.Contains(key)) run.Chat.Allowed.Add(key);
+  if (answer == "chat" && !up.Root.Allowed.Contains(key)) up.Root.Allowed.Add(key);
   Audit(run.Chat, what, site, answer switch {
    "always" => "You always allow this on " + site, "chat" => "You allowed it in this chat", "once" => "You allowed it once",
    "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",

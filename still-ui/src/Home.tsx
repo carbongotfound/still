@@ -72,7 +72,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const [wipe, setWipe] = useState(false)
  const needs = (id: string) => needsYou(ai, id)
  const first = ai.companions?.[0]?.id
- const chats = ai.chats.filter(c => (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
+ const chats = ai.chats.filter(c => !c.from && (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
   && (!who || (c.companion || first) === who) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
  if (oldest) chats.reverse()
  const groups = chats.reduce<[string, typeof chats][]>((all, c) => { const day = dayOf(c.updated); if (all.at(-1)?.[0] === day) all.at(-1)![1].push(c); else all.push([day, [c]]); return all }, [])

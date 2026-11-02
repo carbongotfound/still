@@ -400,13 +400,20 @@ func named(_ name: String) -> Companion? {
 }
 
 /// Companions message each other (Windows: MainWindow.Ai.cs, Exchange): ask_companion waits for the reply, tell_companion
-/// hands work over. The one asked answers in its own chat with the asker, and only it sees what was asked; the asking chat,
-/// and the user's chat the request started in, show the exchange as a card. At most 3 hops deep and about 10 messages per
+/// hands work over in the background. The one asked works on a child task of the asking chat and sees only what it was
+/// asked; its result comes back to the card in the asking chat and the user's chat the request started in. Child chats
+/// aren't in history: their cards open them. A child acts only where everyone up the chain may (strictest), keeps
+/// nothing in memory (the asker decides), and is stopped with its parent. At most 3 hops deep and about 10 messages per
 /// request; a companion already in the exchange can't be asked again (a loop), and none messages itself.
 let exchangeHops = 3, exchangeMessages = 10
 var exchangesSent: [String: Int] = [:] // by the user's chat: messages sent for its current request
 func chatById(_ id: String?) -> AiChat? { id.flatMap { id in aiChats.first { $0.id == id } ?? browsers.lazy.flatMap { $0.aiView.privateChats }.first { $0.id == id } } }
 func nameOf(_ id: String) -> String { companions.first { $0.id == id }?.name ?? "A former teammate" }
+/// A child task's permission: the strictest of everyone's up the chain (Windows: Delegation.Strictest). Unknown modes ask.
+func strictest(_ modes: [String]) -> String {
+ let rank = ["always": 0, "chat": 1]
+ return modes.map { rank[$0] == nil ? "ask" : $0 }.max { (rank[$0] ?? 2) < (rank[$1] ?? 2) } ?? "ask"
+}
 /// The user's chat an exchange started in, and who's in it so far: that chat's companion, then each one asked since.
 func exchangeOf(_ chat: AiChat) -> (root: AiChat, chain: [String]) {
  var chat = chat, chain = [chat.companion]
@@ -714,13 +721,15 @@ extension Browser {
   case "aiNew": v.chat = nil; v.error = ""
   case "aiOpenChat": v.chat = myChats.first { $0.id == s("id") } ?? v.chat; v.error = ""
   case "aiDeleteChat":
-   guard runs[s("id")] == nil else { break }
-   for gone in myChats.filter({ $0.id == s("id") }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsHere + "/" + gone.id) }
-   forgetTask(s("id"))
-   if incognito { v.privateChats.removeAll { $0.id == s("id") } } else { aiChats.removeAll { $0.id == s("id") } }
-   if v.chat?.id == s("id") { v.chat = nil }
+   var doomed: Set<String> = [s("id")] // with the child tasks it started, and theirs
+   while case let more = myChats.filter({ $0.from.map(doomed.contains) == true && !doomed.contains($0.id) }), !more.isEmpty { more.forEach { doomed.insert($0.id) } }
+   guard !doomed.contains(where: { runs[$0] != nil }) else { break }
+   for gone in myChats.filter({ doomed.contains($0.id) }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsHere + "/" + gone.id) }
+   doomed.forEach(forgetTask)
+   if incognito { v.privateChats.removeAll { doomed.contains($0.id) } } else { aiChats.removeAll { doomed.contains($0.id) } }
+   if let c = v.chat, doomed.contains(c.id) { v.chat = nil }
    if !incognito { saveAiChats() }
-   for t in tabs where t.chatId == s("id") { close(t) }
+   for t in tabs where t.chatId.map(doomed.contains) == true { close(t) }
   case "aiDeleteAll":
    guard runs.isEmpty else { break }
    for c in myChats { forgetTask(c.id) }
@@ -1091,7 +1100,7 @@ extension Browser {
     return
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if said, !chat.noMemory, !chat.ephemeral, let who = companions.first(where: { $0.id == chat.companion }), memoryRefuses(me, chat.title) == nil, // a title can name a private tab too
+   if said, chat.from == nil, !chat.noMemory, !chat.ephemeral, let who = companions.first(where: { $0.id == chat.companion }), memoryRefuses(me, chat.title) == nil, // a title can name a private tab too
       let last = chat.messages.last(where: { $0.role == "assistant" }) {
     var end = last.text.components(separatedBy: "\n").map(tidy).first { !$0.isEmpty && !$0.hasPrefix(">>") } ?? ""
     end = tidy(end.replacingOccurrences(of: "**", with: ""))
@@ -1120,6 +1129,7 @@ extension Browser {
   guard let run = runs[who], let me = companions.first(where: { $0.id == run.chat.companion }) else { return agentFail("Only Still's companions can message each other.") }
   if tool == "list_companions" { return agentOk(["companions": companions.map { c -> [String: Any] in c === me ? ["name": c.name, "does": clipped(c.job, 240), "you": true] : ["name": c.name, "does": clipped(c.job, 240)] }]) }
   let name = tidy(argText(args, "name")).trimmingCharacters(in: CharacterSet(charactersIn: "@")), text = tidy(argText(args, "message"))
+  let title = clipped(tidy(argText(args, "title")).replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: CharacterSet(charactersIn: ".")), 60)
   guard let to = named(name) else { return agentFail("No teammate is called \"\(name)\". list_companions shows who's on the team.") }
   if to === me { return agentFail("That's you: a companion can't message itself.") }
   if text.isEmpty { return agentFail("Write the message.") }
@@ -1131,30 +1141,32 @@ extension Browser {
   if let busy = listOf(run.chat).first(where: { $0.from == run.chat.id && $0.companion == to.id }), runs[busy.id] != nil { return agentFail("\(to.name) is still on your last message. Wait for that first.") }
   let chat = listOf(run.chat).first { $0.from == run.chat.id && $0.companion == to.id } ?? {
    let c = AiChat(); c.companion = to.id; c.from = run.chat.id; c.noMemory = run.chat.noMemory; c.ephemeral = run.chat.ephemeral
-   c.title = clipped(me.name + (ask ? " asked: " : " handed over: ") + text.replacingOccurrences(of: "\n", with: " "), 60)
+   c.title = title.isEmpty ? clipped(me.name + " asked: " + text.replacingOccurrences(of: "\n", with: " "), 60) : "\(me.name) asked \(to.name) for \(title)"
    toTop(c, in: ownerOf(run.chat)); return c
   }()
   exchangesSent[root.id, default: 0] += 1
-  let card = AiMessage(ask ? "ask" : "tell", text, who: me.id); card.to = to.id; card.status = "working"; card.chat = chat.id
+  let card = AiMessage(ask ? "ask" : "tell", text, who: me.id); card.to = to.id; card.status = "working"; card.chat = chat.id; card.title = title.isEmpty ? nil : title
   run.chat.messages.append(card); if root !== run.chat { root.messages.append(card) }
   let from = chat.messages.count
-  runAi(chat, ask ? "[Still] \(me.name), your teammate, asks you this while working with the user. Your reply goes back to \(me.name): answer them directly with what they need. Use your own tools if it helps.\n\n\(text)"
-   : "[Still] \(me.name), your teammate, hands this over to you while working with the user. Do it; the user sees your work in this chat, and \(me.name) doesn't wait for it.\n\n\(text)", shown: text, asker: me.id)
+  let child = "Name the sources you used (links) and say what you couldn't find or aren't sure of. Don't save anything to memory: they decide what's kept."
+  runAi(chat, ask ? "[Still] \(me.name), your teammate, asks you this while working with the user. Your reply goes back to \(me.name): answer them directly with what they need. Use your own tools if it helps. \(child)\n\n\(text)"
+   : "[Still] \(me.name), your teammate, hands this over to you while working with the user. Do it; your result goes back to \(me.name)'s chat when you finish, and \(me.name) doesn't wait for it. \(child)\n\n\(text)", shown: text, asker: me.id)
   publishAiEverywhere()
+  let missing = "Still missing: \(title.isEmpty ? clipped(text.replacingOccurrences(of: "\n", with: " "), 80) : title)."
   let answered = Task { @MainActor () -> String? in
    while runs[chat.id] != nil { try? await Task.sleep(nanoseconds: 250_000_000) } // ponytail: polls the run; a completion hook on runAi if this ever matters
-   if card.status == "stopped" { return nil }
+   if card.status == "stopped" { card.reply = "Stopped before \(to.name) finished. \(missing)"; saveAiChats(chat); publishAiEverywhere(); return nil }
    let reply = tidy(chat.messages.dropFirst(from).filter { $0.role == "assistant" }.map(\.text).joined(separator: "\n\n"))
    card.status = reply.isEmpty ? "failed" : "replied"
-   card.reply = !reply.isEmpty ? reply : chat.error.isEmpty ? "\(to.name) didn't answer." : chat.error
+   card.reply = !reply.isEmpty ? reply : (chat.error.isEmpty ? "\(to.name) didn't answer." : chat.error) + " " + missing
    saveAiChats(chat); publishAiEverywhere()
    return reply
   }
-  if !ask { return agentOk(["done": "Handed over to \(to.name), who works on it in their own chat. Don't wait for it."]) }
+  if !ask { return agentOk(["done": "Handed over to \(to.name), who works on it in the background. Their result comes back to this chat; don't wait for it."]) }
   switch await answered.value {
   case nil: return agentFail("The user stopped \(to.name)'s answer. Carry on without it, and don't ask again unless the user wants you to.")
   case ""?: return agentFail(card.reply ?? "")
-  case let reply?: return agentOk(["from": to.name, "reply": reply])
+  case let reply?: return agentOk(["from": to.name, "reply": reply, "use": "Use this in your answer, with their sources (links) and anything they weren't sure of."])
   }
  }
 
@@ -1174,7 +1186,7 @@ extension Browser {
   var data: [String: Any] = [
    "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
    "interrupted": incognito || resumeAnswered ? [] : interruptedChats.map { ["id": $0.id, "title": $0.title, "unsure": aiTasks[$0.id]?.sensitive.contains { $0.outcome == nil } ?? false] }, "task": taskView(shown), "incognito": incognito,
-   "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
+   "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "root": r.chat.from == nil ? NSNull() : exchangeOf(r.chat).root.id as Any, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site] }] },
    "error": shown.map { $0.error.isEmpty ? view.error : $0.error } ?? view.error, "profile": "Default", "files": libraryFiles(),
    "models": aiClis.flatMap { c in (aiModels[c.id] ?? []).map { ["harness": c.id, "id": $0.id, "name": $0.name, "efforts": $0.efforts] as [String: Any] } },
@@ -1186,7 +1198,7 @@ extension Browser {
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
-    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
+    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body] },

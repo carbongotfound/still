@@ -35,5 +35,14 @@ Check(gemini.OfType<AgentEvent.ToolCall>().Single().Name == "mcp_still_open_tab"
 Check(gemini.OfType<AgentEvent.Message>().Select(m => m.Text).SequenceEqual(["The title is ", "Example Domain."]), "Manifest jsonl: only assistant text");
 Check(gemini.OfType<AgentEvent.Message>().All(m => m.Join == ""), "Manifest jsonl: streamed pieces join into one reply");
 
+// A helper's permissions: the strictest rule up the chain wins (Delegation.Strictest).
+Check(Delegation.Strictest(["always", "always"]) == "always", "Delegation: allowed when everyone up the chain allows it");
+Check(Delegation.Strictest(["ask", "always"]) == "ask", "Delegation: the asker's Ask beats the helper's Always");
+Check(Delegation.Strictest(["chat", "always"]) == "chat", "Delegation: the asker's Allow in this chat beats the helper's Always");
+Check(Delegation.Strictest(["always", "chat"]) == "chat", "Delegation: the helper's own stricter rule stays");
+Check(Delegation.Strictest(["chat", "always", "ask"]) == "ask", "Delegation: anyone up the chain asking means it asks");
+Check(Delegation.Strictest(["always", "someday"]) == "ask", "Delegation: a mode it doesn't know asks");
+Check(Delegation.Strictest([]) == "ask", "Delegation: no rule at all asks");
+
 Console.WriteLine(failed == 0 ? "PASSED" : $"FAILED {failed}");
 return failed == 0 ? 0 : 1;
