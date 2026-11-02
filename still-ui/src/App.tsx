@@ -13,7 +13,7 @@ import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, CompanionProfile, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginKeySetting, PluginStack } from "./Plugins"
-import { ChatHistory, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
+import { ChatHistory, ChatLink, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
 import { DEFAULT_LOOK } from "./look"
@@ -41,7 +41,7 @@ import { Welcome } from "./Welcome"
 import { Tour } from "./Tour"
 import type { ToolData } from "./BrowserTools"
 
-type Tab = { id: string; title: string; url: string; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; inUse?: string; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
+type Tab = { id: string; title: string; url: string; home?: HomeView; pinned: boolean; isPrivate: boolean; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; inUse?: string; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
 type Group = { id: string; name: string; color: string; collapsed: boolean }
 const splittable = (t?: Tab) => !!t?.url && !t.chatId && !t.inChat
 type Visit = { title: string; url: string; favicon?: string | null; at?: string }
@@ -316,8 +316,6 @@ export default function App() {
  const [ai, setAi] = useState<AiState>()
  const [aiView, setAiView] = useState<"chat" | "settings">("chat")
  const [buddy, setBuddy] = useState("") // the companion picked on the new tab page
- const [views, setViews] = useState<Record<string, HomeView>>({}) // per new tab: the home page it shows
- const wantView = useRef<HomeView>(undefined)
  const [editing, setEditing] = useState<Companion | null>(null)
  const [joined, setJoined] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
@@ -364,11 +362,11 @@ export default function App() {
  const [splitInfo, setSplitInfo] = useState(false) // beside a page, details stay closed until asked for
  const setInfo = (v: boolean) => { setInfoState(v); try { localStorage.setItem("still.chatInfo", v ? "open" : "closed") } catch { /* storage unavailable */ } }
  const companion = ai?.companions?.find(c => c.id === buddy) ?? companionOf(ai)
- const blank = !!active && !active.url && !active.chatId && !active.isPrivate
- const view = views[active?.id ?? ""] ?? "home"
- const setView = (v: HomeView) => { if (active) setViews(m => ({ ...m, [active.id]: v })) }
- const goHome = (v: HomeView) => { if (blank) setView(v); else { wantView.current = v; send("new") } }
- useEffect(() => { if (wantView.current && blank && active) { const v = wantView.current; wantView.current = undefined; setViews(m => ({ ...m, [active.id]: v })) } }, [active?.id]) // eslint-disable-line react-hooks/exhaustive-deps
+ // A chat or a home page shows in the Still app tab, in place, with its own Back and Forward (the host's Go).
+ const view = active?.home || "home"
+ const goHome = (v: HomeView) => send("appHome", { view: v })
+ const setView = goHome
+ const mine = ai?.incognito ? { ...ai, chats: ai.privateChats ?? [] } : ai // an incognito window lists only its own chats
  const role = premadeOf(companion), plugins = ai?.plugins
  const ideas = !companion ? [] : homeIdeas({ name: companion.name, role: role?.role, asks: role?.asks, fits: tasksFor(state.preferences.interests), uses: role?.uses, memory: companion.memory, activeId: active?.id, tabs: state.tabs,
   apps: plugins?.key && plugins.status !== "bad" ? plugins.connected.filter(c => !companion.pluginsOff?.includes(c.slug)) : [] })
@@ -721,13 +719,14 @@ export default function App() {
        {split && !state.noAi && <RunningTasks ai={ai} send={send} onOpen={setTasksOpen} tabs={state.tabs} />}
        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Chat options" title="Chat options"><MoreHorizontal /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
-         <DropdownMenuItem onSelect={() => send("new")}><SquarePen />New chat</DropdownMenuItem>
+         <DropdownMenuItem onSelect={() => goHome("home")}><SquarePen />New chat</DropdownMenuItem>
          <DropdownMenuItem disabled={isRunning(ai, active.chatId)} onSelect={() => send("aiDeleteChat", { id: active.chatId })}><Trash2 />Delete chat</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
        <Button variant="ghost" size="icon-sm" aria-label="Chat details" title="Chat details" aria-pressed={split ? splitInfo : info} className={cn((split ? splitInfo : info) && "is-on")} onClick={() => split ? setSplitInfo(!splitInfo) : setInfo(!info)}><Info /></Button>
        {chatPages.length > 0 && <Button variant="ghost" size="icon-sm" aria-label={split ? "Hide the page" : "Show the page"} title={split ? "Hide the page" : "Show the page"} onClick={() => send("chatPage", { on: !split })}>{split ? <PanelRightClose /> : <PanelRightOpen />}</Button>}
       </div>
-      <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} interests={state.preferences.interests} />
+      {/* Only once the chat's own messages are here: the tab and the chat can arrive one after the other (the Mac sends the chat first) */}
+      {(!ai.chatId || ai.chatId === active.chatId) && <ChatView key={active.chatId} ai={ai} send={send} mode="tab" tabs={state.tabs} onSettings={openAiSettings} onFile={openFile} interests={state.preferences.interests} />}
       {(split ? splitInfo : info) && <ChatInfo ai={ai} pages={chatPages} onEdit={edit} onSettings={openAiSettings} onFile={openFile} />}
      </section>}
      <div className="page-pane">
@@ -750,11 +749,11 @@ export default function App() {
       {ghost?.side && <div className="split-zones" aria-hidden><div className={cn("split-zone", ghost.side === "left" && "is-on")}><span><Columns2 />Open on the left</span></div><div className={cn("split-zone", ghost.side === "right" && "is-on")}><span><Columns2 />Open on the right</span></div></div>}
       {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} />}
       {pair && snapshot && pairShot && <img className={cn("page-snapshot", pair.right !== active?.id && "is-right")} src={pairShot} alt="" style={{ width: `calc((100% - 6px) * ${pair.right === active?.id ? pair.ratio : 1 - pair.ratio})` }} />}
-      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : !active?.isPrivate && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : (!active?.isPrivate || state.incognito && view !== "home") && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
-        {view === "chats" ? <ChatHistory ai={ai} send={send} onNew={() => setView("home")} />
-         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { chatWith(id); setView("home") }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
+        {view === "chats" ? <ChatHistory ai={mine!} send={send} onNew={() => setView("home")} />
+         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
@@ -1014,14 +1013,14 @@ function prettyUrl(url: string) {
 
 // A chat tab's sidebar: new chat, recent chats, and the profile menu. Beside a page it shrinks to the logo.
 function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSettings, openPanel, goHome }: { ai: AiState; state: State; activeChat?: string; open: boolean; setOpen: (v: boolean) => void; split: boolean; onEdit: (c: Companion) => void; onSettings: () => void; openPanel: (name: string) => void; goHome: (v: HomeView) => void }) {
- const chats = ai.chats.filter(c => !c.archived).slice(0, 15)
+ const chats = (ai.incognito ? ai.privateChats ?? [] : ai.chats).filter(c => !c.archived).slice(0, 15)
  if (!open || split) return <nav className="chat-side is-closed" aria-label="Chats">
   <Button variant="ghost" size="icon-sm" aria-label="Show sidebar" title="Show sidebar" onClick={() => { setOpen(true); if (split) send("chatPage", { on: false }) }}><span className="still-mark is-small"><i /><i /></span></Button>
  </nav>
  return <nav className="chat-side" aria-label="Chats">
   <div className="chat-side-head"><span className="still-mark is-small"><i /><i /></span><b>Still</b><Button variant="ghost" size="icon-sm" aria-label="Hide sidebar" title="Hide sidebar" onClick={() => setOpen(false)}><PanelLeftClose /></Button></div>
   <div className="chat-side-nav">
-   <button onClick={() => send("new")}><SquarePen />New Chat</button>
+   <button onClick={() => goHome("home")}><SquarePen />New Chat</button>
    <button onClick={() => goHome("chats")}><MessageSquare />Chat History</button>
    <button onClick={() => goHome("companions")}><Users />Companions</button>
    <button onClick={() => goHome("library")}><Library />Library</button>
@@ -1030,7 +1029,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
   <ScrollArea className="chat-side-list">
    {!chats.length && <p className="chat-rail-empty">Your chats show up here.</p>}
    {chats.map(c => <div key={c.id} className={cn("chat-side-item", c.id === activeChat && "is-on")}>
-    <button className="chat-side-open" title={c.title} onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</button>
+    <ChatLink id={c.id} send={send} className="chat-side-open" title={c.title}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</ChatLink>
     {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
    </div>)}
   </ScrollArea>

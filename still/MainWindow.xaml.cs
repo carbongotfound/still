@@ -245,6 +245,45 @@ public partial class MainWindow : Window
   var tab = new BrowserTab { ChatId = chatId, Title = MyChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
   tabs.Add(tab); SaveLater(); return tab;
  }
+ /// A Still app tab: it shows a chat or one of the home's pages, and going from one to another changes it in place.
+ /// In an incognito window it's that window's private tab, and it only ever shows the window's own chats.
+ bool IsAppTab(BrowserTab t) => t.InChat == null && (t.ChatId != null || t.Url.Length == 0 && (!t.Private || incognito));
+ static string Spot(BrowserTab t) => t.ChatId is { } chat ? "chat:" + chat : "home:" + t.Home;
+ /// A place Back or Forward can still go: a home page, or a chat that's still here and not open in another tab.
+ bool CanGo(string spot) => !spot.StartsWith("chat:") || MyChats.Any(c => c.Id == spot[5..]) && !tabs.Any(t => t.ChatId == spot[5..]);
+ /// The app tab in view with nothing else on screen: Back and Forward move through its own places.
+ BrowserTab? AppNav => active is { } a && IsAppTab(a) && Shown?.View == null ? a : null;
+ /// Where a chat or home page opens: the app tab in view, else the one used last, else a new one.
+ async Task<BrowserTab> AppTab() => active is { } a && IsAppTab(a) ? a : tabs.Where(IsAppTab).MaxBy(t => t.LastActive) ?? await NewTab("", false, false);
+ /// Shows a chat ("chat:<id>") or home page ("home:<page>") in an app tab, in place; Back comes back here.
+ async Task Go(BrowserTab tab, string spot, bool remember = true)
+ {
+  if (spot != Spot(tab)) {
+   if (remember) { tab.Back.Add(Spot(tab)); tab.Forward.Clear(); }
+   if (spot.StartsWith("chat:")) { tab.ChatId = spot[5..]; tab.Home = ""; tab.Title = MyChats.FirstOrDefault(c => c.Id == tab.ChatId)?.Title is { Length: > 0 } title ? title : "Chat"; }
+   else { tab.ChatId = null; tab.Home = spot[5..]; tab.Title = tab.Private ? "Private tab" : "New tab"; }
+   tab.PageOpen = false;
+  }
+  await SelectTab(tab); SaveLater();
+ }
+ /// Opens a chat: where it's already open (in any window like this one), else in a new tab when asked, else in place.
+ async Task OpenChat(string id, bool newTab = false)
+ {
+  if (tabs.FirstOrDefault(t => t.ChatId == id) is { } open) { await SelectTab(open); return; }
+  if (!incognito && Windows.FirstOrDefault(w => w != this && !w.incognito && w.tabs.Any(t => t.ChatId == id)) is { } other) { other.Activate(); await other.SelectTab(other.tabs.First(t => t.ChatId == id)); return; }
+  if (newTab) await SelectTab(ChatTab(id)); else await Go(await AppTab(), "chat:" + id);
+ }
+ /// Back (-1) or Forward (1) in the app tab, past chats that were deleted or opened in another tab since.
+ async Task AppStep(int step)
+ {
+  if (AppNav is not { } tab) return;
+  var (from, to) = step < 0 ? (tab.Back, tab.Forward) : (tab.Forward, tab.Back);
+  while (from.Count > 0) {
+   var spot = from[^1]; from.RemoveAt(from.Count - 1);
+   if (CanGo(spot)) { to.Add(Spot(tab)); await Go(tab, spot, false); return; }
+  }
+  ShellPublish();
+ }
  async Task SelectTab(BrowserTab tab)
  {
   if (tab.InChat is { } app && app.StartsWith(AppPages)) tab.InChat = null; // an AI app's background tab joins the user's tabs once they open it
@@ -607,8 +646,8 @@ public partial class MainWindow : Window
  void CloseWindow(object s, RoutedEventArgs e) => Close();
  void MinimizeWindow(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
  void MaximizeWindow(object s, RoutedEventArgs e) => ToggleMaximize();
- void BackClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
- void ForwardClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
+ async void BackClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); else await AppStep(-1); }
+ async void ForwardClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); else await AppStep(1); }
  async void ReloadClick(object s, RoutedEventArgs e) { if (Shown is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
  void AddressClick(object s, RoutedEventArgs e) => ShowAddress(active?.Url ?? "");
  void BookmarkClick(object s, RoutedEventArgs e) => ToggleBookmark();

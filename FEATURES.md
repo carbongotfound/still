@@ -84,6 +84,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 ## AI chat (bring your own AI)
 
 - ✅ **Chat sidebar and chat tabs**: chat beside any page or as its own tab; resizable (`AiSidebar.tsx`, `MainWindow.Ai.cs`).
+- 🚧 **One Still app tab** (`still-2.10/stage-02-app-tab`): Chat History, a chat, Companions, Library, Skills and New Chat change the Still tab in view instead of opening tabs. From a web page they go to the Still tab used last, or open one. A chat already open in a tab (any window) is focused there. Back and Forward move through the tab's own places; a chat comes back with its AI's page hidden (Show the page). A middle click or Open in new tab gives a chat its own tab. In an incognito window it lists only that window's chats (`IsAppTab`, `Go`, `OpenChat`, `appHome`; `Tabs.swift`; `ChatLink`).
 - ✅ **Claude**: drives the Claude Code CLI headless on your own plan; Still never reads its login (`Agents/AgentAdapter.cs`).
 - ✅ **ChatGPT**: drives OpenAI's agent CLI signed in with your ChatGPT plan; API-key logins are ignored (`AgentAdapter.cs`).
 - ✅ **Grok**: drives Grok Build headless; its own tools off, Still's MCP tools only (`AgentAdapter.cs`).
@@ -263,6 +264,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Maya's shut lids show a thin lower lid edge and small hooks at the corners in close-up (no eye showing through); her decimated body shows faint vertical shading streaks at 3D sizes.
 - Knowledge files and role kits are tested with a fake agent, not a live run.
 - Incognito chats: the AI app's own records (its transcripts and session files in the user's home folder) are outside Still and stay. On Windows the private engine profile is the one all private windows share, so an incognito chat's page sees sign-ins made in another private window. Tested with a fake agent, not a live run. On the Mac a crash leaves a running AI app going until it ends (its own process group; macOS has no parent-death signal), for every chat: nothing resumes, and the next start deletes an incognito chat's folder.
+- Still app tab: its Back and Forward places aren't kept across restarts.
 - Routines only run while Still is open; one missed by more than 15 minutes waits for its next day.
 - The kickoff is tested with a fake agent and one live Claude run.
 - Plugins need a Composio project API key (ak_); For You's Connect key (ck_) and its MCP endpoint aren't supported. Plugins, the catalog and logos are tested against a stand-in shaped like Composio's v3.1 API, not live Composio; the Mac builds but isn't run. The short category names follow Composio's categories as of 2026-10-30; a new category shows under its first word. The shipped app logos are a snapshot of 2026-10-31; 35 apps whose logo address was dead or not an image show their initial until a key fetches one.

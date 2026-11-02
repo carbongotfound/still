@@ -17,6 +17,9 @@ public sealed class BrowserTab
  [JsonIgnore] public object? Wire { get; set; } // which window's page handlers are live (see MainWindow.WireView)
  public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page
  [JsonIgnore] public bool PageOpen { get; set; } // a chat tab showing its AI's page beside the conversation
+ [JsonIgnore] public string Home { get; set; } = ""; // an app tab without a chat: the home page it shows ("" home, chats, companions, library, skills)
+ [JsonIgnore] public List<string> Back { get; } = []; // an app tab's own back and forward: "chat:<id>" or "home:<page>" (see MainWindow.Go)
+ [JsonIgnore] public List<string> Forward { get; } = [];
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  [JsonIgnore] public string? AgentKey { get; set; } // which AI run is at work here (see MainWindow.Worker)
  [JsonIgnore] public string? RunChat { get; set; } // an ordinary tab Still's chat AI opened: "Open chat" opens that chat, and it can show beside the chat

@@ -737,12 +737,15 @@ extension Browser {
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
   case "aiKickoff": // a new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup
-   guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else { break }
+   guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else {
+    if b("home") { go(appTab(), "home:") } // Say hi to a companion that already said hello: the home, with them picked
+    break
+   }
    fresh.greet = false; storeCompanions()
    let kick = AiChat()
    kick.companion = fresh.id; kick.title = fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
    aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
-   openChatTab(kick.id); v.chat = kick
+   go(appTab(), "chat:" + kick.id); v.chat = kick
    runAi(kick, kickoffAsk + openTabsNote(), shown: "") // the title comes from its hello
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
@@ -767,7 +770,11 @@ extension Browser {
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
    guard let chat = myChats.first(where: { $0.id == s("id") }) else { break }
-   openChatTab(chat.id); v.chat = chat; v.error = ""
+   openChat(chat.id, newTab: b("newTab")); v.chat = chat; v.error = ""
+  case "appHome":
+   let page = s("view")
+   guard ["", "home", "chats", "companions", "library", "skills"].contains(page) else { break }
+   go(appTab(), "home:" + (page == "home" ? "" : page))
   case "chatPage": // show or hide the AI's page beside the chat
    guard let chatTab = active, let chat = chatTab.chatId else { break }
    tabs.first { $0.id == s("id") && ($0.inChat ?? $0.runChat) == chat }?.lastSeen = Date()
@@ -966,7 +973,7 @@ extension Browser {
    chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito // a private window keeps nothing
    v.chat = chat
    toTop(chat, in: self)
-   if let into, !into.closed { into.chatId = chat.id; into.title = chat.title; saveLater() }
+   if let into, !into.closed { if into.chatId != chat.id { into.back.append(spot(into)); into.forward = [] }; into.chatId = chat.id; into.home = ""; into.title = chat.title; saveLater() }
    if asker == nil { let first = shown ?? text; Task { await nameChat(chat, first) } }
    return chat
   }()

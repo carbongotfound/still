@@ -116,6 +116,8 @@ final class Tab: NSObject {
  var group = "" // a tab group's id, "" = none
  var chatId: String? // a chat tab: shows this AI chat instead of a page
  var pageOpen = false // a chat tab showing its AI's page beside the conversation
+ var home = "" // an app tab without a chat: the home page it shows ("" home, chats, companions, library, skills)
+ var back: [String] = [], forward: [String] = [] // an app tab's own back and forward: "chat:<id>" or "home:<page>" (see go)
  var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  var agentKey: String? // which AI run is at work here
  var runChat: String? // an ordinary tab Still's chat AI opened: "Open chat" opens that chat
@@ -301,6 +303,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if let chat = tab.runChat { row["runChat"] = chat }
    if let key = tab.agentKey, runs[key] != nil { row["driverChat"] = key }
    if let chat = tab.chatId { row["chatId"] = chat }
+   if !tab.home.isEmpty { row["home"] = tab.home }
    if let chat = tab.inChat { row["inChat"] = chat }
    return row
   }
@@ -331,8 +334,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["history"] = visits
   state["bookmarks"] = marks
   state["downloads"] = files
-  state["canBack"] = shown?.view?.canGoBack ?? false
-  state["canForward"] = shown?.view?.canGoForward ?? false
+  state["canBack"] = appNav.map { $0.back.contains(where: canGo) } ?? shown?.view?.canGoBack ?? false
+  state["canForward"] = appNav.map { $0.forward.contains(where: canGo) } ?? shown?.view?.canGoForward ?? false
   state["siteBlocking"] = pref("Blocking", true) && !unblocked.contains(shown?.view?.url?.host ?? "")
   state["mcpCommand"] = Bundle.main.executablePath ?? ""
   if let agent = agentData() { state["agent"] = agent }
@@ -391,8 +394,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     if move.group != before.group { move.group = !move.pinned && at > 0 && tabs[at - 1].group == before.group ? before.group : "" }
     saveLater()
    }
-  case "back": shown?.view?.goBack()
-  case "forward": shown?.view?.goForward()
+  case "back": if let view = shown?.view, view.canGoBack { view.goBack() } else { appStep(-1) }
+  case "forward": if let view = shown?.view, view.canGoForward { view.goForward() } else { appStep(1) }
   case "reload": if let view = shown?.view { if view.isLoading { view.stopLoading() } else { view.reload() } }
   case "zoom": if let view = shown?.view { view.pageZoom = number("amount") == 0 ? 1 : min(3, max(0.3, view.pageZoom + number("amount"))) }
   case "find": if let view = shown?.view, !text("text").isEmpty { view.find(text("text"), configuration: WKFindConfiguration()) { _ in } }
@@ -1170,8 +1173,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "findTab": openPanel("tabs", "")
   case "find", "history", "downloads", "settings", "bookmarks", "about": openPanel(name, "")
   case "reload": handle("reload", [:])
-  case "back": shown?.view?.goBack()
-  case "forward": shown?.view?.goForward()
+  case "back": handle("back", [:])
+  case "forward": handle("forward", [:])
   case "bookmark": toggleBookmark()
   case "zoomIn": handle("zoom", ["amount": 0.1])
   case "zoomOut": handle("zoom", ["amount": -0.1])
