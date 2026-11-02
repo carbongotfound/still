@@ -2,8 +2,20 @@
 // (ported from MainWindow.Ai.cs). Everything here is used on the main thread only.
 import AppKit
 
+// chats.json can come from an older or newer Still (or from Windows): a field it doesn't have keeps its default,
+// and one that doesn't read does too, so a chat is never lost over one field. (Swift's own decoding fails the whole file.)
+extension KeyedDecodingContainer {
+ func value<T: Decodable>(_ key: Key, _ fallback: T) -> T { ((try? decodeIfPresent(T.self, forKey: key)) ?? nil) ?? fallback }
+}
+
 /// A file the user attached to a message: kept in ai/attachments/<id>, read with read_attachment.
 struct AiFile: Codable { var id = "", name = "", size = 0 }
+extension AiFile {
+ init(from decoder: Decoder) throws {
+  let c = try decoder.container(keyedBy: CodingKeys.self)
+  id = c.value(.id, id); name = c.value(.name, name); size = c.value(.size, size)
+ }
+}
 final class AiMessage: Codable {
  var role = "", text = ""
  var files: [AiFile]?
@@ -11,10 +23,19 @@ final class AiMessage: Codable {
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  var who: String?, to: String?, status: String?, reply: String?, chat: String?
  init(_ role: String, _ text: String, who: String? = nil) { self.role = role; self.text = text; self.who = who }
+ required init(from decoder: Decoder) throws {
+  let c = try decoder.container(keyedBy: CodingKeys.self)
+  role = c.value(.role, role); text = c.value(.text, text); files = c.value(.files, files)
+  who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat)
+ }
 }
 final class AiAudit: Codable {
  var at = Date(), what = "", site = "", result = ""
  init(_ what: String, _ site: String, _ result: String) { self.what = what; self.site = site; self.result = result }
+ required init(from decoder: Decoder) throws {
+  let c = try decoder.container(keyedBy: CodingKeys.self)
+  at = c.value(.at, at); what = c.value(.what, what); site = c.value(.site, site); result = c.value(.result, result)
+ }
 }
 final class AiChat: Codable {
  var id = UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased()
@@ -36,6 +57,14 @@ final class AiChat: Codable {
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
  enum CodingKeys: String, CodingKey { case team, sessions, from, id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
  init() {}
+ required init(from decoder: Decoder) throws {
+  let c = try decoder.container(keyedBy: CodingKeys.self)
+  team = c.value(.team, team); sessions = c.value(.sessions, sessions); from = c.value(.from, from); id = c.value(.id, id)
+  title = c.value(.title, title); harness = c.value(.harness, harness); session = c.value(.session, session); started = c.value(.started, started)
+  companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory)
+  worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)
+  messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); audit = c.value(.audit, audit)
+ }
 }
 
 /// One answer, set once: the first one wins (Windows: TaskCompletionSource<string>).
