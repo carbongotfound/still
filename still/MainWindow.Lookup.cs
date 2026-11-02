@@ -11,23 +11,23 @@ namespace Still;
 public partial class MainWindow
 {
  static readonly SemaphoreSlim lookupGate = new(1, 1);
- WebView2? lookupView, privateLookupView;
+ WebView2? lookupView, privateLookupView, companionLookupView;
  DispatcherTimer? lookupIdle;
 
  string SearchUrl(string q) => (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_SEARCH") is { Length: > 0 } qa ? qa : Prefs.SearchEngine switch { // tests search a local page
   "Google" => "https://www.google.com/search?q=", "Bing" => "https://www.bing.com/search?q=", _ => "https://html.duckduckgo.com/html/?q=" }) + Uri.EscapeDataString(q);
 
- async Task<JsonElement> LookUp(string url, string script, object args, bool priv = false)
+ async Task<JsonElement> LookUp(string url, string script, object args, bool priv = false, bool companion = false)
  {
   await lookupGate.WaitAsync();
   try {
    lookupIdle?.Stop();
-   var view = priv ? privateLookupView : lookupView;
+   var view = priv ? privateLookupView : companion ? companionLookupView : lookupView;
    if (view?.CoreWebView2 == null) {
     view = new WebView2 { Visibility = Visibility.Hidden }; WebHost.Children.Add(view);
-    if (priv) privateLookupView = view; else lookupView = view;
+    if (priv) privateLookupView = view; else if (companion) companionLookupView = view; else lookupView = view;
     var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions();
-    options.ProfileName = priv ? privateProfile : "Default"; options.IsInPrivateModeEnabled = priv;
+    options.ProfileName = priv ? privateProfile : companion ? CompanionEngine : "Default"; options.IsInPrivateModeEnabled = priv;
     await view.EnsureCoreWebView2Async(env, options);
     var c = view.CoreWebView2; ApplyProtection(c);
     c.IsMuted = true; c.Settings.AreDefaultScriptDialogsEnabled = false;
@@ -48,7 +48,7 @@ public partial class MainWindow
    return await Js(core, script, args);
   } finally {
    lookupGate.Release();
-   lookupIdle ??= new DispatcherTimer(TimeSpan.FromSeconds(60), DispatcherPriority.Background, (_, _) => { lookupIdle!.Stop(); foreach (var v in new[] { lookupView, privateLookupView }.OfType<WebView2>()) { WebHost.Children.Remove(v); v.Dispose(); } lookupView = privateLookupView = null; }, Dispatcher);
+   lookupIdle ??= new DispatcherTimer(TimeSpan.FromSeconds(60), DispatcherPriority.Background, (_, _) => { lookupIdle!.Stop(); foreach (var v in new[] { lookupView, privateLookupView, companionLookupView }.OfType<WebView2>()) { WebHost.Children.Remove(v); v.Dispose(); } lookupView = privateLookupView = companionLookupView = null; }, Dispatcher);
    lookupIdle.Start();
   }
  }
@@ -58,8 +58,8 @@ public partial class MainWindow
   string q = S(args, "query").Trim();
   if (q.Length == 0) return Fail("Pass what to search for.");
   int count = (int)Math.Clamp(N(args, "count", 8), 1, 10);
-  var found = await LookUp(SearchUrl(q), ResultsJs, new { count }, Incognito(who));
-  if (found.GetArrayLength() == 0 && Prefs.SearchEngine != "DuckDuckGo") found = await LookUp("https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ResultsJs, new { count }, Incognito(who)); // a consent page or a challenge
+  var found = await LookUp(SearchUrl(q), ResultsJs, new { count }, Incognito(who), OnCompanion(who));
+  if (found.GetArrayLength() == 0 && Prefs.SearchEngine != "DuckDuckGo") found = await LookUp("https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ResultsJs, new { count }, Incognito(who), OnCompanion(who)); // a consent page or a challenge
   Did(who, "Searched “" + Clip(q, 60) + "”");
   if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "search", Text = JsonSerializer.Serialize(new { q, results = found }) }); PublishAiEverywhere(); }
   return found.GetArrayLength() == 0 ? Fail("No results. Try other words, or open_tab the search to see the page.") : Reply(new { results = found });
@@ -68,7 +68,7 @@ public partial class MainWindow
  async Task<string> ReadUrl(string who, JsonElement args)
  {
   string url = WebUrl(S(args, "url"), Prefs.SearchEngine);
-  var page = await LookUp(url, ReadableJs, new { offset = (int)Math.Max(0, N(args, "offset", 0)) }, Incognito(who));
+  var page = await LookUp(url, ReadableJs, new { offset = (int)Math.Max(0, N(args, "offset", 0)) }, Incognito(who), OnCompanion(who));
   string at = Str(page, "url") is { Length: > 0 } u ? u : url;
   Did(who, "Read " + Host(at));
   if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "read", Text = JsonSerializer.Serialize(new { url = at, title = Str(page, "title") }) }); PublishAiEverywhere(); }

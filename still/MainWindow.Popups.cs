@@ -18,7 +18,7 @@ public partial class MainWindow
   popup.Closed += (_, _) => view.Dispose();
   popup.Show();
   var environment = await App.BrowserEnvironment; var options = environment.CreateCoreWebView2ControllerOptions();
-  options.ProfileName = opener.Private ? privateProfile : "Default"; options.IsInPrivateModeEnabled = opener.Private;
+  options.ProfileName = EngineOf(opener); options.IsInPrivateModeEnabled = opener.Private;
   await view.EnsureCoreWebView2Async(environment, options);
   var core = view.CoreWebView2;
   e.NewWindow = core;
@@ -26,7 +26,7 @@ public partial class MainWindow
   void Name() => popup.Title = Host(core.Source) + (string.IsNullOrWhiteSpace(core.DocumentTitle) ? "" : " · " + core.DocumentTitle);
   core.SourceChanged += (_, _) => Name(); core.DocumentTitleChanged += (_, _) => Name();
   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(popup.Close);
-  core.NewWindowRequested += (_, e2) => { e2.Handled = true; string link = e2.Uri; Dispatcher.BeginInvoke(async () => await NewTab(link, opener.Private, false)); };
+  core.NewWindowRequested += (_, e2) => { e2.Handled = true; string link = e2.Uri; Dispatcher.BeginInvoke(async () => await NewTab(link, opener.Private, false, opener.Engine)); };
  }
 
  async void PopupBlocked(BrowserTab tab, string uri)
@@ -36,7 +36,7 @@ public partial class MainWindow
    if (string.IsNullOrWhiteSpace(site) || permissions.Any(p => p.Tab == tab && p.Kind == "open pop-ups")) return;
    if (!await AskPermission(tab, site, "open pop-ups")) return;
    await SetSitePermission(tab, "Popups", "Allow");
-   if (uri.StartsWith("http")) await NewTab(uri, tab.Private, false);
+   if (uri.StartsWith("http")) await NewTab(uri, tab.Private, false, tab.Engine);
   } catch (Exception ex) { App.Log(ex); }
  }
 }

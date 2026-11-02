@@ -121,6 +121,7 @@ final class Tab: NSObject {
  var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  var agentKey: String? // which AI run is at work here
  var runChat: String? // an ordinary tab Still's chat AI opened: "Open chat" opens that chat
+ var engine: String? // "Companion": the page is in the companion profile (Where companions browse); nil: the user's own
  var favicon = ""
  var closed = false, reader = false, edited = false, media = false
  var blocked = 0
@@ -292,14 +293,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "tracking": pref("Tracking", "Balanced"), "memory": pref("MemorySaver", true), "autofill": pref("Autofill", true),
    "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
-   "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "isDefaultBrowser": isDefaultBrowser,
+   "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "agentProfile": pref("AgentProfile", "regular"), "companionSession": Profiles.companionSession, "isDefaultBrowser": isDefaultBrowser,
    "tabLayout": pref("TabLayout", "Classic"), "chatTitles": pref("ChatTitles", ""), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
    "sidebarWidth": pref("SidebarWidth", 248.0)
   ]
   let tabList: [[String: Any]] = tabs.map { tab in
    var row: [String: Any] = [
     "id": tab.id, "group": tab.group, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "agent": tab.agent ?? "", "aiGroup": tab.aiGroup,
-    "isPrivate": tab.isPrivate, "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted, "inUse": tab.inUse,
+    "isPrivate": tab.isPrivate, "engine": tab.isPrivate ? "Private" : tab.engine ?? "Default", "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted, "inUse": tab.inUse,
     "favicon": tab.favicon, "secure": tab.url.hasPrefix("https://"), "certificateError": false
    ]
    if let chat = tab.runChat { row["runChat"] = chat }
@@ -420,6 +421,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()
   case "clearHistory": history.removeAll(); store.picks.removeAll(); save(); toast("History cleared.")
+  case "clearCompanionData": // Settings → Clear the companion profile: the user's own sign-ins stay
+   companionStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Companion profile cleared. Companions are signed out of every site there.") }
   case "clearCookies":
    pageStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Cookies and website data cleared.") }
   case "siteBlocking":
@@ -484,6 +487,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    prefs["AgentsEnabled"] = value == "true"
    if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
   case "askInChat": prefs["AgentsAskInChat"] = value == "true"
+  case "agentProfile": if ["regular", "companion"].contains(value) { prefs["AgentProfile"] = value }
   case "chatTitles": if value.count < 200 && (value.isEmpty || value == "off" || value.contains("/")) { prefs["ChatTitles"] = value }
   default: toast(unavailable); return
   }
@@ -597,7 +601,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func createView(_ tab: Tab, configuration: WKWebViewConfiguration? = nil) -> WKWebView {
   let config = configuration ?? WKWebViewConfiguration()
   if configuration == nil {
-   config.websiteDataStore = tab.isPrivate ? privateStore : pageStore
+   config.websiteDataStore = tab.isPrivate ? privateStore : tab.engine == "Companion" ? companionStore : pageStore
    config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
    config.mediaTypesRequiringUserActionForPlayback = []
    config.preferences.isFraudulentWebsiteWarningEnabled = true
@@ -1070,6 +1074,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let opener = tabs.first(where: { $0.view === view }), action.navigationType != .linkActivated, siteRule(opener, "Popups") == "Deny" { return nil }
   let tab = Tab()
   tab.isPrivate = incognito || tabs.first { $0.view === view }?.isPrivate ?? false
+  if !tab.isPrivate { tab.engine = tabs.first { $0.view === view }?.engine } // a link from a companion's page stays in its profile
   tabs.append(tab)
   let created = createView(tab, configuration: configuration)
   select(tab)

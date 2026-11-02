@@ -125,7 +125,7 @@ extension Browser {
           "permissions": sitePermissions.sorted { $0.key < $1.key }.flatMap { site in site.value.sorted { $0.key < $1.key }.map { ["origin": site.key, "kind": $0.key, "state": $0.value] } }])
   case "cookies":
    let isPrivate = active?.isPrivate == true
-   let cookies = (isPrivate ? privateStore : pageStore).httpCookieStore
+   let cookies = (isPrivate ? privateStore : active?.engine == "Companion" ? companionStore : pageStore).httpCookieStore // the site's cookies in this tab's profile
    cookies.getAllCookies { found in
     self.cookieInventory = [:]
     var rows: [[String: Any]] = []

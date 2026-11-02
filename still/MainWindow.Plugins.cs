@@ -304,6 +304,7 @@ public partial class MainWindow
  async Task<string> PluginTool(string who, string tool, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Plugins are only for Still's own companions.");
+  if (run.Chat.Ephemeral) return Fail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.");
   if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.");
   var mate = Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
   bool Mine(string slug) => mate?.PluginsOff.Contains(slug) != true;
