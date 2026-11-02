@@ -300,11 +300,14 @@ def main():
             p.kill(); p.wait(timeout=20)  # a crash
         except Exception:
             pass
-    check(crashed and until(lambda: not alive(crashed), 10), "A crash takes the incognito run's AI app with it")
+    if not MAC:  # Windows: the Job Object ends it with Still
+        check(crashed and until(lambda: not alive(crashed), 10), "A crash takes the incognito run's AI app with it")
     check(folder3.exists(), "The crash left the incognito folder behind")
     p = launch(EXE, PROFILE, env)
     try:
         until(lambda: js(p, "!!document.body.innerText.length"), 20)
+        if MAC:  # the Mac ends what a crash left at the next start
+            check(crashed and until(lambda: not alive(crashed), 10), "The incognito run's AI app is gone by the next start")
         interrupted = until(lambda: rpc(p).get("interrupted"), 10) or []
         check(len(interrupted) == 1 and interrupted[0] in chats_file() and "SLOW: regular" in chats_file(), "After the crash, only the regular chat is offered to resume")
         check(until(lambda: not folder3.exists(), 10), "and the next start deletes the incognito leftovers")

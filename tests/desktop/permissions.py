@@ -441,7 +441,7 @@ def crash_resume(process):
     check(offer, "After a crash, Still offers to resume the chat that was working")
     capture(process, "resume-all-v01")
     js(process, "[...document.querySelectorAll('[data-sonner-toast] button')].find(b => b.innerText.trim() === 'Resume all')?.click()")
-    check(until(lambda: any("pick up where you left off" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
+    check(until(lambda: any("Picked up where it stopped" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
     send(process, "aiStop", id=(chat_of("SLOW q") or {}).get("Id", ""))
     return process
 

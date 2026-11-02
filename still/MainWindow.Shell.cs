@@ -111,7 +111,7 @@ public partial class MainWindow
     // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.
     BrowserTab? Target()=>S("id") is {Length:>0} id?tabs.FirstOrDefault(t=>t.Id==id):active;
     switch(op) {
-     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();PublishAi();break;
+     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();PublishAi();if(chatsProblem is { } problem){chatsProblem=null;Toast(problem);}break;
      case "bounds":
       if(contentFullScreen)return; // keep the normal layout bounds for when the video leaves fullscreen
       double ratio=data.TryGetProperty("viewportWidth",out var vp)&&vp.GetDouble()>0?shellView.ActualWidth/vp.GetDouble():1;
@@ -242,7 +242,7 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "aiAdvanced" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "chatNoMemory" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach" or "appHome":await HandleAi(op,data);break;
+     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResume" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "aiAdvanced" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "chatNoMemory" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach" or "aiReattach" or "appHome":await HandleAi(op,data);break;
      case "pluginKey" or "pluginLink" or "pluginKeyRemove" or "pluginRefresh" or "pluginLogos" or "pluginConnect" or "pluginDisconnect" or "pluginToggle":await HandlePlugins(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }

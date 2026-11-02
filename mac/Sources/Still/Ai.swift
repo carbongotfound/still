@@ -147,15 +147,15 @@ var aiViews: [ObjectIdentifier: AiView] = [:]
 
 var chatsFile: URL { URL(fileURLWithPath: aiFolder).appendingPathComponent("chats.json") }
 /// chat: the one that changed. An incognito chat's changes never rewrite the file.
+var chatsProblem: String? // said once the interface is up
+var chatsLocked = false // chats.json couldn't be read or moved aside: never written over
 func saveAiChats(_ chat: AiChat? = nil) {
- if chat?.ephemeral == true { return }
+ if chat?.ephemeral == true || chatsLocked { return }
  do {
   try FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
   try pascalJSON(Array(aiChats.filter { !$0.ephemeral }.prefix(200))).write(to: chatsFile, options: .atomic) // an incognito chat never reaches the disk
  } catch { NSLog("Still: couldn't save chats: \(error)") }
 }
-/// Chats whose run was cut off when Still closed or crashed.
-var interruptedChats: [AiChat] { aiChats.filter { $0.running && !$0.archived && !$0.ephemeral && runs[$0.id] == nil } }
 
 // Incognito chats (Windows: MainWindow.Ai.cs, Ephemeral) live only in their window's aiView.privateChats. Still keeps
 // nothing from one: its AI app works in the window's folder under ai/incognito, deleted as the window closes (or at the
@@ -303,7 +303,8 @@ func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
   if let join, let last = chat.messages.last, last.role == "assistant", last.who == nil { last.text += join + text } else { chat.messages.append(AiMessage("assistant", text)) }
   return true
  case .toolCall(_, let name, let args): chatStep(chat, toolLabel(name, args))
- case .session(let id): if chat.session == nil { chat.session = id }
+ case .session(let id) where chat.session == nil || !chat.started: chat.session = chat.session ?? id; chat.started = true; saveAiChats(chat) // on disk now: a crash mid-run doesn't lose it
+ case .session: break
  case .usage(let text): aiUsage[cli.id] = text
  case .error(let text): chat.error = "\(cli.name): " + text
  case .thinking, .toolResult: break
@@ -375,9 +376,11 @@ func askInChat(_ who: String, _ args: [String: Any], _ done: @escaping (String) 
  let asked = AiQuestion(text: clipped(text, 600), options: options, page: page, answer: Answer())
  r.question = asked
  r.chat.messages.append(AiMessage("assistant", asked.text))
+ taskState(r, "waiting", "answer", clipped(text, 200))
  publishAiEverywhere()
  asked.answer.wait(600) { answer in
   if r.question?.answer === asked.answer { r.question = nil }
+  if r.question == nil { taskState(r, "running") }
   publishAiEverywhere()
   done(answer.map { agentOk(["answer": $0]) } ?? agentFail("The user didn't answer within 10 minutes. Stop here and ask them in your reply."))
  }
@@ -607,18 +610,30 @@ extension Browser {
   if chatsLoaded { return }
   chatsLoaded = true
   for dir in (try? FileManager.default.contentsOfDirectory(atPath: incognitoFolder)) ?? [] where !browsers.contains(where: { $0.windowId == dir }) { try? FileManager.default.removeItem(atPath: incognitoFolder + "/" + dir) } // left by a crash
-  if let data = try? Data(contentsOf: chatsFile) {
+  if FileManager.default.fileExists(atPath: chatsFile.path) {
    do {
-    aiChats = try fromPascalJSON([AiChat].self, data)
-    // Files attached but never sent go: the message box doesn't keep them across restarts.
-    let sent = Set(aiChats.flatMap(\.messages).flatMap { $0.files ?? [] }.map(\.id))
-    for dir in (try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder)) ?? [] where !sent.contains(dir) { try? FileManager.default.removeItem(atPath: attachmentsFolder + "/" + dir) }
-   } catch { NSLog("Still: couldn't read chats: \(error)") }
+    aiChats = try fromPascalJSON([AiChat].self, try Data(contentsOf: chatsFile))
+    // Files attached but never sent go once a draft can't hold them any more (7 days).
+    let sent = Set(aiChats.flatMap(\.messages).flatMap { $0.files ?? [] }.map(\.id)), week = Date().addingTimeInterval(-7 * 86400)
+    for dir in (try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder)) ?? [] where !sent.contains(dir) {
+     let at = (try? FileManager.default.attributesOfItem(atPath: attachmentsFolder + "/" + dir)[.modificationDate] as? Date) ?? .distantPast
+     if at < week { try? FileManager.default.removeItem(atPath: attachmentsFolder + "/" + dir) }
+    }
+   } catch {
+    // Unreadable: nothing is lost. The file moves aside as it is, the attachments stay, and new chats go to a new file. If it
+    // can't move, nothing is saved over it this run.
+    NSLog("Still: couldn't read chats: \(error)")
+    let stamp = DateFormatter(); stamp.dateFormat = "yyyyMMdd-HHmmss"; stamp.locale = Locale(identifier: "en_US_POSIX")
+    let kept = chatsFile.path + ".broken-" + stamp.string(from: Date())
+    do { try FileManager.default.moveItem(atPath: chatsFile.path, toPath: kept); chatsProblem = "Still couldn't read your saved chats, so it started a new list. The old file is kept as \((kept as NSString).lastPathComponent)." }
+    catch { chatsLocked = true; chatsProblem = "Still couldn't read your saved chats. It won't save over them until it can." }
+   }
   }
   for c in aiChats { for m in c.messages where (m.role == "ask" || m.role == "tell") && m.status == "working" { m.status = "stopped" } } // Still closed mid-exchange
   let teams = aiChats.filter { !($0.team ?? []).isEmpty }
   teams.forEach(untangle)
   if !teams.isEmpty { saveAiChats() }
+  loadTasks(aiChats)
   companions = pref("Companions", [[String: Any]]()).map(Companion.init)
   // Hired from an old role: move to the role that took over, with its new name unless the user renamed it, and the job and
   // personality Still gave it (with what the user added after "For me:"). The fixer is gone: its chats and memory go to
@@ -701,21 +716,24 @@ extension Browser {
   case "aiDeleteChat":
    guard runs[s("id")] == nil else { break }
    for gone in myChats.filter({ $0.id == s("id") }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsHere + "/" + gone.id) }
+   forgetTask(s("id"))
    if incognito { v.privateChats.removeAll { $0.id == s("id") } } else { aiChats.removeAll { $0.id == s("id") } }
    if v.chat?.id == s("id") { v.chat = nil }
    if !incognito { saveAiChats() }
    for t in tabs where t.chatId == s("id") { close(t) }
   case "aiDeleteAll":
    guard runs.isEmpty else { break }
+   for c in myChats { forgetTask(c.id) }
    if incognito { v.privateChats.removeAll() } else { aiChats.removeAll() }
    v.chat = nil; if !incognito { saveAiChats() }
    try? FileManager.default.removeItem(atPath: attachmentsHere)
    for t in tabs where t.chatId != nil { close(t) }
   case "aiStop": if let stopping = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")] { stopping.queue.removeAll(); stopRun(stopping) }
-  case "aiResumeAll" where !incognito: for cut in interruptedChats { cut.running = false; runAi(cut, "Still closed before you finished. Please pick up where you left off.") }
-  case "aiResumeDismiss" where !incognito:
-   for cut in interruptedChats { cut.running = false }
-   saveAiChats(); publishAiEverywhere()
+  case "aiResume": if let c = myChats.first(where: { $0.id == s("id") }) { resumeTask(c) }
+  case "aiResumeAll" where !incognito: // not one with a step that may not have finished: that one is resumed on its own
+   resumeAnswered = true
+   for cut in interruptedChats where !(aiTasks[cut.id]?.sensitive.contains { $0.outcome == nil } ?? false) { resumeTask(cut) }
+  case "aiResumeDismiss" where !incognito: resumeAnswered = true; publishAiEverywhere() // later, from each chat
   case "aiNow": if let now = shownChat, let r = runs[now.id], !r.queue.isEmpty { stopRun(r) } // what's queued runs right away
   case "aiUnqueue": if let c = shownChat { runs[c.id]?.queue.removeAll() }
   case "aiSend":
@@ -757,6 +775,10 @@ extension Browser {
      attach(to, picker.urls.prefix(maxFiles).map { url in (url.lastPathComponent, ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize).map(Int64.init) ?? 0, { try? Data(contentsOf: url) }) })
     }
    }
+  case "aiReattach": // a draft's files, the ones still here
+   let kept = (data["ids"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }
+   var seen = Set<String>()
+   send(["kind": "attached", "to": s("to"), "files": kept.filter { seen.insert($0.id).inserted }.prefix(maxFiles).map { ["id": $0.id, "name": $0.name, "size": $0.size] }, "error": ""])
   case "aiAttach": // dropped or pasted in the box
    let dropped = s("data")
    guard !dropped.isEmpty else { break }
@@ -986,6 +1008,7 @@ extension Browser {
   runs[chat.id] = me
   stoppedAgents[chat.id] = nil
   let shown = shown ?? text
+  startTask(me, shown)
   if chat.from == nil { exchangesSent[chat.id] = nil } // a new request from the user: its team starts a fresh count
   // @Name in the user's message brings that teammate in: this companion asks them.
   let called = asker == nil ? mentioned(shown).filter { $0 != chat.companion }.map(nameOf) : []
@@ -1039,6 +1062,8 @@ extension Browser {
     chat.worked = Int(Date().timeIntervalSince(me.started)); chat.running = false
    }
    me.question?.answer.set("The chat ended."); me.question = nil
+   // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
+   if me.task.state != "interrupted" && !quitting { me.task.pending = ""; taskState(me, stopped ? "completed" : run.map { $0.exitCode != 0 } ?? true || !chat.error.isEmpty ? "failed" : "completed", stopped ? "stopped" : "") }
    chat.updated = Date(); chat.unread = !browsers.contains { $0.showing(chat) }; saveAiChats(chat)
    try? FileManager.default.removeItem(atPath: request.promptFile)
   }
@@ -1055,12 +1080,14 @@ extension Browser {
    if !named, let spoke = chat.messages.first(where: { $0.role == "assistant" }) { nameFromHello(chat, spoke.text) }
    chat.started = chat.session != nil
    stopped = started.cancelled && !started.timedOut
-   if (started.errors.contains(where: lostSession) || lostSession(chat.error)) && !said && !stopped && cli.namesSession {
+   if (started.errors.contains(where: lostSession) || lostSession(chat.error)) && !said && !stopped && (cli.namesSession || request.resume) {
     // The CLI has no record of this chat (stopped before it saved it): a new session brings the chat over.
     chat.session = nil; chat.started = false; chat.error = ""
     if !shown.isEmpty, let last = chat.messages.lastIndex(where: { $0.role == "user" }) { chat.messages.remove(at: last) }
     runs[chat.id] = nil; run = nil
-    finish(); runAi(chat, shown, asker: asker); publishAiEverywhere()
+    me.task.state = "interrupted" // the new session carries on this task
+    if !me.task.steps.isEmpty || shown.isEmpty { chat.messages.append(AiMessage("note", "\(cli.app) couldn't continue the earlier session, so Still started a new one from where the task got to.")) }
+    finish(); runAi(chat, shown.isEmpty ? resumeBrief(me.task) : shown, shown: shown, asker: asker); publishAiEverywhere()
     return
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
@@ -1078,6 +1105,7 @@ extension Browser {
   if !said && signedOut(chat.error) {
    // Signed out: sign in right here, then the message runs again by itself.
    chat.error = ""; aiStatus[cli.id] = "signedOut"; aiView.pending = shown; aiView.chat = chat
+   taskState(me, "waiting", "signin")
    if chat.messages.last?.role == "user" { chat.messages.removeLast() }
    Task { await aiSignIn(cli) }
   } else if !me.queue.isEmpty && run != nil {
@@ -1145,7 +1173,7 @@ extension Browser {
   let day = { (date: Date) in isoText(date) }
   var data: [String: Any] = [
    "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
-   "interrupted": incognito ? [] : interruptedChats.map(\.id), "incognito": incognito,
+   "interrupted": incognito || resumeAnswered ? [] : interruptedChats.map { ["id": $0.id, "title": $0.title, "unsure": aiTasks[$0.id]?.sensitive.contains { $0.outcome == nil } ?? false] }, "task": taskView(shown), "incognito": incognito,
    "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site] }] },
    "error": shown.map { $0.error.isEmpty ? view.error : $0.error } ?? view.error, "profile": "Default", "files": libraryFiles(),

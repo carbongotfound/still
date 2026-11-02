@@ -90,13 +90,16 @@ export const keys = (k: string) => MAC ? k.replace(/Ctrl Alt/g, "⌥⌘").replac
 const MAC_KEYS: Record<string, [string, string]> = { "Private tab": ["Private window", "Ctrl Shift N"], "Recent tabs (hold Ctrl)": ["Recent tabs (hold Control)", "⌃Tab"], "Bookmarks": ["Bookmarks", "Ctrl Alt B"], "History": ["History", "Ctrl Y"], "Downloads": ["Downloads", "Ctrl Alt L"], "View page source": ["View page source", "Ctrl Alt U"], "Full screen": ["Full screen", "⌃⌘F"] }
 const shortcuts = [["Go to an address", "Ctrl L"], ["Find a tab", "Ctrl K"], ["Running tasks", "Ctrl Shift K"], ["Stop the AI", "Ctrl ."], ["Approve the card in front of you", "Ctrl Enter"], ["Close a preview", "Esc"], ["New tab", "Ctrl T"], ["Private tab", "Ctrl Shift N"], ["Close tab", "Ctrl W"], ["Reopen tab", "Ctrl Shift T"], ["Recent tabs (hold Ctrl)", "Ctrl Tab"], ["Next / previous tab", "Ctrl Alt Right / Left"], ["Tabs on top / on the side", "Ctrl Shift S"], ["Pin tab", "Ctrl Shift P"], ["Bookmark page", "Ctrl D"], ["Bookmarks", "Ctrl Shift B"], ["History", "Ctrl H"], ["Downloads", "Ctrl J"], ["Find in page", "Ctrl F"], ["Chat with your AI", "Ctrl Shift A"], ["View page source", "Ctrl U"], ["Reader", "Ctrl Shift R"], ["Hide an element", "Ctrl Shift H"], ["Full screen", "F11"], ["Exit full screen", "Esc"], ["Focus mode", "Ctrl Shift F"], ["Settings", "Ctrl ,"]].map(([label, key]) => MAC ? (MAC_KEYS[label] ?? [label, key]).map((v, i) => i ? keys(v) : v) : [label, key])
 
-// After a crash: chats that were working when Still closed, with one button to pick them all back up.
+// After a restart, once: the chats that were working when Still closed. Resume all picks up every one but a chat with a
+// step that may not have finished, which is resumed from the chat itself (it checks first and asks again).
 let offered = false
-function resumeOffer(count: number) {
- if (!count || offered) return
+function resumeOffer(cut: { id: string; title: string; unsure: boolean }[]) {
+ if (!cut.length || offered) return
  offered = true
- toast(count === 1 ? "A chat stopped mid-task." : `${count} chats stopped mid-task.`, { id: "resume", duration: Infinity, className: "resume-toast",
-  action: { label: "Resume all", onClick: () => send("aiResumeAll") },
+ const unsure = cut.filter(c => c.unsure), names = (l: typeof cut) => l.map(c => `“${c.title || "New chat"}”`).join(", ")
+ toast(cut.length === 1 ? `${names(cut)} stopped mid-task when Still closed.` : `${cut.length} chats stopped mid-task when Still closed: ${names(cut)}.`, { id: "resume", duration: Infinity, className: "resume-toast",
+  description: unsure.length ? `Open ${names(unsure)} to resume ${unsure.length === 1 ? "it" : "them"}: a step may not have finished, so it's checked first.` : undefined,
+  action: unsure.length < cut.length ? { label: unsure.length ? "Resume the others" : "Resume all", onClick: () => send("aiResumeAll") } : undefined,
   cancel: { label: "Not now", onClick: () => send("aiResumeDismiss") } })
 }
 
@@ -482,7 +485,7 @@ export default function App() {
   const listener = (e: MessageEvent) => {
    const data = e.data
    if (data.kind === "state") setState(data)
-   if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted?.length ?? 0) }
+   if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted ?? []) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
    if (data.kind === "pluginCatalog" || data.kind === "pluginLogos") dispatchEvent(new CustomEvent("still-" + data.kind, { detail: data.data }))
@@ -763,7 +766,7 @@ export default function App() {
           </div>
           <div className="home-center">
            <Space companion={companion} team={ai.companions} mood={typing ? "listening" : "idle"} onOpen={() => setProfile(companion.id)} onPick={setBuddy} />
-           <div className="home-compose"><Composer draft={"tab." + state.activeId} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
+           <div className="home-compose"><Composer draft={state.secondary ? "window.home" : "home"} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
             onSubmit={(text, tabs, files) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>
            <div className="home-chips">
