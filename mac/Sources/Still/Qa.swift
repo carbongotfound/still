@@ -74,6 +74,7 @@ extension Browser {
    "windows": screens, "privateChats": aiView.privateChats.map(\.id), "incognitoFolder": privateFolder, "interrupted": interruptedChats.map(\.id), "title": window.title, "width": window.frame.width, "height": window.frame.height, "left": spot.left, "top": spot.top,
    "tabs": tabs.map { t -> [String: Any] in [
     "Id": t.id, "Title": t.title, "Url": t.url, "Pinned": t.pinned, "Private": t.isPrivate, "InChat": n(t.inChat), "RunChat": n(t.runChat), "ChatId": n(t.chatId),
+    "Home": t.home, "back": t.back.count, "forward": t.forward.count, "appBack": appNav === t && t.back.contains(where: canGo),
     "Loading": t.loading, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
     "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view),
     "enginePrivate": n(t.view.map { !$0.configuration.websiteDataStore.isPersistent }),
@@ -190,13 +191,22 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
 }
 
 /// The DevTools input calls the tests make on Windows, as real AppKit events on the interface or the page: the mouse at
-/// CSS pixels from its top left (moved, pressed, released, wheel) and typed text. Anything else isn't on the Mac.
+/// CSS pixels from its top left (moved, pressed and released with any button, wheel), keys and typed text. Anything else isn't on the Mac.
 private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [String: Any]) -> Bool {
  func number(_ key: String) -> CGFloat { CGFloat((p[key] as? NSNumber)?.doubleValue ?? 0) }
  switch method {
  case "Input.insertText":
   b.window.makeFirstResponder(view)
   view.insertText(p["text"] as? String ?? "")
+ case "Input.dispatchKeyEvent": // a real key press the box handles (rawKeyDown or keyDown, then keyUp)
+  let keys: [String: (UInt16, String)] = ["Backspace": (51, "\u{7F}"), "Delete": (117, "\u{F728}"), "ArrowLeft": (123, "\u{F702}"), "ArrowRight": (124, "\u{F703}"),
+   "ArrowUp": (126, "\u{F700}"), "ArrowDown": (125, "\u{F701}"), "Enter": (36, "\r"), "Tab": (48, "\t"), "Escape": (53, "\u{1B}")]
+  guard let (code, typed) = keys[p["key"] as? String ?? ""] else { return false }
+  let up = p["type"] as? String == "keyUp"
+  guard let event = NSEvent.keyEvent(with: up ? .keyUp : .keyDown, location: .zero, modifierFlags: code >= 115 ? [.function] : [], timestamp: ProcessInfo.processInfo.systemUptime,
+   windowNumber: b.window.windowNumber, context: nil, characters: typed, charactersIgnoringModifiers: typed, isARepeat: false, keyCode: code) else { return false }
+  b.window.makeFirstResponder(view)
+  if up { view.keyUp(with: event) } else { view.keyDown(with: event) }
  case "Input.dispatchMouseEvent":
   let at = view.convert(NSPoint(x: number("x"), y: view.isFlipped ? number("y") : view.bounds.height - number("y")), to: nil)
   let kind = p["type"] as? String ?? ""
@@ -216,6 +226,14 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
     b.window.makeKeyAndOrderFront(nil)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { move.postToPid(getpid()) }
    }
+   return true
+  }
+  if kind == "mousePressed" || kind == "mouseReleased", let button = p["button"] as? String, button == "right" || button == "middle" {
+   // Like the wheel: an event with no window, so its screen point is read as the window point
+   let down = kind == "mousePressed", right = button == "right"
+   guard let click = CGEvent(mouseEventSource: nil, mouseType: right ? (down ? .rightMouseDown : .rightMouseUp) : (down ? .otherMouseDown : .otherMouseUp),
+    mouseCursorPosition: CGPoint(x: at.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - at.y), mouseButton: right ? .right : .center), let event = NSEvent(cgEvent: click) else { return false }
+   switch (right, down) { case (true, true): view.rightMouseDown(with: event); case (true, false): view.rightMouseUp(with: event); case (false, true): view.otherMouseDown(with: event); default: view.otherMouseUp(with: event) }
    return true
   }
   let types: [String: NSEvent.EventType] = ["mouseMoved": .mouseMoved, "mousePressed": .leftMouseDown, "mouseReleased": .leftMouseUp]

@@ -79,6 +79,8 @@ chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started"
 process = launch(EXE, PROFILE)
 try:
     until(lambda: page(process, "w1", "document.readyState") == "complete", 30)
+    # The Mac's interface keeps its storage per app, not per profile: drafts from an earlier run would come back
+    shell(process, "Object.keys(localStorage).filter(k => k.startsWith('still.draft.')).forEach(k => localStorage.removeItem(k))")
     # 1. A web tab: typed text in a textarea and an editable box, scroll, the page itself
     page(process, "w1", "document.getElementById('t').focus()")
     rpc(process, "pageCdp", method="Input.insertText", parameters={"text": "Typed into the textarea"})
@@ -111,6 +113,15 @@ try:
     send(process, "chatOpen", id="chat1"); time.sleep(1)
     check(shell(process, f"document.querySelector('{BOX}').innerText") == "A long thought for chat one", "The draft survives a trip to a web tab")
     rpc(process, "capture", name="chat.png"); shutil.copy(PROFILE / "chat.png", RUN / "chat.png")
+
+    # 2b. The Still tab's own views: Chat History, another chat from it, then Back twice, all in the same tab
+    count = len(rpc(process)["tabs"])
+    send(process, "appHome", view="chats"); until(lambda: shell(process, "!!document.querySelector('section[aria-label=\"Chat History\"] .history-open')"), 10)
+    shell(process, "[...document.querySelectorAll('.history-open')].find(e => e.innerText.includes('Chat 2'))?.click()"); time.sleep(1)
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "Something else for chat two", "Chat two, opened from Chat History, has its own draft")
+    send(process, "back"); time.sleep(.6); send(process, "back"); time.sleep(1)
+    check(shell(process, f"document.querySelector('{BOX}').innerText") == "A long thought for chat one", "Chat one's draft is there after Chat History, chat two and Back")
+    check(len(rpc(process)["tabs"]) == count, f"Going through the views opened no tabs ({len(rpc(process)['tabs'])}, was {count})")
 
     # 3. Closed and opened again
     chat_tab = next(t["Id"] for t in rpc(process)["tabs"] if t.get("ChatId") == "chat1")
