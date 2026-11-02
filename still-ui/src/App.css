@@ -1403,6 +1403,8 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 @keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
 .ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
+.mate-acts { display:flex; align-items:center; gap:6px; }
+.mate-fire { height:30px; padding:0 12px; border-radius:99px; color:var(--muted-foreground); font-size:12.5px; font-weight:580; transition:color .15s,background-color .15s; } .mate-fire:hover { color:var(--destructive); background:color-mix(in oklab,var(--destructive) 12%,transparent); }
 .mate-memory { display:flex; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
 /* Settings > Memory */
 .memory-settings { display:flex; flex-direction:column; gap:10px; }

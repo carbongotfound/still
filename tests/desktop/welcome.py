@@ -33,7 +33,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, companions_page, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("welcome-" + uuid.uuid4().hex[:8])
@@ -746,7 +746,7 @@ def looks(process):
     """Deleting companions, then the look editor, open for six companions."""
     new_tab(process)
     until(lambda: js(process, "!!document.querySelector('.home-rail')"), 10)
-    click(process, ".home-rail-item[aria-label=Companions]")
+    companions_page(process)
     until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 2, 10)
     for name in ("Maya", "Miso"):
         click(process, f".mate-portrait[aria-label='Edit {name}']")
@@ -772,7 +772,7 @@ def looks(process):
         send(process, "companionSave", id=f"crew{i}", name=name, job="", look=json.dumps({**BASE, "color": color, **look}))
     new_tab(process)
     until(lambda: js(process, "!!document.querySelector('.home-rail')"), 10)
-    click(process, ".home-rail-item[aria-label=Companions]")
+    companions_page(process)
     six = until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 6, 10)
     check(six, f"Six companions on the Companions page ({js(process, 'document.querySelectorAll(\'.mate-card\').length')})")
     LOOKS.mkdir(parents=True, exist_ok=True)

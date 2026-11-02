@@ -13,7 +13,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, text, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, launcher, rpc, send, text, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("profile-" + uuid.uuid4().hex[:8])
@@ -186,10 +186,10 @@ def main():
         menu(p, "Duplicate")
         check(until(lambda: "Zesty 2" in mates(), 5) and until(lambda: js(p, "document.querySelector('.profile-switch b')?.innerText") == "Zesty 2", 3), "Duplicate makes a copy and shows it")
         check(not mates().get("Zesty 2", {}).get("Routines"), "The copy starts without routines")
-        menu(p, "Delete Zesty 2")
+        menu(p, "Fire Zesty 2")
         until(lambda: shown(p, "[role=alertdialog]"), 3)
         js(p, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
-        check(until(lambda: "Zesty 2" not in mates(), 5) and until(lambda: not shown(p, ".profile-panel"), 3), "Delete asks first, removes the copy and closes the panel")
+        check(until(lambda: "Zesty 2" not in mates(), 5) and until(lambda: not shown(p, ".profile-panel"), 3), "Fire asks first, removes the copy and closes the panel")
 
         # Esc closes; paste the shared companion on the Companions page.
         js(p, "document.querySelector('.home-face')?.click()")
@@ -201,8 +201,7 @@ def main():
         check(mates()["Jonah"].get("Instructions") == "", "and Still's instructions")
         escape(p)
         check(until(lambda: not shown(p, ".profile-panel"), 2), "Esc closes the profile")
-        js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")
-        until(lambda: shown(p, ".mate-grid"), 5)
+        companions_page(p)
         js(p, f"(() => {{ const d = new DataTransfer(); d.setData('text/plain', {json.dumps(json.dumps({**shared, 'name': 'Pasty'}))}); document.body.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: d, bubbles: true }})) }})()")
         check(until(lambda: "Pasty" in mates(), 5) and mates()["Pasty"]["Job"] == "Finds the best price before I buy anything.", "Pasting a shared companion on the Companions page adds them")
         js(p, "document.querySelector(\".mate-portrait[aria-label='Edit Pasty']\")?.click()")
