@@ -343,7 +343,7 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
     <motion.section key={at + (making ? "-own" : "") + (introOn ? "-held" : "")} className="ob-talk" onScroll={fadeTop} {...slide} transition={{ duration: reduce ? .01 : .26, ease: EASE }}>
      {introOn ? null : <>
      {at === "hello" && <Bubbles from={intro} lines={noAi || !ai ? ["Hi! Welcome to Still.", "Still is an open-source browser that AI apps on this computer can work in, right next to your own tabs.", "Let's set a few things up. You can skip any step."]
-      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}. I'll get you set up.` : "I'll get you set up. In a minute you'll pick who you work with.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API keys, no credits, no extra plan.", "Everything stays on your computer. It takes a couple of minutes, and you can skip most steps."]} />}
+      : ["Hi! Welcome to Still.", first ? `I'm ${first.name}. I'll get you set up.` : "I'll get you set up. In a minute you'll pick who you work with.", "Still is an open-source browser with AI built in. It runs on the AI you already pay for, like Claude, ChatGPT or Grok, through their own apps. No API key needed, no credits, no extra plan.", "Everything stays on your computer. It takes a couple of minutes, and you can skip most steps."]} />}
      {at === "import" && <>
       <Bubbles lines={["Coming from Chrome, Edge or another browser?", "I can copy over your bookmarks, history, passwords and sign-ins. It all stays on this computer."]} />
       <Reveal after={2}><div className="ob-options">

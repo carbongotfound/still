@@ -140,7 +140,7 @@ func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
 var companions: [Companion] = []
 var aiClisCache: [AgentAdapter]?
 /// The built-in agents, then the manifests in Still's agents folder (read again when the user rechecks).
-var aiClis: [AgentAdapter] { if let aiClisCache { return aiClisCache }; let all = AgentAdapter.builtIn + ManifestAdapter.load(); aiClisCache = all; return all }
+var aiClis: [AgentAdapter] { if let aiClisCache { return aiClisCache }; let all = AgentAdapter.builtIn + apiProviders.map(ApiAdapter.init) + ManifestAdapter.load(); aiClisCache = all; return all }
 var aiModels: [String: [AgentModel]] = [:] // each AI's models: asked once per run of Still, in the background
 var aiUsage: [String: String] = [:] // per AI: the latest usage the CLI reported
 var aiModelsLoading = Set<String>()
@@ -208,8 +208,8 @@ func forMode(_ ai: String, _ mode: String?) -> (String, String) {
 }
 func tierDefault(_ ai: String, _ mode: String) -> (String, String) {
  switch mode {
- case "expert": return (ai == "claude" ? "opus" : "", "high")
- case "efficient": return (ai == "claude" ? "haiku" : "", "low")
+ case "expert": return (ai == "claude" ? "opus" : ai == "gemini" ? "pro" : "", "high")
+ case "efficient": return (ai == "claude" ? "haiku" : ai == "gemini" ? "flash" : "", "low")
  default: return ("", "")
  }
 }
@@ -251,13 +251,16 @@ func tiersOf() -> [String: Any] {
  let prompt = "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + clipped(first, 2000)
  var mcp = ["--mcp", "--no-tools", "--as", cli.name, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
  if isQa { mcp.insert("--qa", at: 1) }
- let r = RunRequest(prompt: prompt, model: model, effort: effort, folder: (aiFolder as NSString).appendingPathComponent("titles"), mcp: mcp, session: cli.namesSession ? UUID().uuidString.lowercased() : nil, resume: false)
+ var r = RunRequest(prompt: prompt, model: model, effort: effort, folder: (aiFolder as NSString).appendingPathComponent("titles"), mcp: mcp, session: cli.namesSession ? UUID().uuidString.lowercased() : nil, resume: false)
+ r.job = "titles"; r.forget = cli.forgets // one-shot: nothing to resume
  var said = ""
  do {
   let run = try await cli.start(exe, r)
   let limit = DispatchWorkItem { run.cancel() }
   DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: limit)
-  for await e in run.events() { if case .message(let m, let join) = e { said += (join ?? "\n") + m } }
+  for await e in run.events() {
+   if case .message(let m, let join) = e { said += (join ?? "\n") + m } else if case .spent(let i, let o, let c, let job) = e { spend(cli, i, o, c, job) }
+  }
   limit.cancel()
  } catch { NSLog("Still: chat title: \(error)") }
  try? FileManager.default.removeItem(atPath: r.promptFile)
@@ -279,7 +282,9 @@ func stopRun(_ r: ChatRun) {
 }
 
 // The CLI has no record of the session it was asked to resume (Claude says "No conversation found", Grok's server answers 404).
-func lostSession(_ line: String) -> Bool { line.contains("No conversation found") || line.contains("Failed to restore session") }
+func lostSession(_ line: String) -> Bool {
+ line.contains("No conversation found") || line.contains("Failed to restore session") || line.contains("Error resuming session") || line.contains("Invalid session identifier") || line.contains("Session not found")
+}
 func signedOut(_ text: String) -> Bool { text.range(of: #"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials"#, options: [.regularExpression, .caseInsensitive]) != nil }
 func official(_ cli: AgentAdapter, _ url: String) -> Bool {
  guard let u = URL(string: url), u.scheme == "https", let host = u.host else { return false }
@@ -355,6 +360,8 @@ func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
  case .session: break
  case .usage(let text): aiUsage[cli.id] = text
  case .error(let text): chat.error = "\(cli.name): " + text
+ case .note(let text): chat.messages.append(AiMessage("note", text))
+ case .spent(let i, let o, let c, let job): spend(cli, i, o, c, job)
  case .thinking, .toolResult: break
  }
  return false
@@ -571,6 +578,7 @@ func waitSetupProcess(_ p: Spawned, _ each: @escaping (String) -> Void) async {
 }
 @MainActor func checkAi(_ cli: AgentAdapter) async {
  if ["installing", "signingIn"].contains(aiStatus[cli.id] ?? "") { return }
+ if let api = cli as? ApiAdapter { aiStatus[cli.id] = !ApiKeys.has(api.provider.id) ? "needsKey" : ApiKeys.refused(api.provider.id) ? "badKey" : "ready"; return }
  guard let exe = findCli(cli.command) else { aiStatus[cli.id] = "missing"; return }
  if let signedIn = await cli.detect(exe) { aiStatus[cli.id] = signedIn ? "ready" : "signedOut" } else { aiStatus[cli.id] = nil }
 }
@@ -1023,7 +1031,7 @@ extension Browser {
  /// Signs in with the AI app's own sign-in. Its official page opens in a tab here and the app itself receives the
  /// login when the user approves; Still never sees a password, key or token.
  @MainActor func aiSignIn(_ cli: AgentAdapter) async {
-  guard aiSetupProcess == nil, let exe = findCli(cli.command) else { return }
+  guard aiSetupProcess == nil, !cli.signIn.isEmpty, let exe = findCli(cli.command) else { return }
   aiStatus[cli.id] = "signingIn"; aiSignInUrl = ""; aiSignInCode = ""; aiView.error = ""; aiSetupCancelled = false; aiView.open = true; publishAiEverywhere()
   do {
    try FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
@@ -1315,7 +1323,8 @@ extension Browser {
    "skills": Skill.all.map { ["id": $0.id, "name": $0.name, "description": $0.description, "when": $0.when, "body": $0.body] },
    "model": pref("AiModels", [String: String]())[harness] ?? "", "effort": pref("AiEfforts", [String: String]())[harness] ?? "", "usage": aiUsage[harness] ?? "",
    "harnesses": aiClis.map { c -> [String: Any] in ["id": c.id, "name": c.name, "app": c.app, "maker": c.maker, "installed": findCli(c.command) != nil, "status": aiStatus[c.id] ?? "",
-    "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "forgets": c.forgets] },
+    "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "forgets": c.forgets,
+    "gaps": c.gaps, "terminalSignIn": c.terminalSignIn, "api": c is ApiAdapter] },
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
@@ -1328,6 +1337,7 @@ extension Browser {
    "chats": (incognito ? [] : Array(aiChats.prefix(200))).map(chatRow), "privateChats": view.privateChats.map(chatRow)
   ]
   data["plugins"] = pluginsPayload()
+  data["apis"] = apiPayload()
   data.merge(agentAiFields(shown)) { _, new in new } // approvals, audit, permissions, sensitiveSites
   send(["kind": "ai", "data": data])
  }

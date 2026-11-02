@@ -102,7 +102,8 @@ public sealed class Preferences
  public bool NamesChecked { get; set; } // companions with an old stock name were flagged to ask about it (FlagOldNames)
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode
  public Dictionary<string, string[]> AiTiers { get; set; } = []; // per "ai:mode": [model, effort] picked in Settings; none = the defaults
- public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", a manifest id, or "" until chosen
+ public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", "gemini", "opencode", an API provider's or a manifest's id, or "" until chosen
+ public List<ApiProvider> ApiProviders { get; set; } = []; // API providers the user added: settings and spending only, never the key (ApiKeyStore)
  public bool Autofill { get; set; } = true;
  public bool Sounds { get; set; } = true; // setup, the intro and the look editor; browsing never makes a sound
  public bool RestoreTabs { get; set; } = true;
@@ -172,8 +173,10 @@ public sealed class StateStore
  {
   try {
    File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
-   if (File.Exists(file)) File.Replace(file + ".tmp", file, file + ".bak");
-   else File.Move(file + ".tmp", file);
+   for (int tries = 0; ; tries++) {
+    try { if (File.Exists(file)) File.Replace(file + ".tmp", file, file + ".bak"); else File.Move(file + ".tmp", file); return; }
+    catch (IOException) when (tries < 5) { Thread.Sleep(40); } // another program (a backup, a virus scan) has it open for a moment
+   }
   } catch (Exception ex) { App.Log(ex); }
  }
 }

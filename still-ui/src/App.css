@@ -703,6 +703,20 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .byo-act[aria-expanded=true] svg { transform:rotate(180deg); }
 .byo-how { grid-column:1 / -1; padding:2px 6px 6px 54px; font-size:12.5px; color:var(--muted-foreground); }
 .byo-how p { margin:0 0 6px; }
+.byo-gaps { grid-column:1 / -1; margin:0; padding:0 6px 6px 54px; font-size:12px; line-height:1.5; color:var(--muted-foreground); }
+.api-providers { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+.api-card { align-self:stretch; display:flex; flex-direction:column; gap:8px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; }
+.api-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .api-kind { font-size:12px; color:var(--muted-foreground); }
+.api-key { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:13px; } .api-key svg { width:14px; height:14px; color:var(--muted-foreground); }
+.api-key code { font:12.5px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.api-bad, .api-warn { color:var(--destructive); } .api-warn { margin:0; font-size:12.5px; }
+.api-spend p { margin:0; font-size:13px; }
+.api-checks { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:12.5px; }
+.api-checks li { display:flex; gap:6px; align-items:baseline; } .api-checks svg { width:13px; height:13px; flex:none; color:var(--destructive); transform:translateY(2px); }
+.api-checks li[data-ok] svg { color:var(--primary); }
+.api-form { display:flex; flex-direction:column; gap:10px; }
+.api-form label { display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted-foreground); }
+.api-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .byo-cmd { display:block; padding:8px 10px; border-radius:10px; background:var(--muted); color:var(--foreground); font:13px ui-monospace,SFMono-Regular,Consolas,monospace; user-select:all; overflow-x:auto; white-space:nowrap; }
 .byo-how .ai-row { justify-content:flex-start; margin-top:4px; }
 .byo-more { display:flex; align-items:center; gap:4px; align-self:flex-start; padding:4px 6px; border:0; background:none; font-size:12.5px; color:var(--muted-foreground); }

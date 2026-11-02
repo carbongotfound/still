@@ -155,10 +155,15 @@ public partial class MainWindow
    InstallCommand = "npm install -g @openai/codex", Site = "https://chatgpt.com", SignIn = ["login"], Domains = ["openai.com", "chatgpt.com"] },
   new GrokAdapter { Id = "grok", Name = "Grok", App = "Grok Build", Command = "grok", Maker = "xAI", Installer = "https://x.ai/cli/install.ps1",
    InstallCommand = "irm https://x.ai/cli/install.ps1 | iex", Site = "https://x.ai/cli", SignIn = ["login", "--device-auth"], Domains = ["x.ai"] },
+  // Signed in from a terminal: Gemini CLI has no sign-in command of its own.
+  new GeminiAdapter { Id = "gemini", Name = "Gemini", App = "Gemini CLI", Command = "gemini", Maker = "Google",
+   InstallCommand = "npm install -g @google/gemini-cli", Site = "https://github.com/google-gemini/gemini-cli", TerminalSignIn = "gemini" },
+  new OpenCodeAdapter { Id = "opencode", Name = "OpenCode", App = "OpenCode", Command = "opencode", Maker = "OpenCode",
+   InstallCommand = "npm install -g opencode-ai", Site = "https://opencode.ai", Secondary = true },
  ];
  static AgentAdapter[]? aiClis;
- /// The built-in agents, then the manifests in Still's agents folder (read again when the user rechecks).
- static AgentAdapter[] AiClis => aiClis ??= [.. BuiltInAgents, .. ManifestAdapter.Load()];
+ /// The built-in agents, the user's API providers, then the manifests in Still's agents folder (read again when the user rechecks).
+ static AgentAdapter[] AiClis => aiClis ??= [.. BuiltInAgents, .. (sharedState?.Preferences.ApiProviders ?? []).Select(ApiAdapter.Of), .. ManifestAdapter.Load()];
  /// ChatGPT's id was "codex" before adapters.
  static void MigrateAgentIds(Preferences prefs)
  {
@@ -352,8 +357,8 @@ public partial class MainWindow
   return sharedState?.Preferences.AiTiers.GetValueOrDefault(ai + ":" + mode) is [var model, var effort] ? (model, effort) : TierDefault(ai, mode);
  }
  static (string Model, string Effort) TierDefault(string ai, string mode) => mode switch {
-  "expert" => (ai == "claude" ? "opus" : "", "high"),
-  "efficient" => (ai == "claude" ? "haiku" : "", "low"),
+  "expert" => (ai == "claude" ? "opus" : ai == "gemini" ? "pro" : "", "high"),
+  "efficient" => (ai == "claude" ? "haiku" : ai == "gemini" ? "flash" : "", "low"),
   _ => ("", "") };
  static readonly string[] Tiers = ["efficient", "default", "expert"];
  static readonly HashSet<string> tierFailed = []; // "ai:mode" whose model wasn't on the user's plan: flagged in Settings
@@ -409,6 +414,7 @@ public partial class MainWindow
  /// Finds an installed CLI on the user's current PATH (re-read, so a fresh install is found without restarting Still).
  static string? FindCli(string name)
  {
+  if (name.Length == 0) return ""; // an API provider: Still runs it itself
   string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
   var dirs = $"{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User)};{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine)};{Environment.GetEnvironmentVariable("PATH")}"
    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
@@ -428,7 +434,7 @@ public partial class MainWindow
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
-  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, forgets = c.Forgets }),
+  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
@@ -439,7 +445,7 @@ public partial class MainWindow
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
-  plugins = PluginsPayload(),
+  plugins = PluginsPayload(), apis = ApiPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, guessed = f.Guessed, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
@@ -973,8 +979,10 @@ public partial class MainWindow
   PublishAiEverywhere();
  }
 
- // The CLI has no record of the session it was asked to resume (Claude says "No conversation found", Grok's server answers 404).
- static bool LostSession(string line) => line.Contains("No conversation found") || line.Contains("Failed to restore session");
+ // The CLI has no record of the session it was asked to resume (Claude says "No conversation found", Grok's server answers 404,
+ // Gemini "Error resuming session" or "Invalid session identifier", OpenCode "Session not found"; an API chat's transcript is gone).
+ static bool LostSession(string line) => line.Contains("No conversation found") || line.Contains("Failed to restore session") || line.Contains("Error resuming session")
+  || line.Contains("Invalid session identifier") || line.Contains("Session not found");
  [GeneratedRegex(@"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials", RegexOptions.IgnoreCase)] private static partial Regex SignedOutError();
  [GeneratedRegex(@"\x1b\[[0-9;?]*[A-Za-z]")] private static partial Regex TerminalCodes();
 
@@ -1058,10 +1066,10 @@ public partial class MainWindow
   if (App.IsQa) mcp.Insert(1, "--qa");
   AgentRun? run = null; RunRequest? request = null;
   try {
-   request = new RunRequest(prompt, model, effort, Path.Combine(AiFolder, "titles"), mcp, cli.NamesSession ? Guid.NewGuid().ToString() : null, false);
+   request = new RunRequest(prompt, model, effort, Path.Combine(AiFolder, "titles"), mcp, cli.NamesSession ? Guid.NewGuid().ToString() : null, false) { Job = "titles", Forget = cli.Forgets }; // one-shot: nothing to resume
    run = await cli.Start(exe, request);
    using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(60));
-   await foreach (var e in run.Events(limit.Token)) if (e is AgentEvent.Message m) said += (m.Join ?? "\n") + m.Text;
+   await foreach (var e in run.Events(limit.Token)) if (e is AgentEvent.Message m) said += (m.Join ?? "\n") + m.Text; else if (e is AgentEvent.Spent s) Spend(cli, s);
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception) { App.Log(ex); }
   finally {
    run?.Dispose();
@@ -1086,6 +1094,7 @@ public partial class MainWindow
  static async Task CheckAi(AgentAdapter cli)
  {
   if (aiStatus.GetValueOrDefault(cli.Id) is "installing" or "signingIn") return;
+  if (cli is ApiAdapter api) { aiStatus[cli.Id] = !ApiKeyStore.Has(api.Id) ? "needsKey" : ApiKeyStore.Refused.Contains(api.Id) ? "badKey" : "ready"; return; }
   if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; return; }
   try {
    if (await cli.Detect(exe) is bool signedIn) aiStatus[cli.Id] = signedIn ? "ready" : "signedOut";
@@ -1116,7 +1125,7 @@ public partial class MainWindow
  /// login when the user approves; Still never sees a password, key or token.
  async Task AiSignIn(AgentAdapter cli)
  {
-  if (aiSetupProcess != null || FindCli(cli.Command) is not { } exe) return;
+  if (aiSetupProcess != null || cli.SignIn.Length == 0 || FindCli(cli.Command) is not { } exe) return;
   aiStatus[cli.Id] = "signingIn"; aiSignInUrl = aiSignInCode = aiError = ""; aiSetupCancelled = false; aiOpen = true; PublishAiEverywhere();
   int tabsBefore = 0; Process? p = null;
   try {
@@ -1323,6 +1332,8 @@ public partial class MainWindow
    case AgentEvent.Session session when !chat.Started || chat.Session == null: chat.Session ??= session.Id; chat.Started = true; SaveAiChats(); break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
    case AgentEvent.Error error: chat.Error = $"{cli.Name}: " + error.Text; break;
+   case AgentEvent.Note note: chat.Messages.Add(new() { Role = "note", Text = note.Text }); break;
+   case AgentEvent.Spent spent: Spend(cli, spent); break;
   }
   return false;
  }
