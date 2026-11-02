@@ -141,18 +141,42 @@ var aiSetupLine = "", aiSignInUrl = "", aiSignInCode = ""
 var chatsLoaded = false
 
 /// One window's AI state: the sidebar, the chat it shows (nil = a new, empty chat), and what was asked before the AI was ready.
-final class AiView { var open = false, published = false, error = "", pending = ""; var chat: AiChat? }
+/// privateChats: an incognito window's chats, kept nowhere else.
+final class AiView { var open = false, published = false, error = "", pending = ""; var chat: AiChat?; var privateChats: [AiChat] = [] }
 var aiViews: [ObjectIdentifier: AiView] = [:]
 
 var chatsFile: URL { URL(fileURLWithPath: aiFolder).appendingPathComponent("chats.json") }
-func saveAiChats() {
+/// chat: the one that changed. An incognito chat's changes never rewrite the file.
+func saveAiChats(_ chat: AiChat? = nil) {
+ if chat?.ephemeral == true { return }
  do {
   try FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
-  try pascalJSON(Array(aiChats.prefix(200))).write(to: chatsFile, options: .atomic)
+  try pascalJSON(Array(aiChats.filter { !$0.ephemeral }.prefix(200))).write(to: chatsFile, options: .atomic) // an incognito chat never reaches the disk
  } catch { NSLog("Still: couldn't save chats: \(error)") }
 }
 /// Chats whose run was cut off when Still closed or crashed.
-var interruptedChats: [AiChat] { aiChats.filter { $0.running && !$0.archived && runs[$0.id] == nil } }
+var interruptedChats: [AiChat] { aiChats.filter { $0.running && !$0.archived && !$0.ephemeral && runs[$0.id] == nil } }
+
+// Incognito chats (Windows: MainWindow.Ai.cs, Ephemeral) live only in their window's aiView.privateChats. Still keeps
+// nothing from one: its AI app works in the window's folder under ai/incognito, deleted as the window closes (or at the
+// next start, after a crash), and its pages and lookups use the window's private website data.
+let keepsNothing = "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off. Tell the user if it matters, and carry on without it."
+var incognitoFolder: String { aiFolder + "/incognito" }
+/// The incognito window a chat lives in: nil for a saved chat, or once its window closed.
+func ownerOf(_ chat: AiChat) -> Browser? { chat.ephemeral ? browsers.first { $0.aiView.privateChats.contains { $0 === chat } } : nil }
+func incognitoRun(_ who: String) -> Bool { runs[who]?.chat.ephemeral == true }
+/// The chats a chat sits with: the saved ones, or its incognito window's.
+func listOf(_ chat: AiChat) -> [AiChat] { chat.ephemeral ? ownerOf(chat)?.aiView.privateChats ?? [] : aiChats }
+/// Puts a chat first in its list. in: the window a new incognito chat joins.
+func toTop(_ chat: AiChat, in owner: Browser? = nil) {
+ if chat.ephemeral {
+  guard let view = (owner ?? ownerOf(chat))?.aiView else { return }
+  view.privateChats.removeAll { $0 === chat }; view.privateChats.insert(chat, at: 0)
+ } else { aiChats.removeAll { $0 === chat }; aiChats.insert(chat, at: 0); saveAiChats() }
+}
+func chatRow(_ c: AiChat) -> [String: Any] {
+ ["id": c.id, "title": c.title, "harness": c.harness, "updated": isoText(c.updated), "companion": c.companion, "from": c.from.map { $0 as Any } ?? NSNull(), "unread": c.unread, "archived": c.archived, "noMemory": c.noMemory]
+}
 
 /// The three modes on the message box. Thorough (expert): the strongest model, thinking hard. Quick (efficient): the
 /// quickest, thinking little. Everyday (default): the AI app's own defaults. Advanced (the model and effort pickers) overrides them.
@@ -192,7 +216,7 @@ func forMode(_ ai: String, _ mode: String?) -> (String, String) {
  try? FileManager.default.removeItem(atPath: r.promptFile)
  let title = said.split(separator: "\n").map { String($0).replacingOccurrences(of: #"^(?i:title)\s*:"#, with: "", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "\"'*#“”. ").union(.whitespaces)) }.first { !$0.isEmpty } ?? ""
  if title.isEmpty || chat.title != was || !aiChats.contains(where: { $0 === chat }) { return }
- chat.title = clipped(title, 60); saveAiChats()
+ chat.title = clipped(title, 60); saveAiChats(chat)
  for browser in browsers { for tab in browser.tabs where tab.chatId == chat.id { tab.title = chat.title }; browser.publishAi() }
  saveAllLater(); publishEverywhere()
 }
@@ -228,7 +252,7 @@ func openTabsNote() -> String {
 /// from the user's first message.
 @MainActor func nameFromHello(_ chat: AiChat, _ hello: String) {
  guard let line = hello.replacingOccurrences(of: "**", with: "").components(separatedBy: "\n").map(tidy).first(where: { !$0.isEmpty }) else { return }
- chat.title = clipped(line, 60); saveAiChats()
+ chat.title = clipped(line, 60); saveAiChats(chat)
  for browser in browsers { for tab in browser.tabs where tab.chatId == chat.id { tab.title = chat.title }; browser.publishAi() }
  saveAllLater()
  Task { await nameChat(chat, hello) }
@@ -378,7 +402,7 @@ func named(_ name: String) -> Companion? {
 /// request; a companion already in the exchange can't be asked again (a loop), and none messages itself.
 let exchangeHops = 3, exchangeMessages = 10
 var exchangesSent: [String: Int] = [:] // by the user's chat: messages sent for its current request
-func chatById(_ id: String?) -> AiChat? { id.flatMap { id in aiChats.first { $0.id == id } } }
+func chatById(_ id: String?) -> AiChat? { id.flatMap { id in aiChats.first { $0.id == id } ?? browsers.lazy.flatMap { $0.aiView.privateChats }.first { $0.id == id } } }
 func nameOf(_ id: String) -> String { companions.first { $0.id == id }?.name ?? "A former teammate" }
 /// The user's chat an exchange started in, and who's in it so far: that chat's companion, then each one asked since.
 func exchangeOf(_ chat: AiChat) -> (root: AiChat, chain: [String]) {
@@ -480,11 +504,25 @@ extension Browser {
   let view = AiView(); aiViews[ObjectIdentifier(self)] = view; return view
  }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
- var shownChat: AiChat? { if let id = active?.chatId { return aiChats.first { $0.id == id } }; return aiView.chat }
+ var shownChat: AiChat? { if let id = active?.chatId { return myChats.first { $0.id == id } }; return aiView.chat }
  /// Is this chat on screen in this window: its tab, or the open sidebar beside an ordinary tab.
  func showing(_ chat: AiChat) -> Bool { active?.chatId == chat.id || (active?.chatId == nil && aiView.open && aiView.chat?.id == chat.id) }
- /// ponytail: every tab private stands in for an incognito window until the shell has a real flag.
- var incognitoWindow: Bool { !tabs.isEmpty && tabs.allSatisfy(\.isPrivate) }
+ /// The chats this window shows: the saved ones, or an incognito window's own.
+ var myChats: [AiChat] { incognito ? aiView.privateChats : aiChats }
+ /// An incognito window's folder: its attachments, and its chats' AI apps at work.
+ var privateFolder: String { incognitoFolder + "/" + windowId }
+ var attachmentsHere: String { incognito ? privateFolder + "/attachments" : attachmentsFolder }
+ /// An incognito window closes: its runs stop, their AI apps end, and its chats and folder go.
+ func endIncognito() {
+  let ids = aiView.privateChats.map(\.id), folder = privateFolder
+  for id in ids { if let r = runs[id] { r.queue.removeAll(); stopRun(r) } }
+  aiView.privateChats.removeAll(); aiView.chat = nil
+  func sweep(_ tries: Int) { // again until the AI apps have ended and nothing came back
+   try? FileManager.default.removeItem(atPath: folder)
+   if tries > 0 && (FileManager.default.fileExists(atPath: folder) || ids.contains { runs[$0] != nil }) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { sweep(tries - 1) } }
+  }
+  sweep(40)
+ }
  /// The page shown beside a chat: the latest of its AI's pages.
  func chatShownPage(_ chat: String) -> Tab? { tabs.filter { ($0.inChat ?? $0.runChat) == chat && !$0.closed }.max { $0.lastSeen < $1.lastSeen } }
  func publishOthers() { for browser in browsers where browser !== self { browser.publishAi() } }
@@ -527,7 +565,7 @@ extension Browser {
    let name = clean.isEmpty || clean.hasPrefix(".") ? "file" + clean : clean
    let max = imageMime(name) != nil ? maxImage : maxFile
    if size > max { errors.append("\(name) is \(sizeText(size)). \(max == maxImage ? "Images" : "Files") can be up to \(max >> 20) MB."); continue }
-   let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)), folder = attachmentsFolder + "/" + id
+   let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)), folder = attachmentsHere + "/" + id
    guard let data = bytes(), data.count <= max, (try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)) != nil,
          (try? data.write(to: URL(fileURLWithPath: folder + "/" + name))) != nil else { errors.append("Couldn't add \(name)."); continue }
    files.append(["id": id, "name": name, "size": data.count])
@@ -568,6 +606,7 @@ extension Browser {
  func startAi() {
   if chatsLoaded { return }
   chatsLoaded = true
+  for dir in (try? FileManager.default.contentsOfDirectory(atPath: incognitoFolder)) ?? [] where !browsers.contains(where: { $0.windowId == dir }) { try? FileManager.default.removeItem(atPath: incognitoFolder + "/" + dir) } // left by a crash
   if let data = try? Data(contentsOf: chatsFile) {
    do {
     aiChats = try fromPascalJSON([AiChat].self, data)
@@ -658,46 +697,47 @@ extension Browser {
    v.error = ""; runAi(nil, ask, into: into)
   case "aiHarness": if s("harness").isEmpty || aiClis.contains(where: { $0.id == s("harness") }) { useAi(s("harness")) }
   case "aiNew": v.chat = nil; v.error = ""
-  case "aiOpenChat": v.chat = aiChats.first { $0.id == s("id") } ?? v.chat; v.error = ""
+  case "aiOpenChat": v.chat = myChats.first { $0.id == s("id") } ?? v.chat; v.error = ""
   case "aiDeleteChat":
    guard runs[s("id")] == nil else { break }
-   for gone in aiChats.filter({ $0.id == s("id") }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsFolder + "/" + gone.id) }
-   aiChats.removeAll { $0.id == s("id") }
+   for gone in myChats.filter({ $0.id == s("id") }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsHere + "/" + gone.id) }
+   if incognito { v.privateChats.removeAll { $0.id == s("id") } } else { aiChats.removeAll { $0.id == s("id") } }
    if v.chat?.id == s("id") { v.chat = nil }
-   saveAiChats()
+   if !incognito { saveAiChats() }
    for t in tabs where t.chatId == s("id") { close(t) }
   case "aiDeleteAll":
    guard runs.isEmpty else { break }
-   aiChats.removeAll(); v.chat = nil; saveAiChats()
-   try? FileManager.default.removeItem(atPath: attachmentsFolder)
+   if incognito { v.privateChats.removeAll() } else { aiChats.removeAll() }
+   v.chat = nil; if !incognito { saveAiChats() }
+   try? FileManager.default.removeItem(atPath: attachmentsHere)
    for t in tabs where t.chatId != nil { close(t) }
   case "aiStop": if let stopping = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")] { stopping.queue.removeAll(); stopRun(stopping) }
-  case "aiResumeAll": for cut in interruptedChats { cut.running = false; runAi(cut, "Still closed before you finished. Please pick up where you left off.") }
-  case "aiResumeDismiss":
+  case "aiResumeAll" where !incognito: for cut in interruptedChats { cut.running = false; runAi(cut, "Still closed before you finished. Please pick up where you left off.") }
+  case "aiResumeDismiss" where !incognito:
    for cut in interruptedChats { cut.running = false }
    saveAiChats(); publishAiEverywhere()
   case "aiNow": if let now = shownChat, let r = runs[now.id], !r.queue.isEmpty { stopRun(r) } // what's queued runs right away
   case "aiUnqueue": if let c = shownChat { runs[c.id]?.queue.removeAll() }
   case "aiSend":
-   if setUpAgainAsked(s("text")) && !incognitoWindow { welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
+   if setUpAgainAsked(s("text")) && !incognito { welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
    var text = tidy(s("text"))
    guard (1...20000).contains(text.count) else { break }
    // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
    // A chat that's still working takes it as a follow-up for when it finishes.
-   let target = active?.chatId.map { id in aiChats.first { $0.id == id } } ?? (b("home") ? nil : v.chat)
-   // # in the message box attaches open tabs, never a private one: the message links them, and the AI reads them with read_page.
-   let picked = (data["tabs"] as? [Any] ?? []).compactMap { $0 as? String }
+   let target = active?.chatId.map { id in myChats.first { $0.id == id } } ?? (b("home") ? nil : v.chat)
+   // # in the message box attaches open tabs, never a private one (nor any in an incognito chat): the message links them, and the AI reads them with read_page.
+   let picked = incognito ? [] : (data["tabs"] as? [Any] ?? []).compactMap { $0 as? String }
    let attached = Array(browsers.flatMap(\.tabs).filter { picked.contains($0.id) && !$0.isPrivate && !$0.closed }.prefix(8))
    if !attached.isEmpty { text += "\n\n" + attached.map { "[\($0.title.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")"))](\($0.url))" }.joined(separator: "\n") }
    let asked = attached.isEmpty ? text : text + "\n\n[Still] The user attached \(attached.count == 1 ? "this tab" : "these tabs"): " + attached.map { "\"\($0.title)\" \($0.url) (tabId \($0.id))" }.joined(separator: "; ") + ". Read each with read_page before you answer."
    // Files from the box: the message names them, and the AI reads each with read_attachment.
    var seenFiles = Set<String>()
-   let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap(attachment) }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
+   let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
    if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); break }
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
   case "aiKickoff": // a new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup
-   guard !incognitoWindow, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else { break }
+   guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else { break }
    fresh.greet = false; storeCompanions()
    let kick = AiChat()
    kick.companion = fresh.id; kick.title = fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
@@ -726,7 +766,7 @@ extension Browser {
    answering.chat.messages.append(answer.isEmpty ? AiMessage("note", "Skipped the question.") : AiMessage("user", answer))
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
-   guard let chat = aiChats.first(where: { $0.id == s("id") }) else { break }
+   guard let chat = myChats.first(where: { $0.id == s("id") }) else { break }
    openChatTab(chat.id); v.chat = chat; v.error = ""
   case "chatPage": // show or hide the AI's page beside the chat
    guard let chatTab = active, let chat = chatTab.chatId else { break }
@@ -752,7 +792,7 @@ extension Browser {
    select(mine)
   case "tabHand": // "Hand to …": a tab of the user's becomes a chat's page
    guard let given = tabs.first(where: { $0.id == s("id") && $0.chatId == nil && $0.inChat == nil && !$0.isPrivate && !$0.url.isEmpty }) else { break }
-   let to = aiChats.first { $0.id == s("chat") } ?? {
+   let to = myChats.first { $0.id == s("chat") } ?? {
     let with = companions.first { $0.id == s("companion") } ?? companions.first
     let chat = AiChat()
     chat.harness = with.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", ""); chat.title = given.title; chat.companion = with?.id ?? ""
@@ -763,7 +803,7 @@ extension Browser {
    openChatTab(to.id)?.pageOpen = true // an AI's page opens in its chat
    showChatPage(); publishAiEverywhere()
   case "agentChat": // the pill's "Open chat"
-   if let run = tabs.first(where: { $0.id == s("id") })?.runChat, let chat = aiChats.first(where: { $0.id == run }) { v.chat = chat; v.open = true }
+   if let run = tabs.first(where: { $0.id == s("id") })?.runChat, let chat = myChats.first(where: { $0.id == run }) { v.chat = chat; v.open = true }
 
   case "companionSave":
    if !tidy(s("name")).isEmpty { saveCompanion(data); publishOthers() }
@@ -788,7 +828,7 @@ extension Browser {
   case "memoryForget": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.forget(s("companion"), s("id")); publishAiEverywhere() }
   case "memoryClear": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.clear(s("companion")); publishAiEverywhere() }
   case "chatNoMemory":
-   guard let offRecord = aiChats.first(where: { $0.id == s("id") }) else { break }
+   guard let offRecord = myChats.first(where: { $0.id == s("id") }), !offRecord.ephemeral else { break }
    offRecord.noMemory = b("on")
    if offRecord.noMemory { for c in companions { CompanionMemory.forgetChat(c.id, offRecord.id) } }
    saveAiChats(); publishAiEverywhere()
@@ -807,8 +847,8 @@ extension Browser {
    try? FileManager.default.removeItem(at: gone)
    libraryCache = nil; publishOthers()
   case "chatArchive":
-   guard let archived = aiChats.first(where: { $0.id == s("id") }) else { break }
-   archived.archived = b("on"); saveAiChats(); publishOthers()
+   guard let archived = myChats.first(where: { $0.id == s("id") }) else { break }
+   archived.archived = b("on"); saveAiChats(archived); publishOthers()
   default: return false
   }
   publishAi()
@@ -826,7 +866,7 @@ extension Browser {
  func useAi(_ h: String) {
   prefs["AiHarness"] = h; saveLater(); aiView.error = ""
   if let chat = aiView.chat, runs[chat.id] == nil, chat.harness != h {
-   if h.isEmpty { aiView.chat = nil } else { chat.harness = h; chat.session = nil; chat.started = false; saveAiChats() }
+   if h.isEmpty { aiView.chat = nil } else { chat.harness = h; chat.session = nil; chat.started = false; saveAiChats(chat) }
   }
   publishOthers()
   if let picked = aiClis.first(where: { $0.id == h }) { Task { await aiPicked(picked) } }
@@ -905,12 +945,16 @@ extension Browser {
   let open = browsers.flatMap(\.tabs).filter { !$0.isPrivate }.count
   let place = active.map { a in a.url.isEmpty ? "The active tab is empty." : a.isPrivate ? "The active tab is private, which is off-limits." : "Active tab: \"\(a.title)\" \(a.url) (tabId \(a.id))." } ?? "The active tab is empty."
   let pages = chat.map { c in tabs.filter { $0.inChat == c.id && !$0.closed }.map { "\"\($0.title)\" \($0.url) (tabId \($0.id))" } } ?? []
+  if chat?.ephemeral == true { return "[Still] This chat is in an incognito window: you only use the private tabs you open here." + (pages.isEmpty ? "" : " Your tabs in this chat: " + pages.joined(separator: "; ") + ".") }
   return "[Still] \(place) \(open) tab\(open == 1 ? "" : "s") open." + (pages.isEmpty ? "" : " Your tabs in this chat: " + pages.joined(separator: "; ") + ".")
  }
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is nil). asker: the teammate
  /// whose message this is, when one companion asks another (exchange).
  func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, asker: String? = nil, files: [AiFile] = []) {
+  if let chat, chat.ephemeral, ownerOf(chat) !== self { // an incognito chat runs in its window, or not at all once that closed
+   ownerOf(chat)?.runAi(chat, text, shown: shown, into: into, companion: companion, noMemory: noMemory, asker: asker, files: files); return
+  }
   let v = aiView
   var text = text
   let chat = chat ?? {
@@ -919,9 +963,9 @@ extension Browser {
    let chat = AiChat()
    chat.harness = with.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
    chat.title = line.count > 60 ? String(line.prefix(60)) + "…" : line
-   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognitoWindow // a private window remembers nothing
+   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito // a private window keeps nothing
    v.chat = chat
-   aiChats.insert(chat, at: 0); saveAiChats()
+   toTop(chat, in: self)
    if let into, !into.closed { into.chatId = chat.id; into.title = chat.title; saveLater() }
    if asker == nil { let first = shown ?? text; Task { await nameChat(chat, first) } }
    return chat
@@ -949,23 +993,23 @@ extension Browser {
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
   if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
-  if let who, who.greet { who.greet = false; storeCompanions() } // they spoke first: no kickoff
+  if let who, who.greet, !chat.ephemeral { who.greet = false; storeCompanions() } // they spoke first: no kickoff
   var skills = Skill.invoked(shown)
   if !chat.started { skills += Skill.all.filter { k in who?.skills.contains(k.id) == true && !skills.contains { $0.id == k.id } } }
   for k in skills { chatStep(chat, "Loaded skill " + k.name) }
-  aiChats.removeAll { $0 === chat }; aiChats.insert(chat, at: 0); saveAiChats(); publishAiEverywhere()
+  toTop(chat); publishAiEverywhere()
 
   var isFolder: ObjCBool = false
   let wf = who?.folder ?? ""
-  let work = cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
+  let work = !chat.ephemeral && cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
   let memory = who.map { CompanionMemory.brief($0.id, shown) } ?? ""
   let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work) + "\n\n"
    + (memory.isEmpty ? "" : "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n")
    + (who.map { CompanionMemory.notesBrief($0.id) } ?? "")
-   + (chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
+   + (chat.ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, and your pages open in private tabs.\n\n" : chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
   let prompt = intro + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
-  let folder = (aiFolder as NSString).appendingPathComponent("chats/" + chat.id)
+  let folder = chat.ephemeral ? privateFolder + "/" + chat.id : (aiFolder as NSString).appendingPathComponent("chats/" + chat.id)
   try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
   var mcp = ["--mcp", "--as", cli.name, "--run", chat.id, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
   if isQa { mcp.insert("--qa", at: 1) }
@@ -988,7 +1032,7 @@ extension Browser {
     chat.worked = Int(Date().timeIntervalSince(me.started)); chat.running = false
    }
    me.question?.answer.set("The chat ended."); me.question = nil
-   chat.updated = Date(); chat.unread = !browsers.contains { $0.showing(chat) }; saveAiChats()
+   chat.updated = Date(); chat.unread = !browsers.contains { $0.showing(chat) }; saveAiChats(chat)
    try? FileManager.default.removeItem(atPath: request.promptFile)
   }
   do {
@@ -1013,7 +1057,7 @@ extension Browser {
     return
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if said, !chat.noMemory, let who = companions.first(where: { $0.id == chat.companion }), memoryRefuses(me, chat.title) == nil, // a title can name a private tab too
+   if said, !chat.noMemory, !chat.ephemeral, let who = companions.first(where: { $0.id == chat.companion }), memoryRefuses(me, chat.title) == nil, // a title can name a private tab too
       let last = chat.messages.last(where: { $0.role == "assistant" }) {
     var end = last.text.components(separatedBy: "\n").map(tidy).first { !$0.isEmpty && !$0.hasPrefix(">>") } ?? ""
     end = tidy(end.replacingOccurrences(of: "**", with: ""))
@@ -1049,11 +1093,11 @@ extension Browser {
   if chain.count > exchangeHops { return agentFail("This exchange is already \(exchangeHops) hops deep, the most it goes. Carry on with what you have.") }
   if exchangesSent[root.id, default: 0] >= exchangeMessages { return agentFail("Your team has sent \(exchangeMessages) messages for this request, the most for one. Carry on with what you have.") }
   let ask = tool == "ask_companion"
-  if let busy = aiChats.first(where: { $0.from == run.chat.id && $0.companion == to.id }), runs[busy.id] != nil { return agentFail("\(to.name) is still on your last message. Wait for that first.") }
-  let chat = aiChats.first { $0.from == run.chat.id && $0.companion == to.id } ?? {
-   let c = AiChat(); c.companion = to.id; c.from = run.chat.id; c.noMemory = run.chat.noMemory
+  if let busy = listOf(run.chat).first(where: { $0.from == run.chat.id && $0.companion == to.id }), runs[busy.id] != nil { return agentFail("\(to.name) is still on your last message. Wait for that first.") }
+  let chat = listOf(run.chat).first { $0.from == run.chat.id && $0.companion == to.id } ?? {
+   let c = AiChat(); c.companion = to.id; c.from = run.chat.id; c.noMemory = run.chat.noMemory; c.ephemeral = run.chat.ephemeral
    c.title = clipped(me.name + (ask ? " asked: " : " handed over: ") + text.replacingOccurrences(of: "\n", with: " "), 60)
-   aiChats.insert(c, at: 0); return c
+   toTop(c, in: ownerOf(run.chat)); return c
   }()
   exchangesSent[root.id, default: 0] += 1
   let card = AiMessage(ask ? "ask" : "tell", text, who: me.id); card.to = to.id; card.status = "working"; card.chat = chat.id
@@ -1068,7 +1112,7 @@ extension Browser {
    let reply = tidy(chat.messages.dropFirst(from).filter { $0.role == "assistant" }.map(\.text).joined(separator: "\n\n"))
    card.status = reply.isEmpty ? "failed" : "replied"
    card.reply = !reply.isEmpty ? reply : chat.error.isEmpty ? "\(to.name) didn't answer." : chat.error
-   saveAiChats(); publishAiEverywhere()
+   saveAiChats(chat); publishAiEverywhere()
    return reply
   }
   if !ask { return agentOk(["done": "Handed over to \(to.name), who works on it in their own chat. Don't wait for it."]) }
@@ -1094,8 +1138,8 @@ extension Browser {
   let day = { (date: Date) in isoText(date) }
   var data: [String: Any] = [
    "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
-   "interrupted": interruptedChats.map(\.id),
-   "runs": runs.values.map { r -> [String: Any] in ["id": r.chat.id, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
+   "interrupted": incognito ? [] : interruptedChats.map(\.id), "incognito": incognito,
+   "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site] }] },
    "error": shown.map { $0.error.isEmpty ? view.error : $0.error } ?? view.error, "profile": "Default", "files": libraryFiles(),
    "models": aiClis.flatMap { c in (aiModels[c.id] ?? []).map { ["harness": c.id, "id": $0.id, "name": $0.name, "efforts": $0.efforts] as [String: Any] } },
@@ -1113,7 +1157,7 @@ extension Browser {
     "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body] },
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
-   "chats": aiChats.prefix(200).map { ["id": $0.id, "title": $0.title, "harness": $0.harness, "updated": day($0.updated), "companion": $0.companion, "from": $0.from.map { $0 as Any } ?? NSNull(), "unread": $0.unread, "archived": $0.archived, "noMemory": $0.noMemory] }
+   "chats": (incognito ? [] : Array(aiChats.prefix(200))).map(chatRow), "privateChats": view.privateChats.map(chatRow)
   ]
   data["plugins"] = pluginsPayload()
   data.merge(agentAiFields(shown)) { _, new in new } // approvals, audit, permissions, sensitiveSites

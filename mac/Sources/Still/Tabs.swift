@@ -26,7 +26,7 @@ extension Browser {
   if let open = tabs.first(where: { $0.chatId == chatId }) { return open }
   let tab = Tab()
   tab.chatId = chatId
-  let title = aiChats.first { $0.id == chatId }?.title ?? ""
+  let title = chatById(chatId)?.title ?? ""
   tab.title = title.isEmpty ? "Chat" : title
   tabs.append(tab)
   saveLater()

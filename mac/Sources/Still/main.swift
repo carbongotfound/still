@@ -1141,6 +1141,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func windowDidBecomeKey(_ notification: Notification) { lastActiveBrowser = self; schedulePublish() }
  func windowWillClose(_ notification: Notification) {
   closing = true
+  if incognito { endIncognito() }
   saveAll()
   if !temporary && !incognito { closedWindows.append((at: Date(), tabs: tabs)) }
   for tab in tabs { unload(tab) }
@@ -1225,6 +1226,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
  func applicationWillTerminate(_ notification: Notification) {
   saveAll(); AgentRun.endAll()
+  try? FileManager.default.removeItem(atPath: incognitoFolder) // incognito windows' folders (the next start sweeps what's left)
   // A temporary profile is deleted as it closes (the next temp window sweeps any leftovers).
   if isTemp, support.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.appendingPathComponent("Still-temp").standardizedFileURL.path + "/") { try? FileManager.default.removeItem(at: support) }
  }

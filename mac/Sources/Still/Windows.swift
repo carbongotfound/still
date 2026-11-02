@@ -129,12 +129,12 @@ extension Browser {
 
  /// The other Still window under a screen point (drop target for a dragged tab). When windows overlap, the frontmost wins.
  func windowAt(_ point: NSPoint) -> Browser? {
-  let candidates = browsers.filter { $0 !== self && !$0.closing && $0.window.isVisible && !$0.window.isMiniaturized && $0.window.frame.contains(point) }
+  let candidates = browsers.filter { $0 !== self && !$0.closing && $0.incognito == incognito && $0.window.isVisible && !$0.window.isMiniaturized && $0.window.frame.contains(point) }
   return NSApp.orderedWindows.lazy.compactMap { window in candidates.first { $0.window === window } }.first ?? candidates.first
  }
 
  var windowsData: [[String: Any]] {
-  browsers.enumerated().filter { $0.element !== self && !$0.element.closing }.map { ["id": $0.element.windowId, "name": "Window \($0.offset + 1)", "title": $0.element.active?.title ?? ""] }
+  browsers.enumerated().filter { $0.element !== self && !$0.element.closing && $0.element.incognito == incognito }.map { ["id": $0.element.windowId, "name": "Window \($0.offset + 1)", "title": $0.element.active?.title ?? ""] }
  }
 
  /// The interface reports screen points from the top of the main screen; AppKit counts from its bottom.
@@ -143,6 +143,9 @@ extension Browser {
  /// Moves a tab with its live page to another window, or to a new one (target nil) at point.
  func moveTab(_ tab: Tab, to target: Browser?, at point: NSPoint?) {
   guard let index = tabs.firstIndex(where: { $0 === tab }), target !== self else { return }
+  // Tabs stay with windows of their kind, and an incognito chat and its pages stay in the window that holds the chat.
+  if let target, target.incognito != incognito { return }
+  if incognito && (tab.chatId ?? tab.inChat ?? tab.runChat) != nil { return }
   // Leave this window (not a real close: nothing goes to "reopen closed tab").
   if tab === splitLeft || tab === splitRight { splitLeft = nil; splitRight = nil }
   dropPermissions(tab)

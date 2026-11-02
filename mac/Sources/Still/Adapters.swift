@@ -35,9 +35,9 @@ let maxFiles = 10, maxFile: Int64 = 10 << 20, maxImage: Int64 = 5 << 20
 var attachmentsFolder: String { aiFolder + "/attachments" }
 func imageMime(_ name: String) -> String? { ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"][(name as NSString).pathExtension.lowercased()] }
 func sizeText(_ b: Int64) -> String { b < 1024 ? "\(b) B" : b < 1 << 20 ? String(format: "%.1f KB", Double(b) / 1024) : String(format: "%.1f MB", Double(b) / 1048576) }
-func attachment(_ id: String) -> AiFile? {
- guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder + "/" + id).first else { return nil }
- let size = (try? FileManager.default.attributesOfItem(atPath: attachmentsFolder + "/" + id + "/" + name)[.size] as? Int) ?? 0
+func attachment(_ id: String, in folder: String = attachmentsFolder) -> AiFile? {
+ guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: folder + "/" + id).first else { return nil }
+ let size = (try? FileManager.default.attributesOfItem(atPath: folder + "/" + id + "/" + name)[.size] as? Int) ?? 0
  return AiFile(id: id, name: name, size: size)
 }
 func filesNote(_ files: [AiFile]) -> String {
@@ -45,8 +45,9 @@ func filesNote(_ files: [AiFile]) -> String {
 }
 /// read_attachment: text and code as text, a PDF's text, an image as itself.
 func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
- guard let file = attachment(id) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
- let url = URL(fileURLWithPath: attachmentsFolder + "/" + id + "/" + file.name)
+ let folder = runs[who].map { $0.chat.ephemeral ? ownerOf($0.chat)?.attachmentsHere ?? "" : attachmentsFolder } ?? attachmentsFolder // an incognito chat's are in its window's folder
+ guard let file = attachment(id, in: folder) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
+ let url = URL(fileURLWithPath: folder + "/" + id + "/" + file.name)
  did(who, "Read " + file.name)
  if let mime = imageMime(file.name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
  var text: String

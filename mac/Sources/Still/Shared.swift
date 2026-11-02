@@ -26,6 +26,7 @@ final class AiChat: Codable {
  var team: [String]?, sessions: [String: String]? // only read to split up a team chat from before companions messaged each other (untangle)
  var unread = false, archived = false
  var noMemory = false // "Don't remember this chat": nothing from it goes into the companion's memory
+ var ephemeral = false // an incognito window's chat: never saved, and gone with its window (so not in CodingKeys)
  var worked = 0 // how long its last run took, in seconds
  var running = false // saved while a run goes on: still set at startup means Still closed mid-run
  var error = "" // why its last run failed, until the next one (not saved)

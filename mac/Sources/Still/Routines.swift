@@ -40,7 +40,7 @@ var routineClock: Timer?
 extension Browser {
  static func watchRoutines() {
   guard routineClock == nil else { return }
-  routineClock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in browsers.first { !$0.incognitoWindow }?.runRoutines(Date()) }
+  routineClock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in browsers.first { !$0.incognito }?.runRoutines(Date()) }
  }
 
  func runRoutines(_ now: Date) {

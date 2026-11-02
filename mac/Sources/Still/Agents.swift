@@ -96,8 +96,8 @@ func askToSignIn(_ who: String, _ browser: Browser, _ tab: Tab, _ site: String) 
 
 /// The window agent calls and links from other apps land in: the one used last, never a sign-in window.
 var homeBrowser: Browser? {
- if let last = lastActiveBrowser, !last.temporary, browsers.contains(where: { $0 === last }) { return last }
- return browsers.first { !$0.temporary } ?? browsers.first
+ if let last = lastActiveBrowser, !last.temporary, !last.incognito, browsers.contains(where: { $0 === last }) { return last }
+ return browsers.first { !$0.temporary && !$0.incognito } ?? browsers.first { !$0.temporary } ?? browsers.first
 }
 func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
  for browser in browsers { if let tab = browser.tabs.first(where: { $0.id == id }) { return (browser, tab) } }
@@ -106,6 +106,7 @@ func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
 /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
 func chatRunner(_ who: String) -> Browser? {
  guard let run = runs[who] else { return nil }
+ if run.chat.ephemeral { return ownerOf(run.chat) } // an incognito chat's pages stay in its window
  return browsers.first { $0.showing(run.chat) } ?? browsers.first { $0.tabs.contains { $0.chatId == run.chat.id } } ?? homeBrowser
 }
 /// No keyboard or mouse for a minute, or Still is hidden or every window minimized: nobody will see the bar.
@@ -663,6 +664,7 @@ extension Browser {
   let tab = Tab()
   tab.url = url; tab.title = url.isEmpty ? "New tab" : hostName(url)
   tab.agent = worker(who).name; tab.agentKey = who
+  tab.isPrivate = incognito // an incognito chat's pages: the window's private website data
   tab.aiGroup = chat == nil && !background
   tab.runChat = background ? nil : chat
   tab.inChat = background ? chat ?? "app:" + who : nil
@@ -685,7 +687,8 @@ extension Browser {
   if id.isEmpty, let last = agentTabs[who], findTab(last) != nil { id = last }
   for browser in browsers {
    guard let tab = id.isEmpty ? (browser === self ? browser.active : nil) : browser.tabs.first(where: { $0.id == id }) else { continue }
-   if tab.isPrivate { throw AgentError("Private tabs are off-limits to agents.") }
+   // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
+   if incognitoRun(who) ? (tab.inChat ?? tab.runChat) != who : tab.isPrivate { throw AgentError(incognitoRun(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.") }
    browser.claim(who, tab)
    return (browser, tab)
   }
@@ -778,7 +781,8 @@ extension Browser {
    return nil
   }
   if granted && action != "sensitive" { if action == "interact" { audit(run.chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat") }; return nil }
-  let answer = await approve(run, what, site, action, why, countdown: granted)
+  var answer = await approve(run, what, site, action, why, countdown: granted)
+  if answer == "always" && run.chat.ephemeral { answer = "chat" } // an incognito chat writes no site rules
   if answer == "always" { setPermission(site, action, "", "always") }
   if answer == "chat" && !run.chat.allowed.contains(key) { run.chat.allowed.append(key) }
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
@@ -796,6 +800,7 @@ extension Browser {
 
  @MainActor func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String {
   do {
+   if incognitoRun(who), ["remember", "forget", "update_knowledge", "save_file", "offer_routine"].contains(tool) { return agentFail(keepsNothing) }
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
    case "offer_routine": return await offerRoutine(who, args)
@@ -811,7 +816,7 @@ extension Browser {
    case "list_tabs":
     var list: [[String: Any]] = []
     for (index, browser) in browsers.enumerated() {
-     for tab in browser.tabs where !tab.isPrivate {
+     for tab in browser.tabs where incognitoRun(who) ? (tab.inChat ?? tab.runChat) == who : !tab.isPrivate {
       var item: [String: Any] = ["tabId": tab.id, "title": tab.title, "url": tab.url, "window": index + 1]
       if tab === browser.active { item["active"] = true }
       if agentTabs[who] == tab.id { item["yours"] = true }
@@ -827,7 +832,11 @@ extension Browser {
     let url = try agentWebUrl(argText(args, "url")), chat = runs[who] != nil ? who : nil
     let mine = browsers.flatMap(\.tabs).filter { !$0.closed && (chat != nil ? ($0.runChat ?? $0.inChat) == chat : $0.aiGroup && $0.agentKey == who || $0.inChat == "app:" + who) }
     if mine.count >= 6 { return agentFail("You already have 6 tabs open. Reuse one with navigate, or close one with close_tab first.") } // tabs one chat (or one outside AI) may have open at once
-    let tab = (chatRunner(who) ?? self).openAgentTab(who, url, background: background)
+    // An incognito chat's pages open in its window; no other agent opens one in an incognito window.
+    guard let host = incognitoRun(who) ? chatRunner(who) : chatRunner(who) ?? self, host.incognito == incognitoRun(who) else {
+     return agentFail(incognitoRun(who) ? "The incognito window closed." : "Agents don't open tabs in an incognito window.")
+    }
+    let tab = host.openAgentTab(who, url, background: background)
     await waitLoaded(tab)
     did(who, "Opened " + hostName(tab.url)); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "navigate":
