@@ -18,6 +18,7 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Status { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Reply { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Chat { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Title { get; set; } // what was asked for, in a few words
 }
 /// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
 public sealed class AiFile { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public long Size { get; set; } }
@@ -385,7 +386,7 @@ public partial class MainWindow
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito && !resumeAnswered).Select(c => new { id = c.Id, title = c.Title, unsure = aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null) }), task = TaskView(shown), incognito,
-  runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
+  runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced,
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
@@ -394,9 +395,10 @@ public partial class MainWindow
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
-  approvals = run?.Approvals.Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until }),
+  approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
+   .SelectMany(r => r.Approvals.Select(a => new { id = a.Id, run = r.Chat.Id, who = r.Chat.Companion, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until })),
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
@@ -434,12 +436,15 @@ public partial class MainWindow
    case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h); break;
    case "aiNew": aiChat = null; aiError = ""; break;
    case "aiOpenChat": aiChat = MyChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
-   case "aiDeleteChat" when !runs.ContainsKey(S("id")):
-    ForgetTask(S("id"));
-    foreach (var gone in MyChats.Where(c => c.Id == S("id")).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
-    MyChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
-    foreach (var t in tabs.Where(t => t.ChatId == S("id")).ToList()) await CloseTab(t, true);
-    break;
+   case "aiDeleteChat" when !runs.ContainsKey(S("id")): {
+    HashSet<string> doomed = [S("id")]; // with the child tasks it started, and theirs
+    for (int more = 1; more > 0;) more = MyChats.Count(c => c.From != null && doomed.Contains(c.From) && doomed.Add(c.Id));
+    if (doomed.Any(runs.ContainsKey)) break;
+    foreach (var id in doomed) ForgetTask(id);
+    foreach (var gone in MyChats.Where(c => doomed.Contains(c.Id)).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
+    MyChats.RemoveAll(c => doomed.Contains(c.Id)); if (aiChat != null && doomed.Contains(aiChat.Id)) aiChat = null; SaveAiChats();
+    foreach (var t in tabs.Where(t => t.ChatId != null && doomed.Contains(t.ChatId)).ToList()) await CloseTab(t, true);
+    break; }
    case "aiDeleteAll" when runs.Count == 0:
     foreach (var c in MyChats) ForgetTask(c.Id);
     MyChats.Clear(); aiChat = null; SaveAiChats();
@@ -679,9 +684,11 @@ public partial class MainWindow
  Companion? Named(string name) => Companions.FirstOrDefault(c => c.Name.Equals(name.Trim(), StringComparison.OrdinalIgnoreCase))
   ?? (FormerNames.TryGetValue(Fnv(name), out var role) ? Companions.FirstOrDefault(c => c.Crew == role) : null);
 
- /// Companions message each other: ask_companion waits for the reply, tell_companion hands work over. The one asked answers
- /// in its own chat with the asker (its own memory, tools and AI app), and only it sees what was asked; the asking chat,
- /// and the user's chat the request started in, show the exchange as a card. An exchange goes at most 3 hops deep and
+ /// Companions message each other: ask_companion waits for the reply, tell_companion hands work over in the background.
+ /// The one asked works on a child task of the asking chat (its own memory, tools and AI app), sees only what it was asked,
+ /// and its result comes back to the card in the asking chat and the user's chat the request started in. Child chats
+ /// aren't in history: their cards open them. A child acts only where everyone up the chain may (Delegation), keeps
+ /// nothing in memory (the asker decides), and is stopped with its parent. An exchange goes at most 3 hops deep and
  /// sends about 10 messages per request; a companion already in it can't be asked again (a loop), and none messages itself.
  const int ExchangeHops = 3, ExchangeMessages = 10;
  static readonly Dictionary<string, int> exchangesSent = []; // by the user's chat: messages sent for its current request
@@ -699,7 +706,7 @@ public partial class MainWindow
  {
   if (runs.GetValueOrDefault(who) is not { } run || Companions.FirstOrDefault(c => c.Id == run.Chat.Companion) is not { } me) return Fail("Only Still's companions can message each other.");
   if (tool == "list_companions") return Reply(new { companions = Companions.Select(c => new { name = c.Name, does = Clip(c.Job, 240), you = c == me ? true : (bool?)null }) });
-  string name = S(args, "name").Trim().TrimStart('@'), text = S(args, "message").Trim();
+  string name = S(args, "name").Trim().TrimStart('@'), text = S(args, "message").Trim(), title = Clip(S(args, "title").Trim().TrimEnd('.').ReplaceLineEndings(" "), 60);
   var to = Named(name);
   if (to == null) return Fail($"No teammate is called \"{name}\". list_companions shows who's on the team.");
   if (to == me) return Fail("That's you: a companion can't message itself.");
@@ -710,31 +717,33 @@ public partial class MainWindow
   if (exchangesSent.GetValueOrDefault(root.Id) >= ExchangeMessages) return Fail($"Your team has sent {ExchangeMessages} messages for this request, the most for one. Carry on with what you have.");
   var chat = ListOf(run.Chat).FirstOrDefault(c => c.From == run.Chat.Id && c.Companion == to.Id);
   if (chat != null && runs.ContainsKey(chat.Id)) return Fail($"{to.Name} is still on your last message. Wait for that first.");
-  if (chat == null) ListOf(run.Chat).Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = Clip(me.Name + (tool == "ask_companion" ? " asked: " : " handed over: ") + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory, Ephemeral = run.Chat.Ephemeral });
+  if (chat == null) ListOf(run.Chat).Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = title.Length > 0 ? $"{me.Name} asked {to.Name} for {title}" : Clip(me.Name + " asked: " + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory, Ephemeral = run.Chat.Ephemeral });
   exchangesSent[root.Id] = exchangesSent.GetValueOrDefault(root.Id) + 1;
   bool ask = tool == "ask_companion";
-  var card = new AiMessage { Role = ask ? "ask" : "tell", Who = me.Id, To = to.Id, Text = text, Status = "working", Chat = chat.Id };
+  var card = new AiMessage { Role = ask ? "ask" : "tell", Who = me.Id, To = to.Id, Text = text, Status = "working", Chat = chat.Id, Title = title.Length > 0 ? title : null };
   run.Chat.Messages.Add(card); if (root != run.Chat) root.Messages.Add(card);
   int from = chat.Messages.Count;
-  string prompt = ask ? $"[Still] {me.Name}, your teammate, asks you this while working with the user. Your reply goes back to {me.Name}: answer them directly with what they need. Use your own tools if it helps.\n\n{text}"
-   : $"[Still] {me.Name}, your teammate, hands this over to you while working with the user. Do it; the user sees your work in this chat, and {me.Name} doesn't wait for it.\n\n{text}";
+  const string Child = "Name the sources you used (links) and say what you couldn't find or aren't sure of. Don't save anything to memory: they decide what's kept.";
+  string prompt = ask ? $"[Still] {me.Name}, your teammate, asks you this while working with the user. Your reply goes back to {me.Name}: answer them directly with what they need. Use your own tools if it helps. {Child}\n\n{text}"
+   : $"[Still] {me.Name}, your teammate, hands this over to you while working with the user. Do it; your result goes back to {me.Name}'s chat when you finish, and {me.Name} doesn't wait for it. {Child}\n\n{text}";
+  string missing = $"Still missing: {(title.Length > 0 ? title : Clip(text.ReplaceLineEndings(" "), 80))}.";
   async Task<string?> Answered()
   {
    await RunAi(chat, prompt, text, asker: me.Id);
-   if (card.Status == "stopped") return null;
+   if (card.Status == "stopped") { card.Reply = $"Stopped before {to.Name} finished. {missing}"; SaveAiChats(); PublishAiEverywhere(); return null; }
    string reply = string.Join("\n\n", chat.Messages.Skip(from).Where(m => m.Role == "assistant").Select(m => m.Text)).Trim();
    card.Status = reply.Length > 0 ? "replied" : "failed";
-   card.Reply = reply.Length > 0 ? reply : chat.Error.Length > 0 ? chat.Error : $"{to.Name} didn't answer.";
+   card.Reply = reply.Length > 0 ? reply : (chat.Error.Length > 0 ? chat.Error : $"{to.Name} didn't answer.") + " " + missing;
    SaveAiChats(); PublishAiEverywhere();
    return reply;
   }
   var answering = Answered();
   PublishAiEverywhere();
-  if (!ask) return Reply(new { done = $"Handed over to {to.Name}, who works on it in their own chat. Don't wait for it." });
+  if (!ask) return Reply(new { done = $"Handed over to {to.Name}, who works on it in the background. Their result comes back to this chat; don't wait for it." });
   return await answering switch {
    null => Fail($"The user stopped {to.Name}'s answer. Carry on without it, and don't ask again unless the user wants you to."),
    "" => Fail(card.Reply ?? ""),
-   var reply => Reply(new { from = to.Name, reply }) };
+   var reply => Reply(new { from = to.Name, reply, use = "Use this in your answer, with their sources (links) and anything they weren't sure of." }) };
  }
 
  /// A team chat from before companions messaged each other: each member gets the whole thread as a chat of its own, on
@@ -841,7 +850,7 @@ public partial class MainWindow
     return;
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if (said && !chat.NoMemory && !chat.Ephemeral && who != null && MemoryRefuses(me, chat.Title) == null && chat.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { // a title can name a private tab too
+   if (said && chat.From == null && !chat.NoMemory && !chat.Ephemeral && who != null && MemoryRefuses(me, chat.Title) == null && chat.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { // a title can name a private tab too
     string end = last.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(l => !l.StartsWith(">>")) ?? "";
     end = end.Replace("**", "").Trim(); if (end.Length > 160) end = end[..160] + "…";
     CompanionMemory.Remember(who.Id, chat.Title + (end.Length > 0 && MemoryRefuses(me, end) == null ? ": " + end : ""), "chat", chat.Id, "chat:" + chat.Id);

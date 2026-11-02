@@ -187,6 +187,7 @@ public partial class MainWindow
  {
   if (runs.GetValueOrDefault(who) is not { } run || Companions.FirstOrDefault(c => c.Id == run.Chat.Companion) is not { } me) return Fail("Memory belongs to Still's own companions, in their chats.");
   if (run.Chat.Ephemeral && tool != "recall") return Fail(KeepsNothing);
+  if (run.Chat.From != null && tool != "recall") return Fail($"You're helping {NameOf(ExchangeOf(run.Chat).Chain[^2])}, who decides what's kept: put what's worth remembering in your reply.");
   switch (tool) {
    case "remember": {
     if (run.Chat.NoMemory) return Fail("This chat is off the record: the user asked you not to remember it.");

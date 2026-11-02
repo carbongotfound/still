@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group"
@@ -39,16 +39,16 @@ export type AiState = {
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState
 }
-// who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who messaged whom, how it's going,
-// the reply and the chat it's in.
+// who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
+// how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; files?: Attached[] | null }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string }
-// A chat at work. Any number run at once.
-export type Run = { id: string; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
+// A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
+export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
 const waits = (r: Run) => !!r.question || !!r.asks?.length
-export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && waits(r))
+export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => (r.id === id || r.root === id) && waits(r))
 type Send = (op: string, payload?: Record<string, unknown>) => void
 type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean; favicon?: string }
 const TabIcon = ({ tab }: { tab: TabRef }) => tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" /> : <Globe />
@@ -547,6 +547,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const forget = chat ? !!chat.noMemory : offRecord
  const submit = (value: string, tabs: string[] = [], files: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
  const you = calledBy(companion)
+ const parent = chat?.from ? chatOf(ai, chat.from) : undefined
+ const childStatus = busy ? (needsYou(ai, ai.chatId) ? "needs" : "working") : ai.task?.state === "failed" ? "failed" : ai.task?.reason === "stopped" ? "stopped" : "replied"
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
@@ -556,7 +558,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text], who: m.who }) }
   else items.push(m)
  }
- const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
+ const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more). A teammate's line has its face.
  const whoOf = (i: number) => items[i]?.who ?? ai.chatCompanion
@@ -572,6 +574,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const openLink = (url: string) => send("new", { url })
 
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
+  {!setup && chat?.from && <div className="task-head"><div className="chat-column">
+   <Button variant="ghost" size="sm" className="task-back" onClick={() => send(mode === "panel" ? "aiOpenChat" : "chatOpen", { id: chat.from })}><ArrowLeft /><span>Back to {parent?.title ?? "the chat"}</span></Button>
+   <StatusPill status={childStatus} />{busy && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: chat.id })}><Square />Stop</Button>}
+  </div></div>}
   {setup ?? <div className="ai-log" ref={log} onScroll={keepScroll}><div className="chat-column">
    {!items.length && !ai.question && (mode === "tab" ? <div className="chat-hello">
     <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
@@ -600,7 +606,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
-    if (m.role === "ask" || m.role === "tell") return <ExchangeCard key={i} m={m} ai={ai} send={send} onLink={openLink} />
+    if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, next } = nextSteps(m.text)
     const last = i === items.length - 1 && !busy
@@ -623,37 +629,42 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
-   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} incognito={ai.incognito} />}
+   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} companions={ai.companions} send={send} incognito={ai.incognito} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
-   <Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
+   {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, and {provider?.app || provider?.name || "its app"} may keep its own record.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
-   </div>
+   </div></>}
   </div></div>}
  </section>
 }
 
-/// One companion messaging another: who asked whom, the message, how it's going and the reply. It opens to the whole
-/// exchange; the one asked has it in a chat of its own, and Stop ends it while it works.
-function ExchangeCard({ m, ai, send, onLink }: { m: Message; ai: AiState; send: Send; onLink: (url: string) => void }) {
+const PILL: Record<string, string> = { working: "Working", needs: "Needs you", replied: "Done", failed: "Failed", stopped: "Stopped" }
+const StatusPill = ({ status }: { status: string }) => <span className="delegation-pill" data-status={status}>{status === "working" && <Spinner />}{PILL[status] ?? status}</span>
+
+/// R18: a teammate's help as one row among the steps: who asked whom for what, and how it's going. It opens to what was
+/// asked and the result; View opens the child task. Never the prompt Still sent.
+function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState; send: Send; mode: "tab" | "panel"; onLink: (url: string) => void }) {
  const [open, setOpen] = useState(false)
- const from = companionOf(ai, m.who ?? ""), to = companionOf(ai, m.to ?? ""), status = m.status ?? "working", tell = m.role === "tell"
- const label = { working: "Working", replied: tell ? "Done" : "Replied", failed: "Failed", stopped: "Stopped" }[status] ?? status
- return <div className="exchange" data-status={status} data-open={open || undefined} style={{ "--hue": hueOf(to) } as CSSProperties}>
-  <button type="button" className="exchange-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-   <span className="exchange-faces"><Face companion={from} size={24} /><ArrowRight aria-hidden /><Face companion={to} size={24} mood={status === "working" ? "working" : "idle"} /></span>
-   <span className="exchange-who"><b>{from?.name ?? "A former teammate"}</b> {tell ? "handed this to" : "asked"} <b>{to?.name ?? "a former teammate"}</b></span>
-   <span className="exchange-status">{status === "working" ? <Spinner /> : status === "replied" ? <Check /> : null}{label}</span>
-   <ChevronDown className="exchange-chevron" aria-hidden />
-  </button>
-  <p className="exchange-message">{m.text}</p>
-  {m.reply && <div className="exchange-reply">{open ? <Markdown text={m.reply} onLink={onLink} /> : <p>{m.reply}</p>}</div>}
-  {(open || status === "working") && <div className="exchange-actions">
-   {m.chat && <Button variant="ghost" size="sm" onClick={() => send("chatOpen", { id: m.chat })}>Open {to?.name ?? "their"}'s chat</Button>}
-   {status === "working" && m.chat && <Button variant="outline" size="sm" onClick={() => send("aiStop", { id: m.chat })}><Square />Stop</Button>}
+ const mate = (id?: string | null) => ai.companions?.find(c => c.id === id)
+ const from = mate(m.who), to = mate(m.to), working = (m.status ?? "working") === "working"
+ const status = working && needsYou(ai, m.chat ?? "") ? "needs" : m.status ?? "working"
+ return <div className="ai-steps-group delegation" data-status={status} data-open={open || undefined}>
+  <div className="ai-steps-row">
+   <button type="button" className="delegation-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <span className="delegation-faces" aria-hidden><Face companion={from} size={20} /><ArrowRight /><Face companion={to} size={20} mood={working ? "working" : "idle"} /></span>
+    <span className="ai-step-line"><b>{from?.name ?? "A former teammate"}</b> asked <b>{to?.name ?? "a former teammate"}</b>{m.title ? ` for ${m.title}` : <span>: {m.text}</span>}</span>
+    <StatusPill status={status} /><ChevronDown className="ai-steps-chevron" aria-hidden />
+   </button>
+   {m.chat && <Tip label="View"><Button variant="ghost" size={mode === "panel" ? "icon-xs" : "xs"} className="delegation-view" aria-label={`View ${to?.name ?? "their"} work`} onClick={() => send(mode === "panel" ? "aiOpenChat" : "chatOpen", { id: m.chat })}>{mode === "panel" ? <ArrowUpRight /> : "View"}</Button></Tip>}
+  </div>
+  {open && <div className="delegation-body">
+   <p className="delegation-asked">{m.text}</p>
+   {m.reply && <div className="delegation-result"><Markdown text={m.reply} onLink={onLink} /></div>}
+   {working && m.chat && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: m.chat })}><Square />Stop</Button>}
   </div>}
  </div>
 }
@@ -727,7 +738,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
  useEffect(() => { const flip = () => setOpen(!open); window.addEventListener("still-tasks", flip); return () => window.removeEventListener("still-tasks", flip) }) // Ctrl+Shift+K
  const [, setNow] = useState(0)
  useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [open])
- const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), apps = tabs.filter(t => t.inChat?.startsWith("app:")), empty = !runs.length && !unread.length && !apps.length
+ const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !c.from && !isRunning(ai, c.id)).slice(0, 6), apps = tabs.filter(t => t.inChat?.startsWith("app:")), empty = !runs.length && !unread.length && !apps.length
  useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
  if (empty) return null
  const waiting = runs.filter(waits).length

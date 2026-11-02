@@ -274,6 +274,7 @@ func memoryRefuses(_ run: ChatRun?, _ text: String) -> String? {
 /// The remember, recall and forget tools: Still's own chat only, on the memory of the companion it's with.
 func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
  guard let run = runs[who], let me = companions.first(where: { $0.id == run.chat.companion }) else { return agentFail("Memory belongs to Still's own companions, in their chats.") }
+ if run.chat.from != nil && tool != "recall" { let chain = exchangeOf(run.chat).chain; return agentFail("You're helping \(nameOf(chain[max(0, chain.count - 2)])), who decides what's kept: put what's worth remembering in your reply.") }
  switch tool {
  case "remember":
   if run.chat.noMemory { return agentFail("This chat is off the record: the user asked you not to remember it.") }

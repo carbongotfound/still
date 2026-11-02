@@ -1016,7 +1016,7 @@ function prettyUrl(url: string) {
 
 // A chat tab's sidebar: new chat, recent chats, and the profile menu. Beside a page it shrinks to the logo.
 function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSettings, openPanel, goHome }: { ai: AiState; state: State; activeChat?: string; open: boolean; setOpen: (v: boolean) => void; split: boolean; onEdit: (c: Companion) => void; onSettings: () => void; openPanel: (name: string) => void; goHome: (v: HomeView) => void }) {
- const chats = (ai.incognito ? ai.privateChats ?? [] : ai.chats).filter(c => !c.archived).slice(0, 15)
+ const chats = (ai.incognito ? ai.privateChats ?? [] : ai.chats).filter(c => !c.archived && !c.from).slice(0, 15)
  if (!open || split) return <nav className="chat-side is-closed" aria-label="Chats">
   <Button variant="ghost" size="icon-sm" aria-label="Show sidebar" title="Show sidebar" onClick={() => { setOpen(true); if (split) send("chatPage", { on: false }) }}><span className="still-mark is-small"><i /><i /></span></Button>
  </nav>

@@ -188,7 +188,8 @@ def open_incognito(p):
     before = {w["id"] for w in rpc(p)["windows"]}
     send(p, "incognitoWindow")
     wid = until(lambda: next((w["id"] for w in rpc(p)["windows"] if w["incognito"] and w["id"] not in before), None), 15)
-    until(lambda: window(p, wid, "shellEval", script="document.body.innerText.length > 0"), 15)
+    until(lambda: window(p, wid, "shellEval", script="!!document.querySelector('[aria-label=Message]')"), 15)  # where a person could type
+    time.sleep(.5)
     return wid
 
 

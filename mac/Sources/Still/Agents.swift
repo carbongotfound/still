@@ -779,9 +779,11 @@ extension Browser {
   let marked = pref("SensitiveSites", [String]()).contains { onSite($0, site) }
   if action == "interact" && (!why.isEmpty || marked) { action = "sensitive"; if why.isEmpty { why = "You marked " + site + " as sensitive." } }
   let run = runs[who]
-  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
-  let mode = permissionMode(run?.chat.companion ?? "", site, action) ?? (run != nil ? defaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site
-  var granted = mode == "always" || mode == "chat" && (run.map { $0.chat.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
+  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  let up = run.map { exchangeOf($0.chat) }
+  let mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site
+  var granted = mode == "always" || mode == "chat" && (up.map { $0.root.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
   if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
   guard let run else {
    if granted { return nil }
@@ -798,7 +800,7 @@ extension Browser {
   var answer = await approve(run, what, site, action, why, countdown: granted)
   if answer == "always" && run.chat.ephemeral { answer = "chat" } // an incognito chat writes no site rules
   if answer == "always" { setPermission(site, action, "", "always") }
-  if answer == "chat" && !run.chat.allowed.contains(key) { run.chat.allowed.append(key) }
+  if let root = up?.root, answer == "chat" && !root.allowed.contains(key) { root.allowed.append(key) }
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
                  "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
   audit(run.chat, what, site, results[answer] ?? "You said no")
@@ -1127,9 +1129,10 @@ extension Browser {
   }
   let specific = rules.filter { !ruleText($0, "Site").isEmpty || !ruleText($0, "Companion").isEmpty }
    .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
-  let run = shown.flatMap { runs[$0.id] }
+  // The shown chat's cards, and those of the child tasks it started (they ask in the user's chat).
+  let asking = shown.map { s in runs.values.filter { $0.chat === s || $0.chat.from != nil && exchangeOf($0.chat).root === s } } ?? []
   return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()),
-          "approvals": run.map { r in r.approvals.map { ["id": $0.id, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] } } as Any? ?? NSNull(),
+          "approvals": asking.flatMap { r in r.approvals.map { ["id": $0.id, "run": r.chat.id, "who": r.chat.companion, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] as [String: Any] } },
           "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
  }
 }
@@ -1304,9 +1307,9 @@ enum Mcp {
   // Teammates: the user's other companions, each with its own role, memory and tools (Ai.swift, exchange).
   tool("list_companions", "List your teammates: the user's other companions, what each one does, and which one is you.", [], []),
   tool("ask_companion", "Ask a teammate something and wait for their reply (up to 10 minutes). They answer with their own role, memory and tools, and only they see your message. Say what you need and why, with what they need from you. The user sees the exchange.",
-       [str("name", "The teammate's name, from list_companions"), str("message", "What you're asking them")], ["name", "message"]),
-  tool("tell_companion", "Hand work over to a teammate without waiting: they do it in their own chat, where the user sees it. Give them everything they need to do it.",
-       [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you")], ["name", "message"]),
+       [str("name", "The teammate's name, from list_companions"), str("message", "What you're asking them"), str("title", "What you're asking for in a few words, as in \"asked Jonah for a pitch\": a pitch. The user sees it.")], ["name", "message"]),
+  tool("tell_companion", "Hand work over to a teammate without waiting: they do it in the background and their result comes back to this chat, where the user sees it. Give them everything they need to do it.",
+       [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you"), str("title", "What you're asking for in a few words, as in \"asked Jonah for a pitch\": a pitch. The user sees it.")], ["name", "message"]),
   // The user's own apps (Gmail, Calendar, Slack…) through Composio, once they connect them (Plugins.swift).
   tool("list_connected_plugins", "Names of the user's apps (plugins) connected for you, like Gmail or Slack. Names only: get_plugin_tools loads one app's actions.", [], []),
   tool("find_plugins", "Look up apps Still can connect through Composio, by name or category: each one's name, categories and whether it's connected for you.",

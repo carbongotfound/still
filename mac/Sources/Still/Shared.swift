@@ -22,11 +22,12 @@ final class AiMessage: Codable {
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  var who: String?, to: String?, status: String?, reply: String?, chat: String?
+ var title: String? // an ask/tell card: what was asked for, in a few words
  init(_ role: String, _ text: String, who: String? = nil) { self.role = role; self.text = text; self.who = who }
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
   role = c.value(.role, role); text = c.value(.text, text); files = c.value(.files, files)
-  who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat)
+  who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat); title = c.value(.title, title)
  }
 }
 final class AiAudit: Codable {
