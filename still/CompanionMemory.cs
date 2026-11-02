@@ -12,6 +12,7 @@ public sealed class Fact
  public DateTime At { get; set; } = DateTime.UtcNow;
  public string Chat { get; set; } = ""; // the chat it came from; "" = setup, or the user typed it
  public string Key { get; set; } = ""; // a slot that holds one fact ("name", "interests", "chat:<id>"): a new one replaces it
+ public bool Guessed { get; set; } // worked out from what the user did, not something they said: kept apart until they confirm it
 }
 
 /// Each companion's memory of the user: companions\<id>\memory.json in the profile, plain JSON on this computer, and
@@ -93,12 +94,12 @@ static partial class CompanionMemory
   : ""; 
 
  /// Keeps a fact, or freshens the one it repeats. Null when it's refused: it looks like a secret, or it's empty.
- internal static Fact? Remember(string id, string text, string kind = "fact", string chat = "", string key = "")
+ internal static Fact? Remember(string id, string text, string kind = "fact", string chat = "", string key = "", bool guessed = false)
  {
   text = Regex.Replace(text, @"\s+", " ").Trim();
   if (id.Length == 0 || text.Length < 3 || Secret(text)) return null;
   var list = Of(id);
-  var fact = Add(list, text.Length > 300 ? text[..300] + "…" : text, kind, chat, key);
+  var fact = Add(list, text.Length > 300 ? text[..300] + "…" : text, kind, chat, key, guessed);
   // A long memory keeps everything the user told it and the 60 latest chats.
   var chats = list.Where(f => f.Kind == "chat").OrderByDescending(f => f.At).Skip(60).ToHashSet();
   list.RemoveAll(chats.Contains);
@@ -106,14 +107,14 @@ static partial class CompanionMemory
   return fact;
  }
 
- static Fact? Add(List<Fact> list, string text, string kind, string chat, string key)
+ static Fact? Add(List<Fact> list, string text, string kind, string chat, string key, bool guessed = false)
  {
   if (text.Length < 3) return null;
   kind = Kinds.Contains(kind) ? kind : "fact";
   var words = Words(text);
   var same = key.Length > 0 ? list.FirstOrDefault(f => f.Key == key) : list.FirstOrDefault(f => f.Key.Length == 0 && (f.Kind == "chat") == (kind == "chat") && Similar(Words(f.Text), words));
-  if (same != null) { same.Text = text; same.Kind = kind; same.At = DateTime.UtcNow; if (chat.Length > 0) same.Chat = chat; return same; }
-  var fact = new Fact { Text = text, Kind = kind, Chat = chat, Key = key };
+  if (same != null) { same.Text = text; same.Kind = kind; same.At = DateTime.UtcNow; same.Guessed &= guessed; if (chat.Length > 0) same.Chat = chat; return same; } // once confirmed, it stays confirmed
+  var fact = new Fact { Text = text, Kind = kind, Chat = chat, Key = key, Guessed = guessed };
   list.Add(fact);
   return fact;
  }
@@ -122,7 +123,7 @@ static partial class CompanionMemory
  {
   text = Regex.Replace(text, @"\s+", " ").Trim();
   if (Of(id).FirstOrDefault(f => f.Id == factId) is not { } f || text.Length < 3 || Secret(text)) return false;
-  f.Text = text.Length > 300 ? text[..300] : text; f.At = DateTime.UtcNow; Save(id); return true;
+  f.Text = text.Length > 300 ? text[..300] : text; f.At = DateTime.UtcNow; f.Guessed = false; Save(id); return true; // the user wrote it: confirmed
  }
 
  /// Forgets facts by id, or every fact that matches the words given. Returns what it forgot.
@@ -138,21 +139,25 @@ static partial class CompanionMemory
  internal static void ForgetChat(string id, string chat) { if (Of(id).RemoveAll(f => f.Chat == chat || f.Key == "chat:" + chat) > 0) Save(id); }
 
  /// The facts that fit what the user just asked, best first: shared words, then the core things (who they are, what
- /// they like), then the newest. Past chats come last, the related ones first.
+ /// they like), then the newest. Only facts that share a word with it or are core make it (and everything the user wrote
+ /// in setup or on the memory page); past chats only when related.
  internal static List<Fact> Relevant(string id, string query, int count = 14)
  {
   var q = Words(query); var now = DateTime.UtcNow;
-  double Score(Fact f) => Words(f.Text).Intersect(q).Count() * 2 + (f.Key.Length > 0 ? 3 : f.Kind is "preference" or "person" ? 1 : 0) + 1 / (1 + (now - f.At).TotalDays / 30);
+  int Shared(Fact f) => Words(f.Text).Intersect(q).Count();
+  bool Core(Fact f) => f.Key.Length > 0 || f.Kind is "preference" or "person" || f.Chat.Length == 0 && !f.Guessed;
+  double Score(Fact f) => Shared(f) * 2 + (f.Key.Length > 0 ? 3 : f.Kind is "preference" or "person" ? 1 : 0) + 1 / (1 + (now - f.At).TotalDays / 30);
   var list = Of(id);
-  return [.. list.Where(f => f.Kind != "chat").OrderByDescending(Score).Take(count),
-   .. list.Where(f => f.Kind == "chat").OrderByDescending(f => Words(f.Text).Intersect(q).Count()).ThenByDescending(f => f.At).Take(4)];
+  return [.. list.Where(f => f.Kind != "chat" && (Core(f) || Shared(f) > 0)).OrderByDescending(Score).Take(count),
+   .. list.Where(f => f.Kind == "chat" && Shared(f) > 0).OrderByDescending(Shared).ThenByDescending(f => f.At).Take(4)];
  }
 
  internal static string Brief(string id, string query)
  {
   var facts = Relevant(id, query);
-  if (facts.Count == 0) return "";
-  return string.Join("\n", facts.Select(f => $"- {(f.Kind == "chat" ? "A past chat: " : "")}{f.Text} ({f.At.ToLocalTime():yyyy-MM-dd}, id {f.Id})"));
+  string Line(Fact f) => $"- {(f.Kind == "chat" ? "A past chat: " : "")}{f.Text} ({f.At.ToLocalTime():yyyy-MM-dd}, id {f.Id})";
+  var told = facts.Where(f => !f.Guessed).Select(Line).ToList(); var guessed = facts.Where(f => f.Guessed).Select(Line).ToList();
+  return string.Join("\n", told) + (guessed.Count > 0 ? (told.Count > 0 ? "\n" : "") + "Guessed from what they did, not confirmed (check before relying on them):\n" + string.Join("\n", guessed) : "");
  }
 
  /// Never kept: passwords, codes, keys, card and account numbers.
@@ -193,7 +198,7 @@ public partial class MainWindow
     if (run.Chat.NoMemory) return Fail("This chat is off the record: the user asked you not to remember it.");
     string fact = S(args, "fact").Trim();
     if (MemoryRefuses(run, fact) is { } why) return Fail(why);
-    if (CompanionMemory.Remember(me.Id, fact, S(args, "kind"), run.Chat.Id) is not { } kept) return Fail("Pass one short fact.");
+    if (CompanionMemory.Remember(me.Id, fact, S(args, "kind"), run.Chat.Id, guessed: B(args, "guessed")) is not { } kept) return Fail("Pass one short fact.");
     PublishAiEverywhere();
     return Reply(new { remembered = kept.Text, id = kept.Id });
    }

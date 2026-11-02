@@ -16,13 +16,14 @@ import { Switch } from "@/components/ui/switch"
 import { FALLBACK, Face, hueOf, showProfile, type Companion, type Mode, type Mood } from "./Buddy"
 import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
+import { nextSteps } from "./nextSteps"
 import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; forgets?: boolean }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
@@ -36,6 +37,7 @@ export type AiState = {
  chats: ChatRow[]
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
+ tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState
 }
@@ -69,7 +71,7 @@ const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts.
-const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Loaded skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Used|Loaded) skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
  [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // A step reads as its verb in bold and what it acted on, muted. An address shows as its site; the full one is on hover.
@@ -77,8 +79,6 @@ function Step({ step }: { step: string }) {
  const [verb, ...rest] = step.split(" "), what = rest.join(" "), url = what.match(/https?:\/\/\S+/)?.[0]
  return <span className="ai-step-line" title={url}><b>{verb}</b>{what && <span> {url ? what.replace(url, host(url)) : what}</span>}</span>
 }
-// Next steps the AI offers end its answer, one per line starting with ">> ".
-const nextSteps = (text: string) => { const next: string[] = []; const body = text.replace(/^>>\s*(.+)$/gm, (_, s: string) => { next.push(s.trim()); return "" }).trim(); return { body, next } }
 // Before setup makes one there's no companion: Still itself talks, with the default look.
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
@@ -148,7 +148,7 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
    </SelectGroup>)}</SelectContent></Select>
   {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
    <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start"><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
+   <SelectContent position="popper" side="top" align="start"><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{effortName(e)} effort</SelectItem>)}</SelectContent></Select>}
  </>
 }
 
@@ -184,11 +184,43 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
     {!mates.length && <p className="mode-none">No one by that name.</p>}
     <DropdownMenuSeparator />
    </>}
-   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }); if (ai.advanced) send("aiAdvanced", { on: false }) }}>
+   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion || ai.advanced} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
   </DropdownMenuContent>
  </DropdownMenu>
+}
+
+const effortName = (e: string) => e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)
+// Settings → Models: per set-up AI, the model and effort Quick, Everyday and Thorough use, picked only from its own
+// catalog. With Advanced on they're kept but not used, and the table says so.
+export function TierSettings({ ai, send }: { ai: AiState; send: Send }) {
+ const list = ai.harnesses.filter(h => ai.tiers?.[h.id])
+ if (!list.length) return <p className="tiers-note">Set up an AI to pick its models here.</p>
+ return <div className="tiers" data-off={ai.advanced || undefined}>
+  {ai.advanced && <p className="tiers-note">Advanced is on, so these tiers are not used.</p>}
+  {list.map(h => {
+   const models = (ai.models ?? []).filter(m => m.harness === h.id), tiers = ai.tiers![h.id]
+   return <div key={h.id} className="tier-ai" id={"tiers-" + h.id}>
+    <div className="tier-head"><AiLogo id={h.id} size={16} /><span>{h.name}</span>
+     <Button variant="ghost" size="sm" disabled={!MODES.some(([t]) => tiers[t]?.custom)} onClick={() => send("aiTiersReset", { harness: h.id })}>Reset to defaults</Button></div>
+    {MODES.map(([t, label, Icon]) => {
+     const tier = tiers[t], model = models.find(m => m.id === tier.model)
+     const effort = model?.efforts.includes(tier.effort) ? tier.effort : "default"
+     return <div key={t} className="tier-row" data-tier={t}>
+      <span className="tier-name"><Icon />{label}</span>
+      <Select value={tier.missing ? "missing" : tier.model || "default"} onValueChange={v => send("aiTier", { harness: h.id, tier: t, model: v === "default" ? "" : v, effort: tier.effort })}>
+       <SelectTrigger size="sm" aria-label={`${h.name} ${label} model`}><SelectValue /></SelectTrigger>
+       <SelectContent>{tier.missing && <SelectItem value="missing" disabled>Not available</SelectItem>}{models.map(m => <SelectItem key={m.id || "default"} value={m.id || "default"}>{m.name}</SelectItem>)}</SelectContent></Select>
+      <Select value={effort} disabled={!model?.efforts.length} onValueChange={v => send("aiTier", { harness: h.id, tier: t, model: tier.model, effort: v === "default" ? "" : v })}>
+       <SelectTrigger size="sm" aria-label={`${h.name} ${label} effort`}><SelectValue /></SelectTrigger>
+       <SelectContent><SelectItem value="default">Default effort</SelectItem>{model?.efforts.map(e => <SelectItem key={e} value={e}>{effortName(e)} effort</SelectItem>)}</SelectContent></Select>
+      {tier.failed && <small className="tier-failed">Not on your plan, so chats ran on the default model.</small>}
+     </div>
+    })}
+   </div>
+  })}
+ </div>
 }
 
 // The message box: the model on the right, then send, or a red stop while the AI works (Enter then queues a follow-up).
@@ -534,8 +566,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   const el = log.current; if (!el) return
   if (back.current != null) { el.scrollTop = back.current; back.current = undefined } else el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
  }, [ai.messages.length, busy, !!ai.question])
+ const pinned = useRef(true) // the user is at the bottom of the chat
  const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
   fadeTop(e); const el = e.currentTarget
+  pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8
   if (ai.chatId) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
  }
  // Timed from when the run started, so it reads right after switching chats.
@@ -570,6 +604,13 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  }
  const turn = (i: number) => same(i) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })
+ // Text that grows after it's drawn (a table, a card, the next steps) keeps the end of the chat in view while the user is there.
+ useEffect(() => {
+  const el = log.current; if (!el || typeof ResizeObserver === "undefined") return
+  const keep = new ResizeObserver(() => { if (pinned.current) el.scrollTop = el.scrollHeight })
+  keep.observe(el); if (el.firstElementChild) keep.observe(el.firstElementChild)
+  return () => keep.disconnect()
+ }, [ai.chatId, !!setup])
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
  const openLink = (url: string) => send("new", { url })
 
@@ -634,7 +675,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, and {provider?.app || provider?.name || "its app"} may keep its own record. Connected apps are off in incognito windows.</p>
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, {provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
     {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
@@ -679,7 +720,7 @@ function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState;
   </div>
   {open && <div className="delegation-body">
    <p className="delegation-asked">{m.text}</p>
-   {m.reply && <div className="delegation-result"><Markdown text={m.reply} onLink={onLink} /></div>}
+   {m.reply && <div className="delegation-result"><Markdown text={nextSteps(m.reply).body} onLink={onLink} /></div>}
    {working && m.chat && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: m.chat })}><Square />Stop</Button>}
   </div>}
  </div>

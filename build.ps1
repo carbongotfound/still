@@ -6,7 +6,7 @@ function Invoke-Checked([scriptblock]$Command) { & $Command; if ($LASTEXITCODE -
 Push-Location still-ui
 try {
   Invoke-Checked { npm ci }
-  Invoke-Checked { node --test tests/suggestions.test.ts }
+  Invoke-Checked { node --test tests/suggestions.test.ts tests/nextSteps.test.ts tests/media.test.ts }
   Invoke-Checked { npm run lint }
   Invoke-Checked { npm run build }
 } finally { Pop-Location }

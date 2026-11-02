@@ -1,8 +1,11 @@
 import type { ReactNode } from "react"
 import { Copy } from "lucide-react"
+import { mediaLine } from "./media"
+import { MediaCard } from "./MediaCard"
 
 // A small Markdown renderer for AI replies: headings, lists, quotes, code, tables, links, bold/italic/strike.
-// React escapes all text, so a reply can't inject HTML. Links open in a new Still tab.
+// React escapes all text, so a reply can't inject HTML. Links open in a new Still tab. An image or a YouTube link on a
+// line of its own shows as a card (MediaCard.tsx).
 type Link = (url: string) => void
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*\s][^*]*\*|(?<![\w])_[^_\s][^_]*_(?![\w]))|(\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g
@@ -43,6 +46,8 @@ export function Markdown({ text, onLink, onCopy }: { text: string; onLink: Link;
    else blocks.push(<pre key={k}><code>{code.join("\n")}</code></pre>)
    continue
   }
+  const media = mediaLine(line)
+  if (media) { blocks.push(<MediaCard key={k} media={media} onLink={onLink} />); i++; continue }
   const h = /^(#{1,6})\s+(.*)$/.exec(line)
   if (h) { const Tag = (["h3", "h3", "h4", "h5", "h5", "h5"] as const)[h[1].length - 1]; blocks.push(<Tag key={k}>{inline(h[2], onLink, k)}</Tag>); i++; continue }
   if (/^\s*([-*_])(\s*\1){2,}\s*$/.test(line)) { blocks.push(<hr key={k} />); i++; continue }
@@ -71,7 +76,7 @@ export function Markdown({ text, onLink, onCopy }: { text: string; onLink: Link;
    continue
   }
   const para: string[] = []
-  while (i < lines.length && lines[i].trim() && !/^\s*(```|#{1,6}\s|>|([-*+]|\d+[.)])\s|\|)/.test(lines[i])) para.push(lines[i++])
+  while (i < lines.length && lines[i].trim() && !/^\s*(```|#{1,6}\s|>|([-*+]|\d+[.)])\s|\|)/.test(lines[i]) && !mediaLine(lines[i])) para.push(lines[i++])
   if (!para.length) para.push(lines[i++])
   blocks.push(<p key={k}>{para.flatMap((p, j) => j ? [<br key={"br" + j} />, ...inline(p, onLink, k + j)] : inline(p, onLink, k + j))}</p>)
  }
