@@ -34,7 +34,7 @@ export type AiState = {
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
  question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
  chats: ChatRow[]
- incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: never in the chat list or history
+ incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState

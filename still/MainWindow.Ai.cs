@@ -461,7 +461,7 @@ public partial class MainWindow
     fresh.Greet = false; SaveLater();
     var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
     AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
-    await SelectTab(ChatTab(kick.Id));
+    await Go(await AppTab(), "chat:" + kick.Id);
     await RunAi(kick, KickoffAsk + OpenTabsNote(), ""); // the title comes from its hello
     break; }
    case "aiPickFiles": {
@@ -487,7 +487,9 @@ public partial class MainWindow
     Prefs.SensitiveSites.Remove(marked); if (B("on")) Prefs.SensitiveSites.Add(marked);
     SaveLater(); PublishAiEverywhere(); break;
    case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); SaveLater(); PublishAiEverywhere(); break;
-   case "chatOpen" when S("id") is { Length: > 0 } open && MyChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
+   case "chatOpen" when S("id") is { Length: > 0 } open && MyChats.Any(c => c.Id == open): await OpenChat(open, B("newTab")); break;
+   case "aiKickoff" when B("home"): await Go(await AppTab(), "home:"); break; // Say hi to a companion that already said hello: the home, with them picked
+   case "appHome" when S("view") is "" or "home" or "chats" or "companions" or "library" or "skills": await Go(await AppTab(), "home:" + (S("view") == "home" ? "" : S("view"))); break;
    case "chatPage" when active?.ChatId is { } pageChat: // show or hide the AI's page beside the chat
     if (tabs.FirstOrDefault(t => t.Id == S("id") && (t.InChat ?? t.RunChat) == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;
     active.PageOpen = B("on");
@@ -738,7 +740,7 @@ public partial class MainWindow
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
    chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito }; // a private window remembers nothing
    MyChats.Insert(0, chat); SaveAiChats();
-   if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
+   if (into is { Closed: false }) { if (into.ChatId != chat.Id) { into.Back.Add(Spot(into)); into.Forward.Clear(); } into.ChatId = chat.Id; into.Home = ""; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
   }
   // An incognito chat runs in its own window (its folder, its private tabs), and not at all once that window is gone.

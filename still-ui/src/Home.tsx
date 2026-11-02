@@ -1,9 +1,10 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiLogo } from "./AiLogo"
 import { Face, hueOf, type Companion, type Mode } from "./Buddy"
@@ -55,6 +56,14 @@ export function CompanionSwitch({ ai, companion, onPick, onEdit }: { ai: AiState
 const ago = (iso: string) => { const m = (Date.now() - Date.parse(iso)) / 6e4; return m < 60 ? Math.max(1, Math.round(m)) + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d" }
 const dayOf = (iso: string) => { const d = new Date(iso), now = new Date(); const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5); return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "This week" : "Earlier" }
 
+/// A chat in a list: a click opens it in this Still tab; a middle click or the menu's Open in new tab opens it in a tab of its own.
+export function ChatLink({ id, send, className, title, children }: { id: string; send: Send; className: string; title?: string; children: ReactNode }) {
+ const own = () => send("chatOpen", { id, newTab: true })
+ return <ContextMenu><ContextMenuTrigger asChild>
+  <button className={className} title={title} onClick={() => send("chatOpen", { id })} onMouseDown={e => { if (e.button === 1) e.preventDefault() }} onAuxClick={e => { if (e.button === 1) own() }}>{children}</button>
+ </ContextMenuTrigger><ContextMenuContent><ContextMenuItem onSelect={own}><ExternalLink />Open in new tab</ContextMenuItem></ContextMenuContent></ContextMenu>
+}
+
 export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNew: () => void }) {
  const [find, setFind] = useState("")
  const [only, setOnly] = useState<"" | "unread" | "needs" | "archived">("")
@@ -71,8 +80,8 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const mate = companionOf(ai, who)
  return <section className="home-page" aria-label="Chat History">
   <header className="home-page-head"><h1>Chat History</h1>
-   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
-    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+   {!ai.incognito && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
+    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
    <Button className="home-new" onClick={onNew}><Plus />New chat</Button>
   </header>
   <label className="history-find"><Search /><input aria-label="Search chats" placeholder="Search chats..." value={find} onChange={e => setFind(e.target.value)} /></label>
@@ -88,8 +97,8 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
   {!chats.length && <p className="home-empty">{find || only || who ? "No chats match." : "Your chats show up here. Start one from the new tab page."}</p>}
   {groups.map(([day, list]) => <div key={day} className="history-group"><h2>{day}</h2>
    {list.map(c => <div key={c.id} className="history-row">
-    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
-     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</button>
+    <ChatLink id={c.id} send={send} className="history-open"><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
+     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</ChatLink>
     <button className="history-act" aria-label={c.archived ? "Unarchive " + c.title : "Archive " + c.title} title={c.archived ? "Unarchive" : "Archive"} onClick={() => send("chatArchive", { id: c.id, on: !c.archived })}>{c.archived ? <ArchiveRestore /> : <Archive />}</button>
     <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>
    </div>)}
