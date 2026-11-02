@@ -18,7 +18,7 @@ const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pa
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
 
 // The cards above the message box: steps waiting for your OK (Approve all when there are several), and countdowns.
-export function Approvals({ list, companion, send }: { list: Approval[]; companion?: Companion; send: Send }) {
+export function Approvals({ list, companion, send, incognito }: { list: Approval[]; companion?: Companion; send: Send; incognito?: boolean }) {
  const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null, name = companion?.name ?? "Your AI"
  const answer = (id: string, a: string) => send("permAnswer", { id, answer: a })
  return <>
@@ -36,7 +36,7 @@ export function Approvals({ list, companion, send }: { list: Approval[]; compani
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
     : one
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button>
-     <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>
+     {!incognito && <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>}
      {one.action === "sensitive"
       ? <><Button size="sm" variant="outline" title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
       : <><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button><Button size="sm" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button></>}</>

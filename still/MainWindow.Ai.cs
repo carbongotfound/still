@@ -36,6 +36,7 @@ public sealed class AiChat
  public bool Unread { get; set; } // a reply landed while the user was elsewhere
  public bool Archived { get; set; }
  public bool NoMemory { get; set; } // "Don't remember this chat": nothing from it goes into the companion's memory
+ [System.Text.Json.Serialization.JsonIgnore] public bool Ephemeral { get; set; } // an incognito window's chat: kept in that window only, never written down
  public int Worked { get; set; } // how long its last run took, in seconds
  public bool Running { get; set; } // saved while a run goes on: still set at startup means Still closed mid-run
  [System.Text.Json.Serialization.JsonIgnore] public string Error { get; set; } = ""; // why its last run failed, until the next one
@@ -153,12 +154,37 @@ public partial class MainWindow
 
  static List<AiChat>? aiChats;
  internal static string AiFolder => Path.Combine(App.DataRoot, "ai");
+ // An incognito window's chats live in the window, never in chats.json. Their files (attachments, the AI app's folder,
+ // logs) live in ai/incognito/<window>, deleted when the window closes and swept at the next start after a crash.
+ readonly List<AiChat> privateChats = [];
+ static string IncognitoFolder => Path.Combine(AiFolder, "incognito");
+ string PrivateFolder => Path.Combine(IncognitoFolder, WindowId);
+ /// The chats this window shows and opens: an incognito window only ever has its own.
+ List<AiChat> MyChats => incognito ? privateChats : AiChats;
+ static MainWindow? OwnerOf(AiChat chat) => Windows.FirstOrDefault(w => w.privateChats.Contains(chat));
+ static List<AiChat> ListOf(AiChat chat) => chat.Ephemeral ? OwnerOf(chat)?.privateChats ?? [] : AiChats;
+ static bool Incognito(string who) => runs.GetValueOrDefault(who)?.Chat.Ephemeral == true;
+ /// Closing an incognito window ends its chats: their runs stop (the AI app's processes with them) and their files go.
+ void EndIncognito()
+ {
+  foreach (var r in runs.Values.Where(r => privateChats.Contains(r.Chat)).ToList()) { r.Queue.Clear(); StopRun(r); }
+  privateChats.Clear(); aiChat = null;
+  string folder = PrivateFolder;
+  _ = Task.Run(async () => { // a stopped app can hold its folder for a moment; what a quit cuts short, the next start sweeps
+   for (int tries = 0; tries < 40 && Directory.Exists(folder); tries++)
+    try { Directory.Delete(folder, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { await Task.Delay(250); }
+  });
+ }
+ const string KeepsNothing = "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off. Tell the user if it matters, and carry on without it.";
  static List<AiChat> AiChats
  {
   get {
    if (aiChats != null) return aiChats;
    try { aiChats = JsonSerializer.Deserialize<List<AiChat>>(File.ReadAllText(Path.Combine(AiFolder, "chats.json"))); } catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
    aiChats ??= [];
+   // An incognito window's files left behind by a crash: nothing of them is picked up again.
+   try { foreach (var dir in Directory.GetDirectories(IncognitoFolder)) if (!Windows.Any(w => w.WindowId == Path.GetFileName(dir))) Directory.Delete(dir, true); }
+   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
    // Files attached but never sent go: the message box doesn't keep them across restarts.
    var sentFiles = aiChats.SelectMany(c => c.Messages).SelectMany(m => m.Files ?? []).Select(f => f.Id).ToHashSet();
    if (File.Exists(Path.Combine(AiFolder, "chats.json")) || aiChats.Count > 0)
@@ -174,12 +200,12 @@ public partial class MainWindow
   }
  }
  /// Chats whose run was cut off when Still closed or crashed.
- static IEnumerable<AiChat> Interrupted => AiChats.Where(c => c.Running && !c.Archived && !runs.ContainsKey(c.Id));
+ static IEnumerable<AiChat> Interrupted => AiChats.Where(c => c.Running && !c.Archived && !c.Ephemeral && !runs.ContainsKey(c.Id));
  static void SaveAiChats()
  {
   try {
    Directory.CreateDirectory(AiFolder); string file = Path.Combine(AiFolder, "chats.json");
-   File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(AiChats.Take(200)));
+   File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(AiChats.Where(c => !c.Ephemeral).Take(200))); // incognito chats never reach the disk
    // A reader holding chats.json (a virus scanner, the search indexer) refuses the swap for a moment: a lost save can leave a
    // stopped chat marked running, which the next launch picks up again.
    for (int tries = 1; ; tries++)
@@ -322,7 +348,7 @@ public partial class MainWindow
   foreach (var asked in runs.Values.Where(x => x.Chat.From == r.Chat.Id && !x.Stopped).ToList()) StopRun(asked);
  }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
- AiChat? ShownChat => active?.ChatId is { } id ? AiChats.FirstOrDefault(c => c.Id == id) : aiChat;
+ AiChat? ShownChat => active?.ChatId is { } id ? MyChats.FirstOrDefault(c => c.Id == id) : aiChat;
  bool aiOpen;
  string aiError = "";
  AiChat? aiChat; // null = a new, empty chat
@@ -342,8 +368,8 @@ public partial class MainWindow
  }
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
-  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Select(c => c.Id),
-  runs = runs.Values.Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
+  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito).Select(c => c.Id), incognito,
+  runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced,
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
@@ -363,7 +389,9 @@ public partial class MainWindow
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
-  chats = AiChats.Take(200).Select(c => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory }) } }); }
+  chats = AiChats.Where(_ => !incognito).Take(200).Select(ChatRow), privateChats = privateChats.Select(ChatRow) } }); }
+ // An incognito window's chats go as privateChats: never in the chat list, so never in history.
+ static object ChatRow(AiChat c) => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory };
 
  async Task HandleAi(string op, JsonElement data)
  {
@@ -389,23 +417,23 @@ public partial class MainWindow
     break;
    case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h); break;
    case "aiNew": aiChat = null; aiError = ""; break;
-   case "aiOpenChat": aiChat = AiChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
+   case "aiOpenChat": aiChat = MyChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
    case "aiDeleteChat" when !runs.ContainsKey(S("id")):
-    foreach (var gone in AiChats.Where(c => c.Id == S("id")).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsFolder, gone.Id), true); } catch (IOException) { }
-    AiChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
+    foreach (var gone in MyChats.Where(c => c.Id == S("id")).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
+    MyChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId == S("id")).ToList()) await CloseTab(t, true);
     break;
    case "aiDeleteAll" when runs.Count == 0:
-    AiChats.Clear(); aiChat = null; SaveAiChats();
-    try { Directory.Delete(AttachmentsFolder, true); } catch (IOException) { }
+    MyChats.Clear(); aiChat = null; SaveAiChats();
+    try { Directory.Delete(AttachmentsHere, true); } catch (IOException) { }
     foreach (var t in tabs.Where(t => t.ChatId != null).ToList()) await CloseTab(t, true);
     break;
    case "aiStop" when runs.GetValueOrDefault(S("id") is { Length: > 0 } stopId ? stopId : ShownChat?.Id ?? "") is { } stopping:
     stopping.Queue.Clear(); StopRun(stopping); break;
-   case "aiResumeAll":
+   case "aiResumeAll" when !incognito:
     foreach (var cut in Interrupted.ToList()) { cut.Running = false; _ = RunAi(cut, "Still closed before you finished. Please pick up where you left off."); }
     break;
-   case "aiResumeDismiss":
+   case "aiResumeDismiss" when !incognito:
     foreach (var cut in Interrupted.ToList()) cut.Running = false;
     SaveAiChats(); PublishAiEverywhere(); break;
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
@@ -414,15 +442,15 @@ public partial class MainWindow
    case "aiSend" when S("text").Trim() is { Length: > 0 and <= 20000 } text: {
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
     // A chat that's still working takes it as a follow-up for when it finishes.
-    var target = active?.ChatId is { } chatId ? AiChats.FirstOrDefault(c => c.Id == chatId) : B("home") ? null : aiChat;
+    var target = active?.ChatId is { } chatId ? MyChats.FirstOrDefault(c => c.Id == chatId) : B("home") ? null : aiChat;
     // # in the message box attaches open tabs, never a private one: the message links them, and the AI reads them with read_page.
-    var attached = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("tabs", out var picked) && picked.ValueKind == JsonValueKind.Array
+    var attached = !incognito && data.ValueKind == JsonValueKind.Object && data.TryGetProperty("tabs", out var picked) && picked.ValueKind == JsonValueKind.Array
      ? picked.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? e.GetString() : null).Distinct().Select(id => Windows.SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id && !t.Private && !t.Closed)).OfType<BrowserTab>().Take(8).ToList() : [];
     if (attached.Count > 0) text += "\n\n" + string.Join("\n", attached.Select(t => $"[{t.Title.Replace('[', '(').Replace(']', ')')}]({t.Url})"));
     string asked = attached.Count == 0 ? text : text + $"\n\n[Still] The user attached {(attached.Count == 1 ? "this tab" : "these tabs")}: " + string.Join("; ", attached.Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})")) + ". Read each with read_page before you answer.";
     // Files from the box: the message names them, and the AI reads each with read_attachment.
     var files = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("files", out var fileIds) && fileIds.ValueKind == JsonValueKind.Array
-     ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
+     ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
     if (files.Count > 0) asked += FilesNote(files);
     if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(files.Count > 0 ? text + FilesNote(files) : text); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
@@ -459,7 +487,7 @@ public partial class MainWindow
     Prefs.SensitiveSites.Remove(marked); if (B("on")) Prefs.SensitiveSites.Add(marked);
     SaveLater(); PublishAiEverywhere(); break;
    case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); SaveLater(); PublishAiEverywhere(); break;
-   case "chatOpen" when S("id") is { Length: > 0 } open && AiChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
+   case "chatOpen" when S("id") is { Length: > 0 } open && MyChats.Any(c => c.Id == open): await SelectTab(ChatTab(open)); break;
    case "chatPage" when active?.ChatId is { } pageChat: // show or hide the AI's page beside the chat
     if (tabs.FirstOrDefault(t => t.Id == S("id") && (t.InChat ?? t.RunChat) == pageChat) is { } pick) pick.LastActive = DateTime.UtcNow;
     active.PageOpen = B("on");
@@ -478,12 +506,12 @@ public partial class MainWindow
    case "tabMine" when tabs.FirstOrDefault(t => t.Id == S("id") && t.InChat != null) is { } mine: // the same, from the running tasks
     mine.RunChat = mine.InChat!.StartsWith(AppPages) ? null : mine.InChat; mine.AgentGroup = mine.RunChat == null; mine.InChat = null; await SelectTab(mine); break;
    case "tabHand" when tabs.FirstOrDefault(t => t.Id == S("id") && t.ChatId == null && t.InChat == null && !t.Private && t.Url.Length > 0) is { } given: { // "Hand to …": a tab of the user's becomes a chat's page
-    var to = AiChats.FirstOrDefault(c => c.Id == S("chat"));
+    var to = MyChats.FirstOrDefault(c => c.Id == S("chat"));
     if (to == null) { var with = Companions.FirstOrDefault(c => c.Id == S("companion")) ?? Companions.FirstOrDefault(); AiChats.Insert(0, to = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = given.Title, Companion = with?.Id ?? "" }); SaveAiChats(); }
     given.InChat = to.Id; given.RunChat = null; given.AgentGroup = false; aiChat = to;
     await SelectTab(given); PublishAiEverywhere(); break;
    }
-   case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && AiChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Open chat"
+   case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && MyChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Open chat"
     aiChat = runChat; aiOpen = true; break;
    case "companionSave" when S("name").Trim().Length > 0:
     SaveCompanion(data); foreach (var w in Windows) if (w != this) w.PublishAi();
@@ -507,7 +535,7 @@ public partial class MainWindow
     PublishAiEverywhere(); break;
    case "memoryForget" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Forget(S("companion"), S("id")); PublishAiEverywhere(); break;
    case "memoryClear" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Clear(S("companion")); PublishAiEverywhere(); break;
-   case "chatNoMemory" when AiChats.FirstOrDefault(c => c.Id == S("id")) is { } offRecord:
+   case "chatNoMemory" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { Ephemeral: false } offRecord: // an incognito chat stays off the record
     offRecord.NoMemory = B("on"); if (offRecord.NoMemory) foreach (var c in Companions) CompanionMemory.ForgetChat(c.Id, offRecord.Id);
     SaveAiChats(); PublishAiEverywhere(); break;
    case "skillSave" when S("name").Trim() is { Length: > 0 } skillName:
@@ -534,7 +562,7 @@ public partial class MainWindow
    case "fileDelete" when LibraryFile(S("path")) is { } gone:
     try { File.Delete(gone); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
     library = null; foreach (var w in Windows) if (w != this) w.PublishAi(); break;
-   case "chatArchive" when AiChats.FirstOrDefault(c => c.Id == S("id")) is { } archived:
+   case "chatArchive" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { } archived:
     archived.Archived = B("on"); SaveAiChats(); foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
   }
@@ -610,6 +638,7 @@ public partial class MainWindow
    : active.Private ? "The active tab is private, which is off-limits."
    : $"Active tab: \"{active.Title}\" {active.Url} (tabId {active.Id}).";
   var pages = chat == null ? [] : tabs.Where(t => t.InChat == chat.Id && !t.Closed).Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})").ToList();
+  if (chat?.Ephemeral == true) return "[Still] This chat is in an incognito window: you only use the private tabs you open here." + (pages.Count > 0 ? " Your tabs in this chat: " + string.Join("; ", pages) + "." : "");
   return $"[Still] {where} {open} tab{(open == 1 ? "" : "s")} open." + (pages.Count > 0 ? " Your tabs in this chat: " + string.Join("; ", pages) + "." : "");
  }
 
@@ -631,7 +660,7 @@ public partial class MainWindow
  /// sends about 10 messages per request; a companion already in it can't be asked again (a loop), and none messages itself.
  const int ExchangeHops = 3, ExchangeMessages = 10;
  static readonly Dictionary<string, int> exchangesSent = []; // by the user's chat: messages sent for its current request
- static AiChat? ChatById(string? id) => id == null ? null : AiChats.FirstOrDefault(c => c.Id == id);
+ static AiChat? ChatById(string? id) => id == null ? null : AiChats.FirstOrDefault(c => c.Id == id) ?? Windows.SelectMany(w => w.privateChats).FirstOrDefault(c => c.Id == id);
  /// The user's chat an exchange started in, and who's in it so far: that chat's companion, then each one asked since.
  static (AiChat Root, List<string> Chain) ExchangeOf(AiChat chat)
  {
@@ -654,9 +683,9 @@ public partial class MainWindow
   if (chain.Contains(to.Id)) return Fail($"{to.Name} is already in this exchange ({string.Join(" → ", chain.Select(NameOf))}), so asking them would go in a loop. Carry on with what you have.");
   if (chain.Count > ExchangeHops) return Fail($"This exchange is already {ExchangeHops} hops deep, the most it goes. Carry on with what you have.");
   if (exchangesSent.GetValueOrDefault(root.Id) >= ExchangeMessages) return Fail($"Your team has sent {ExchangeMessages} messages for this request, the most for one. Carry on with what you have.");
-  var chat = AiChats.FirstOrDefault(c => c.From == run.Chat.Id && c.Companion == to.Id);
+  var chat = ListOf(run.Chat).FirstOrDefault(c => c.From == run.Chat.Id && c.Companion == to.Id);
   if (chat != null && runs.ContainsKey(chat.Id)) return Fail($"{to.Name} is still on your last message. Wait for that first.");
-  if (chat == null) AiChats.Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = Clip(me.Name + (tool == "ask_companion" ? " asked: " : " handed over: ") + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory });
+  if (chat == null) ListOf(run.Chat).Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = Clip(me.Name + (tool == "ask_companion" ? " asked: " : " handed over: ") + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory, Ephemeral = run.Chat.Ephemeral });
   exchangesSent[root.Id] = exchangesSent.GetValueOrDefault(root.Id) + 1;
   bool ask = tool == "ask_companion";
   var card = new AiMessage { Role = ask ? "ask" : "tell", Who = me.Id, To = to.Id, Text = text, Status = "working", Chat = chat.Id };
@@ -707,11 +736,13 @@ public partial class MainWindow
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito }; // a private window remembers nothing
-   AiChats.Insert(0, chat); SaveAiChats();
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito }; // a private window remembers nothing
+   MyChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { into.ChatId = chat.Id; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
   }
+  // An incognito chat runs in its own window (its folder, its private tabs), and not at all once that window is gone.
+  if (chat.Ephemeral && OwnerOf(chat) != this) { if (OwnerOf(chat) is { closing: false } owner) await owner.RunAi(chat, text, shown, into, companion, noMemory, asker, files); return; }
   if (chat.Harness.Length == 0) chat.Harness = Companions.FirstOrDefault(c => c.Id == chat.Companion) is { Ai.Length: > 0 } own ? own.Ai : Prefs.AiHarness;
   if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
   var cli = AiClis.FirstOrDefault(c => c.Id == chat.Harness) ?? AiClis[0];
@@ -733,21 +764,21 @@ public partial class MainWindow
   if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
-  if (who is { Greet: true }) { who.Greet = false; SaveLater(); } // they spoke first: no kickoff
+  if (who is { Greet: true } && !chat.Ephemeral) { who.Greet = false; SaveLater(); } // they spoke first: no kickoff
   var skills = Skill.Invoked(shown);
   if (!chat.Started) skills.AddRange(Skill.All.Where(k => who?.Skills.Contains(k.Id) == true && !skills.Contains(k)));
   foreach (var k in skills) Step(chat, "Loaded skill " + k.Name);
-  AiChats.Remove(chat); AiChats.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
+  var list = ListOf(chat); list.Remove(chat); list.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
-  string work = cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
+  string work = !chat.Ephemeral && cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
   string memory = who == null ? "" : CompanionMemory.Brief(who.Id, shown);
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n"
    + (memory.Length > 0 ? "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n" : "")
    + (who == null ? "" : CompanionMemory.NotesBrief(who.Id))
-   + (chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : ""))
+   + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, and your pages open in private tabs.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : ""))
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
-  string folder = Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
+  string folder = chat.Ephemeral ? Path.Combine(PrivateFolder, chat.Id) : Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
   Directory.CreateDirectory(folder);
   List<string> mcp = ["--mcp", "--as", cli.Name, "--run", chat.Id, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
@@ -782,7 +813,7 @@ public partial class MainWindow
     return;
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if (said && !chat.NoMemory && who != null && MemoryRefuses(me, chat.Title) == null && chat.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { // a title can name a private tab too
+   if (said && !chat.NoMemory && !chat.Ephemeral && who != null && MemoryRefuses(me, chat.Title) == null && chat.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { // a title can name a private tab too
     string end = last.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(l => !l.StartsWith(">>")) ?? "";
     end = end.Replace("**", "").Trim(); if (end.Length > 160) end = end[..160] + "…";
     CompanionMemory.Remember(who.Id, chat.Title + (end.Length > 0 && MemoryRefuses(me, end) == null ? ": " + end : ""), "chat", chat.Id, "chat:" + chat.Id);
@@ -1082,10 +1113,11 @@ public partial class MainWindow
  const int MaxFiles = 10;
  const long MaxFile = 10L << 20, MaxImage = 5L << 20;
  static string AttachmentsFolder => Path.Combine(AiFolder, "attachments");
+ string AttachmentsHere => incognito ? Path.Combine(PrivateFolder, "attachments") : AttachmentsFolder;
  static string? ImageMime(string name) => Path.GetExtension(name).ToLowerInvariant() switch { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp", _ => null };
  static string SizeText(long b) => b < 1024 ? b + " B" : b < 1L << 20 ? $"{b / 1024.0:0.#} KB" : $"{b / 1048576.0:0.#} MB";
- static AiFile? Attachment(string id) => Regex.IsMatch(id, "^[a-f0-9]{16}$") && Directory.Exists(Path.Combine(AttachmentsFolder, id))
-  && Directory.GetFiles(Path.Combine(AttachmentsFolder, id)).FirstOrDefault() is { } path ? new() { Id = id, Name = Path.GetFileName(path), Size = new FileInfo(path).Length } : null;
+ static AiFile? Attachment(string folder, string id) => Regex.IsMatch(id, "^[a-f0-9]{16}$") && Directory.Exists(Path.Combine(folder, id))
+  && Directory.GetFiles(Path.Combine(folder, id)).FirstOrDefault() is { } path ? new() { Id = id, Name = Path.GetFileName(path), Size = new FileInfo(path).Length } : null;
  static string FilesNote(List<AiFile> files) => $"\n\n[Still] The user attached {(files.Count == 1 ? "a file" : files.Count + " files")}: "
   + string.Join("; ", files.Select(f => $"\"{f.Name}\" ({SizeText(f.Size)}, id {f.Id})")) + ". Read each with read_attachment before you answer.";
 
@@ -1098,7 +1130,7 @@ public partial class MainWindow
    string name = string.Concat(Path.GetFileName(raw).Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim() is { Length: > 0 } n ? n[..Math.Min(n.Length, 120)] : "file";
    long max = ImageMime(name) != null ? MaxImage : MaxFile;
    if (size > max) { errors.Add($"{name} is {SizeText(size)}. {(max == MaxImage ? "Images" : "Files")} can be up to {max >> 20} MB."); continue; }
-   string id = Guid.NewGuid().ToString("N")[..16], folder = Path.Combine(AttachmentsFolder, id);
+   string id = Guid.NewGuid().ToString("N")[..16], folder = Path.Combine(AttachmentsHere, id);
    try { var data = bytes(); if (data.Length > max) throw new IOException(); Directory.CreateDirectory(folder); File.WriteAllBytes(Path.Combine(folder, name), data); files.Add(new() { Id = id, Name = name, Size = data.Length }); }
    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException) { errors.Add($"Couldn't add {name}."); }
   }
@@ -1108,8 +1140,10 @@ public partial class MainWindow
  /// read_attachment: text and code as text, a PDF's text, an image as itself.
  string ReadAttachment(string who, string id, int offset)
  {
-  if (Attachment(id) is not { } file) return Fail("No attachment has that id. Use the id from the [Still] note in the user's message.");
-  string path = Path.Combine(AttachmentsFolder, id, file.Name);
+  // An incognito chat reads its own window's files; every other chat the saved ones.
+  string? from = runs.GetValueOrDefault(who)?.Chat is { Ephemeral: true } c ? OwnerOf(c)?.AttachmentsHere : AttachmentsFolder;
+  if (from == null || Attachment(from, id) is not { } file) return Fail("No attachment has that id. Use the id from the [Still] note in the user's message.");
+  string path = Path.Combine(from, id, file.Name);
   Did(who, "Read " + file.Name);
   if (ImageMime(file.Name) is { } mime) return Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
   string text;
@@ -1131,6 +1165,7 @@ public partial class MainWindow
  async Task<string> OfferRoutine(string who, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } r || Companions.FirstOrDefault(c => c.Id == r.Chat.Companion) is not { } me) return Fail("Only Still's companions have routines.");
+  if (r.Chat.Ephemeral) return Fail(KeepsNothing);
   string text = Clip(S(args, "text").Trim(), 600), time = S(args, "time").Trim();
   List<int> days = args.TryGetProperty("days", out var d) && d.ValueKind == JsonValueKind.Array
    ? [.. d.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Number && x.TryGetInt32(out _)).Select(x => x.GetInt32()).Where(x => x is >= 0 and <= 6).Distinct().Order()] : [];

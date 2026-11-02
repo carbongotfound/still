@@ -3,7 +3,7 @@ import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
 import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, companionOf, isRunning, type AiState } from "./AiSidebar"
+import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, chatOf, companionOf, isRunning, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
@@ -69,7 +69,7 @@ type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: stri
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
 // Who is driving a tab: the companion of the chat that opened it, or another AI app under its own name.
-const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverChat ?? tab.runChat ? companionOf(ai, ai?.chats.find(c => c.id === (tab.driverChat ?? tab.runChat))?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
+const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverChat ?? tab.runChat ? companionOf(ai, chatOf(ai, tab.driverChat ?? tab.runChat)?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
 const initial: State = { profileName:"Default",maximized:false,activeId: "empty", dark: true, focusMode: false, fullScreen:false, preferences: { theme: "Dark", search: "Google", restore: true, blocking: true, downloads: "", tracking:"Balanced", memory:true, autofill:true, startup:false, startupDisabled:false }, zoom:100, tabs: [{ id: "empty", title: "New tab", url: "", pinned: false, isPrivate: false, loading: false, sleeping: false, blocked: 0, muted: false }], history: [], bookmarks: [], downloads: [], canBack: false, canForward: false, siteBlocking: true }
 // One click on the new tab page hands one of these to the AI.
 // "Try one of these": a look per kind of idea (suggestions.ts homeIdeas).
@@ -196,7 +196,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
   const {state,ai,setContext,arriving,setGhost}=useContext(UICtx)!
   const selected = tab.id === state.activeId
   const marked = state.bookmarks.some(b => b.url === tab.url)
-  const chat = tab.chatId ? companionOf(ai, ai?.chats.find(c => c.id === tab.chatId)?.companion) : undefined
+  const chat = tab.chatId ? companionOf(ai, chatOf(ai, tab.chatId)?.companion) : undefined
   const driver = tab.agent && !state.agent?.pending && state.working?.includes(tab.id) ? driverOf(ai, tab) : undefined // only while it is at work here
   const [tearing, setTearing] = useState(false)
   // Pointer-driven drag: drop on another tab to reorder; drop outside the tab list to open a new window.
@@ -584,7 +584,7 @@ export default function App() {
      {active?.isPrivate ? <LockKeyhole /> : active?.secure ? <Shield /> : <Search />}
      <input ref={addressRef} className="address-input" aria-label="Search or enter an address" spellCheck={false} autoComplete="off"
       placeholder="Search or enter an address"
-      value={pane === "address" ? (pick >= 0 && addressItems[pick]?.value ? addressItems[pick].value! : query + completion) : (notice || (active?.chatId ? "Chat / " + (ai?.chats.find(c => c.id === active.chatId)?.title ?? active.title) : active?.url ? prettyUrl(active.url) : ""))}
+      value={pane === "address" ? (pick >= 0 && addressItems[pick]?.value ? addressItems[pick].value! : query + completion) : (notice || (active?.chatId ? "Chat / " + (chatOf(ai, active.chatId)?.title ?? active.title) : active?.url ? prettyUrl(active.url) : ""))}
       onFocus={e => { if (pane !== "address") { typedRef.current = false; setQuery(active?.url ?? ""); setPick(-1); setPane("address"); setDisplayPane("address"); send("openPanel", { name: "address", value: active?.url ?? "" }) } requestAnimationFrame(() => e.target.select()) }}
       onChange={e => { const ne = e.nativeEvent as InputEvent; const del = (ne.inputType ?? "").startsWith("delete"); typedRef.current = !del; if (del) setCompletion(""); setQuery(e.target.value); setPick(-1) }}
       onKeyDown={e => {
@@ -1034,7 +1034,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
     {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
    </div>)}
   </ScrollArea>
-  <DropdownMenu><DropdownMenuTrigger asChild><button className="chat-side-profile"><span className="chat-side-avatar">{(state.profileName[0] ?? "S").toUpperCase()}</span><span className="chat-side-title">{state.profileName}</span><ChevronDown /></button></DropdownMenuTrigger>
+  <DropdownMenu><DropdownMenuTrigger asChild><button className="chat-side-profile"><span className="chat-side-avatar">{state.incognito ? <LockKeyhole /> : (state.profileName[0] ?? "S").toUpperCase()}</span><span className="chat-side-title">{state.incognito ? "Incognito" : state.profileName}</span><ChevronDown /></button></DropdownMenuTrigger>
    <DropdownMenuContent side="top" align="start" sideOffset={8} className="chat-side-menu">
     <DropdownMenuLabel>Theme</DropdownMenuLabel>
     <div className="chat-side-theme">{([["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const).map(([t, Icon]) => <button key={t} aria-pressed={state.preferences.theme === t} onClick={() => send("preference", { key: "theme", value: t })}><Icon />{t}</button>)}</div>

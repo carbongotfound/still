@@ -47,7 +47,7 @@ public partial class MainWindow
  // Ends an agent's running call early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
  static readonly Dictionary<string, TaskCompletionSource<string>> agentInterrupts = new(StringComparer.OrdinalIgnoreCase);
  static bool agentServerStarted;
- internal static MainWindow Home => LastActive is { closing: false, temporary: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
+ internal static MainWindow Home => LastActive is { closing: false, temporary: false, incognito: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary && !w.incognito) ?? Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
 
  // Any number of agents at once: each connection gets its own pipe instance, and calls run side by side.
  internal static void StartAgentServer(string instance)
@@ -468,7 +468,11 @@ public partial class MainWindow
   if (id.Length == 0 && agentTabs.TryGetValue(who, out var last) && FindTab(last) != null) id = last;
   foreach (var w in Windows.Where(w => !w.closing)) {
    var t = id.Length > 0 ? w.tabs.FirstOrDefault(x => x.Id == id) : (w == this ? w.active : null);
-   if (t != null) { if (t.Private) throw new InvalidOperationException("Private tabs are off-limits to agents."); Claim(who, w, t); return (w, t); }
+   if (t != null) {
+    // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
+    if (Incognito(who) ? (t.InChat ?? t.RunChat) != who : t.Private) throw new InvalidOperationException(Incognito(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.");
+    Claim(who, w, t); return (w, t);
+   }
   }
   throw new InvalidOperationException(id.Length > 0 ? "No tab with that id. Call list_tabs." : "There is no active tab.");
  }
@@ -500,7 +504,7 @@ public partial class MainWindow
  }
  /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
  static MainWindow? ChatRunner(string who) => runs.TryGetValue(who, out var run)
-  ? Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
+  ? run.Chat.Ephemeral ? OwnerOf(run.Chat) : Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
  // Background (the default for Still's own chat): the page belongs to the chat and shows only beside it, never in the
  // user's tab strip. Otherwise Still's chat opens it as the user's own tab, beside the chat, and other AI apps open it
  // next to the other AI tabs. An AI app's background tabs belong to it ("app:" + who) and show in the running tasks.
@@ -511,7 +515,11 @@ public partial class MainWindow
   string? chat = runs.TryGetValue(who, out var run) ? who : null;
   if (Windows.SelectMany(w => w.tabs).Count(t => !t.Closed && (chat != null ? (t.RunChat ?? t.InChat) == chat : t.AgentGroup && t.AgentKey == who || t.InChat == AppPages + who)) >= AgentTabCap)
    throw new InvalidOperationException($"You already have {AgentTabCap} tabs open. Reuse one with navigate, or close one with close_tab first.");
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null };
+  // An incognito chat's pages are private tabs in its own window: the private engine profile, no history, no saved
+  // passwords or cookies. No other agent opens a tab in an incognito window.
+  bool priv = run?.Chat.Ephemeral == true;
+  if (priv ? OwnerOf(run!.Chat) != this : incognito) throw new InvalidOperationException(priv ? "The incognito window closed." : "Agents don't open tabs in an incognito window.");
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null, Private = priv };
   if (background) tabs.Add(tab);
   else if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
@@ -619,6 +627,7 @@ public partial class MainWindow
   }
   if (granted && action != "sensitive") { if (action == "interact") Audit(run.Chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat"); return null; }
   string answer = await Approve(run, what, site, action, why, countdown: granted);
+  if (answer == "always" && run.Chat.Ephemeral) answer = "chat"; // an incognito chat writes no site rules
   if (answer == "always") SetPermission(site, action, "", "always");
   if (answer == "chat" && !run.Chat.Allowed.Contains(key)) run.Chat.Allowed.Add(key);
   Audit(run.Chat, what, site, answer switch {
@@ -745,6 +754,7 @@ public partial class MainWindow
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget" or "update_knowledge": return Remembering(who, tool, args);
    case "save_file": {
+    if (Incognito(who)) return Fail(KeepsNothing);
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");
     string ext = Path.GetExtension(name).ToLowerInvariant();
     if (ext is not (".csv" or ".tsv" or ".md" or ".json" or ".txt") || name.Length is < 5 or > 120) return Fail("Name the file with a .csv, .md, .json or .txt ending, like laptops.csv.");
@@ -762,7 +772,7 @@ public partial class MainWindow
     return Reply(new { done = $"{(again ? "Replaced" : "Saved")} {Path.GetFileName(file)} in the user's Library. It shows in the chat as a card they can open, so don't paste its contents in your reply." });
    }
    case "list_tabs":
-    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
+    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => Incognito(who) ? (t.InChat ?? t.RunChat) == who : !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "web_search": return await WebSearch(who, args);
    case "read_url": return await ReadUrl(who, args);
    case "read_attachment": return ReadAttachment(who, S(args, "id"), (int)Math.Max(0, N(args, "offset", 0)));
