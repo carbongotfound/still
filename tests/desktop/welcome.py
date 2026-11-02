@@ -16,6 +16,7 @@ Run: python tests/desktop/welcome.py artifacts/Still-QA/Still.exe
 Out: docs/agentic/mascot/look-*.png (the look editor for 6 companions), artifacts/welcome-*/setup.mp4 (the recording),
      artifacts/welcome-*/shots/pick-*.png
 """
+import atexit
 import ctypes
 import ctypes.wintypes
 import http.server
@@ -190,6 +191,7 @@ def record(pid, out, fps=20):
     if MAC:
         recorder = subprocess.Popen(["screencapture", "-v", "-x", "-C", str(Path(out).with_suffix(".mov"))], stdin=subprocess.DEVNULL)
         recorder.done = None
+        atexit.register(lambda: recorder.poll() is None and recorder.send_signal(signal.SIGINT))  # a run that fails partway still stops it
         return recorder
     hwnd, ww, wh, x, y, w, h = window_of(pid)
     user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
@@ -854,7 +856,7 @@ def shots():
         back(process)
         check(until(lambda: js(process, "document.querySelector('.ob-mains [aria-checked=true] strong')?.innerText.trim()") == "Jonah", 4), "With the same lead picked")
         back(process)
-        check(js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).sort().join()") == "Marketing Leo,Research Maya,Sales Jonah",
+        check(until(lambda: js(process, "[...document.querySelectorAll('.crew-card.is-picked .role-title')].map(h => h.innerText.trim()).sort().join()") == "Marketing Leo,Research Maya,Sales Jonah", 4),
               "And the same three hired")
         next_step(process)
         next_step(process)
