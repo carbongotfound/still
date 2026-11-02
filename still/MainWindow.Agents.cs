@@ -527,7 +527,7 @@ public partial class MainWindow
   // passwords or cookies. No other agent opens a tab in an incognito window.
   bool priv = run?.Chat.Ephemeral == true;
   if (priv ? OwnerOf(run!.Chat) != this : incognito) throw new InvalidOperationException(priv ? "The incognito window closed." : "Agents don't open tabs in an incognito window.");
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null, Private = priv };
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null, Private = priv, Engine = !priv && OnCompanion(who) ? CompanionEngine : null };
   if (background) tabs.Add(tab);
   else if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {

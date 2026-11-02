@@ -45,6 +45,7 @@ final class AiChat: Codable {
  var started = false
  var companion = "" // who the user is working with in this chat
  var from: String? // a teammate's chat that asked this companion something: this chat answers it
+ var profile: String? // "companion": its pages open in the companion profile (Where companions browse); nil: the user's own
  var team: [String]?, sessions: [String: String]? // only read to split up a team chat from before companions messaged each other (untangle)
  var unread = false, archived = false
  var noMemory = false // "Don't remember this chat": nothing from it goes into the companion's memory
@@ -56,11 +57,11 @@ final class AiChat: Codable {
  var messages: [AiMessage] = []
  var allowed: [String] = [] // "action site" the user allowed for the rest of this chat
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case team, sessions, from, id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
  init() {}
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
-  team = c.value(.team, team); sessions = c.value(.sessions, sessions); from = c.value(.from, from); id = c.value(.id, id)
+  team = c.value(.team, team); sessions = c.value(.sessions, sessions); from = c.value(.from, from); profile = c.value(.profile, profile); id = c.value(.id, id)
   title = c.value(.title, title); harness = c.value(.harness, harness); session = c.value(.session, session); started = c.value(.started, started)
   companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory)
   worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)

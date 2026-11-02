@@ -23,6 +23,7 @@ public sealed class BrowserTab
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  [JsonIgnore] public string? AgentKey { get; set; } // which AI run is at work here (see MainWindow.Worker)
  [JsonIgnore] public string? RunChat { get; set; } // an ordinary tab Still's chat AI opened: "Open chat" opens that chat, and it can show beside the chat
+ [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Engine { get; set; } // "Companion": the page is in the companion profile (Where companions browse); null: the user's own
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
  [JsonIgnore] public WebView2? View { get; set; }
@@ -92,6 +93,7 @@ public sealed class Preferences
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
  public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
+ public string AgentProfile { get; set; } = "regular"; // Where companions browse, for new chats: "regular" (the user's own profile) or "companion" (a separate one)
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public string ChatTitles { get; set; } = ""; // what names new chats: "" = the quickest model, "off" = their first message, or "ai/model"

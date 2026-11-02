@@ -165,6 +165,14 @@ var incognitoFolder: String { aiFolder + "/incognito" }
 /// The incognito window a chat lives in: nil for a saved chat, or once its window closed.
 func ownerOf(_ chat: AiChat) -> Browser? { chat.ephemeral ? browsers.first { $0.aiView.privateChats.contains { $0 === chat } } : nil }
 func incognitoRun(_ who: String) -> Bool { runs[who]?.chat.ephemeral == true }
+/// Where an AI's pages open (Where companions browse): a chat keeps the profile it started with; other AI apps follow the setting.
+func onCompanion(_ who: String) -> Bool {
+ if let run = runs[who] { return !run.chat.ephemeral && run.chat.profile == "companion" }
+ return store.prefs["AgentProfile"] as? String == "companion"
+}
+func newChatProfile(_ incognito: Bool) -> String? { !incognito && store.prefs["AgentProfile"] as? String == "companion" ? "companion" : nil }
+var profileSwitched = Set<String>() // chats whose profile the user just switched: their AI hears it on the next turn
+let companionNote = "Your pages open in the companion profile: a separate browser profile with its own sign-ins and cookies, apart from the user's. If a site needs the user signed in, open it and ask_user so they can sign in there."
 /// The chats a chat sits with: the saved ones, or its incognito window's.
 func listOf(_ chat: AiChat) -> [AiChat] { chat.ephemeral ? ownerOf(chat)?.aiView.privateChats ?? [] : aiChats }
 /// Puts a chat first in its list. in: the window a new incognito chat joins.
@@ -175,7 +183,7 @@ func toTop(_ chat: AiChat, in owner: Browser? = nil) {
  } else { aiChats.removeAll { $0 === chat }; aiChats.insert(chat, at: 0); saveAiChats() }
 }
 func chatRow(_ c: AiChat) -> [String: Any] {
- ["id": c.id, "title": c.title, "harness": c.harness, "updated": isoText(c.updated), "companion": c.companion, "from": c.from.map { $0 as Any } ?? NSNull(), "unread": c.unread, "archived": c.archived, "noMemory": c.noMemory]
+ ["id": c.id, "title": c.title, "harness": c.harness, "updated": isoText(c.updated), "companion": c.companion, "from": c.from.map { $0 as Any } ?? NSNull(), "unread": c.unread, "archived": c.archived, "noMemory": c.noMemory, "profile": c.profile ?? "regular"]
 }
 
 /// The three modes on the message box. Thorough (expert): the strongest model, thinking hard. Quick (efficient): the
@@ -441,7 +449,7 @@ func untangle(_ team: AiChat) {
  if let at = aiChats.firstIndex(where: { $0 === team }) { aiChats.insert(contentsOf: chats.dropFirst(), at: at + 1) }
 }
 
-func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _ folder: String) -> String {
+func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _ folder: String, plugins: Bool = true) -> String {
  (who.map { "Your name is \($0.name). The user set you up as: \($0.job)\n" + ($0.tone.isEmpty ? "" : "Your personality and how you talk: \($0.tone)\n") + "\n" } ?? "") + """
  You are the AI assistant built into Still, the user's web browser, running on \(cli.app). You work with the user in a chat.
  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
@@ -465,7 +473,7 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
  - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
  - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
  - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
- """ + pluginInstructions(who) + roleSetup(who)
+ """ + (plugins ? pluginInstructions(who) : "") + roleSetup(who)
 }
 
 /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
@@ -770,7 +778,7 @@ extension Browser {
    }
    fresh.greet = false; storeCompanions()
    let kick = AiChat()
-   kick.companion = fresh.id; kick.title = fresh.name; kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
+   kick.companion = fresh.id; kick.title = fresh.name; kick.profile = newChatProfile(false); kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
    aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
    go(appTab(), "chat:" + kick.id); v.chat = kick
    runAi(kick, kickoffAsk + openTabsNote(), shown: "") // the title comes from its hello
@@ -865,6 +873,15 @@ extension Browser {
    publishAiEverywhere()
   case "memoryForget": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.forget(s("companion"), s("id")); publishAiEverywhere() }
   case "memoryClear": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.clear(s("companion")); publishAiEverywhere() }
+  case "aiChatProfile":
+   guard !incognito, ["companion", "regular"].contains(s("profile")), let switched = myChats.first(where: { $0.id == s("id") }), !switched.ephemeral, switched.from == nil, runs[switched.id] == nil else { break }
+   let to: String? = s("profile") == "companion" ? "companion" : nil
+   guard switched.profile != to else { break }
+   switched.profile = to; profileSwitched.insert(switched.id)
+   // Its pages were signed in as the other profile: they close, and the chat (and its AI, next turn) hears about the switch.
+   for b in browsers { for t in b.tabs where !t.closed && (t.runChat ?? t.inChat) == switched.id { b.close(t, force: true) } }
+   switched.messages.append(AiMessage("note", to != nil ? "Now browsing in the companion profile: its own sign-ins, apart from yours." : "Now browsing in your profile, with your sign-ins."))
+   saveAiChats(); publishAiEverywhere()
   case "chatNoMemory":
    guard let offRecord = myChats.first(where: { $0.id == s("id") }), !offRecord.ephemeral else { break }
    offRecord.noMemory = b("on")
@@ -1001,7 +1018,7 @@ extension Browser {
    let chat = AiChat()
    chat.harness = with.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
    chat.title = line.count > 60 ? String(line.prefix(60)) + "…" : line
-   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito // a private window keeps nothing
+   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito; chat.profile = newChatProfile(incognito) // a private window keeps nothing
    v.chat = chat
    toTop(chat, in: self)
    if let into, !into.closed { if into.chatId != chat.id { into.back.append(spot(into)); into.forward = [] }; into.chatId = chat.id; into.home = ""; into.title = chat.title; saveLater() }
@@ -1042,16 +1059,20 @@ extension Browser {
   let wf = who?.folder ?? ""
   let work = !chat.ephemeral && cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
   let memory = who.map { CompanionMemory.brief($0.id, shown) } ?? ""
-  let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work) + "\n\n"
+  let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work, plugins: !chat.ephemeral) + "\n\n"
    + (memory.isEmpty ? "" : "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n")
    + (who.map { CompanionMemory.notesBrief($0.id) } ?? "")
-   + (chat.ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, and your pages open in private tabs.\n\n" : chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
-  let prompt = intro + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
+   + (chat.ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
+   + (chat.profile == "companion" && !chat.ephemeral ? companionNote + "\n\n" : "")
+  let switched = profileSwitched.remove(chat.id) != nil && chat.started
+   ? "[Still] " + (chat.profile == "companion" ? "The user switched this chat to browse in the companion profile: " + companionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : ""
+  let prompt = intro + switched + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
   let folder = chat.ephemeral ? privateFolder + "/" + chat.id : (aiFolder as NSString).appendingPathComponent("chats/" + chat.id)
   try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
   var mcp = ["--mcp", "--as", cli.name, "--run", chat.id, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
   if isQa { mcp.insert("--qa", at: 1) }
+  if chat.ephemeral { mcp.append("--no-plugins") } // connected apps are off in incognito windows
   var (model, effort) = pref("AiAdvanced", false) ? (pref("AiModels", [String: String]())[cli.id] ?? "", pref("AiEfforts", [String: String]())[cli.id] ?? "") : forMode(cli.id, who?.mode)
   // Only the adapter's own catalog values reach the command line.
   if !(aiModels[cli.id] ?? []).contains(where: { $0.id == model && (effort.isEmpty || $0.efforts.contains(effort)) }) { model = ""; effort = "" }
@@ -1140,7 +1161,7 @@ extension Browser {
   let ask = tool == "ask_companion"
   if let busy = listOf(run.chat).first(where: { $0.from == run.chat.id && $0.companion == to.id }), runs[busy.id] != nil { return agentFail("\(to.name) is still on your last message. Wait for that first.") }
   let chat = listOf(run.chat).first { $0.from == run.chat.id && $0.companion == to.id } ?? {
-   let c = AiChat(); c.companion = to.id; c.from = run.chat.id; c.noMemory = run.chat.noMemory; c.ephemeral = run.chat.ephemeral
+   let c = AiChat(); c.companion = to.id; c.from = run.chat.id; c.noMemory = run.chat.noMemory; c.ephemeral = run.chat.ephemeral; c.profile = run.chat.profile
    c.title = title.isEmpty ? clipped(me.name + " asked: " + text.replacingOccurrences(of: "\n", with: " "), 60) : "\(me.name) asked \(to.name) for \(title)"
    toTop(c, in: ownerOf(run.chat)); return c
   }()

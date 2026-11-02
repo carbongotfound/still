@@ -78,7 +78,7 @@ extension Browser {
     "Loading": t.loading, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
     "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view),
     "enginePrivate": n(t.view.map { !$0.configuration.websiteDataStore.isPersistent }),
-    "engineProfile": n(t.view.map { $0.configuration.websiteDataStore === pageStore ? "Default" : $0.configuration.websiteDataStore === privateStore ? "Private" : "Other" })
+    "engineProfile": n(t.view.map { $0.configuration.websiteDataStore === pageStore ? "Default" : $0.configuration.websiteDataStore === companionStore ? "Companion" : $0.configuration.websiteDataStore === privateStore ? "Private" : "Other" })
    ] },
    "history": history, "bookmarks": bookmarks, "hidden": store.hidden,
    "downloads": downloads.map { ["Path": n($0.path?.path), "status": $0.status, "bytes": $0.task.progress.completedUnitCount] as [String: Any] },

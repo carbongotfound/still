@@ -34,6 +34,7 @@ public sealed class AiChat
  // Only read to split up a team chat from before companions messaged each other (Untangle).
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public List<string>? Team { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public Dictionary<string, string>? Sessions { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Profile { get; set; } // "companion": its pages open in the companion profile (Where companions browse); null: the user's own
  public bool Unread { get; set; } // a reply landed while the user was elsewhere
  public bool Archived { get; set; }
  public bool NoMemory { get; set; } // "Don't remember this chat": nothing from it goes into the companion's memory
@@ -165,6 +166,11 @@ public partial class MainWindow
  static MainWindow? OwnerOf(AiChat chat) => Windows.FirstOrDefault(w => w.privateChats.Contains(chat));
  static List<AiChat> ListOf(AiChat chat) => chat.Ephemeral ? OwnerOf(chat)?.privateChats ?? [] : AiChats;
  static bool Incognito(string who) => runs.GetValueOrDefault(who)?.Chat.Ephemeral == true;
+ /// Where an AI's pages open (Where companions browse): a chat keeps the profile it started with; other AI apps follow the setting.
+ static bool OnCompanion(string who) => runs.GetValueOrDefault(who) is { } r ? r.Chat is { Ephemeral: false, Profile: CompanionProfile } : sharedState?.Preferences.AgentProfile == CompanionProfile;
+ const string CompanionProfile = "companion";
+ static string? NewChatProfile(bool incognito) => !incognito && sharedState?.Preferences.AgentProfile == CompanionProfile ? CompanionProfile : null;
+ static readonly HashSet<string> profileSwitched = []; // chats whose profile the user just switched: their AI hears it on the next turn
  /// Closing an incognito window ends its chats: their runs stop (the AI app's processes with them) and their files go.
  void EndIncognito()
  {
@@ -176,6 +182,7 @@ public partial class MainWindow
     try { Directory.Delete(folder, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { await Task.Delay(250); }
   });
  }
+ const string CompanionNote = "Your pages open in the companion profile: a separate browser profile with its own sign-ins and cookies, apart from the user's. If a site needs the user signed in, open it and ask_user so they can sign in there.";
  const string KeepsNothing = "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off. Tell the user if it matters, and carry on without it.";
  static List<AiChat> AiChats
  {
@@ -409,7 +416,7 @@ public partial class MainWindow
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Where(_ => !incognito).Take(200).Select(ChatRow), privateChats = privateChats.Select(ChatRow) } }); }
  // An incognito window's chats go as privateChats: never in the chat list, so never in history.
- static object ChatRow(AiChat c) => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory };
+ static object ChatRow(AiChat c) => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory, profile = c.Profile ?? "regular" };
 
  async Task HandleAi(string op, JsonElement data)
  {
@@ -484,7 +491,7 @@ public partial class MainWindow
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Greet: true } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
     fresh.Greet = false; SaveLater();
-    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
+    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Profile = NewChatProfile(false), Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
     AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
     await Go(await AppTab(), "chat:" + kick.Id);
     await RunAi(kick, KickoffAsk + OpenTabsNote(), ""); // the title comes from its hello
@@ -565,6 +572,14 @@ public partial class MainWindow
     PublishAiEverywhere(); break;
    case "memoryForget" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Forget(S("companion"), S("id")); PublishAiEverywhere(); break;
    case "memoryClear" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Clear(S("companion")); PublishAiEverywhere(); break;
+   case "aiChatProfile" when !incognito && S("profile") is "companion" or "regular" && MyChats.FirstOrDefault(c => c.Id == S("id")) is { Ephemeral: false, From: null } switched && !runs.ContainsKey(switched.Id): {
+    string? to = S("profile") == CompanionProfile ? CompanionProfile : null;
+    if (switched.Profile == to) break;
+    switched.Profile = to; profileSwitched.Add(switched.Id);
+    // Its pages were signed in as the other profile: they close, and the chat (and its AI, next turn) hears about the switch.
+    foreach (var w in Windows) foreach (var t in w.tabs.Where(t => !t.Closed && (t.RunChat ?? t.InChat) == switched.Id).ToList()) await w.CloseTab(t);
+    switched.Messages.Add(new() { Role = "note", Text = to != null ? "Now browsing in the companion profile: its own sign-ins, apart from yours." : "Now browsing in your profile, with your sign-ins." });
+    SaveAiChats(); PublishAiEverywhere(); break; }
    case "chatNoMemory" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { Ephemeral: false } offRecord: // an incognito chat stays off the record
     offRecord.NoMemory = B("on"); if (offRecord.NoMemory) foreach (var c in Companions) CompanionMemory.ForgetChat(c.Id, offRecord.Id);
     SaveAiChats(); PublishAiEverywhere(); break;
@@ -611,7 +626,7 @@ public partial class MainWindow
   if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
  }
 
- static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n" + (who.Tone.Length > 0 ? $"Your personality and how you talk: {who.Tone}\n" : "") + "\n") + $"""
+ static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n" + (who.Tone.Length > 0 ? $"Your personality and how you talk: {who.Tone}\n" : "") + "\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   {(folder.Length > 0 ? $"You may read and write files in the user's working folder {folder}, and nowhere else. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
@@ -634,7 +649,7 @@ public partial class MainWindow
   - You have a memory of this user, kept on their computer. When you learn something lasting about them (a preference, a habit, a person or a project in their life), call remember with one short fact, like "Prefers aisle seats". Never remember passwords, codes, card or account numbers, what they typed into forms, or anything from private tabs. Use recall to look something up, and forget when they ask you to.
   - Answer in concise Markdown: short paragraphs, bullet lists, **bold** for key facts, a table when comparing things.
   - When it helps, end with a short bold line and up to 3 next steps the user can pick, each on its own line starting with ">> ", for example ">> Compare the two cheapest options".
-  """ + PluginInstructions(who) + RoleSetup(who);
+  """ + (plugins ? PluginInstructions(who) : "") + RoleSetup(who);
 
  /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
  // A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
@@ -717,7 +732,7 @@ public partial class MainWindow
   if (exchangesSent.GetValueOrDefault(root.Id) >= ExchangeMessages) return Fail($"Your team has sent {ExchangeMessages} messages for this request, the most for one. Carry on with what you have.");
   var chat = ListOf(run.Chat).FirstOrDefault(c => c.From == run.Chat.Id && c.Companion == to.Id);
   if (chat != null && runs.ContainsKey(chat.Id)) return Fail($"{to.Name} is still on your last message. Wait for that first.");
-  if (chat == null) ListOf(run.Chat).Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = title.Length > 0 ? $"{me.Name} asked {to.Name} for {title}" : Clip(me.Name + " asked: " + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory, Ephemeral = run.Chat.Ephemeral });
+  if (chat == null) ListOf(run.Chat).Insert(0, chat = new AiChat { Companion = to.Id, From = run.Chat.Id, Title = title.Length > 0 ? $"{me.Name} asked {to.Name} for {title}" : Clip(me.Name + " asked: " + text.ReplaceLineEndings(" "), 60), NoMemory = run.Chat.NoMemory, Ephemeral = run.Chat.Ephemeral, Profile = run.Chat.Profile });
   exchangesSent[root.Id] = exchangesSent.GetValueOrDefault(root.Id) + 1;
   bool ask = tool == "ask_companion";
   var card = new AiMessage { Role = ask ? "ask" : "tell", Who = me.Id, To = to.Id, Text = text, Status = "working", Chat = chat.Id, Title = title.Length > 0 ? title : null };
@@ -770,7 +785,7 @@ public partial class MainWindow
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito }; // a private window remembers nothing
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito) }; // a private window remembers nothing
    MyChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { if (into.ChatId != chat.Id) { into.Back.Add(Spot(into)); into.Forward.Clear(); } into.ChatId = chat.Id; into.Home = ""; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
@@ -807,16 +822,19 @@ public partial class MainWindow
 
   string work = !chat.Ephemeral && cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
   string memory = who == null ? "" : CompanionMemory.Brief(who.Id, shown);
-  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work) + "\n\n"
+  string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work, !chat.Ephemeral) + "\n\n"
    + (memory.Length > 0 ? "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n" : "")
    + (who == null ? "" : CompanionMemory.NotesBrief(who.Id))
-   + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, and your pages open in private tabs.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : ""))
+   + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
+   + (chat.Profile == CompanionProfile && !chat.Ephemeral ? CompanionNote + "\n\n" : ""))
+   + (profileSwitched.Remove(chat.Id) && chat.Started ? "[Still] " + (chat.Profile == CompanionProfile ? "The user switched this chat to browse in the companion profile: " + CompanionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : "")
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
   string folder = chat.Ephemeral ? Path.Combine(PrivateFolder, chat.Id) : Path.Combine(AiFolder, "chats", chat.Id), promptFile = "";
   Directory.CreateDirectory(folder);
   List<string> mcp = ["--mcp", "--as", cli.Name, "--run", chat.Id, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
+  if (chat.Ephemeral) mcp.Add("--no-plugins"); // connected apps are off in incognito windows
   bool said = false, stopped = false;
   var (model, effort) = Prefs.AiAdvanced ? (Prefs.AiModels.GetValueOrDefault(cli.Id, ""), Prefs.AiEfforts.GetValueOrDefault(cli.Id, "")) : ForMode(cli.Id, who?.Mode);
   // Only the adapter's own catalog values reach the command line (cmd.exe and TOML quoting).

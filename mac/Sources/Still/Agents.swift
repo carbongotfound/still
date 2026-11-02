@@ -678,6 +678,7 @@ extension Browser {
   tab.url = url; tab.title = url.isEmpty ? "New tab" : hostName(url)
   tab.agent = worker(who).name; tab.agentKey = who
   tab.isPrivate = incognito // an incognito chat's pages: the window's private website data
+  if !incognito && onCompanion(who) { tab.engine = "Companion" }
   tab.aiGroup = chat == nil && !background
   tab.runChat = background ? nil : chat
   tab.inChat = background ? chat ?? "app:" + who : nil
@@ -1325,7 +1326,7 @@ enum Mcp {
  // Each profile is its own Still process with its own socket. The AI sidebar's agent is locked to its own profile.
  static func toolList(_ lockProfile: Bool) -> [Tool] {
   if noTools { return [] }
-  if lockProfile { return browserTools + chatTools }
+  if lockProfile { return browserTools + chatTools.filter { !noPlugins || !["list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action"].contains($0.name) } }
   return [listProfilesTool] + browserTools.map { Tool(name: $0.name, description: $0.description, props: $0.props + [profileProp], required: $0.required) }
  }
  static let instructions: String = "You're driving the user's own Still browser, signed in as them. "
@@ -1351,6 +1352,7 @@ enum Mcp {
 
  static var runId = "" // Still's own chat: which chat this server works for (--run)
  static var noTools = false // --no-tools: a talk with no browser at all (setup's interview)
+ static var noPlugins = false // --no-plugins: an incognito chat, where connected apps are off
  static let outLock = NSLock(), stateLock = NSLock()
  static var cancelledIds = Set<String>()
  // Questions this server asks the user through their AI app (MCP elicitation), by request id.
@@ -1368,6 +1370,7 @@ enum Mcp {
   let forced = argAfter("--as"), lockProfile = CommandLine.arguments.contains("--this-profile")
   runId = argAfter("--run") ?? ""
   noTools = CommandLine.arguments.contains("--no-tools")
+  noPlugins = CommandLine.arguments.contains("--no-plugins")
   var client = forced ?? "An AI agent", canElicit = false
   let tools = toolList(lockProfile).map { schema($0) }
   let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"

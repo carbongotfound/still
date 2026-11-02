@@ -22,7 +22,11 @@ public partial class MainWindow : Window
  readonly List<DownloadItem> downloads = [];
  readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
  readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(5) };
- string privateProfile => sharedPrivateProfile;
+ // Each incognito window has its own InPrivate session, so two never share a sign-in; private tabs in a normal window share one.
+ readonly string ownPrivateProfile = "Private" + Guid.NewGuid().ToString("N");
+ string privateProfile => incognito ? ownPrivateProfile : sharedPrivateProfile;
+ internal const string CompanionEngine = "Companion"; // the companion profile's WebView2 profile (Where companions browse)
+ string EngineOf(BrowserTab tab) => tab.Private ? privateProfile : tab.Engine ?? "Default";
  BrowserTab? active;
  bool dark, closing, focusMode;
  string panel = "";
@@ -221,10 +225,10 @@ public partial class MainWindow : Window
   AddMenu(menu, "Close other unpinned tabs", async () => { foreach (var other in tabs.Where(t => t != tab && !t.Pinned).ToList()) await CloseTab(other, true); });
   return menu;
  }
- async Task<BrowserTab> NewTab(string url = "", bool isPrivate = false, bool prompt = true)
+ async Task<BrowserTab> NewTab(string url = "", bool isPrivate = false, bool prompt = true, string? engine = null)
  {
   isPrivate |= incognito; // every tab in an incognito window is private
-  var tab = new BrowserTab { Url = url, Private = isPrivate, Title = isPrivate ? "Private tab" : "New tab" };
+  var tab = new BrowserTab { Url = url, Private = isPrivate, Title = isPrivate ? "Private tab" : "New tab", Engine = isPrivate ? null : engine }; // a link from a companion's page stays in its profile
   tabs.Add(tab); await SelectTab(tab);
   if (prompt && url.Length == 0) ShowAddress("");
   SaveLater(); return tab;
@@ -365,7 +369,7 @@ public partial class MainWindow : Window
  {
   ClearViewColor();
   var view = new WebView2 {
-   CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = tab.Private ? privateProfile : "Default", IsInPrivateModeEnabled = tab.Private },
+   CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = EngineOf(tab), IsInPrivateModeEnabled = tab.Private },
    DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White,
    Visibility = Shown == tab && panel == "" ? Visibility.Visible : Visibility.Hidden
   };
@@ -373,7 +377,7 @@ public partial class MainWindow : Window
   view.Loaded+=(_,_)=>RestorePageWindow();
   WebHost.UpdateLayout();
   try {
-   var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=tab.Private?privateProfile:"Default";options.IsInPrivateModeEnabled=tab.Private;
+   var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=EngineOf(tab);options.IsInPrivateModeEnabled=tab.Private;
    await view.EnsureCoreWebView2Async(environment,options); ClearViewColor();
    StartupMetrics.Mark("page-controller");
    if (tab.Closed || tab.View != view || closing) return;
@@ -490,7 +494,7 @@ public partial class MainWindow : Window
     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank", tab.InChat != null) : await NewTab("about:blank", tab.Private, false);
+    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank", tab.InChat != null) : await NewTab("about:blank", tab.Private, false, tab.Engine);
     if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
    } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
    finally { deferral.Complete(); }

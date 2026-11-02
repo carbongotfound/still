@@ -34,6 +34,18 @@ public partial class MainWindow
    // Bookmarks for this site pick up its icon (regular tabs only).
    if(!tab.Private)foreach(var b in state.Bookmarks)if(Host(b.Url)==Host(page)&&b.Favicon!=tab.Favicon){b.Favicon=tab.Favicon;ShellPublish();}}}catch(Exception){/* A missing or cancelled favicon uses the globe fallback. */}
  }
+ /// Settings → Clear the companion profile: companions are signed out everywhere; the user's own profile is untouched.
+ async Task ClearCompanionData()
+ {
+  var view = new WebView2 { Visibility = Visibility.Hidden }; WebHost.Children.Add(view);
+  try {
+   var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions(); options.ProfileName = CompanionEngine;
+   await view.EnsureCoreWebView2Async(env, options);
+   await view.CoreWebView2.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllProfile);
+   Toast("Companion profile cleared. Companions are signed out of every site there.");
+  } catch (Exception ex) { App.Log(ex); Toast("Couldn't clear the companion profile."); }
+  finally { WebHost.Children.Remove(view); view.Dispose(); }
+ }
  async Task<CoreWebView2> ManagementCore()
  {
   if(tabs.FirstOrDefault(t=>!t.Private&&t.View?.CoreWebView2!=null)?.View?.CoreWebView2 is {} ready)return ready;

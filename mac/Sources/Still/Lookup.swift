@@ -89,7 +89,7 @@ extension Browser {
 
  /// Where an AI's lookups load: an incognito chat's in its window's private website data.
  func lookupStore(_ who: String) throws -> WKWebsiteDataStore? {
-  guard let run = runs[who], run.chat.ephemeral else { return nil }
+  guard let run = runs[who], run.chat.ephemeral else { return onCompanion(who) ? companionStore : nil }
   guard let owner = ownerOf(run.chat) else { throw AgentError("The incognito window closed.") }
   return owner.privateStore
  }

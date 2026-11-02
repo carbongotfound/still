@@ -26,6 +26,9 @@ weak var lastActiveBrowser: Browser?
 /// The website data (cookies, storage, cache) of this profile: the system's store for Default, and one of its own for every
 /// other profile and for test profiles (macOS 14 and later; before that every profile shares the system's store).
 let pageStore: WKWebsiteDataStore = isTemp ? .nonPersistent() : Profiles.dataStore(support)
+/// The companion profile's website data (Where companions browse): its own sign-ins and cookies, apart from the user's.
+/// macOS 14+ keeps it with the profile; before that it's a session that signs out when Still quits.
+let companionStore: WKWebsiteDataStore = isTemp ? .nonPersistent() : Profiles.companionStore(support)
 /// A throwaway profile an MCP agent opened (--temp): it never sees the real cookies or logins, and keeps nothing.
 let isTemp = CommandLine.arguments.contains("--temp")
 
@@ -218,6 +221,12 @@ enum Profiles {
   guard folder.standardizedFileURL != defaultSupport.standardizedFileURL, #available(macOS 14.0, *) else { return .default() }
   return WKWebsiteDataStore(forIdentifier: shellId(folder))
  }
+ static func companionStore(_ folder: URL) -> WKWebsiteDataStore {
+  guard #available(macOS 14.0, *) else { return .nonPersistent() }
+  return WKWebsiteDataStore(forIdentifier: companionId(folder))
+ }
+ static func companionId(_ folder: URL) -> UUID { var id = storeId(folder).uuid; id.1 ^= 0xC3; return UUID(uuid: id) }
+ static var companionSession: Bool { if #available(macOS 14.0, *) { return isTemp } else { return true } } // signs out when Still quits
  static func shellId(_ folder: URL) -> UUID { var id = storeId(folder).uuid; id.0 ^= 0x5A; return UUID(uuid: id) }
  /// A profile folder's id (its 32-hex name), or one saved in the folder for test profiles.
  static func storeId(_ folder: URL) -> UUID {
@@ -298,7 +307,7 @@ enum Profiles {
   let folder = folder(id)
   if FileManager.default.fileExists(atPath: folder.path) { try checkTree(folder); try FileManager.default.removeItem(at: folder) }
   Vault.erase(folder)
-  if #available(macOS 14.0, *) { for store in [storeId(folder), shellId(folder)] { WKWebsiteDataStore.remove(forIdentifier: store) { _ in } } }
+  if #available(macOS 14.0, *) { for store in [storeId(folder), shellId(folder), companionId(folder)] { WKWebsiteDataStore.remove(forIdentifier: store) { _ in } } }
   if launchId == id { try? setLaunch("default") }
   list.removeAll { $0.id == id }
   try write(list)

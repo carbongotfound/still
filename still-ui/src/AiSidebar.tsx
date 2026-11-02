@@ -23,7 +23,7 @@ import { useMascotVersion } from "./Mascot"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
-type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean }
+type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
 export type AiState = {
@@ -576,7 +576,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
   {!setup && chat?.from && <div className="task-head"><div className="chat-column">
    <Button variant="ghost" size="sm" className="task-back" onClick={() => send(mode === "panel" ? "aiOpenChat" : "chatOpen", { id: chat.from })}><ArrowLeft /><span>Back to {parent?.title ?? "the chat"}</span></Button>
-   <StatusPill status={childStatus} />{busy && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: chat.id })}><Square />Stop</Button>}
+   <StatusPill status={childStatus} /><span className="task-profile"><Globe />{chat.profile === "companion" ? "Companion profile" : "Your profile"}</span>{busy && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: chat.id })}><Square />Stop</Button>}
   </div></div>}
   {setup ?? <div className="ai-log" ref={log} onScroll={keepScroll}><div className="chat-column">
    {!items.length && !ai.question && (mode === "tab" ? <div className="chat-hello">
@@ -634,12 +634,28 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, and {provider?.app || provider?.name || "its app"} may keep its own record.</p>
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, and {provider?.app || provider?.name || "its app"} may keep its own record. Connected apps are off in incognito windows.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
+    {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
     {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
    </div></>}
   </div></div>}
  </section>
+}
+
+/// Where this chat's pages open (Settings → Where companions browse): the user's own profile, or the companion profile
+/// with its own sign-ins. Switching closes the chat's pages and tells its AI before its next step.
+function ProfileChip({ chat, busy, send }: { chat: ChatRow; busy: boolean; send: Send }) {
+ const companion = chat.profile === "companion"
+ const pick = (profile: string) => send("aiChatProfile", { id: chat.id, profile })
+ return <DropdownMenu>
+  <DropdownMenuTrigger asChild disabled={busy}><button type="button" className="chat-profile" aria-label={`Browses in ${companion ? "the companion profile" : "your profile"}`} title={busy ? "Change it when this chat isn't working" : undefined}><Globe />{companion ? "Companion profile" : "Your profile"}<ChevronDown /></button></DropdownMenuTrigger>
+  <DropdownMenuContent align="start" className="chat-profile-menu">
+   <DropdownMenuLabel>Where this chat browses</DropdownMenuLabel>
+   <DropdownMenuItem onSelect={() => pick("regular")}><span>Your profile<small>Your sign-ins</small></span>{!companion && <Check />}</DropdownMenuItem>
+   <DropdownMenuItem onSelect={() => pick("companion")}><span>Companion profile<small>Its own sign-ins, apart from yours</small></span>{companion && <Check />}</DropdownMenuItem>
+  </DropdownMenuContent>
+ </DropdownMenu>
 }
 
 const PILL: Record<string, string> = { working: "Working", needs: "Needs you", replied: "Done", failed: "Failed", stopped: "Stopped" }
@@ -752,7 +768,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
    <DropdownMenuLabel>Running tasks</DropdownMenuLabel>
    {runs.map(r => { const c = chat(r.id); return <div key={r.id} className="tasks-item">
     <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={waits(r) ? "needs" : "working"} />
-     <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working · " + clock(since(r.started))}</small></span>
+     <span className="tasks-title">{c?.title ?? "Chat"}<small>{(waits(r) ? "Needs you" : "Working · " + clock(since(r.started))) + (c?.profile === "companion" ? " · Companion profile" : "")}</small></span>
      {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
     {tabs.filter(t => t.inChat === r.id).map(t => <div key={t.id} className="tasks-page">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.title || host(t.url)}</span><button onClick={() => send("aiHelpPage", { id: t.id })}>Watch</button><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}
