@@ -59,7 +59,7 @@ extension Browser {
   let view = active?.view
   let screens = browsers.map { b -> [String: Any] in
    let spot = qaTopLeft(b.window)
-   return ["id": b.windowId, "tabs": b.tabs.map(\.url), "privateTabs": b.tabs.filter(\.isPrivate).count, "secondary": b.secondary, "incognito": b.incognito, "left": spot.left, "top": spot.top]
+   return ["id": b.windowId, "tabs": b.tabs.map(\.url), "privateTabs": b.tabs.filter(\.isPrivate).count, "secondary": b.secondary, "incognito": b.incognito, "temporary": b.temporary, "left": spot.left, "top": spot.top]
   }
   let spot = qaTopLeft(window)
   return [
@@ -71,11 +71,13 @@ extension Browser {
    "viewport": ["pageX": pageFrame.minX, "pageY": pageFrame.minY, "pageWidth": pageFrame.width, "pageHeight": pageFrame.height, "visible": view.map { $0.isHidden ? "Collapsed" : "Visible" } ?? "Collapsed",
                 "viewWidth": n(view?.frame.width), "viewHeight": n(view?.frame.height), "hostWidth": pageFrame.width, "hostHeight": pageFrame.height, "zoom": n(view.map { Double($0.pageZoom) })] as [String: Any],
    "protection": ["reputation": n(view?.configuration.preferences.isFraudulentWebsiteWarningEnabled), "tracking": pref("Tracking", "Balanced"), "blocking": pref("Blocking", true)] as [String: Any],
-   "windows": screens, "title": window.title, "width": window.frame.width, "height": window.frame.height, "left": spot.left, "top": spot.top,
+   "windows": screens, "privateChats": aiView.privateChats.map(\.id), "incognitoFolder": privateFolder, "interrupted": interruptedChats.map(\.id), "title": window.title, "width": window.frame.width, "height": window.frame.height, "left": spot.left, "top": spot.top,
    "tabs": tabs.map { t -> [String: Any] in [
     "Id": t.id, "Title": t.title, "Url": t.url, "Pinned": t.pinned, "Private": t.isPrivate, "InChat": n(t.inChat), "RunChat": n(t.runChat), "ChatId": n(t.chatId),
     "Loading": t.loading, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
-    "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view)
+    "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view),
+    "enginePrivate": n(t.view.map { !$0.configuration.websiteDataStore.isPersistent }),
+    "engineProfile": n(t.view.map { $0.configuration.websiteDataStore === pageStore ? "Default" : $0.configuration.websiteDataStore === privateStore ? "Private" : "Other" })
    ] },
    "history": history, "bookmarks": bookmarks, "hidden": store.hidden,
    "downloads": downloads.map { ["Path": n($0.path?.path), "status": $0.status, "bytes": $0.task.progress.completedUnitCount] as [String: Any] },
@@ -136,12 +138,17 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  let once = Once<String>()
  once.action = reply
  DispatchQueue.main.asyncAfter(deadline: .now() + 30) { once.fire(jsonText(["error": "timed out"])) }
- guard let request = jsonObject(line), let op = request["op"] as? String, let b = browsers.first else { once.fire(jsonText(["error": "bad request"])); return }
+ // "window": a window's id runs the request there (an incognito window's interface, say).
+ guard let request = jsonObject(line), let op = request["op"] as? String, let b = (request["window"] as? String).flatMap({ id in browsers.first { $0.windowId == id } }) ?? browsers.first else { once.fire(jsonText(["error": "bad request"])); return }
  func text(_ key: String) -> String { request[key] as? String ?? "" }
  let done: (Any) -> Void = { once.fire(($0 as? String) ?? qaJson($0)) }
  switch op {
  case "state": done(b.qaState())
  case "tabs": done(b.qaTabs())
+ case "closeWindow": browsers.first { $0.windowId == text("id") }?.window.close(); done(["ok": true])
+ case "closeAll": // like closing each window in turn, this one first
+  done(["ok": true])
+  DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
  case "shellEval": qaWhenReady(b) { qaEval(b.shell, text("script"), done) }
  case "eval":

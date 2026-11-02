@@ -266,7 +266,9 @@ def main():
         check("still.qa.probe" in drafts and PHRASE not in drafts, "A draft typed in the incognito chat stays out of the interface's storage")
 
         hits, locked = found_phrase(str(folder))
-        check(snapshot() == before, "chats.json, memory, knowledge, attachments, AI folders, logs and the library are unchanged")
+        after = snapshot()
+        changed = sorted(k for k in {*before, *after} if before.get(k) != after.get(k))
+        check(not changed, "chats.json, memory, knowledge, attachments, AI folders, logs and the library are unchanged" + (f" ({changed})" if changed else ""))
         check(not hits, "Outside the window's folder, the phrase is nowhere in the profile" + (f" ({hits})" if hits else "") + f" [{locked} files in use, unread]")
 
         # Closing the window deletes its folder.
