@@ -12,7 +12,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, shots, text, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, launcher, rpc, send, shots, text, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("companions-" + uuid.uuid4().hex[:8])
@@ -99,7 +99,7 @@ def main():
     try:
         home(process)
         shown = text(process)
-        check(js(process, "document.querySelectorAll('.home-rail-item').length >= 6") and js(process, "!!document.querySelector('.mate-switch')")
+        check(js(process, "document.querySelectorAll('.home-rail-item').length") == 5 and js(process, "!!document.querySelector('.mate-switch')")
               and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" not in shown
               and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
         check(js(process, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
@@ -153,8 +153,7 @@ def main():
         until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
 
         # The Companions page: a card per companion, then the crew to pick from; memory opens Settings > Memory.
-        click(process, ".home-rail-item[aria-label=Companions]")
-        until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
+        companions_page(process)
         check(js(process, "document.querySelectorAll('.mate-card').length") == 5 and "Say hi" in text(process), "The Companions page shows a card per companion")
         check(js(process, "document.querySelectorAll('.crew-card').length") == 7 and "Hire for a role" in text(process), "Below them, the six roles to hire and Make your own")
         js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Ines'))?.querySelector('.mate-memory')?.click()")
@@ -236,17 +235,27 @@ def main():
             time.sleep(.4)
             rpc(process, "capture", name="chats.png")
 
-        # Delete a companion.
-        click(process, ".home-rail-item[aria-label=Companions]")
-        until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 5)
+        # Fire a companion: each card on the Companions page has a Fire button, and it asks first.
+        companions_page(process)
+        asking = lambda: js(process, "document.querySelector('[data-slot=alert-dialog-content]')?.innerText ?? ''")
+        check(click(process, ".mate-fire[aria-label='Fire Ines']") and until(lambda: "Fire Ines?" in asking(), 3), "A companion's card has a Fire button that asks first")
+        click_text(process, "[data-slot=alert-dialog-content] button", "Keep Ines")
+        check(until(lambda: not asking(), 3) and "Ines" in mates(), "Keep Ines keeps her")
+        # The profile's More menu asks the same way.
         click(process, ".mate-portrait[aria-label='Edit Ines']")
         until(lambda: js(process, "!!document.querySelector('.profile-panel')"), 5)
         open_menu(process, ".profile-head [aria-label=More]")
         until(lambda: js(process, "!!document.querySelector('[role=menuitem]')"), 3)
-        click_text(process, "[role=menuitem]", "Delete Ines")
-        until(lambda: js(process, "!!document.querySelector('[role=alertdialog]')"), 3)
+        click_text(process, "[role=menuitem]", "Fire Ines")
+        check(until(lambda: "Fire Ines?" in asking(), 3), "and so does Fire in her profile's More menu")
+        click_text(process, "[data-slot=alert-dialog-content] button", "Keep Ines")
+        until(lambda: not asking(), 3)
+        key(process, "body", "Escape")
+        until(lambda: not js(process, "!!document.querySelector('.profile-panel')"), 3)
+        click(process, ".mate-fire[aria-label='Fire Ines']")
+        until(lambda: asking(), 3)
         click(process, "[data-slot=alert-dialog-action]")
-        check(until(lambda: "Ines" not in mates(), 5), "Delete removes the companion")
+        check(until(lambda: "Ines" not in mates(), 5) and until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 4, 5), "Fire removes the companion and its card")
         check(until(lambda: not file.exists(), 5), "and its memory file")
         check("Codex" not in text(process), "No Codex on screen")
     finally:
@@ -260,8 +269,7 @@ def main():
     process = launch(EXE, PROFILE)
     try:
         home(process)
-        click(process, ".home-rail-item[aria-label=Companions]")
-        until(lambda: js(process, "!!document.querySelector('.mate-grid')"), 10)
+        companions_page(process)
         js(process, "[...document.querySelectorAll('.mate-card')].find(c => c.innerText.includes('Maya'))?.querySelector('.mate-memory')?.click()")
         check(until(lambda: "Maya lives in Porto" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), 10), "Maya's memory is still there after a restart")
         check(len(state()["Preferences"]["Companions"]) == 4, "The crew is saved")
@@ -286,7 +294,7 @@ def screens():
         until(lambda: js(p, "!!document.querySelector('.mode-menu')"), 5)
     def companions(p):
         hue(p)
-        click(p, ".home-rail-item[aria-label=Companions]")
+        companions_page(p)
     def editor(p):
         companions(p)
         time.sleep(.3)

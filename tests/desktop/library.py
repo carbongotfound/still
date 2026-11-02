@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("library-" + uuid.uuid4().hex[:8])
@@ -218,8 +218,7 @@ def main():
         check(until(lambda: shown(p, ".companion-dialog") and not shown(p, ".companion-library"), 5), "Make your own opens the create dialog")
         escape(p)
         until(lambda: not shown(p, ".companion-dialog"), 3)
-        js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")
-        until(lambda: shown(p, ".mate-grid"), 5)
+        companions_page(p)
         click(p, ".home-new", "Hire a companion")
         check(until(lambda: shown(p, ".companion-library"), 5), "The Companions page's Hire a companion opens the library")
         escape(p)

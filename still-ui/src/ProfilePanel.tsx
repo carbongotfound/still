@@ -77,7 +77,7 @@ export function ProfilePanel({ ai, id, send, onPick, onClose, onOpenFile, onSkil
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
       {premade && <DropdownMenuItem onSelect={() => setAsk("reset")}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onSelect={() => setAsk("fire")}><Trash2 />{premade ? "Fire" : "Delete"} {c.name}</DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" onSelect={() => setAsk("fire")}><Trash2 />Fire {c.name}</DropdownMenuItem>
      </DropdownMenuContent></DropdownMenu>
     <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button>
    </header>
@@ -166,21 +166,32 @@ export function ProfilePanel({ ai, id, send, onPick, onClose, onOpenFile, onSkil
    </Tabs>
   </aside>
   {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { save({ ...c, look }); setStyling(false) }} />}
-  <AlertDialog open={!!ask} onOpenChange={o => { if (!o) setAsk(null) }}>
+  <AlertDialog open={ask === "reset" && !!premade} onOpenChange={o => { if (!o) setAsk(null) }}>
    <AlertDialogContent>
-    {ask === "reset" && premade ? <>
+    {premade && <>
      <AlertDialogHeader><AlertDialogTitle>Reset {c.name}?</AlertDialogTitle><AlertDialogDescription>Their name, look, instructions, way of talking and thinking go back to how {premade.name} started. What they remember about you, their skills and routines stay.</AlertDialogDescription></AlertDialogHeader>
      <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai, instructions: "" })}>Reset</AlertDialogAction></AlertDialogFooter>
-    </> : only ? <>
-     <AlertDialogHeader><AlertDialogTitle>{c.name} is your only companion</AlertDialogTitle><AlertDialogDescription>Still needs at least one. Hire or make another first, then you can {premade ? "fire" : "delete"} {c.name}.</AlertDialogDescription></AlertDialogHeader>
-     <AlertDialogFooter><AlertDialogCancel>OK</AlertDialogCancel></AlertDialogFooter>
-    </> : <>
-     <AlertDialogHeader><AlertDialogTitle>{premade ? "Fire" : "Delete"} {c.name}?</AlertDialogTitle><AlertDialogDescription>{c.name} goes, with everything they remember about you and their routines. Your chats with them stay.</AlertDialogDescription></AlertDialogHeader>
-     <AlertDialogFooter><AlertDialogCancel>Keep {c.name}</AlertDialogCancel><AlertDialogAction className="bg-destructive text-white hover:bg-destructive/90" onClick={() => { send("companionDelete", { id: c.id }); close() }}>{premade ? "Fire" : "Delete"}</AlertDialogAction></AlertDialogFooter>
     </>}
    </AlertDialogContent>
   </AlertDialog>
+  {ask === "fire" && <FireDialog c={c} only={only} send={send} onClose={() => setAsk(null)} onGone={close} />}
  </>
+}
+
+/// Fire a companion: asks first, and when it's your only companion says Still
+/// needs one instead. The profile's More menu and the Companions page both use it.
+export function FireDialog({ c, only, send, onClose, onGone }: { c: Companion; only: boolean; send: Send; onClose: () => void; onGone?: () => void }) {
+ return <AlertDialog open onOpenChange={o => { if (!o) onClose() }}>
+  <AlertDialogContent>
+   {only ? <>
+    <AlertDialogHeader><AlertDialogTitle>{c.name} is your only companion</AlertDialogTitle><AlertDialogDescription>Still needs at least one. Hire or make another first, then you can fire {c.name}.</AlertDialogDescription></AlertDialogHeader>
+    <AlertDialogFooter><AlertDialogCancel>OK</AlertDialogCancel></AlertDialogFooter>
+   </> : <>
+    <AlertDialogHeader><AlertDialogTitle>Fire {c.name}?</AlertDialogTitle><AlertDialogDescription>{c.name} goes, with everything they remember about you and their routines. Your chats with them stay.</AlertDialogDescription></AlertDialogHeader>
+    <AlertDialogFooter><AlertDialogCancel>Keep {c.name}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { send("companionDelete", { id: c.id }); onGone?.() }}>Fire</AlertDialogAction></AlertDialogFooter>
+   </>}
+  </AlertDialogContent>
+ </AlertDialog>
 }
 
 function Empty({ text, action, onAction }: { text: string; action: string; onAction: () => void }) {

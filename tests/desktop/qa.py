@@ -91,6 +91,12 @@ def until(predicate, seconds=20, step=.1):
     return None
 
 
+def companions_page(process, seconds=10):
+    """Opens the Companions page from the Companions chip on the home page (the side rail has no button for it)."""
+    return until(lambda: js(process, "(() => { if (document.querySelector('.mate-grid')) return true; const chip = [...document.querySelectorAll('.home-chips button')].find(b => b.innerText.includes('Companions'));"
+                            " (chip ?? document.querySelector('.home-rail-item[aria-label=\"New chat\"]'))?.click(); return false })()"), seconds, .3)
+
+
 def alive(pid):
     if MAC:  # a zombie counts as gone, as an exit code does on Windows
         import subprocess

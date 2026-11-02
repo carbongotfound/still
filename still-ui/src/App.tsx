@@ -978,7 +978,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
    onOwn={() => { setLibrary(false); setEditing(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
    onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
-  {editing && ai && <CompanionEditor ai={ai} companion={editing} canDelete={!!editing.id} only={(ai?.companions?.length ?? 0) <= 1} onClose={() => setEditing(null)} onSave={c => { if (c.id) send("companionSave", c); else hire(c); setEditing(null) }} onDelete={() => { send("companionDelete", { id: editing.id }); if (buddy === editing.id) setBuddy(""); setEditing(null) }} />}
+  {editing && ai && <CompanionEditor ai={ai} companion={editing} onClose={() => setEditing(null)} onSave={c => { if (c.id) send("companionSave", c); else hire(c); setEditing(null) }} />}
   {joined && <JoinedCard companion={joined} onLater={() => setJoined(null)} onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />

@@ -12,6 +12,7 @@ import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade, fromShared } from "./crew"
+import { FireDialog } from "./ProfilePanel"
 import { PluginsPage, Who } from "./Plugins"
 import { toast } from "sonner"
 
@@ -28,7 +29,6 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
   {item("home", "New chat", SquarePen)}
   {item("chats", "Chats", MessageSquare)}
   {item("library", "Library", Library)}
-  {item("companions", "Companions", Users)}
   {item("skills", "Skills & plugins", BookOpen)}
   <span className="home-rail-gap" />
   <button className="home-rail-item" aria-label="Settings" title="Settings" onClick={onSettings}><Settings2 /></button>
@@ -114,6 +114,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
   }
   addEventListener("paste", paste); return () => removeEventListener("paste", paste)
  }, [send])
+ const [firing, setFiring] = useState<Companion | null>(null)
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
@@ -125,13 +126,15 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
-    <button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
+    <div className="mate-acts"><button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
+     <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => setFiring(c)}>Fire</button></div>
     </div>
    </article> })}
   </div>
   <h2 className="home-page-sub">Hire for a role</h2>
   <p className="home-page-lead">Each one owns a part of your work and gets sharper as it learns about you. Hire one, then change anything you like.</p>
   <CrewCards have={ai.companions} onChat={onChat} onOwn={onMake} onPick={p => onHire(fromPremade(p))} />
+  {firing && <FireDialog c={firing} only={(ai.companions?.length ?? 0) <= 1} send={send} onClose={() => setFiring(null)} />}
  </section>
 }
 
@@ -222,9 +225,8 @@ export function RenameAsk({ companion, onSave }: { companion: Companion; onSave:
 // Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
 const MODE_NAMES: [Mode, string][] = [["efficient", "Quick"], ["default", "Everyday"], ["expert", "Thorough"]]
 /// `only`: it's the last companion, and Still always keeps one, so Delete explains instead.
-export function CompanionEditor({ ai, companion, canDelete, only, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; only?: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
+export function CompanionEditor({ ai, companion, onClose, onSave }: { ai: AiState; companion: Companion; onClose: () => void; onSave: (c: Companion) => void }) {
  const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
- const [lastOne, setLastOne] = useState(false)
  const [styling, setStyling] = useState(false)
  const skills = ai.skills ?? []
  useEffect(() => { // the folder picked in Windows' own dialog
@@ -262,9 +264,7 @@ export function CompanionEditor({ ai, companion, canDelete, only, onClose, onSav
       {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
      {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
     <label><span>How should {c.name.trim() || "they"} talk?</span><textarea className="companion-job" rows={2} maxLength={600} placeholder="For example: upbeat and quick, with short answers and a joke now and then." value={c.tone} onChange={e => setC({ ...c, tone: e.target.value })} /></label>
-    {lastOne && <p className="companion-note is-warn" role="alert">{companion.name} is your only companion, and Still needs at least one. Add another before you delete {companion.name}.</p>}
     <div className="companion-actions">
-     {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={() => only ? setLastOne(true) : onDelete()}><Trash2 />Delete</Button>}
      <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
      <Button type="submit" className="companion-save" disabled={!c.name.trim()}>Save</Button>
     </div>

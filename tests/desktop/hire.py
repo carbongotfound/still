@@ -18,7 +18,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, launcher, rpc, send, until  # noqa: E402
 import exchange as X  # noqa: E402  its fake agent: what each companion says comes from plan.json, and it can call Still's tools
 import welcome as W  # noqa: E402  setup's steps
 
@@ -85,7 +85,7 @@ def card(p):
 def say_hi(p, name):
     send(p, "new")
     until(lambda: shown(p, ".home-face") and not shown(p, ".mate-grid"), 10)
-    until(lambda: js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()") or shown(p, ".mate-grid"), 10, .5)
+    companions_page(p)
     return until(lambda: js(p, f"(() => {{ const b = [...document.querySelectorAll('.mate-card')].find(c => c.querySelector('h3')?.innerText === {json.dumps(name)})?.querySelector('.mate-chat'); b?.click(); return !!b }})()"), 5)
 
 
