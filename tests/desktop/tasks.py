@@ -246,7 +246,7 @@ try:
     press(p, "Resume the others", "[data-sonner-toast]")
     check(until(lambda: state("SLOW two") == ("waiting", "signin"), 15) and not prompts("RESUME SLOW"), f"Signed out: Resume leaves it waiting for a sign-in ({state('SLOW two')})")
     send(p, "chatOpen", id=two)
-    bar = until(lambda: js(p, "document.querySelector('.task-bar')?.innerText ?? ''"), 15) or ""
+    bar = until(lambda: (lambda b: b if "sign in" in b else "")(js(p, "document.querySelector('.task-bar')?.innerText ?? ''") or ""), 15) or ""
     check("sign in" in bar and "Sign in" in bar and "Resume" in bar, f"The chat offers Sign in and Resume ({bar!r})")
     (BIN / "signedout").unlink(); send(p, "aiCheck"); time.sleep(3)
     press(p, "Resume", ".task-bar")
@@ -270,7 +270,7 @@ try:
     check(until(lambda: any("started a new one from where the task got to" in n for n in note(buy)), 10), f"...and the chat says so ({note(buy)})")
     brief = next(x["prompt"] for x in prompts("RESUME BUY") if "--resume" not in x["args"])
     check("Click “Place order”" in brief and "may or may not have gone through" in brief and "Check the site first" in brief, "The new run is told what it did and to check the order first")
-    card = until(lambda: js(p, "document.querySelector('.approve-card')?.innerText ?? ''"), 20) or ""
+    card = until(lambda: js(p, "document.querySelector('.approve-card')?.innerText ?? ''"), 45) or ""  # opening the shop can take up to 15 s
     check("Place order" in card and not js(p, "!!document.querySelector('.countdown-card')"), f"Trying it again asks with a card, not a countdown ({card[:80]!r})")
     press(p, "Deny")
     check(until(lambda: state("BUY")[0] == "completed", 20), f"The resumed task completes ({state('BUY')})")
