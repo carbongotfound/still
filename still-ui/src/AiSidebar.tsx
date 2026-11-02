@@ -23,6 +23,9 @@ import { useMascotVersion } from "./Mascot"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
+type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean }
+/// A chat by id: a saved one, or one of this incognito window's own.
+export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
  runs?: Run[]; interrupted?: string[]; queued?: string[]; files?: LibFile[]; worked?: number
@@ -30,7 +33,8 @@ export type AiState = {
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
  question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
- chats: { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
+ chats: ChatRow[]
+ incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: never in the chat list or history
  advanced?: boolean; skills?: Skill[]
  approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
  plugins?: PluginsState
@@ -210,8 +214,11 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
 }
 
 // What the user was typing: a chat's draft is kept on disk, so it's still there after closing the chat or Still;
-// a new tab page's lasts while Still runs. Sending or emptying the box forgets it.
-const drafts = (key: string) => key.startsWith("chat.") ? localStorage : sessionStorage
+// a new tab page's lasts while Still runs. Sending or emptying the box forgets it. An incognito window's drafts stay
+// in memory: the interface's own storage reaches the disk.
+const inMemory = new Map<string, string>()
+const memoryDrafts = { getItem: (k: string) => inMemory.get(k) ?? null, setItem: (k: string, v: string) => void inMemory.set(k, v), removeItem: (k: string) => void inMemory.delete(k) }
+const drafts = (key: string) => key.startsWith("private.") ? memoryDrafts : key.startsWith("chat.") ? localStorage : sessionStorage
 const readDraft = (key?: string) => { try { return key && drafts(key).getItem("still.draft." + key) || "" } catch { return "" } }
 const keepDraft = (key: string | undefined, v: string) => { if (key) try { if (v) drafts(key).setItem("still.draft." + key, v); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
 // Where each chat was scrolled to while Still runs; none = at the newest message.
@@ -228,7 +235,8 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 // into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+ const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
  const [parts, setParts] = useState<Part[]>([])
  const [before, setBefore] = useState("") // the text just before the caret: what the pickers look at
  const [pick, setPick] = useState(0)
@@ -496,7 +504,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
  // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
  // "Don't remember this chat": a chat that exists flips its own flag, a new one starts off the record.
- const chat = ai.chats.find(c => c.id === ai.chatId)
+ const chat = chatOf(ai, ai.chatId)
  const [offRecord, setOffRecord] = useState(false)
  const forget = chat ? !!chat.noMemory : offRecord
  const submit = (value: string, tabs: string[] = [], files: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
@@ -572,12 +580,13 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
-   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
+   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} incognito={ai.incognito} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    <Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, and {provider?.app || provider?.name || "its app"} may keep its own record.</p>
+    : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
    </div>
   </div></div>}
@@ -612,10 +621,10 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
   <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for. Switch between them in the model list under the message box.</p>
    <AiPicker ai={ai} send={send} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
   <Separator />
-  <section><h4>What it can see</h4><p>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</p></section>
+  <section><h4>What it can see</h4><p>{ai.incognito ? "Only the private tabs it opens in this window. Never your other tabs, saved passwords or cookies." : <>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</>}</p></section>
   <Separator />
-  <section><h4>Chats</h4><p>{ai.chats.length ? `${ai.chats.length} saved on this PC.` : "None saved yet."}</p>
-   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>
+  {!ai.incognito && <section><h4>Chats</h4><p>{ai.chats.length ? `${ai.chats.length} saved on this PC.` : "None saved yet."}</p>
+   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>}
  </div>
 }
 
@@ -627,7 +636,7 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { 
  return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
   <div className="ai-head">
    {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>}
-   <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
+   <div className="ai-title"><strong>{view === "settings" ? "AI settings" : chatOf(ai, ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    {view === "chat" && <>
     <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
     <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
@@ -647,13 +656,13 @@ export function RunAnnouncer({ ai }: { ai: AiState }) {
  const [say, setSay] = useState("")
  const last = useRef<Record<string, boolean>>({})
  useEffect(() => {
-  const runs = ai.runs ?? [], title = (id: string) => ai.chats.find(c => c.id === id)?.title || "Your chat", lines: string[] = []
+  const runs = ai.runs ?? [], title = (id: string) => chatOf(ai, id)?.title || "Your chat", lines: string[] = []
   const now: Record<string, boolean> = Object.fromEntries(runs.map(r => [r.id, waits(r)]))
   for (const r of runs) if (!(r.id in last.current)) lines.push(title(r.id) + ": working"); else if (now[r.id] && !last.current[r.id]) lines.push(title(r.id) + " needs you")
   for (const id in last.current) if (!(id in now)) lines.push(title(id) + ": done")
   last.current = now
   if (lines.length) setSay(lines.join(". "))
- }, [ai.runs, ai.chats])
+ }, [ai.runs, ai.chats, ai.privateChats])
  return <div className="sr-only run-announcer" role="status" aria-live="polite">{say}</div>
 }
 
@@ -679,7 +688,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
  useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
  if (empty) return null
  const waiting = runs.filter(waits).length
- const chat = (id: string) => ai.chats.find(c => c.id === id)
+ const chat = (id: string) => chatOf(ai, id)
  return <DropdownMenu open={open} onOpenChange={setOpen}>
   <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks · Ctrl+Shift+K">
    {runs.length > waiting ? <Spinner className="tasks-spin" /> : <ListTodo />}{runs.length > 0 && <b>{runs.length}</b>}

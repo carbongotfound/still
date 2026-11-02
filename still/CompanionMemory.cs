@@ -186,6 +186,7 @@ public partial class MainWindow
  string Remembering(string who, string tool, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run || Companions.FirstOrDefault(c => c.Id == run.Chat.Companion) is not { } me) return Fail("Memory belongs to Still's own companions, in their chats.");
+  if (run.Chat.Ephemeral && tool != "recall") return Fail(KeepsNothing);
   switch (tool) {
    case "remember": {
     if (run.Chat.NoMemory) return Fail("This chat is off the record: the user asked you not to remember it.");

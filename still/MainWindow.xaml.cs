@@ -88,6 +88,7 @@ public partial class MainWindow : Window
   };
   Closing += (_, _) => {
    closing = true; saveTimer.Stop(); memoryTimer.Stop(); Hide(); // disappear at once; tearing down the pages can take a moment
+   if (incognito) EndIncognito();
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
    else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
    Save(); if (!Unsaved) closedWindows.Add((DateTime.UtcNow, tabs.ToArray()));
@@ -241,7 +242,7 @@ public partial class MainWindow : Window
  BrowserTab ChatTab(string chatId)
  {
   if (tabs.FirstOrDefault(t => t.ChatId == chatId) is { } open) return open;
-  var tab = new BrowserTab { ChatId = chatId, Title = AiChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
+  var tab = new BrowserTab { ChatId = chatId, Title = MyChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
   tabs.Add(tab); SaveLater(); return tab;
  }
  async Task SelectTab(BrowserTab tab)
@@ -262,7 +263,7 @@ public partial class MainWindow : Window
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
   RenderTabs(); UpdateChrome(); SaveLater();
-  if (tab.ChatId is { } chat) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
+  if (tab.ChatId is { } chat) { aiChat = MyChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
   if (tab.ChatId != null || leaving?.ChatId != null) PublishAi();
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
   if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;LayoutSplit();RestorePageWindow(); if (shown == tab) view.Focus(); }
