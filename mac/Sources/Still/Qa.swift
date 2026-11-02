@@ -198,7 +198,7 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
  case "Input.insertText":
   b.window.makeFirstResponder(view)
   view.insertText(p["text"] as? String ?? "")
- case "Input.dispatchKeyEvent": // a real key press the box handles (rawKeyDown or keyDown, then keyUp)
+ case "Input.dispatchKeyEvent": // a real key press the box handles (rawKeyDown or keyDown, then keyUp), queued as the keyboard's are
   let keys: [String: (UInt16, String)] = ["Backspace": (51, "\u{7F}"), "Delete": (117, "\u{F728}"), "ArrowLeft": (123, "\u{F702}"), "ArrowRight": (124, "\u{F703}"),
    "ArrowUp": (126, "\u{F700}"), "ArrowDown": (125, "\u{F701}"), "Enter": (36, "\r"), "Tab": (48, "\t"), "Escape": (53, "\u{1B}")]
   guard let (code, typed) = keys[p["key"] as? String ?? ""] else { return false }
@@ -206,7 +206,7 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
   guard let event = NSEvent.keyEvent(with: up ? .keyUp : .keyDown, location: .zero, modifierFlags: code >= 115 ? [.function] : [], timestamp: ProcessInfo.processInfo.systemUptime,
    windowNumber: b.window.windowNumber, context: nil, characters: typed, charactersIgnoringModifiers: typed, isARepeat: false, keyCode: code) else { return false }
   b.window.makeFirstResponder(view)
-  if up { view.keyUp(with: event) } else { view.keyDown(with: event) }
+  qaPost(b, event)
  case "Input.dispatchMouseEvent":
   let at = view.convert(NSPoint(x: number("x"), y: view.isFlipped ? number("y") : view.bounds.height - number("y")), to: nil)
   let kind = p["type"] as? String ?? ""
@@ -315,16 +315,21 @@ private func qaKey(_ b: Browser, _ key: String, _ mods: String) -> Bool {
  let queued = qaQueued > .now()
  if !queued, NSApp.mainMenu?.performKeyEquivalent(with: down) == true { return true }
  if !queued, flags.contains(.command) { return false }
- // Queued like a real key press, so event monitors see it. Keys reach only the active app's key window, so a key brings
- // Still forward first, and the keys sent meanwhile wait their turn.
+ qaPost(b, down)
+ return true
+}
+
+/// Queued like a real key press, so event monitors see it and AppKit closes the undo step before it (edits made between
+/// events share one, so Undo would take back several). Keys reach only the active app's key window, so a key brings
+/// Still forward first, and the keys sent meanwhile wait their turn.
+private func qaPost(_ b: Browser, _ event: NSEvent) {
  if !b.window.isKeyWindow && qaForward < .now() {
   NSApp.activate(ignoringOtherApps: true)
   b.window.makeKeyAndOrderFront(nil)
   qaForward = .now() + 0.25
  }
  qaQueued = max(qaForward, .now()) + 0.2
- DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) { NSApp.postEvent(down, atStart: false) }
- return true
+ DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) { NSApp.postEvent(event, atStart: false) }
 }
 
 // MARK: Capture

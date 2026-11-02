@@ -24,7 +24,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 RUN = ROOT / "artifacts" / ("exchange-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
@@ -173,7 +173,7 @@ def press(name):
     """A real key press, as the keyboard sends it."""
     for kind in ("rawKeyDown", "keyUp"):
         rpc(P, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": kind, "key": name, "code": name, "windowsVirtualKeyCode": KEYS[name]})
-    time.sleep(.25)
+    time.sleep(.5 if MAC else .25)  # the Mac queues it as the keyboard does, behind bringing the window forward
 
 
 def box_text():

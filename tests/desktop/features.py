@@ -124,7 +124,7 @@ try:
     wait(lambda: rpc("shellEval", script="!!document.querySelector('.dl-row small')"))
     # Real React events with the browser's native event sequencing.
     rpc("shellEval", script="document.querySelector('.dl-row small').dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))")
-    wait(lambda: marker.exists())
+    wait(lambda: marker.exists() and marker.read_text().endswith("\n"))  # the opener makes the file, then writes its line
     check(len(marker.read_text().splitlines()) == 1, "Double-click completed download opens its actual file once")
     downloaded = marker.read_text().strip()
     check(Path(downloaded).is_file() and Path(downloaded).read_bytes() == b"synthetic downloaded file", "Opened file is the downloaded content")
