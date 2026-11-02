@@ -225,6 +225,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   window.contentView = root
 
   let config = WKWebViewConfiguration()
+  // The interface's storage is the profile's own; an incognito window's lives in memory and goes with the window.
+  config.websiteDataStore = incognito || isTemp ? .nonPersistent() : Profiles.shellStore(support)
   config.setURLSchemeHandler(ShellScheme(root: resources.appendingPathComponent("Shell")), forURLScheme: "still")
   config.mediaTypesRequiringUserActionForPlayback = [] // the intro's sound starts before the first click
   config.userContentController.add(self, name: "still")
@@ -368,6 +370,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    publish() // the interface draws nothing until its first state
    shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
    publishAi()
+   if let problem = chatsProblem { chatsProblem = nil; toast(problem) }
   case "bounds":
    if contentFullScreen { return } // keep the normal layout for when the video leaves fullscreen
    shellRatio = number("viewportWidth") > 0 ? shell.bounds.width / number("viewportWidth") : 1
@@ -1207,7 +1210,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
  func applicationDidFinishLaunching(_ notification: Notification) {
   if isQa && qaSystemTheme == nil { qaSystemTheme = ProcessInfo.processInfo.environment["STILL_QA_SYSTEM_THEME"] ?? "Dark" }
-  Profiles.holdRunningLock()
+  if Profiles.holdRunningLock() { Children.sweep() }
   loadStore()
   let browser = Browser()
   restoreOtherWindows()
@@ -1228,6 +1231,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
  func applicationWillTerminate(_ notification: Notification) {
+  quitting = true
   saveAll(); AgentRun.endAll()
   try? FileManager.default.removeItem(atPath: incognitoFolder) // incognito windows' folders (the next start sweeps what's left)
   // A temporary profile is deleted as it closes (the next temp window sweeps any leftovers).

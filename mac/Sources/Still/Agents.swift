@@ -90,6 +90,7 @@ func askToSignIn(_ who: String, _ browser: Browser, _ tab: Tab, _ site: String) 
  let me = worker(who)
  if me.paused { return }
  me.paused = true; me.signIn = site
+ taskState(runs[who], "paused", "site")
  if !tab.closed { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
  publishEverywhere(); browser.toast(me.label + " needs you to sign in to " + site + ". It never sees your password.")
 }
@@ -135,8 +136,10 @@ var sessionGrants = Set<String>() // outside apps: "who action site" allowed unt
 @MainActor func approve(_ run: ChatRun, _ what: String, _ site: String, _ action: String, _ why: String, countdown: Bool) async -> String {
  let card = Approval(id: String((0..<8).map { _ in "0123456789abcdef".randomElement()! }), what: what, site: site, action: action, why: why, until: countdown ? Date().addingTimeInterval(8) : nil)
  run.approvals.append(card); publishAiEverywhere()
+ if !countdown { taskState(run, "waiting", "approval", what + " on " + site) }
  let answer: String = await withCheckedContinuation { done in card.answer.wait(countdown ? 8 : 600) { done.resume(returning: $0 ?? (countdown ? "go" : "timeout")) } }
  run.approvals.removeAll { $0 === card }; publishAiEverywhere()
+ if !countdown && !run.approvals.contains(where: { $0.until == nil }) { taskState(run, "running") }
  return answer
 }
 
@@ -514,11 +517,20 @@ extension Browser {
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
   let limit: Double = tool == "ask_user" || tool == "run_plugin_action" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
-  switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
-  case .done(let reply): return reply ?? agentFail("Failed.")
-  case .interrupted(let reply): return reply
-  case .late: return agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
+  // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
+  let going = runs[who]
+  if let going, let intent = going.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
+  let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }), result: String
+  switch raced {
+  case .done(let reply): result = reply ?? agentFail("Failed.")
+  case .interrupted(let reply): result = reply
+  case .late: result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
   }
+  if let going {
+   if let ran = going.intent { if case .done = raced { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off: uncertain
+   checkpoint(going, tool, result)
+  }
+  return result
  }
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Nil: no answer yet; the question stays up.
@@ -602,6 +614,7 @@ extension Browser {
  func takeOver(_ on: Bool, _ key: String) {
   guard let me = workers[key] else { return }
   me.paused = on
+  taskState(runs[key], on ? "paused" : "running")
   if !on && !me.signIn.isEmpty { me.signedIn = (me.signIn, Date()); me.signIn = "" }
   if on { agentInterrupts.removeValue(forKey: key)?.set(agentFail(tookOver)) }
   if on, let id = agentTabs[key], let (browser, tab) = findTab(id) { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
@@ -768,7 +781,8 @@ extension Browser {
   let run = runs[who]
   // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   let mode = permissionMode(run?.chat.companion ?? "", site, action) ?? (run != nil ? defaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site
-  let granted = mode == "always" || mode == "chat" && (run.map { $0.chat.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  var granted = mode == "always" || mode == "chat" && (run.map { $0.chat.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
   guard let run else {
    if granted { return nil }
    let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site
@@ -789,6 +803,10 @@ extension Browser {
                  "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
   audit(run.chat, what, site, results[answer] ?? "You said no")
   publishAiEverywhere()
+  if ["always", "chat", "once", "go", "now"].contains(answer) && action == "sensitive" {
+   if run.recheck { run.recheck = false; for s in run.task.sensitive where s.outcome == nil { s.outcome = "rechecked" } }
+   run.intent = AiSensitive(what, site)
+  }
   switch answer {
   case "always", "chat", "once", "go", "now": return nil
   case "cancel": return agentFail("The user cancelled this before it ran. Don't try it again unless they ask.")

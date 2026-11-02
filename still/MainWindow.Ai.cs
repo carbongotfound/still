@@ -180,15 +180,26 @@ public partial class MainWindow
  {
   get {
    if (aiChats != null) return aiChats;
-   try { aiChats = JsonSerializer.Deserialize<List<AiChat>>(File.ReadAllText(Path.Combine(AiFolder, "chats.json"))); } catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException) { }
+   string file = Path.Combine(AiFolder, "chats.json"); bool read = !File.Exists(file);
+   for (int tries = 1; !read; tries++) // a virus scanner or the search indexer can hold the file for a moment
+    try { aiChats = JsonSerializer.Deserialize<List<AiChat>>(File.ReadAllText(file)); read = aiChats != null; break; }
+    catch (IOException) when (tries < 5) { Thread.Sleep(20 * tries); }
+    catch (Exception ex) when (ex is IOException or JsonException or UnauthorizedAccessException or NotSupportedException) { App.Log(ex); break; }
+   // Unreadable: nothing is lost. The file moves aside as it is, the attachments stay, and new chats go to a new file. If it
+   // can't move, nothing is saved over it this run.
+   if (!read) {
+    string kept = file + ".broken-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+    try { File.Move(file, kept); chatsProblem = $"Still couldn't read your saved chats, so it started a new list. The old file is kept as {Path.GetFileName(kept)}."; }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); chatsLocked = true; chatsProblem = "Still couldn't read your saved chats. It won't save over them until it can."; }
+   }
    aiChats ??= [];
    // An incognito window's files left behind by a crash: nothing of them is picked up again.
    try { foreach (var dir in Directory.GetDirectories(IncognitoFolder)) if (!Windows.Any(w => w.WindowId == Path.GetFileName(dir))) Directory.Delete(dir, true); }
    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { }
-   // Files attached but never sent go: the message box doesn't keep them across restarts.
+   // Files attached but never sent go once a draft can't hold them any more (7 days).
    var sentFiles = aiChats.SelectMany(c => c.Messages).SelectMany(m => m.Files ?? []).Select(f => f.Id).ToHashSet();
-   if (File.Exists(Path.Combine(AiFolder, "chats.json")) || aiChats.Count > 0)
-    try { foreach (var dir in Directory.GetDirectories(AttachmentsFolder)) if (!sentFiles.Contains(Path.GetFileName(dir))) Directory.Delete(dir, true); } catch (IOException) { }
+   if (read && (File.Exists(file) || aiChats.Count > 0))
+    try { foreach (var dir in Directory.GetDirectories(AttachmentsFolder)) if (!sentFiles.Contains(Path.GetFileName(dir)) && Directory.GetLastWriteTimeUtc(dir) < DateTime.UtcNow.AddDays(-7)) Directory.Delete(dir, true); } catch (IOException) { }
    var teams = aiChats.Where(c => c.Team?.Count > 0).ToList();
    foreach (var c in aiChats.ToList()) {
     if (c.Harness == "codex") c.Harness = "chatgpt"; // its id before adapters
@@ -196,13 +207,15 @@ public partial class MainWindow
    }
    foreach (var c in teams) Untangle(c);
    if (teams.Count > 0) SaveAiChats();
+   LoadTasks(aiChats);
    return aiChats;
   }
  }
- /// Chats whose run was cut off when Still closed or crashed.
- static IEnumerable<AiChat> Interrupted => AiChats.Where(c => c.Running && !c.Archived && !c.Ephemeral && !runs.ContainsKey(c.Id));
+ static string? chatsProblem; // said once the interface is up
+ static bool chatsLocked; // chats.json couldn't be read or moved aside: never written over
  static void SaveAiChats()
  {
+  if (chatsLocked) return;
   try {
    Directory.CreateDirectory(AiFolder); string file = Path.Combine(AiFolder, "chats.json");
    File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(AiChats.Where(c => !c.Ephemeral).Take(200))); // incognito chats never reach the disk
@@ -334,6 +347,9 @@ public partial class MainWindow
   public readonly List<string> Queue = []; // typed while it worked: sent together when it finishes
   public readonly List<Approval> Approvals = [];
   public readonly HashSet<string> Typed = []; // what it typed into pages: form data, which memory never keeps
+  public AiTask Task = new(); // its state and checkpoint (MainWindow.Tasks.cs)
+  public bool Recheck; // picked up after a sensitive step that may not have finished: the next one asks again
+  public AiSensitive? Intent; // the sensitive step about to run
  }
  static readonly Dictionary<string, ChatRun> runs = []; // by chat id
  static readonly HashSet<string> kickoffs = []; // chats a new companion started itself: its first question's answer goes to its memory
@@ -368,7 +384,7 @@ public partial class MainWindow
  }
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
-  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito).Select(c => c.Id), incognito,
+  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito && !resumeAnswered).Select(c => new { id = c.Id, title = c.Title, unsure = aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null) }), task = TaskView(shown), incognito,
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced,
@@ -419,23 +435,27 @@ public partial class MainWindow
    case "aiNew": aiChat = null; aiError = ""; break;
    case "aiOpenChat": aiChat = MyChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
    case "aiDeleteChat" when !runs.ContainsKey(S("id")):
+    ForgetTask(S("id"));
     foreach (var gone in MyChats.Where(c => c.Id == S("id")).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
     MyChats.RemoveAll(c => c.Id == S("id")); if (aiChat?.Id == S("id")) aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId == S("id")).ToList()) await CloseTab(t, true);
     break;
    case "aiDeleteAll" when runs.Count == 0:
+    foreach (var c in MyChats) ForgetTask(c.Id);
     MyChats.Clear(); aiChat = null; SaveAiChats();
     try { Directory.Delete(AttachmentsHere, true); } catch (IOException) { }
     foreach (var t in tabs.Where(t => t.ChatId != null).ToList()) await CloseTab(t, true);
     break;
    case "aiStop" when runs.GetValueOrDefault(S("id") is { Length: > 0 } stopId ? stopId : ShownChat?.Id ?? "") is { } stopping:
     stopping.Queue.Clear(); StopRun(stopping); break;
-   case "aiResumeAll" when !incognito:
-    foreach (var cut in Interrupted.ToList()) { cut.Running = false; _ = RunAi(cut, "Still closed before you finished. Please pick up where you left off."); }
+   case "aiResumeAll" when !incognito: // not one with a step that may not have finished: that one is resumed on its own
+    resumeAnswered = true;
+    foreach (var cut in Interrupted.Where(c => !aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null)).ToList()) _ = ResumeTask(cut);
     break;
-   case "aiResumeDismiss" when !incognito:
-    foreach (var cut in Interrupted.ToList()) cut.Running = false;
-    SaveAiChats(); PublishAiEverywhere(); break;
+   case "aiResumeDismiss" when !incognito: // later, from each chat
+    resumeAnswered = true; PublishAiEverywhere(); break;
+   case "aiResume" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { } resumed:
+    await ResumeTask(resumed); break;
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
    case "aiUnqueue" when ShownChat is { } unq && runs.GetValueOrDefault(unq.Id) is { } unqueued: unqueued.Queue.Clear(); break;
    case "aiSend" when SetUpAgain().IsMatch(S("text")) && !incognito: state.Welcome = true; welcomeTalk = true; PublishAll(); break; // "set me up again" reopens setup's interview
@@ -470,6 +490,9 @@ public partial class MainWindow
     break; }
    case "aiAttach" when S("data") is { Length: > 0 } dropped: // dropped or pasted in the box
     Attach(S("to"), [(S("name"), dropped.Length / 4L * 3, () => Convert.FromBase64String(dropped))]); break;
+   case "aiReattach" when data.ValueKind == JsonValueKind.Object && data.TryGetProperty("ids", out var keptIds) && keptIds.ValueKind == JsonValueKind.Array: // a draft's files, the ones still here
+    ShellSend(new { kind = "attached", to = S("to"), files = keptIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null)
+     .OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).Select(f => new { id = f.Id, name = f.Name, size = f.Size }), error = "" }); break;
    case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
     var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
@@ -753,6 +776,7 @@ public partial class MainWindow
   var me = runs[chat.Id] = new ChatRun(chat, cli.Name);
   stoppedAgents.Remove(chat.Id); workers.Remove(chat.Id);
   shown ??= text;
+  StartTask(me, shown);
   if (chat.From == null) exchangesSent.Remove(chat.Id); // a new request from the user: its team starts a fresh count
   // @Name in the user's message brings that teammate in: this companion asks them.
   if (asker == null && Mentioned(shown).Where(id => id != chat.Companion).Select(NameOf).ToList() is { Count: > 0 } called)
@@ -805,13 +829,15 @@ public partial class MainWindow
    chat.Started = chat.Session != null;
    stopped = run.Cancelled && !run.TimedOut;
    bool lost = run.Errors.Any(LostSession) || LostSession(chat.Error);
-   if (lost && !said && !stopped && cli.NamesSession) {
+   if (lost && !said && !stopped && (cli.NamesSession || request.Resume)) {
     // The CLI has no record of this chat (stopped before it saved it, or from before chats had their own folders):
     // a new session brings the chat over.
     chat.Session = null; chat.Started = false; chat.Error = "";
     if (shown.Length > 0) chat.Messages.RemoveAt(chat.Messages.FindLastIndex(m => m.Role == "user"));
     runs.Remove(chat.Id); run.Dispose(); run = null;
-    await RunAi(chat, shown, asker: asker);
+    me.Task.State = "interrupted"; // the new session carries on this task
+    if (me.Task.Steps.Count > 0 || shown.Length == 0) chat.Messages.Add(new() { Role = "note", Text = $"{cli.App} couldn't continue the earlier session, so Still started a new one from where the task got to." });
+    await RunAi(chat, shown.Length > 0 ? shown : ResumeBrief(me.Task), shown: shown, asker: asker);
     return;
    }
    // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
@@ -826,8 +852,11 @@ public partial class MainWindow
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { chat.Error = $"{cli.App} failed: {ex.Message}"; }
   finally {
    if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
+   string ended = stopped ? "completed" : run == null || run.ExitCode != 0 || chat.Error.Length > 0 ? "failed" : "completed"; // before Dispose, which takes the exit code with it
    run?.Dispose();
    if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false; }
+   // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
+   if (Windows.Any(w => !w.closing)) { me.Task.Pending = ""; TaskState(me, ended, stopped ? "stopped" : ""); }
    me.Question?.Answer.TrySetResult("The chat ended."); me.Question = null;
    chat.Updated = DateTime.UtcNow; chat.Unread = !Windows.Any(w => w.Showing(chat)); SaveAiChats();
    try { if (promptFile.Length > 0) File.Delete(promptFile); } catch (IOException) { }
@@ -835,6 +864,7 @@ public partial class MainWindow
   if (!said && SignedOutError().IsMatch(chat.Error)) {
    // Signed out: sign in right here, then the message runs again by itself.
    chat.Error = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text; aiChat = chat;
+   TaskState(me, "waiting", "signin");
    if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
    _ = AiSignIn(cli);
   }
@@ -1104,9 +1134,11 @@ public partial class MainWindow
   if (page != null && options.Length == 0) options = ["I'm done"];
   var asked = r.Question = new(Clip(text, 600), options, new(TaskCreationOptions.RunContinuationsAsynchronously), page);
   r.Chat.Messages.Add(new() { Role = "assistant", Text = asked.Text });
+  TaskState(r, "waiting", "answer", Clip(text, 200));
   PublishAiEverywhere();
   bool answered = await Task.WhenAny(asked.Answer.Task, Task.Delay(TimeSpan.FromMinutes(10))) == asked.Answer.Task;
   if (r.Question == asked) r.Question = null;
+  if (r.Question == null) TaskState(r, "running");
   PublishAiEverywhere();
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
  }
@@ -1187,7 +1219,7 @@ public partial class MainWindow
    case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last && last.Who == null: last.Text += join + m.Text; return true;
    case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text }); return true;
    case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); break;
-   case AgentEvent.Session session: chat.Session ??= session.Id; break;
+   case AgentEvent.Session session when !chat.Started || chat.Session == null: chat.Session ??= session.Id; chat.Started = true; SaveAiChats(); break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
    case AgentEvent.Error error: chat.Error = $"{cli.Name}: " + error.Text; break;
   }

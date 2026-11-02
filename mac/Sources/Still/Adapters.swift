@@ -421,6 +421,7 @@ final class Spawned {
    throw AgentError("couldn't start it: " + String(cString: strerror(result)))
   }
   pid = child
+  Children.started(child)
   input = FileHandle(fileDescriptor: inPipe[1], closeOnDealloc: true)
   output = FileHandle(fileDescriptor: outPipe[0], closeOnDealloc: true)
   errors = FileHandle(fileDescriptor: errPipe[0], closeOnDealloc: true)
@@ -439,7 +440,47 @@ final class Spawned {
   while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
   let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
   reaped = code
+  Children.ended(pid)
   return code
+ }
+}
+
+/// What Still has running (AI apps, sign-ins), listed under the profile so a start after a crash ends what's left:
+/// on the Mac nothing ends a child when its parent dies (Windows: the Job Object does). A listed pid counts only while
+/// its start time still matches, so a number the system gave to something else since is never touched.
+enum Children {
+ private static let lock = NSLock()
+ private static var running: [pid_t: UInt64] = [:]
+ private static var file: URL { support.appendingPathComponent("running-ai.txt") }
+
+ static func started(_ pid: pid_t) {
+  guard let at = startTime(pid) else { return }
+  lock.lock(); defer { lock.unlock() }
+  running[pid] = at; save()
+ }
+ static func ended(_ pid: pid_t) {
+  lock.lock(); defer { lock.unlock() }
+  if running.removeValue(forKey: pid) != nil { save() }
+ }
+ private static func save() {
+  if running.isEmpty { try? FileManager.default.removeItem(at: file); return }
+  try? running.map { "\($0.key) \($0.value)" }.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+ }
+ static func startTime(_ pid: pid_t) -> UInt64? {
+  var info = proc_bsdinfo(), size = Int32(MemoryLayout<proc_bsdinfo>.size)
+  guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+  return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+ }
+ /// At start, holding the profile's lock (no other copy runs on it): ends each listed run still going, and its group.
+ static func sweep() {
+  guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
+  for line in text.split(separator: "\n") {
+   let field = line.split(separator: " ")
+   guard field.count == 2, let pid = pid_t(field[0]), let at = UInt64(field[1]), pid > 1, startTime(pid) == at else { continue }
+   if Darwin.killpg(pid, SIGKILL) != 0 { _ = Darwin.kill(pid, SIGKILL) }
+   NSLog("Still: ended AI app \(pid), left running by a Still that didn't quit")
+  }
+  try? FileManager.default.removeItem(at: file)
  }
 }
 

@@ -28,7 +28,7 @@ type ChatRow = { id: string; title: string; harness: string; updated: string; co
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
- runs?: Run[]; interrupted?: string[]; queued?: string[]; files?: LibFile[]; worked?: number
+ runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: string[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
@@ -213,14 +213,29 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
-// What the user was typing: a chat's draft is kept on disk, so it's still there after closing the chat or Still;
-// a new tab page's lasts while Still runs. Sending or emptying the box forgets it. An incognito window's drafts stay
-// in memory: the interface's own storage reaches the disk.
+// What the user typed and didn't send, per box: the home box (the main window's is kept on disk; another window's while
+// it's open), each chat's, and a new chat's until it has an id. Kept on disk in the interface's own storage, so it's
+// still there after leaving, closing the tab or restarting Still, never in the chat itself. An incognito window's stay in
+// memory. Sending or emptying the box forgets it; one not touched for 7 days is dropped.
+type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[] }
+const WEEK = 7 * 86400000
 const inMemory = new Map<string, string>()
 const memoryDrafts = { getItem: (k: string) => inMemory.get(k) ?? null, setItem: (k: string, v: string) => void inMemory.set(k, v), removeItem: (k: string) => void inMemory.delete(k) }
-const drafts = (key: string) => key.startsWith("private.") ? memoryDrafts : key.startsWith("chat.") ? localStorage : sessionStorage
-const readDraft = (key?: string) => { try { return key && drafts(key).getItem("still.draft." + key) || "" } catch { return "" } }
-const keepDraft = (key: string | undefined, v: string) => { if (key) try { if (v) drafts(key).setItem("still.draft." + key, v); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
+const drafts = (key: string) => key.startsWith("private.") ? memoryDrafts : key.startsWith("window.") ? sessionStorage : localStorage
+const readDraft = (key?: string): Draft | null => {
+ if (!key) return null
+ try {
+  const raw = drafts(key).getItem("still.draft." + key); if (!raw) return null
+  let d: Draft = { text: raw } // older drafts: the text, or {"parts": [...]}
+  try { const j = JSON.parse(raw); if (j && typeof j === "object" && !Array.isArray(j)) d = { ...j, text: j.text ?? "" } } catch { /* plain text */ }
+  if (d.at && Date.now() - d.at > WEEK) { drafts(key).removeItem("still.draft." + key); return null }
+  return d
+ } catch { return null }
+}
+const keepDraft = (key: string | undefined, d: Draft | null) => { if (key) try { if (d) drafts(key).setItem("still.draft." + key, JSON.stringify({ ...d, at: Date.now() })); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
+try { // on load: drafts left for more than 7 days go
+ for (const k of Object.keys(localStorage)) if (k.startsWith("still.draft.")) readDraft(k.slice(12))
+} catch { /* storage unavailable */ }
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
@@ -237,6 +252,7 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
 export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
+ const drafted = useRef(draft)
  const [parts, setParts] = useState<Part[]>([])
  const [before, setBefore] = useState("") // the text just before the caret: what the pickers look at
  const [pick, setPick] = useState(0)
@@ -244,10 +260,23 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [files, setFiles] = useState<Attached[]>([])
  const [dropping, setDropping] = useState(false)
  const me = useId()
+ const partsRef = useRef(parts), filesRef = useRef(files)
+ useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
+ const pending = useRef<(() => void) | null>(null), timer = useRef(0)
+ const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
+ const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
+  const key = draft, t = textOf(p), d: Draft | null = t.trim() || f.length ? { text: t, parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined } : null
+  pending.current = () => keepDraft(key, d); clearTimeout(timer.current); timer.current = window.setTimeout(flush, 300)
+ }
+ useEffect(() => { addEventListener("beforeunload", flush); return () => { removeEventListener("beforeunload", flush); flush() } }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { // what Still kept from a pick, drop or paste in this box
-  const got = (e: Event) => { const d = (e as CustomEvent).detail; if (d.to !== me) return; if (d.files?.length) setFiles(had => [...had, ...d.files].slice(0, MAX_FILES)); if (d.error) toast(d.error) }
+  const got = (e: Event) => { // added now, or (.kept) a draft's that are still there
+   const d = (e as CustomEvent).detail; if (d.to !== me && d.to !== me + ".kept") return
+   if (d.files?.length) { const all = [...filesRef.current, ...d.files].slice(0, MAX_FILES); setFiles(all); if (d.to === me) save(partsRef.current, all) }
+   if (d.error) toast(d.error)
+  }
   addEventListener("still-attached", got); return () => removeEventListener("still-attached", got)
- }, [me])
+ }, [me, draft]) // eslint-disable-line react-hooks/exhaustive-deps
  const take = (list: FileList | File[]) => {
   const all = [...list], room = MAX_FILES - files.length
   if (all.length > room) toast(`You can attach up to ${MAX_FILES} files to a message.`)
@@ -264,14 +293,23 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const knownRef = useRef(known)
  useMascotVersion(); usePluginData(send) // a companion's picture, or an app's logo, can come in after it's mentioned
  useEffect(() => { knownRef.current = known; if (box.current) dress(box.current, known) })
- // The draft: what was typed in this chat or tab before, its mentions too while they're still there.
+ // The draft: what was typed in this box before, its mentions too while they're still there, and its files if Still
+ // still has them. A new chat's goes with it once the chat has an id.
  useLayoutEffect(() => {
-  const kept = readDraft(draft), el = box.current
-  let p: Part[] = [kept]
-  try { if (kept.startsWith('{"parts":')) p = (JSON.parse(kept).parts as unknown[]).map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "") } catch { /* plain text */ }
+  flush() // what was typed under the last key is kept under it
+  const was = drafted.current, el = box.current; drafted.current = draft
+  if (was && draft && was !== draft && /(^|\.)chat\.new$/.test(was) && (textOf(partsRef.current).trim() || filesRef.current.length)) {
+   keepDraft(was, null); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined })
+   return // the new chat got its id: what's in the box stays, now under it
+  }
+  const kept = readDraft(draft)
+  const p: Part[] = kept?.parts ? kept.parts.map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "") : [kept?.text ?? ""]
   if (el) el.innerHTML = markup(p, knownRef.current)
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
- }, [draft])
+  setFiles([])
+  if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
+  if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); const s = getSelection(); s?.selectAllChildren(el); s?.collapseToEnd() }
+ }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  // The caret at the end of the box (it isn't in the box yet).
  const end = () => { const el = box.current, s = getSelection(); if (!el || !s) return; el.focus(); s.selectAllChildren(el); s.collapseToEnd() }
  useEffect(() => { if (autoFocus) end() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -287,7 +325,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   const el = box.current; if (!el) return
   dress(el, known)
   const p = read(el), t = textOf(p)
-  setParts(p); keepDraft(draft, mentions(p).length ? JSON.stringify({ parts: p }) : t); setPick(0); setShut(null); onTyping?.(!!t.trim())
+  setParts(p); save(p, files); setPick(0); setShut(null); onTyping?.(!!t.trim())
  }
  const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
  const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
@@ -295,7 +333,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   if (!message || disabled) return
   onSubmit(message, attached, files.map(f => f.id))
   if (box.current) box.current.innerHTML = ""
-  setParts([]); setBefore(""); setFiles([]); keepDraft(draft, ""); onTyping?.(false)
+  setParts([]); setBefore(""); setFiles([]); pending.current = null; clearTimeout(timer.current); keepDraft(draft, null); onTyping?.(false)
  }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
@@ -363,11 +401,11 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
   {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
-   {files.map(f => <FileChip key={f.id} file={f} onRemove={() => setFiles(files.filter(x => x !== f))} />)}
+   {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
   </InputGroupAddon>}
   <div ref={box} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
-   onInput={sync} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
+   onInput={sync} onBlur={flush} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
    onDrop={e => { // text dropped on the box comes in as plain text
     if (dragging(e)) return
     e.preventDefault()
@@ -381,7 +419,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
     if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
     if ((e.key === "Backspace" || e.key === "Delete") && unmention(e.key === "Delete")) { e.preventDefault(); return }
-    if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); return }
+    if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); save(parts, files.slice(0, -1)); return }
     if (e.key === "Enter") { e.preventDefault(); if (e.shiftKey) document.execCommand("insertLineBreak"); else submit() } }} />
   <InputGroupAddon align="block-end">
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add files, a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
@@ -575,6 +613,11 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? "Working · " + clock(tick) : `${name} is writing…`}</p></div>}
   </div></div>}
+  {!busy && ai.chatId && ai.task?.state === "interrupted" && <Alert className="task-bar"><AlertDescription>{ai.task.unsure
+    ? `Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
+    : `Still closed while ${name} was mid-task.`}</AlertDescription><Button size="sm" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button></Alert>}
+  {!busy && ai.chatId && ai.task?.state === "waiting" && ai.task.reason === "signin" && <Alert className="task-bar"><AlertDescription>{name} is waiting: sign in to carry on.</AlertDescription>
+   <Button size="sm" variant="outline" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button><Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button></Alert>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}

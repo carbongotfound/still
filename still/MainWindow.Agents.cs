@@ -118,11 +118,17 @@ public partial class MainWindow
    string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
    if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
+   var going = runs.GetValueOrDefault(who);
+   if (going?.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
    var working = RunTool(who, tool, args, quick);
    int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
    string result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
+   if (going != null) {
+    if (going.Intent is { } ran) { if (first == working) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; going.Intent = null; } // cut off: uncertain
+    Checkpoint(going, tool, result);
+   }
    if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who);
    PublishAll();
    return result;
@@ -204,6 +210,7 @@ public partial class MainWindow
  {
   if (workers.GetValueOrDefault(key) is not { } me) return;
   me.Paused = on;
+  TaskState(runs.GetValueOrDefault(key), on ? "paused" : "running");
   if (!on && me.SignIn.Length > 0) { me.SignedIn = (me.SignIn, DateTime.UtcNow); me.SignIn = ""; }
   if (on && agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail(TookOver));
   if (on && agentTabs.GetValueOrDefault(key) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
@@ -226,6 +233,7 @@ public partial class MainWindow
   var me = Me(who);
   if (me.Paused) return;
   me.Paused = true; me.SignIn = site;
+  TaskState(runs.GetValueOrDefault(who), "paused", "site");
   if (!t.Closed) await w.SelectTab(t);
   PublishAll(); w.Toast(me.Label + " needs you to sign in to " + site + ". It never sees your password.");
  }
@@ -615,6 +623,7 @@ public partial class MainWindow
   // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   string mode = PermissionMode(run?.Chat.Companion ?? "", site, action) ?? (run != null ? DefaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site;
   bool granted = mode == "always" || mode == "chat" && (run?.Chat.Allowed.Contains(key) ?? sessionGrants.Contains(who + " " + key));
+  if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again
   if (run == null) {
    if (granted) return null;
    string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site;
@@ -635,6 +644,10 @@ public partial class MainWindow
    "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",
    "timeout" => "No answer in 10 minutes", _ => "You said no" });
   PublishAiEverywhere();
+  if (answer is "always" or "chat" or "once" or "go" or "now" && action == "sensitive") {
+   if (run.Recheck) { run.Recheck = false; foreach (var s in run.Task.Sensitive.Where(s => s.Outcome == null)) s.Outcome = "rechecked"; }
+   run.Intent = new() { What = what, Site = site };
+  }
   return answer switch {
    "always" or "chat" or "once" or "go" or "now" => null,
    "cancel" => Fail("The user cancelled this before it ran. Don't try it again unless they ask."),
@@ -647,9 +660,11 @@ public partial class MainWindow
  {
   var card = new Approval(Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant(), what, site, action, why, countdown ? DateTime.UtcNow.AddSeconds(8) : null, new(TaskCreationOptions.RunContinuationsAsynchronously));
   run.Approvals.Add(card); PublishAiEverywhere();
+  if (!countdown) TaskState(run, "waiting", "approval", what + " on " + site);
   var wait = Task.Delay(countdown ? TimeSpan.FromSeconds(8) : TimeSpan.FromMinutes(10));
   string answer = await Task.WhenAny(card.Answer.Task, wait) == wait ? (countdown ? "go" : "timeout") : await card.Answer.Task;
   run.Approvals.Remove(card); PublishAiEverywhere();
+  if (!countdown && !run.Approvals.Any(a => a.Until == null)) TaskState(run, "running");
   return answer;
  }
  static void Audit(AiChat chat, string what, string site, string result)

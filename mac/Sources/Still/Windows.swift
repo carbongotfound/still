@@ -211,6 +211,14 @@ enum Profiles {
   guard folder.standardizedFileURL != defaultSupport.standardizedFileURL, #available(macOS 14.0, *) else { return .default() }
   return WKWebsiteDataStore(forIdentifier: storeId(folder))
  }
+ /// The interface's own storage (drafts, small settings) for a profile, kept apart from its website data so clearing that
+ /// keeps them, and from other profiles' (Windows: each profile's own WebView2 folder). Default keeps the system's store,
+ /// as before, so its settings carry over. Before macOS 14 every profile shares that one.
+ static func shellStore(_ folder: URL) -> WKWebsiteDataStore {
+  guard folder.standardizedFileURL != defaultSupport.standardizedFileURL, #available(macOS 14.0, *) else { return .default() }
+  return WKWebsiteDataStore(forIdentifier: shellId(folder))
+ }
+ static func shellId(_ folder: URL) -> UUID { var id = storeId(folder).uuid; id.0 ^= 0x5A; return UUID(uuid: id) }
  /// A profile folder's id (its 32-hex name), or one saved in the folder for test profiles.
  static func storeId(_ folder: URL) -> UUID {
   var name = folder.lastPathComponent
@@ -227,9 +235,10 @@ enum Profiles {
 
  /// Held while this profile is open, so other Still processes can tell (Windows: the instance mutex).
  private static var runningLock: Int32 = -1
- static func holdRunningLock() {
+ /// true: this copy is the only one on the profile.
+ @discardableResult static func holdRunningLock() -> Bool {
   runningLock = open(support.appendingPathComponent("running.lock").path, O_CREAT | O_RDWR, 0o600)
-  if runningLock >= 0 { _ = flock(runningLock, LOCK_EX | LOCK_NB) }
+  return runningLock >= 0 && flock(runningLock, LOCK_EX | LOCK_NB) == 0
  }
  /// Locks a closed profile so it can't open while it's deleted. nil: it's open somewhere.
  static func lockClosed(_ id: String) -> Int32? {
@@ -289,7 +298,7 @@ enum Profiles {
   let folder = folder(id)
   if FileManager.default.fileExists(atPath: folder.path) { try checkTree(folder); try FileManager.default.removeItem(at: folder) }
   Vault.erase(folder)
-  if #available(macOS 14.0, *) { WKWebsiteDataStore.remove(forIdentifier: storeId(folder)) { _ in } }
+  if #available(macOS 14.0, *) { for store in [storeId(folder), shellId(folder)] { WKWebsiteDataStore.remove(forIdentifier: store) { _ in } } }
   if launchId == id { try? setLaunch("default") }
   list.removeAll { $0.id == id }
   try write(list)
