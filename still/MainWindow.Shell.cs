@@ -206,6 +206,7 @@ public partial class MainWindow
      case "removeHistory":state.History.RemoveAll(v=>v.Url==S("url"));SaveLater();break;
      case "startup":StartupRegistration.Set(data.GetProperty("enabled").GetBoolean());break;
      case "welcomeDone":state.Welcome=false;SaveLater();PublishAll();break;
+     case "whatsNewSeen":state.SeenVersion=CurrentVersion.ToString(2);SaveLater();PublishAll();break;
      case "welcomeAgain":state.Welcome=true;welcomeTalk=data.TryGetProperty("talk",out var tk)&&tk.ValueKind==JsonValueKind.True;PublishAll();break;
      case "setupStart" or "setupAnswer" or "setupUndo" or "setupEdit" or "setupHire" or "setupEnd":await HandleSetup(op,data);break;
      case "interests":Prefs.Interests=data.TryGetProperty("list",out var picks)&&picks.ValueKind==JsonValueKind.Array?[..picks.EnumerateArray().Where(x=>x.ValueKind==JsonValueKind.String).Select(x=>x.GetString()!.Trim()).Where(x=>x.Length is > 0 and <= 40).Distinct().Take(12)]:[];SaveLater();PublishAll();break;
@@ -270,7 +271,7 @@ public partial class MainWindow
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),working=AtWork().Select(w=>agentTabs.GetValueOrDefault(w.Key)).Where(id=>id!=null),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
-    welcome=state.Welcome&&!secondary&&!incognito,welcomeTalk,
+    welcome=state.Welcome&&!secondary&&!incognito,welcomeTalk,seenVersion=state.SeenVersion,
     preferences=new{theme=Prefs.Theme,agentProfile=Prefs.AgentProfile,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,sounds=Prefs.Sounds,osSoundsOff=OsSoundsOff,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,tabLayout=Prefs.TabLayout,chatTitles=Prefs.ChatTitles,newTab=Prefs.NewTab,interests=Prefs.Interests,sidebarWidth=Prefs.SidebarWidth,startupDisabled=StartupRegistration.DisabledByWindows},
     tabs=tabs.Select(t=>new{id=t.Id,group=t.Group,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,engine=t.Private?null:t.Engine??"Default",driverChat=t.AgentKey is{} k&&runs.ContainsKey(k)?k:null,aiGroup=t.AgentGroup,chatId=t.ChatId,home=t.Home,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,inUse=t.InUse,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),

@@ -1252,7 +1252,7 @@ public partial class MainWindow
  static async Task CheckAi(AgentAdapter cli)
  {
   if (aiStatus.GetValueOrDefault(cli.Id) is "installing" or "signingIn") return;
-  if (cli is ApiAdapter api) { aiStatus[cli.Id] = !ApiKeyStore.Has(api.Id) ? "needsKey" : ApiKeyStore.Refused.Contains(api.Id) ? "badKey" : "ready"; return; }
+  if (cli is ApiAdapter api) { aiStatus[cli.Id] = !ApiKeyStore.Has(api.Id) && !api.Provider.NoKey ? "needsKey" : ApiKeyStore.Refused.Contains(api.Id) ? "badKey" : "ready"; return; }
   if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; return; }
   try {
    if (await cli.Detect(exe) is bool signedIn) aiStatus[cli.Id] = signedIn ? "ready" : "signedOut";

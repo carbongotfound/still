@@ -141,6 +141,7 @@ public sealed class SavedState
 {
  public int UiVersion { get; set; }
  public bool Welcome { get; set; }
+ public string SeenVersion { get; set; } = ""; // the release (2.10) whose What's New was shown
  public Preferences Preferences { get; set; } = new();
  public List<BrowserTab> Tabs { get; set; } = [];
  public string? ActiveId { get; set; }

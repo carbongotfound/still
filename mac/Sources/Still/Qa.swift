@@ -65,7 +65,7 @@ extension Browser {
   return [
    "activeId": n(active?.id), "panel": panel, "dark": dark, "theme": pref("Theme", "System"), "aiCalls": AgentRun.launched, "startup": NSNull(),
    "fullScreen": window.styleMask.contains(.fullScreen), "browserFullScreen": false, "contentFullScreen": false,
-   "windowState": window.isMiniaturized ? "Minimized" : window.isZoomed ? "Maximized" : "Normal", "focusMode": focusMode, "shellErrors": qaShellErrors, "pointerOnPage": pointerOnPage,
+   "windowState": window.isMiniaturized ? "Minimized" : window.isZoomed ? "Maximized" : "Normal", "focusMode": focusMode, "overlay": overlay, "shellErrors": qaShellErrors, "pointerOnPage": pointerOnPage,
    "appActive": NSApp.isActive, "keyWindow": window.isKeyWindow, "responder": window.firstResponder.map { String(describing: type(of: $0)) } ?? "",
    "sidePanelUrl": NSNull(), "sidePanelWidth": NSNull(), "extensionPopup": false,
    "viewport": ["pageX": pageFrame.minX, "pageY": pageFrame.minY, "pageWidth": pageFrame.width, "pageHeight": pageFrame.height, "visible": view.map { $0.isHidden ? "Collapsed" : "Visible" } ?? "Collapsed",
@@ -258,7 +258,8 @@ private func qaJson(_ value: Any?) -> String {
   case let list as [Any]: return list.map(plain)
   case let object as [String: Any]: return object.mapValues(plain)
   case let date as Date: return ISO8601DateFormatter().string(from: date)
-  case is String, is NSNumber, is NSNull: return value
+  case let number as NSNumber: return number.doubleValue.isFinite ? number : NSNull() // NaN and Infinity aren't JSON
+  case is String, is NSNull: return value
   default: return "\(value)"
   }
  }

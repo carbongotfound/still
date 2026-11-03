@@ -224,7 +224,7 @@ sealed class GeminiAdapter : AgentAdapter
 sealed partial class OpenCodeAdapter : AgentAdapter
 {
  string version = "";
- public override string[] Gaps => ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal), or its free models.",
+ public override string[] Gaps => ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal).",
   "OpenCode keeps its own record of incognito chats on this computer. It has no option to turn that off.",
   .. version.Length > 0 && !version.StartsWith("1.", StringComparison.Ordinal) ? new[] { $"Still was checked with OpenCode 1. This is {version}, so it may not work." } : []];
  [System.Text.RegularExpressions.GeneratedRegex(@"^[A-Za-z0-9][\w.@-]*/\S+$")] private static partial System.Text.RegularExpressions.Regex ModelLine();

@@ -189,7 +189,7 @@ def main():
         menu(p, "Fire Zesty 2")
         until(lambda: shown(p, "[role=alertdialog]"), 3)
         js(p, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
-        check(until(lambda: "Zesty 2" not in mates(), 5) and until(lambda: not shown(p, ".profile-panel"), 3), "Fire asks first, removes the copy and closes the panel")
+        check(until(lambda: not shown(p, ".profile-panel"), 3) and until(lambda: "Zesty 2" not in mates(), 15), "Fire asks first, closes the panel and removes the copy once Undo is gone")
 
         # Esc closes; paste the shared companion on the Companions page.
         js(p, "document.querySelector('.home-face')?.click()")

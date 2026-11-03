@@ -1,18 +1,17 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, Users } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, UserX, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiLogo } from "./AiLogo"
 import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade, fromShared } from "./crew"
-import { FireDialog } from "./ProfilePanel"
+import { deleteAllChats, deleteChat, destroy, fire } from "./Undo"
 import { PluginsPage, Who } from "./Plugins"
 import { toast } from "sonner"
 
@@ -68,7 +67,6 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const [only, setOnly] = useState<"" | "unread" | "needs" | "archived">("")
  const [who, setWho] = useState("")
  const [oldest, setOldest] = useState(false)
- const [wipe, setWipe] = useState(false)
  const needs = (id: string) => needsYou(ai, id)
  const first = ai.companions?.[0]?.id
  const chats = ai.chats.filter(c => !c.from && (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
@@ -80,7 +78,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  return <section className="home-page" aria-label="Chat History">
   <header className="home-page-head"><h1>Chat History</h1>
    {!ai.incognito && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
-    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
+    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => deleteAllChats(send, ai.chats.length)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
    <Button className="home-new" onClick={onNew}><Plus />New chat</Button>
   </header>
   <label className="history-find"><Search /><input aria-label="Search chats" placeholder="Search chats..." value={find} onChange={e => setFind(e.target.value)} /></label>
@@ -99,13 +97,9 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
     <ChatLink id={c.id} send={send} className="history-open"><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
      {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</ChatLink>
     <button className="history-act" aria-label={c.archived ? "Unarchive " + c.title : "Archive " + c.title} title={c.archived ? "Unarchive" : "Archive"} onClick={() => send("chatArchive", { id: c.id, on: !c.archived })}>{c.archived ? <ArchiveRestore /> : <Archive />}</button>
-    <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>
+    <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => deleteChat(send, c)}><Trash2 /></button>
    </div>)}
   </div>)}
-  <AlertDialog open={wipe} onOpenChange={setWipe}><AlertDialogContent>
-   <AlertDialogHeader><AlertDialogTitle>Delete all chats?</AlertDialogTitle><AlertDialogDescription>Every chat in this profile goes away. Your AI app may keep its own copy.</AlertDialogDescription></AlertDialogHeader>
-   <AlertDialogFooter><AlertDialogCancel>Keep them</AlertDialogCancel><AlertDialogAction onClick={() => send("aiDeleteAll")}>Delete all</AlertDialogAction></AlertDialogFooter>
-  </AlertDialogContent></AlertDialog>
  </section>
 }
 
@@ -122,7 +116,6 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
   }
   addEventListener("paste", paste); return () => removeEventListener("paste", paste)
  }, [send])
- const [firing, setFiring] = useState<Companion | null>(null)
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
@@ -135,18 +128,21 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
     <div className="mate-acts"><button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
-     <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => setFiring(c)}>Fire</button></div>
+     <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => fire(send, c, (ai.companions?.length ?? 0) <= 1)}><UserX />Fire</button></div>
     </div>
    </article> })}
   </div>
   <h2 className="home-page-sub">Hire for a role</h2>
   <p className="home-page-lead">Each one owns a part of your work and gets sharper as it learns about you. Hire one, then change anything you like.</p>
   <CrewCards have={ai.companions} onChat={onChat} onOwn={onMake} onPick={p => onHire(fromPremade(p))} />
-  {firing && <FireDialog c={firing} only={(ai.companions?.length ?? 0) <= 1} send={send} onClose={() => setFiring(null)} />}
  </section>
 }
 
 /// Skills & plugins: the Plugins page (Plugins.tsx) with the user's skills among the apps. One search finds both.
+/// Reset a skill Still ships to its own version: the user's changes to it go.
+export const resetSkill = (send: Send, k: Skill) => destroy({ key: "skill-reset:" + k.id, title: `Reset ${k.name}?`, body: `Your changes to ${k.name} go, and it's back to the version Still ships.`,
+ action: "Reset skill", done: `${k.name} reset`, run: () => send("skillReset", { id: k.id }) })
+
 export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
  const [editing, setEditing] = useState<Skill | null>(null)
  const blank = () => setEditing({ id: "", name: "", description: "", when: "", body: "" })
@@ -158,8 +154,9 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
    <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.description && " · " + k.description}</small></button>
    {k.id === "setup" ? <small className="skill-always">Every companion, on their first chat</small>
     : <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />}
-   {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => send("skillReset", { id: k.id })}><RotateCcw /></button>}
-   {k.id !== "setup" && <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>}
+   {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => resetSkill(send, k)}><RotateCcw /></button>}
+   {k.id !== "setup" && <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => destroy({ key: "skill:" + k.id, title: `Delete ${k.name}?`, action: "Delete skill", done: `Deleted ${k.name}`,
+    body: `The skill goes, and ${(ai.companions ?? []).filter(m => m.skills?.includes(k.id)).length || "no"} companions stop using it.`, run: () => send("skillDelete", { id: k.id }) })}><Trash2 /></button>}
   </div>)}</div>
   return q ? <section className="plug-group skills-part" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2></div>{list}</section>
    : found.length ? list : <p className="home-empty skills-empty">Skills are short how-tos your companions follow: type / in a message to use one. <button className="plug-all" onClick={blank}>Write your first one</button></p>
@@ -209,7 +206,7 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
     <button className="history-open" onClick={() => onOpen(f.path)}><FileIcon path={f.path} /><b>{nameOf(f.path)}</b><small>{chat ? chat.title + " · " : ""}{ago(f.saved)}</small></button>
     {chat && <button className="history-act" aria-label={"Open the chat for " + f.name} title="Open chat" onClick={() => send("chatOpen", { id: chat.id })}><MessageSquare /></button>}
     <button className="history-act" aria-label={"Show " + f.name + " in its folder"} title="Show in folder" onClick={() => send("fileShow", { path: f.path })}><FolderOpen /></button>
-    <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => send("fileDelete", { path: f.path })}><Trash2 /></button>
+    <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => destroy({ key: "file:" + f.path, title: `Delete ${nameOf(f.path)}?`, body: "The file is deleted from this computer, not moved to the trash.", action: "Delete file", done: "File deleted", run: () => send("fileDelete", { path: f.path }) })}><Trash2 /></button>
    </div> })}</div>
   </>}
  </section>

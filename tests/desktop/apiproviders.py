@@ -224,7 +224,7 @@ def main():
         check("about $" in spend and "chats $" in spend and "chat titles $" in spend and "tests $" in spend, "Settings shows this month's tokens and estimate, by chats, titles and tests")
         save(p, "Fake OpenAI", limit=0.0001)
         check(until(lambda: "Paused for this month" in text(p), 10), "Reaching the monthly limit pauses the provider")
-        t = ask(p, "hello?", until_text="reached your limit") or ""
+        t = ask(p, "hello?", until_text="spending reached your limit") or ""  # Settings, open beside it, says "the estimate reached your limit"
         check("this month's spending reached your limit of $0" in t, "and a chat says so instead of calling it")
         save(p, "Fake OpenAI", limit=0)
         idle(p)

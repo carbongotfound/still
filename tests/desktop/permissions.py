@@ -18,7 +18,6 @@ Screenshots: docs/agentic/compare/ (approval-v01, sensitive-v01, countdown-v01, 
 import http.server
 import json
 from pathlib import Path
-import re
 import sys
 import textwrap
 import threading
@@ -488,8 +487,9 @@ def settings(process):
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
     capture(process, "permissions-v01")
     press(process, "Reset all", ".perm-settings")
-    press(process, "Reset now", ".perm-settings")
-    check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 10), "Reset all goes back to the defaults")
+    until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 15), "Reset all asks, then goes back to the defaults once Undo is gone")
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 

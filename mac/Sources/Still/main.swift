@@ -331,6 +331,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["noExtensions"] = true
   state["noAi"] = false
   state["welcome"] = welcome && !secondary && !incognito
+  state["seenVersion"] = store.seenVersion
   state["version"] = currentVersion
   state["zoom"] = Int(((shown?.view?.pageZoom ?? 1) * 100).rounded())
   state["preferences"] = preferences
@@ -435,6 +436,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    }
   case "preference": setPreference(text("key"), text("value"))
   case "welcomeDone": welcome = false; saveLater(); applyTheme()
+  case "whatsNewSeen": store.seenVersion = releaseLine; saveLater(); for browser in browsers { browser.publish() }
   case "defaultBrowser": makeDefault()
   case "chooseDownloads":
    let picker = NSOpenPanel()

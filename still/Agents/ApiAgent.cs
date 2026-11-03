@@ -26,6 +26,7 @@ public sealed class ApiProvider
  public double Limit { get; set; }            // a month's spending limit; 0 = none
  public int Context { get; set; }             // the models' context size in tokens; 0 = not known (Still assumes 128k and halves it if refused)
  public bool NoTools { get; set; }            // Test connection found the model doesn't call tools: it can chat, not use tabs
+ public bool NoKey { get; set; }              // saved without a key: a local or open server that doesn't ask for one
  public Dictionary<string, ApiUse> Spent { get; set; } = []; // "2026-11" → that month's use, and per job under "2026-11/titles"
  public static string Month => DateTime.Now.ToString("yyyy-MM");
  public double CostOf(long input, long output) => input / 1e6 * PriceIn + output / 1e6 * PriceOut;
@@ -80,7 +81,7 @@ sealed class ApiAdapter : AgentAdapter
  public override bool NamesSession => true; // the chat's transcript file
  public override bool Forgets => true; // incognito: the transcript lives in memory for the turn and is never written
  public override string[] Gaps => Provider.NoTools ? ["Can't use your tabs: Test connection found this model doesn't call tools."] : [];
- public override Task<bool?> Detect(string exe) => Task.FromResult<bool?>(ApiKeyStore.Has(Provider.Id));
+ public override Task<bool?> Detect(string exe) => Task.FromResult<bool?>(ApiKeyStore.Has(Provider.Id) || Provider.NoKey);
  public override Task<AgentModel[]> Models(string exe) => Task.FromResult<AgentModel[]>([new("", "Default", []), .. Provider.Models.Select(m => new AgentModel(m.Id, m.Id, m.Efforts))]);
  public override Task<List<string>> Args(string exe, RunRequest r) => Task.FromResult(new List<string>());
  public override IEnumerable<AgentEvent> Parse(JsonNode e) => [];
@@ -129,7 +130,9 @@ public sealed class ApiRun : AgentRun
  static Uri At(Uri root, string path) => new(root.AbsoluteUri.TrimEnd('/') + "/" + path);
  static void Authorize(HttpRequestMessage req, string kind, string key)
  {
-  if (kind == "anthropic") { req.Headers.Add("x-api-key", key); req.Headers.Add("anthropic-version", "2023-06-01"); }
+  if (kind == "anthropic") req.Headers.Add("anthropic-version", "2023-06-01");
+  if (key.Length == 0) return; // a provider saved without a key
+  if (kind == "anthropic") req.Headers.Add("x-api-key", key);
   else req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
  }
 
@@ -149,7 +152,7 @@ public sealed class ApiRun : AgentRun
 
  async Task Turn()
  {
-  string key = ApiKeyStore.Read(p.Id) ?? throw new ApiFailure("needs a key. Add one in Settings → Models.");
+  string key = ApiKeyStore.Read(p.Id) ?? (p.NoKey ? "" : throw new ApiFailure("needs a key. Add one in Settings → Models."));
   var root = Address(p.Url) ?? throw new ApiFailure("its address must start with https:// (plain http only for localhost).");
   string model = r.Model.Length > 0 ? r.Model : p.Models.FirstOrDefault()?.Id ?? throw new ApiFailure("has no model. Add one in Settings → Models.");
   string file = Path.Combine(r.Folder, "api-" + (r.Session ?? "run") + ".json");
@@ -359,6 +362,7 @@ public sealed class ApiRun : AgentRun
  {
   List<(string, bool, string)> checks = [];
   long input = 0, output = 0;
+  string accepted = key.Length > 0 ? "Accepted." : "None needed.", refused = key.Length > 0 ? "Not accepted. Copy the key again from your provider and replace it." : "It asks for a key. Add one, then test again.";
   if (Address(p.Url) is not { } root) { checks.Add(("Address", false, "Use an address that starts with https:// (plain http only for localhost).")); return (checks, 0, 0); }
   // The model list: reaches the address and checks the key, where the provider has one.
   List<string> listed = [];
@@ -367,9 +371,9 @@ public sealed class ApiRun : AgentRun
    Authorize(req, p.Kind, key);
    using var res = await Http.SendAsync(req, token).WaitAsync(TimeSpan.FromSeconds(30), token);
    checks.Add(("Address", true, $"Reached {root.Host}."));
-   if (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) { checks.Add(("Key", false, "Not accepted. Copy the key again from your provider and replace it.")); return (checks, 0, 0); }
+   if (res.StatusCode is HttpStatusCode.Unauthorized or HttpStatusCode.Forbidden) { checks.Add(("Key", false, refused)); return (checks, 0, 0); }
    if (res.IsSuccessStatusCode) {
-    checks.Add(("Key", true, "Accepted."));
+    checks.Add(("Key", true, accepted));
     try { listed = [.. (JsonNode.Parse(await res.Content.ReadAsStringAsync(token))?["data"] as JsonArray ?? []).Select(m => m?["id"]?.GetValue<string>() ?? "").Where(m => m.Length > 0)]; } catch (JsonException) { }
    }
   } catch (Exception ex) when (ex is HttpRequestException or TimeoutException or IOException) {
@@ -383,7 +387,7 @@ public sealed class ApiRun : AgentRun
    try {
     var reply = await run.Call(root, key, model, [new JsonObject { ["role"] = "user", ["content"] = "This is a connection test. Call the still_test tool once, then say done." }], probe);
     input += reply.In; output += reply.Out;
-    if (!checks.Any(c => c.Item1 == "Key")) checks.Add(("Key", true, "Accepted."));
+    if (!checks.Any(c => c.Item1 == "Key")) checks.Add(("Key", true, accepted));
     checks.Add(("Model", true, $"{model} answered."));
     checks.Add(("Streaming", true, "Replies stream in as they're written."));
     checks.Add(reply.Calls.Any(c => c.Name == "still_test") ? ("Tools", true, "It calls tools, so it can use your tabs.") : ("Tools", false, "It didn't call the test tool, so it can chat but can't use your tabs."));
@@ -393,7 +397,7 @@ public sealed class ApiRun : AgentRun
    catch (ApiFailure f) {
     checks.Add(f.Message switch {
      "model" => ("Model", false, $"{p.Name} doesn't offer {model}. Pick one it offers."),
-     var m when m.StartsWith("Key not accepted", StringComparison.Ordinal) => ("Key", false, "Not accepted. Copy the key again from your provider and replace it."),
+     var m when m.StartsWith("Key not accepted", StringComparison.Ordinal) => ("Key", false, refused),
      var m => ("Streaming", false, $"The request failed: {m}"),
     });
     return (checks, input, output);

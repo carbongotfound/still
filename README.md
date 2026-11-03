@@ -2,9 +2,9 @@
 
 # still.
 
-**An open-source agent browser that works with the Claude, ChatGPT, Grok and Gemini CLIs you're already signed into. No API key needed.**
+**An open-source browser with AI companions that run on the Claude, ChatGPT, Grok, Gemini or OpenCode app you're already signed into. Or bring an OpenAI- or Claude-compatible API.**
 
-[**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**Features**](#features) · [**Install**](#install) · [**Connect your AI**](#connect-your-ai) · [**Contributing**](#contributing)
+[**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**What's new**](#whats-new-in-210) · [**What you can do**](#what-you-can-do-with-still) · [**Install**](#install) · [**Contributing**](#contributing)
 
 [![Latest release](https://img.shields.io/github/v/release/carbongotfound/still?label=release)](https://github.com/carbongotfound/still/releases/latest)
 [![License: AGPL-3.0](https://img.shields.io/badge/license-AGPL--3.0-blue.svg)](./LICENSE)
@@ -15,87 +15,105 @@
 </div>
 
 <!-- LAUNCH FILM -->
-<!-- The 2.0 launch film goes here, between the pitch and the first screenshot: an embed or a linked thumbnail. -->
+<!-- The launch film goes here, between the pitch and the first screenshot: an embed or a linked thumbnail. -->
 
-<p align="center"><img src="docs/screenshots/home.png" alt="Still's new tab: Maya, the companion you work with, with the rest of the team behind her and the message box below" width="900"></p>
+<p align="center"><img src="docs/screenshots/home.webp" alt="Still's new tab: Research Maya in front, the rest of the team behind her, and the message box below" width="900"></p>
 
-Still is a real browser with a team of AI companions built in. Hire the ones you need, give them a task, and they work in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They run on the Claude, ChatGPT, Grok or Gemini app you already use, signed in to your own plan, so there's nothing new to pay for and no key to paste. Everything stays on your computer.
+Still is a real browser with a team of AI companions built in. Hire the ones you need, hand them a task, and they get on with it in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They think with the AI app you already pay for, so there's no new plan and no key to paste. Everything stays on your computer.
 
-## Features
+## What's new in 2.10
 
-The highlights are below. [FEATURES.md](FEATURES.md) lists everything Still does.
+The first time 2.10 opens, a short tour shows these. You can open it again from **Settings > About**.
 
-### Companions you hire
+<img src="docs/screenshots/whatsnew.webp" alt="The What's new in Still 2.10 popup: a screenshot card, its title and line, dots and arrows, See everything and Close" width="360" align="right">
 
-Six companions come ready to hire. Each one owns a part of your work and has its own skills, memory, routines and way of talking.
+- **Gemini, OpenCode and your own API.** Gemini and OpenCode join Claude, ChatGPT and Grok, and any OpenAI- or Claude-compatible API works too.
+- **Setup in four steps.** Connect your AI, make a companion and give it a first task, all in one go.
+- **Make them look your way.** Pick a body, colors, a face and extras in the new look editor.
+- **See what they remember.** Every fact a companion keeps, with where it came from. Change or forget any of it.
+- **Undo when you delete.** Deleting a chat, a companion or your data asks first, then gives you a few seconds to undo.
 
-| | Role | What to expect |
+The full list is in [FEATURES.md](FEATURES.md).
+
+<br clear="right">
+
+## What you can do with Still
+
+### Ask about the page you're on
+
+Open the side chat on any page and ask away. The companion reads the page, answers with sources and suggests what to ask next. This one is a real run: Claude Haiku on low effort, about 17 seconds.
+
+<p align="center"><img src="docs/screenshots/page-chat.webp" alt="A Wikipedia article on sourdough with the side chat open: Research Maya read the page and summed it up with sources" width="900"></p>
+
+### Hire a team for the busywork
+
+Six companions come ready to hire, each with a job, skills, routines and a memory of you. Say hi to start a chat, or Fire one you don't need (it asks first, and you can undo).
+
+| Role | Who | What to expect |
 |---|---|---|
-| **Jonah** | Sales | A one-page brief before every sales call, lead lists that fit who you sell to, follow-ups in your voice sent only on your OK |
-| **Talia** | Growth | The biggest leak in your funnel with the number, small experiments ranked with one metric each, ready-to-run copy launched only on your OK |
-| **Nora** | Planner | Tomorrow planned tonight with the most important thing first, a two-minute brief before each meeting, what's waiting on you with replies drafted |
-| **Leo** | Marketing | One idea turned into posts for every platform, launch posts and newsletters in your voice, drafts only: nothing posts without you |
-| **Ivan** | Engineer | Small tools and pages built and tested in Still, bug reports with steps to reproduce, specs with acceptance checks from messy feedback |
-| **Maya** | Research | Deep research with cited sources, options compared side by side, claims fact-checked before you share them |
-| **Make your own** | Any job | Pick its look, name, role, personality and reply length, say what it's for, and Still drafts its instructions and picks its first skills for you to review. Give it a prop to hold |
+| **Sales** | Jonah | A one-page brief before every sales call, lead lists that fit who you sell to, follow-ups in your voice sent only on your OK |
+| **Growth** | Talia | The biggest leak in your funnel with the number, small experiments ranked with one metric each, copy launched only on your OK |
+| **Planner** | Nora | Tomorrow planned tonight with the most important thing first, a two-minute brief before each meeting, replies drafted |
+| **Marketing** | Leo | One idea turned into posts for every platform, launch posts and newsletters in your voice, drafts only |
+| **Engineer** | Ivan | Small tools and pages built and tested in Still, bug reports with steps to reproduce, specs from messy feedback |
+| **Research** | Maya | Deep research with cited sources, options compared side by side, claims fact-checked before you share them |
 
-<p align="center"><img src="docs/screenshots/library.png" alt="Hire a companion: each card shows the character, its role and name, what it does in a line, Hire or Hired, and View profile" width="900"></p>
+<p align="center"><img src="docs/screenshots/companions.webp" alt="The Companions page: Maya, Jonah, Talia, Nora, Leo and Ivan, each with their job, their AI, What they remember, Say hi and Fire" width="900"></p>
 
-- **Hire in one click.** Each card shows the character, its role and what to expect. **View profile** shows its full instructions before you hire.
-- **They get to work.** A new hire opens its first chat by itself: it says who it is and what it can do now, asks a question or two, and offers its first tasks. Start with a task and it just does it.
-- **Yours to shape.** Edit a companion's look, instructions, skills, routines, files and model. Its memory stays on your computer, and you can see, edit and forget anything it keeps.
-- **They work together.** A companion can ask a teammate for help or hand work over, and you see who asked whom.
+### Make your own, and make it look right
 
-### The message box
+Need a job the six don't cover? Make your own: a name, a role, a personality and what it's for, and Still drafts its instructions and first skills for you to check. Then dress it up in the look editor.
 
-<p align="center"><img src="docs/screenshots/composer.png" alt="The message box with a tab attached with #, two files dropped in, and the @ list of companions open" width="900"></p>
+<p align="center"><img src="docs/screenshots/look.webp" alt="The look editor on its Colors tab, with a blue companion called Kit on the left" width="700"></p>
 
-- **`#` attaches a tab** and the companion reads that page. Private tabs never appear.
-- **`@` pulls in a teammate**, and **`/` runs one of your skills**.
-- **Drop in files.** Text, code, PDFs and images, up to 10 a message, with every AI.
+### See what they know about you
 
-### Plugins
+Every fact a companion keeps shows up in Settings with where it came from. Add things yourself, fix them or make them forget. Passwords, codes, form fields and private tabs are never kept.
 
-<p align="center"><img src="docs/screenshots/plugins.png" alt="The Plugins page: connected apps at the top, one search for apps and skills, category chips, then Recommended apps two across, each with its logo and Connect or a Connected check" width="900"></p>
+<p align="center"><img src="docs/screenshots/memory.webp" alt="Settings > Companions: what Maya knows, four facts each with where it came from, and buttons to edit or forget" width="700"></p>
 
-- **Hundreds of apps.** Gmail, Slack, Notion, GitHub and the rest of [Composio](https://composio.dev)'s catalog, connected with **your own** Composio API key. Still keeps the key in Windows DPAPI or the macOS Keychain and only ever shows its last four characters.
-- **Light on tokens.** Companions don't carry every app's tools. They look up what's connected and load one app's actions only when a task needs it.
-- **Reads go ahead, writes ask first.** Anything that sends, posts, deletes, pays or changes data waits for your OK. If a companion needs an app you haven't connected, it asks you to connect it.
+### Use the AI you already have
 
-### You stay in charge
+Pick Claude, ChatGPT, Grok, Gemini or OpenCode, signed in with your own plan, and switch any time, even mid-chat. Or plug in an OpenAI- or Claude-compatible API, like a model running on your own machine.
 
-<p align="center"><img src="docs/screenshots/permissions.png" alt="The Permissions button on a Wikipedia page: Allow, Ask or Block for camera, microphone, location and more" width="900"></p>
+<p align="center"><img src="docs/screenshots/ai-picker.webp" alt="The model list under the message box: Claude and its models, ChatGPT, Grok and its models, Gemini, OpenCode, and a local model added as a Compatible API" width="900"></p>
 
-- **Per-site permissions.** Allow, Ask or Block camera, microphone, location, notifications and more, site by site.
-- **AI permissions.** Set rules per site and per companion. Buying, sending, deleting and payment fields always wait on an 8 second countdown you can cancel.
-- **Watch, take over or stop.** A colored cursor shows where the companion clicks. **Take over** pauses it while you drive, and **Stop** ends the run.
+### Delete without the panic
 
-### A full browser
+Deleting a chat, a companion, a memory, a key or your history asks first and says what goes. Then you get about six seconds to undo before anything is really deleted.
 
-- Tabs, groups, split view, private windows and profiles, with tabs on top or on the side.
-- Ads and trackers blocked, YouTube ads included, and one-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox.
-- A password manager encrypted with Windows DPAPI or the macOS Keychain. Companions never see saved passwords.
+<p align="center"><img src="docs/screenshots/undo.webp" alt="Chat history after deleting a chat: a Chat deleted toast with an Undo button at the top" width="900"></p>
 
-### Use Still from other AI apps
+## Supported AI apps
 
-Turn on **Settings > Models > Let other AI apps use Still** and Claude Code, Claude Desktop, Cursor or any MCP app can drive it. Each app asks once before it starts.
+Still runs the AI's own app in the background, signed in to your plan. It never asks for a key for these, never reads the app's login, and strips API-key settings from each run so nothing gets billed to an API account.
+
+| AI | What Still runs | How it connects |
+|---|---|---|
+| **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. **Sign in with Anthropic** opens Claude's own sign-in. |
+| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
+| **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
+| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
+| **OpenCode** | [OpenCode](https://opencode.ai) | Under **More agents**. It runs on the provider you set up inside OpenCode (`opencode providers login`). |
+| **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models > API providers**. Labelled **Compatible**. |
+| **Claude-compatible API** | Still's own agent | Same as above, for services that speak the Anthropic Messages format. Labelled **Compatible**. |
+
+If an app is already installed and signed in, Still finds it.
+
+**About Compatible APIs:** you pay your provider per use. The key goes in Windows DPAPI or the macOS Keychain, only its last four characters ever show, and it's sent only over https (plain http only to `localhost` and `127.0.0.1`). **Test connection** checks the address, key, model, streaming and tool calls with one tiny request, which your provider may bill. They're labelled **Compatible** because Still tests them against its own test server, not against every real provider.
+
+## Also in the box
+
+- **A full browser.** Tabs, groups, split view, private windows and profiles, tabs on top or on the side. Ads and trackers blocked, YouTube ads included, and one-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox.
+- **The message box.** `#` attaches a tab, `@` pulls in a teammate, `/` runs a skill, and you can drop in up to 10 files.
+- **Plugins.** Gmail, Slack, Notion, GitHub and the rest of [Composio](https://composio.dev)'s catalog, with **your own** Composio key. Reads go ahead, anything that sends, posts, deletes or pays asks first.
+- **You stay in charge.** Per-site permissions, AI rules per site and per companion, and an 8 second countdown you can cancel before buying, sending, deleting or touching a payment field. A colored cursor shows where the companion clicks, **Take over** lets you drive, **Stop** ends the run.
+- **A password manager** encrypted with Windows DPAPI or the macOS Keychain. Companions never see saved passwords.
+- **Use Still from other AI apps.** Turn on **Settings > Models > Let other AI apps use Still** and Claude Code, Claude Desktop, Cursor or any MCP app can drive it, after asking you once.
 
 ```powershell
 claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" --mcp
 ```
-
-Settings has **Copy config** with your real path filled in, and `Still.exe --cli help` lists the one-step commands for agents without MCP.
-
-<table>
-<tr>
-<td width="50%"><img src="docs/screenshots/profile.png" alt="Maya's profile: her live character, instructions, skills, routines, files, memory and model"></td>
-<td width="50%"><img src="docs/screenshots/settings.png" alt="Settings, Models page: chat titles and AI models"></td>
-</tr>
-<tr>
-<td align="center">A companion's profile</td>
-<td align="center">Settings</td>
-</tr>
-</table>
 
 ## Install
 
@@ -103,7 +121,7 @@ Settings has **Copy config** with your real path filled in, and `Still.exe --cli
 
 1. Download [**Still-Setup-x64.exe**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) and run it. No admin rights needed.
 2. Still isn't code-signed yet, so SmartScreen may warn the first time. Choose **More info > Run anyway**.
-3. Setup walks you through importing your old browser, picking your AI and hiring your first companions.
+3. Setup walks you through connecting your AI, making your first companion and giving it a task.
 
 Still updates itself after that.
 
@@ -112,45 +130,22 @@ Still updates itself after that.
 1. Download [**Still-mac.dmg**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg), open it and drag **Still** to **Applications**. It runs natively on Apple silicon and Intel.
 2. Still isn't notarized yet, so the first time, right-click Still and choose **Open**. On macOS 15, open it once, then choose **Open Anyway** in **System Settings > Privacy & Security**.
 
+<p align="center"><img src="docs/screenshots/home-mac.webp" alt="Still on macOS: the same new tab page, with Research Maya and the team" width="640"></p>
+
 ### Requirements
 
 - **Windows** 10 (1809 or later) or 11, x64. Setup installs the Microsoft Edge WebView2 Runtime if it's missing.
 - **macOS** 12 or later.
 - Linux isn't supported yet.
-- **An AI app** for the companions: Claude Code, ChatGPT's CLI from OpenAI, Grok Build, Gemini CLI or OpenCode, signed in to your own account. Setup can install and sign in for you. Still works as a browser without one.
-
-## Connect your AI
-
-Still runs the AI's own command-line app in the background, signed in to your plan. It never asks for an API key, never reads the app's login, and removes API-key settings from each run so nothing is billed to an API account.
-
-| AI | What Still runs | How it connects |
-|---|---|---|
-| **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. **Sign in with Anthropic** opens Claude's own sign-in. |
-| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
-| **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
-| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
-| **OpenCode** | [OpenCode](https://opencode.ai) | Under **More agents**. It runs on the provider you set up inside OpenCode (`opencode providers login`), or its free models. |
-
-The buttons are on each AI's tile in setup and in the chat's AI picker. If the app is already installed and signed in, Still finds it. Switch AI anytime, even halfway through a chat: the chat moves over with its history.
-
-### Your own API key (optional)
-
-If you'd rather pay per use, add a provider in **Settings > Models > API providers**: any service that speaks the OpenAI Chat Completions or Anthropic Messages format, with your own API key. Still runs the agent itself, with the same approvals and permissions as the apps. It uses your API key and your provider bills you per use.
-
-- The key stays in Windows DPAPI or the macOS Keychain. Still shows only its last four characters, with Replace and Remove.
-- Still sends it only over https (plain http only to `localhost` and `127.0.0.1`), and never to a redirect.
-- Each reply shows its tokens and an estimated cost if you enter prices. Settings shows the month's total, and an optional monthly limit pauses the provider.
-- **Test connection** checks the address, key, model, streaming and tool calls. It sends one tiny request, which your provider may bill.
-
-API providers are labelled **Compatible**: Still checks them against its own test server, not against real providers.
+- **An AI** for the companions: one of the apps above signed in to your own account, or a Compatible API. Still works as a plain browser without one.
 
 ## Privacy
 
 - **No telemetry.** No Still account, no analytics. The only request Still makes on its own is a check of GitHub for a newer release.
-- **Agents never see private tabs, saved passwords or cookies.** Fields that hold saved logins read as hidden. When a companion reaches a sign-in page it pauses and asks you to sign in, then carries on.
+- **Agents never see private tabs, saved passwords or cookies.** When a companion reaches a sign-in page it pauses and asks you to sign in, then carries on.
 - **Private tabs never save passwords, history or form data.**
 - **Your data stays local** in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on the Mac.
-- **Plugins are opt-in.** Still talks to Composio only after you paste your own key: to list its apps and their logos, and to work in the apps you connect.
+- **Plugins are opt-in.** Still talks to Composio only after you paste your own key.
 
 ## Build from source
 
@@ -181,4 +176,4 @@ See [SECURITY.md](SECURITY.md) and the [security review](docs/SECURITY-REVIEW.md
 
 Still is open source under the [GNU Affero General Public License v3.0 or later](LICENSE) (AGPL-3.0-or-later), © 2026 Carbon. Versions released before this change stay available under the MIT license.
 
-The companions, their animations and props, the app icon and the two setup sounds are original work made for Still and covered by the same license. Everything Still bundles from others keeps its own license: the list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Claude, ChatGPT and Grok and their logos belong to Anthropic, OpenAI and xAI. Still isn't affiliated with them.
+The companions, their animations and props, the app icon and the two setup sounds are original work made for Still and covered by the same license. Everything Still bundles from others keeps its own license: the list is in [THIRD-PARTY-NOTICES.txt](THIRD-PARTY-NOTICES.txt) and every license text is in [Licenses](Licenses). Claude, ChatGPT, Grok, Gemini and OpenCode and their logos belong to Anthropic, OpenAI, xAI, Google and the OpenCode project. Still isn't affiliated with any of them.

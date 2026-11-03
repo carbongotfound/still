@@ -15,6 +15,7 @@ final class ApiProvider {
  var limit = 0.0                   // a month's spending limit; 0 = none
  var context = 0                   // the models' context size in tokens; 0 = not known (Still assumes 128k and halves it if refused)
  var noTools = false               // Test connection found the model doesn't call tools: it can chat, not use tabs
+ var noKey = false                 // saved without a key: a local or open server that doesn't ask for one
  var spent: [String: ApiUse] = [:] // "2026-11" → that month's use, and per job under "2026-11/titles"
 
  init() {}
@@ -23,14 +24,14 @@ final class ApiProvider {
   id = d["Id"] as? String ?? ""; kind = d["Kind"] as? String == "anthropic" ? "anthropic" : "openai"
   name = d["Name"] as? String ?? ""; url = d["Url"] as? String ?? ""
   models = (d["Models"] as? [[String: Any]] ?? []).map { ApiModel(id: $0["Id"] as? String ?? "", efforts: $0["Efforts"] as? [String] ?? []) }
-  priceIn = num("PriceIn"); priceOut = num("PriceOut"); limit = num("Limit"); context = Int(num("Context")); noTools = d["NoTools"] as? Bool ?? false
+  priceIn = num("PriceIn"); priceOut = num("PriceOut"); limit = num("Limit"); context = Int(num("Context")); noTools = d["NoTools"] as? Bool ?? false; noKey = d["NoKey"] as? Bool ?? false
   for (k, v) in d["Spent"] as? [String: [String: Any]] ?? [:] {
    spent[k] = ApiUse(input: AgentStream.long(v["In"]), output: AgentStream.long(v["Out"]), cost: (v["Cost"] as? NSNumber)?.doubleValue ?? 0, calls: (v["Calls"] as? NSNumber)?.intValue ?? 0)
   }
  }
  var dict: [String: Any] {
   ["Id": id, "Kind": kind, "Name": name, "Url": url, "Models": models.map { ["Id": $0.id, "Efforts": $0.efforts] as [String: Any] }, "PriceIn": priceIn, "PriceOut": priceOut,
-   "Limit": limit, "Context": context, "NoTools": noTools, "Spent": spent.mapValues { ["In": $0.input, "Out": $0.output, "Cost": $0.cost, "Calls": $0.calls] as [String: Any] }]
+   "Limit": limit, "Context": context, "NoTools": noTools, "NoKey": noKey, "Spent": spent.mapValues { ["In": $0.input, "Out": $0.output, "Cost": $0.cost, "Calls": $0.calls] as [String: Any] }]
  }
  static var month: String {
   let f = DateFormatter(); f.calendar = Calendar(identifier: .gregorian); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "yyyy-MM"
@@ -136,7 +137,7 @@ final class ApiAdapter: AgentAdapter {
  override var namesSession: Bool { true } // the chat's transcript file
  override var forgets: Bool { true } // incognito: the transcript lives in memory for the turn and is never written
  override var gaps: [String] { provider.noTools ? ["Can't use your tabs: Test connection found this model doesn't call tools."] : [] }
- override func detect(_ exe: String) async -> Bool? { ApiKeys.has(provider.id) }
+ override func detect(_ exe: String) async -> Bool? { ApiKeys.has(provider.id) || provider.noKey }
  override func models(_ exe: String) async -> [AgentModel] { [AgentModel(id: "", name: "Default", efforts: [])] + provider.models.map { AgentModel(id: $0.id, name: $0.id, efforts: $0.efforts) } }
  override func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { ApiRun.start(self, r) }
 }
@@ -204,8 +205,9 @@ final class ApiRun: AgentRun {
  static func request(_ url: URL, _ kind: String, _ key: String, body: Data? = nil, timeout: TimeInterval = 30) -> URLRequest {
   var q = URLRequest(url: url, timeoutInterval: timeout)
   if let body { q.httpMethod = "POST"; q.httpBody = body; q.setValue("application/json", forHTTPHeaderField: "Content-Type") }
-  if kind == "anthropic" { q.setValue(key, forHTTPHeaderField: "x-api-key"); q.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
-  else { q.setValue("Bearer " + key, forHTTPHeaderField: "Authorization") }
+  if kind == "anthropic" { q.setValue("2023-06-01", forHTTPHeaderField: "anthropic-version") }
+  if key.isEmpty { return q } // a provider saved without a key
+  if kind == "anthropic" { q.setValue(key, forHTTPHeaderField: "x-api-key") } else { q.setValue("Bearer " + key, forHTTPHeaderField: "Authorization") }
   return q
  }
 
@@ -235,7 +237,7 @@ final class ApiRun: AgentRun {
  struct Reply { var message: [String: Any]; var calls: [Call]; var input: Int64; var output: Int64 }
 
  private func turn() async throws {
-  guard let key = ApiKeys.read(p.id) else { throw ApiFailure("needs a key. Add one in Settings → Models.") }
+  guard let key = ApiKeys.read(p.id) ?? (p.noKey ? "" : nil) else { throw ApiFailure("needs a key. Add one in Settings → Models.") }
   guard let root = ApiRun.address(p.url) else { throw ApiFailure("its address must start with https:// (plain http only for localhost).") }
   var model = !r.model.isEmpty ? r.model : p.models.first?.id ?? ""
   if model.isEmpty { throw ApiFailure("has no model. Add one in Settings → Models.") }
@@ -459,6 +461,7 @@ final class ApiRun: AgentRun {
  static func test(_ p: ApiProvider, _ key: String, _ model: String) async -> (checks: [Check], input: Int64, output: Int64) {
   var checks: [Check] = []
   var input: Int64 = 0, output: Int64 = 0
+  let accepted = key.isEmpty ? "None needed." : "Accepted.", refused = key.isEmpty ? "It asks for a key. Add one, then test again." : "Not accepted. Copy the key again from your provider and replace it."
   guard let root = address(p.url) else { return ([("Address", false, "Use an address that starts with https:// (plain http only for localhost).")], 0, 0) }
   let host = root.host ?? ""
   // The model list: reaches the address and checks the key, where the provider has one.
@@ -467,8 +470,8 @@ final class ApiRun: AgentRun {
    let (data, response) = try await session.data(for: request(at(root, "models"), p.kind, key), delegate: NoRedirects.shared)
    let status = (response as? HTTPURLResponse)?.statusCode ?? 0
    checks.append(("Address", true, "Reached \(host)."))
-   if status == 401 || status == 403 { checks.append(("Key", false, "Not accepted. Copy the key again from your provider and replace it.")); return (checks, 0, 0) }
-   if (200..<300).contains(status) { checks.append(("Key", true, "Accepted.")); listed = ids(data) }
+   if status == 401 || status == 403 { checks.append(("Key", false, refused)); return (checks, 0, 0) }
+   if (200..<300).contains(status) { checks.append(("Key", true, accepted)); listed = ids(data) }
   } catch { return ([("Address", false, "Couldn't reach \(host). Check the base URL, and that the server is running.")], 0, 0) }
   if !listed.isEmpty && !listed.contains(model) { checks.append(("Model", false, "\(model) isn't in \(p.name)'s model list. Pick one it offers.")); return (checks, 0, 0) }
   let probe: [[String: Any]] = [["name": "still_test", "description": "A harmless test tool. Call it once when asked.", "inputSchema": ["type": "object", "properties": [String: Any]()]]]
@@ -479,7 +482,7 @@ final class ApiRun: AgentRun {
    do {
     let reply = try await run.call(root, key, model, [["role": "user", "content": "This is a connection test. Call the still_test tool once, then say done."]], probe)
     input += reply.input; output += reply.output
-    if !checks.contains(where: { $0.part == "Key" }) { checks.append(("Key", true, "Accepted.")) }
+    if !checks.contains(where: { $0.part == "Key" }) { checks.append(("Key", true, accepted)) }
     checks.append(("Model", true, "\(model) answered."))
     checks.append(("Streaming", true, "Replies stream in as they're written."))
     checks.append(reply.calls.contains { $0.name == "still_test" } ? ("Tools", true, "It calls tools, so it can use your tabs.") : ("Tools", false, "It didn't call the test tool, so it can chat but can't use your tabs."))
@@ -488,7 +491,7 @@ final class ApiRun: AgentRun {
    } catch let f as ApiFailure where !effort.isEmpty && !f.message.hasPrefix("Key not accepted") { continue } // refused with effort: once more without
    catch let f as ApiFailure {
     checks.append(f.message == "model" ? ("Model", false, "\(p.name) doesn't offer \(model). Pick one it offers.")
-     : f.message.hasPrefix("Key not accepted") ? ("Key", false, "Not accepted. Copy the key again from your provider and replace it.") : ("Streaming", false, "The request failed: \(f.message)"))
+     : f.message.hasPrefix("Key not accepted") ? ("Key", false, refused) : ("Streaming", false, "The request failed: \(f.message)"))
     return (checks, input, output)
    } catch {
     checks.append(("Address", false, "No answer in time. Check the base URL."))
@@ -591,7 +594,7 @@ func apiPayload() -> [String: Any] {
   var jobs: [String: Any] = [:]
   for j in apiJobs where p.spent[month + "/" + j] != nil { jobs[j] = use(p.spent[month + "/" + j]) }
   return ["id": p.id, "kind": p.kind, "name": p.name, "url": p.url, "models": p.models.map { ["id": $0.id, "efforts": $0.efforts] as [String: Any] }, "priceIn": p.priceIn, "priceOut": p.priceOut,
-   "limit": p.limit, "context": p.context, "noTools": p.noTools, "hasKey": has, "keyEnd": has ? ApiKeys.end(p.id) : "", "refused": ApiKeys.refused(p.id),
+   "limit": p.limit, "context": p.context, "noTools": p.noTools, "noKey": p.noKey, "hasKey": has, "keyEnd": has ? ApiKeys.end(p.id) : "", "refused": ApiKeys.refused(p.id),
    "month": use(p.spent[month]), "jobs": jobs, "paused": p.paused, "test": apiTests[p.id].map { $0 as Any } ?? NSNull()]
  }]
 }
@@ -613,7 +616,7 @@ func spend(_ cli: AgentAdapter, _ input: Int64, _ output: Int64, _ cost: Double,
 
 /// Fills a provider's models from its own list, where it offers one; otherwise the user types them.
 @MainActor func listApiModels(_ p: ApiProvider) async {
- guard let key = ApiKeys.read(p.id), apiBusy.isEmpty else { return }
+ guard let key = ApiKeys.read(p.id) ?? (p.noKey ? "" : nil), apiBusy.isEmpty else { return }
  apiBusy = p.id; publishAiEverywhere()
  do {
   let ids = try await ApiRun.list(p, key)
@@ -638,7 +641,6 @@ extension Browser {
     if name.isEmpty || name.count > 40 { apiError = "Give it a name, up to 40 characters."; break }
     if ApiRun.address(url) == nil { apiError = "Use an address that starts with https:// (plain http only for localhost)."; break }
     if key.count > 500 || key.unicodeScalars.contains(where: { CharacterSet.whitespacesAndNewlines.contains($0) || CharacterSet.controlCharacters.contains($0) }) { apiError = "That key has spaces or line breaks in it. Copy it again."; break }
-    if p == nil && key.isEmpty { apiError = "Paste your API key."; break }
     let saved = p ?? ApiProvider()
     if p == nil { saved.id = "api-" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(8)); apiProviders.append(saved) }
     saved.kind = argText(data, "kind") == "anthropic" ? "anthropic" : "openai"; saved.name = name
@@ -650,10 +652,12 @@ extension Browser {
       .filter { !$0.isEmpty && $0.count <= 120 && !$0.contains(where: \.isWhitespace) && !$0.contains("\"") && seen.insert($0).inserted }.prefix(300)
      saved.models = ids.map { id in saved.models.first { $0.id == id } ?? ApiModel(id: id, efforts: []) }
     }
-    if !key.isEmpty { ApiKeys.save(saved.id, key) }
+    if !key.isEmpty { ApiKeys.save(saved.id, key); saved.noKey = false } else if !ApiKeys.has(saved.id) { saved.noKey = true } // no key, by choice: a local or open server
     aiClisCache = nil; aiModels[saved.id] = nil; saveApiProviders()
     if saved.models.isEmpty { await listApiModels(saved) }
     await checkAis(true)
+    if AgentStream.isTrue(data["use"]) { useAi(saved.id, signIn: false) }                                  // setup: the AI it connects
+    if AgentStream.isTrue(data["test"]), let first = saved.models.first { await testApi(saved, first.id) } // setup's Test connection saves first
    case "apiModels": if let p { await listApiModels(p) }
    case "apiKeyRemove":
     guard let p else { break }
@@ -666,23 +670,28 @@ extension Browser {
     for c in companions where c.ai == p.id { c.ai = "" }
     aiClisCache = nil; aiModels[p.id] = nil; aiStatus[p.id] = nil; saveAllLater()
    case "apiTest":
-    guard let p, apiBusy.isEmpty else { break }
-    guard let secret = ApiKeys.read(p.id) else { apiError = "Add a key first."; break }
-    let model = p.models.contains { $0.id == argText(data, "model") } ? argText(data, "model") : p.models.first?.id ?? ""
-    if model.isEmpty { apiError = "Add a model first."; break }
-    apiBusy = p.id; publishAiEverywhere()
-    let (checks, input, output) = await ApiRun.test(p, secret, model)
-    apiBusy = ""
-    if input + output > 0 { spend(ApiAdapter(p), input, output, p.costOf(input, output), "test") }
-    if let tools = checks.first(where: { $0.part == "Tools" }) { p.noTools = !tools.ok }
-    if let effort = checks.first(where: { $0.part == "Effort" }), let i = p.models.firstIndex(where: { $0.id == model }) { p.models[i].efforts = effort.ok ? agentEfforts : [] }
-    if checks.contains(where: { $0.part == "Key" && !$0.ok }) { ApiKeys.setRefused(p.id, true) } else if checks.contains(where: { $0.part == "Key" && $0.ok }) { ApiKeys.setRefused(p.id, false) }
-    apiTests[p.id] = ["model": model, "at": isoText(Date()), "checks": checks.map { ["part": $0.part, "ok": $0.ok, "text": $0.text] as [String: Any] }]
-    aiClisCache = nil; aiModels[p.id] = nil; saveApiProviders(); await checkAis(true)
+    guard let p else { break }
+    await testApi(p, p.models.contains { $0.id == argText(data, "model") } ? argText(data, "model") : p.models.first?.id ?? "")
    default: break
    }
    publishAiEverywhere()
   }
   return true
+ }
+
+ /// Test connection: one tiny request to the provider, then each part's result for the shell.
+ @MainActor func testApi(_ p: ApiProvider, _ model: String) async {
+  guard apiBusy.isEmpty else { return }
+  guard let secret = ApiKeys.read(p.id) ?? (p.noKey ? "" : nil) else { apiError = "Add a key first."; return }
+  if model.isEmpty { apiError = "Add a model first."; return }
+  apiBusy = p.id; publishAiEverywhere()
+  let (checks, input, output) = await ApiRun.test(p, secret, model)
+  apiBusy = ""
+  if input + output > 0 { spend(ApiAdapter(p), input, output, p.costOf(input, output), "test") }
+  if let tools = checks.first(where: { $0.part == "Tools" }) { p.noTools = !tools.ok }
+  if let effort = checks.first(where: { $0.part == "Effort" }), let i = p.models.firstIndex(where: { $0.id == model }) { p.models[i].efforts = effort.ok ? agentEfforts : [] }
+  if checks.contains(where: { $0.part == "Key" && !$0.ok }) { ApiKeys.setRefused(p.id, true) } else if checks.contains(where: { $0.part == "Key" && $0.ok }) { ApiKeys.setRefused(p.id, false) }
+  apiTests[p.id] = ["model": model, "at": isoText(Date()), "checks": checks.map { ["part": $0.part, "ok": $0.ok, "text": $0.text] as [String: Any] }]
+  aiClisCache = nil; aiModels[p.id] = nil; saveApiProviders(); await checkAis(true)
  }
 }

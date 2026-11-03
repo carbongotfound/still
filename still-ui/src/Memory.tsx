@@ -3,7 +3,7 @@ import { History, MessageSquare, Pencil, Plus, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { destroy } from "./Undo"
 import { Face, type Companion, type Fact } from "./Buddy"
 
 // Settings > Memory: what each companion remembers about the user, kept on this PC (companions\<id>\memory.json and
@@ -11,14 +11,13 @@ import { Face, type Companion, type Fact } from "./Buddy"
 type Send = (op: string, payload?: Record<string, unknown>) => void
 const KINDS: Record<string, string> = { profile: "About you", fact: "About you", preference: "Likes", habit: "Habit", person: "Someone you know", project: "Project", correction: "Correction" }
 const day = (at: string) => new Date(at).toLocaleDateString(undefined, { month: "short", day: "numeric", year: new Date(at).getFullYear() === new Date().getFullYear() ? undefined : "numeric" })
-type Ask = "clear" | "knowledge" | "personal" | "all" | null
+type Ask = "clear" | "knowledge" | "personal" | "all"
 
 export function MemorySettings({ companions, first, send, summaries, onOpenChat }: { companions: Companion[]; first?: string; send: Send; summaries?: boolean; onOpenChat?: (id: string) => void }) {
  const [id, setId] = useState(first || companions[0]?.id || "")
  const [adding, setAdding] = useState("")
  const [editing, setEditing] = useState<{ id: string; text: string } | null>(null)
  const [open, setOpen] = useState<string | null>(null) // the item whose earlier versions show
- const [ask, setAsk] = useState<Ask>(null)
  const who = companions.find(c => c.id === id) ?? companions[0]
  if (!who) return <p className="data-intro">Make a companion first. What they remember about you shows up here.</p>
  const facts = who.memory ?? [], known = facts.filter(f => (f.status ?? "active") === "active" && f.kind !== "chat"), chats = who.summaries ?? []
@@ -36,17 +35,19 @@ export function MemorySettings({ companions, first, send, summaries, onOpenChat 
       {f.sourceText && <small className="memory-source">{f.sourceText.charAt(0).toUpperCase() + f.sourceText.slice(1)}</small>}</div>
      {older.length > 0 && <Button variant="ghost" size="icon-xs" aria-label={`Earlier versions: ${f.text}`} aria-expanded={open === f.id} title="Earlier versions" onClick={() => setOpen(open === f.id ? null : f.id)}><History /></Button>}
      <Button variant="ghost" size="icon-xs" aria-label={"Edit: " + f.text} title="Edit" onClick={() => setEditing({ id: f.id, text: f.text })}><Pencil /></Button>
-     <Button variant="ghost" size="icon-xs" aria-label={"Forget: " + f.text} title="Forget" onClick={() => send("memoryForget", { companion: who.id, id: f.id })}><Trash2 /></Button>
+     <Button variant="ghost" size="icon-xs" aria-label={"Forget: " + f.text} title="Forget" onClick={() => destroy({ key: "fact:" + f.id, title: `Forget this?`, body: `${who.name} forgets "${f.text}", and its earlier versions.`, action: "Forget", done: "Forgotten", run: () => send("memoryForget", { companion: who.id, id: f.id }) })}><Trash2 /></Button>
     </div>
     {open === f.id && <ul className="memory-versions" aria-label="Earlier versions">{older.map(o => <li key={o.id}><s>{o.text}</s><small>{day(o.at)}</small></li>)}</ul>}
    </div>
  }
- const confirm: Record<Exclude<Ask, null>, [string, string, string, string, Record<string, unknown>?]> = {
-  clear: [`Clear ${who.name}'s memory?`, `${who.name} forgets all ${known.length} things above and all ${chats.length} chat summaries. Their knowledge files, instructions and chats stay.`, "Clear memory", "memoryClear"],
-  knowledge: [`Reset ${who.name}'s knowledge files?`, `Each file goes back to empty. You can bring back a file's last version from its profile.`, "Reset files", "knowledgeReset"],
-  personal: [`Clear ${who.name}'s personalization?`, `Their role, personality and reply length go back to the defaults, and what they learned in their first chat is forgotten. Their other memories stay.`, "Clear personalization", "personalizationClear"],
-  all: [`Reset everything for ${who.name}?`, `${who.name} forgets all memories, chat summaries and knowledge files, and their next chat starts with Setup again, like the first one. Your chats stay.`, "Reset everything", "memoryResetAll"],
+ const confirm: Record<Ask, [string, string, string, string, string]> = {
+  clear: [`Clear ${who.name}'s memory?`, `${who.name} forgets all ${known.length} things above and all ${chats.length} chat summaries. Their knowledge files, instructions and chats stay.`, "Clear memory", "memoryClear", "Memory cleared"],
+  knowledge: [`Reset ${who.name}'s knowledge files?`, `Each file goes back to empty. You can bring back a file's last version from its profile.`, "Reset files", "knowledgeReset", "Knowledge files reset"],
+  personal: [`Clear ${who.name}'s personalization?`, `Their role, personality and reply length go back to the defaults, and what they learned in their first chat is forgotten. Their other memories stay.`, "Clear personalization", "personalizationClear", "Personalization cleared"],
+  all: [`Reset everything for ${who.name}?`, `${who.name} forgets all memories, chat summaries and knowledge files, and their next chat starts with Setup again, like the first one. Your chats stay.`, "Reset everything", "memoryResetAll", `Everything reset for ${who.name}`],
  }
+ const keys: Record<Ask, string> = { clear: "memory:", knowledge: "knowledge:", personal: "personal:", all: "memory-all:" }
+ const setAsk = (k: Ask) => { const [title, body, action, op, done] = confirm[k]; destroy({ key: keys[k] + who.id, title, body, action, done, run: () => send(op, { companion: who.id }) }) }
  return <div className="memory-settings">
   <p className="data-intro">What your companions remember about you, kept on this PC, with where each thing came from. Passwords, codes, what you type into forms and anything from private tabs are never kept.</p>
   {companions.length > 1 && <div className="memory-who" role="radiogroup" aria-label="Companion">{companions.map(c =>
@@ -66,7 +67,7 @@ export function MemorySettings({ companions, first, send, summaries, onOpenChat 
     <div><p><b>{s.title || "A chat"}</b></p><small className="memory-summary">{s.text}</small>
      <small>{[day(s.at), s.legacy && "From before this version, not checked against the chat", !s.exists && "Chat deleted"].filter(Boolean).join(" · ")}</small></div>
     {s.exists && onOpenChat && <Button variant="ghost" size="icon-xs" aria-label={"Open chat: " + (s.title || "chat")} title="Open chat" onClick={() => onOpenChat(s.chat)}><MessageSquare /></Button>}
-    <Button variant="ghost" size="icon-xs" aria-label={"Forget this chat: " + (s.title || "chat")} title="Forget this chat" onClick={() => send("memoryForgetChat", { companion: who.id, chat: s.chat })}><Trash2 /></Button>
+    <Button variant="ghost" size="icon-xs" aria-label={"Forget this chat: " + (s.title || "chat")} title="Forget this chat" onClick={() => destroy({ key: `summary:${who.id}:${s.chat}`, title: "Forget this chat?", body: `${who.name} forgets the summary of "${s.title || "this chat"}". The chat itself stays.`, action: "Forget", done: "Chat summary forgotten", run: () => send("memoryForgetChat", { companion: who.id, chat: s.chat }) })}><Trash2 /></Button>
    </div>)}</>}
   <p className="memory-note"><b>Don't remember this chat</b>, under a chat's message box, keeps that one chat out of memory: nothing from it is saved or summarized. An <b>incognito window</b> goes further: Still keeps nothing from it at all, and memory there is read only.</p>
   <div className="memory-controls">
@@ -75,9 +76,5 @@ export function MemorySettings({ companions, first, send, summaries, onOpenChat 
    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setAsk("personal")}>Clear personalization</Button>
    <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setAsk("all")}>Reset everything</Button>
   </div>
-  <AlertDialog open={!!ask} onOpenChange={o => !o && setAsk(null)}>{ask && <AlertDialogContent>
-   <AlertDialogHeader><AlertDialogTitle>{confirm[ask][0]}</AlertDialogTitle><AlertDialogDescription>{confirm[ask][1]}</AlertDialogDescription></AlertDialogHeader>
-   <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => send(confirm[ask][3], { companion: who.id })}>{confirm[ask][2]}</AlertDialogAction></AlertDialogFooter>
-  </AlertDialogContent>}</AlertDialog>
  </div>
 }

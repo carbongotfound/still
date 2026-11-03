@@ -13,7 +13,6 @@ Out: artifacts/memory-*/ (memory-page.png, Settings > Memory)
 """
 import http.server
 import json
-import os
 from pathlib import Path
 import sys
 import textwrap
@@ -207,7 +206,9 @@ def main():
         time.sleep(.6)
         rpc(process, "capture", name="memory-page.png")
         js(process, "[...document.querySelectorAll('.memory-row')].find(r => r.innerText.includes('Maya'))?.querySelector('[aria-label^=Forget]')?.click()")
-        check(until(lambda: not any("Maya" in f["Text"] for f in facts()), 5), "Forget on the Memory page forgets it")
+        until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+        js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+        check(until(lambda: not any("Maya" in f["Text"] for f in facts()), 15), "Forget on the Memory page asks, then forgets it once Undo is gone")
         errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
         check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:

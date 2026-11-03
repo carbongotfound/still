@@ -23,7 +23,7 @@ public partial class MainWindow
    id = p.Id, kind = p.Kind, name = p.Name, url = p.Url, models = p.Models.Select(m => new { id = m.Id, efforts = m.Efforts }), priceIn = p.PriceIn, priceOut = p.PriceOut,
    limit = p.Limit, context = p.Context, noTools = p.NoTools, hasKey = ApiKeyStore.Has(p.Id), keyEnd = ApiKeyStore.Has(p.Id) ? KeyEndOf(p.Id) : "", refused = ApiKeyStore.Refused.Contains(p.Id),
    month = Use(p.Spent.GetValueOrDefault(ApiProvider.Month)), jobs = Jobs.Where(j => p.Spent.ContainsKey(ApiProvider.Month + "/" + j)).ToDictionary(j => j, j => Use(p.Spent[ApiProvider.Month + "/" + j])),
-   paused = p.Limit > 0 && p.Spent.GetValueOrDefault(ApiProvider.Month)?.Cost >= p.Limit, test = apiTests.GetValueOrDefault(p.Id) }) };
+   noKey = p.NoKey, paused = p.Limit > 0 && p.Spent.GetValueOrDefault(ApiProvider.Month)?.Cost >= p.Limit, test = apiTests.GetValueOrDefault(p.Id) }) };
 
  /// An API call's tokens and cost, added to the provider's month and to the job it was for.
  void Spend(AgentAdapter cli, AgentEvent.Spent s)
@@ -40,6 +40,7 @@ public partial class MainWindow
  async Task HandleApi(string op, JsonElement data)
  {
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
+  bool B(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
   double D(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.GetDouble() is var d && d is >= 0 and < 1e7 ? d : 0;
   var providers = Prefs.ApiProviders;
   var p = providers.FirstOrDefault(x => x.Id == S("id"));
@@ -50,7 +51,6 @@ public partial class MainWindow
     if (name.Length is 0 or > 40) { apiError = "Give it a name, up to 40 characters."; break; }
     if (ApiRun.Address(url) == null) { apiError = "Use an address that starts with https:// (plain http only for localhost)."; break; }
     if (key.Length > 500 || key.Any(c => char.IsWhiteSpace(c) || char.IsControl(c))) { apiError = "That key has spaces or line breaks in it. Copy it again."; break; }
-    if (p == null && key.Length == 0) { apiError = "Paste your API key."; break; }
     if (p == null) providers.Add(p = new ApiProvider { Id = "api-" + Guid.NewGuid().ToString("N")[..8] });
     p.Kind = S("kind") == "anthropic" ? "anthropic" : "openai"; p.Name = name;
     if (p.Url != url) { p.Url = url; p.NoTools = false; apiTests.Remove(p.Id); }
@@ -59,10 +59,13 @@ public partial class MainWindow
      var ids = ms.EnumerateArray().Select(m => m.ValueKind == JsonValueKind.String ? m.GetString()!.Trim() : "").Where(m => m.Length is > 0 and <= 120 && !m.Any(char.IsWhiteSpace) && !m.Contains('"')).Distinct().Take(300).ToList();
      p.Models = [.. ids.Select(id => p.Models.FirstOrDefault(m => m.Id == id) ?? new ApiModel { Id = id })];
     }
-    if (key.Length > 0) { ApiKeyStore.Save(p.Id, key); apiKeyEnds.Remove(p.Id); }
+    if (key.Length > 0) { ApiKeyStore.Save(p.Id, key); apiKeyEnds.Remove(p.Id); p.NoKey = false; }
+    else if (!ApiKeyStore.Has(p.Id)) p.NoKey = true; // no key, by choice: a local or open server
     aiClis = null; aiModels.Remove(p.Id); SaveLater();
     if (p.Models.Count == 0) await ListModels(p);
     await CheckAis(true);
+    if (B("use")) UseAi(p.Id, false);                                  // setup: the AI it connects
+    if (B("test") && p.Models.Count > 0) await TestApi(p, p.Models[0].Id); // setup's Test connection saves first
     break; }
    case "apiModels" when p != null: await ListModels(p); break;
    case "apiKeyRemove" when p != null:
@@ -72,33 +75,39 @@ public partial class MainWindow
     if (Prefs.AiHarness == p.Id) Prefs.AiHarness = "";
     foreach (var c in Companions.Where(c => c.Ai == p.Id)) c.Ai = "";
     aiClis = null; aiModels.Remove(p.Id); aiStatus.Remove(p.Id); SaveLater(); break;
-   case "apiTest" when p != null && apiBusy.Length == 0:
-    if (ApiKeyStore.Read(p.Id) is not { } secret) { apiError = "Add a key first."; break; }
-    string model = p.Models.Any(m => m.Id == S("model")) ? S("model") : p.Models.FirstOrDefault()?.Id ?? "";
-    if (model.Length == 0) { apiError = "Add a model first."; break; }
-    apiBusy = p.Id; PublishAiEverywhere();
-    try {
-     using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(90));
-     var (checks, input, output) = await ApiRun.Test(p, secret, model, limit.Token);
-     if (input + output > 0) Spend(ApiAdapter.Of(p), new AgentEvent.Spent(input, output, p.CostOf(input, output), "test"));
-     if (checks.FirstOrDefault(c => c.Part == "Tools") is { Part: "Tools" } tools) p.NoTools = !tools.Ok;
-     if (checks.FirstOrDefault(c => c.Part == "Effort") is { Part: "Effort" } effort && p.Models.FirstOrDefault(m => m.Id == model) is { } tested)
-      tested.Efforts = effort.Ok ? ["low", "medium", "high"] : [];
-     if (checks.Any(c => c.Part == "Key" && !c.Ok)) ApiKeyStore.Refused.Add(p.Id); else if (checks.Any(c => c.Part == "Key" && c.Ok)) ApiKeyStore.Refused.Remove(p.Id);
-     apiTests[p.Id] = new { model, at = DateTime.UtcNow, checks = checks.Select(c => new { part = c.Part, ok = c.Ok, text = c.Text }) };
-    } catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or TimeoutException or IOException or InvalidOperationException) {
-     apiTests[p.Id] = new { model, at = DateTime.UtcNow, checks = new[] { new { part = "Address", ok = false, text = "No answer in time. Check the base URL." } } };
-    } finally { apiBusy = ""; }
-    aiClis = null; aiModels.Remove(p.Id); SaveLater(); await CheckAis(true);
+   case "apiTest" when p != null:
+    await TestApi(p, p.Models.Any(m => m.Id == S("model")) ? S("model") : p.Models.FirstOrDefault()?.Id ?? "");
     break;
   }
   PublishAiEverywhere();
  }
 
+ /// Test connection: one tiny request to the provider, then each part's result for the shell.
+ async Task TestApi(ApiProvider p, string model)
+ {
+  if (apiBusy.Length > 0) return;
+  if ((ApiKeyStore.Read(p.Id) ?? (p.NoKey ? "" : null)) is not { } secret) { apiError = "Add a key first."; return; }
+  if (model.Length == 0) { apiError = "Add a model first."; return; }
+  apiBusy = p.Id; PublishAiEverywhere();
+  try {
+   using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(90));
+   var (checks, input, output) = await ApiRun.Test(p, secret, model, limit.Token);
+   if (input + output > 0) Spend(ApiAdapter.Of(p), new AgentEvent.Spent(input, output, p.CostOf(input, output), "test"));
+   if (checks.FirstOrDefault(c => c.Part == "Tools") is { Part: "Tools" } tools) p.NoTools = !tools.Ok;
+   if (checks.FirstOrDefault(c => c.Part == "Effort") is { Part: "Effort" } effort && p.Models.FirstOrDefault(m => m.Id == model) is { } tested)
+    tested.Efforts = effort.Ok ? ["low", "medium", "high"] : [];
+   if (checks.Any(c => c.Part == "Key" && !c.Ok)) ApiKeyStore.Refused.Add(p.Id); else if (checks.Any(c => c.Part == "Key" && c.Ok)) ApiKeyStore.Refused.Remove(p.Id);
+   apiTests[p.Id] = new { model, at = DateTime.UtcNow, checks = checks.Select(c => new { part = c.Part, ok = c.Ok, text = c.Text }) };
+  } catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or TimeoutException or IOException or InvalidOperationException) {
+   apiTests[p.Id] = new { model, at = DateTime.UtcNow, checks = new[] { new { part = "Address", ok = false, text = "No answer in time. Check the base URL." } } };
+  } finally { apiBusy = ""; }
+  aiClis = null; aiModels.Remove(p.Id); SaveLater(); await CheckAis(true);
+ }
+
  /// Fills a provider's models from its own list, where it offers one; otherwise the user types them.
  async Task ListModels(ApiProvider p)
  {
-  if (ApiKeyStore.Read(p.Id) is not { } key || apiBusy.Length > 0) return;
+  if ((ApiKeyStore.Read(p.Id) ?? (p.NoKey ? "" : null)) is not { } key || apiBusy.Length > 0) return;
   apiBusy = p.Id; PublishAiEverywhere();
   try {
    using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(30));

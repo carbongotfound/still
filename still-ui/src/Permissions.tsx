@@ -7,6 +7,7 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { Face, type Companion } from "./Buddy"
 import type { AiState } from "./AiSidebar"
+import { destroy } from "./Undo"
 
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A step waiting for your OK. With until, a sensitive step you allowed without asking, counting down to go ahead.
@@ -77,7 +78,7 @@ function ModeSelect({ value, onChange, label }: { value: string; onChange: (mode
 export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
- const [marked, setMarked] = useState(""), [sure, setSure] = useState(false)
+ const [marked, setMarked] = useState("")
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
@@ -105,6 +106,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
    </form></div>
   <Separator />
   <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, and sensitive steps ask every time.</p></div>
-   <Button variant={sure ? "destructive" : "outline"} size="sm" onBlur={() => setSure(false)} onClick={() => { if (!sure) return setSure(true); send("permReset"); setSure(false) }}>{sure ? "Reset now" : "Reset all"}</Button></div>
+   <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
+    body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>
 }
