@@ -6,13 +6,18 @@ namespace Still;
 
 /// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
 /// what they say until it knows them, then sets Still up around them (Assets/setup.md): settings, companions from Still's
-/// library, what each companion focuses on and remembers, and starter routines, off. Every change keeps an undo, and the
+/// library to hire (suggested only: each needs the user's Hire), what each companion focuses on and remembers, and starter
+/// routines, off. Every change keeps an undo, and the
 /// text ones can be reworded in the summary. Quick setup never comes here and never runs an AI.
+/// The same talk in make mode (Assets/make.md) is setup's Create step: a few plain questions, then the new companion's
+/// own wording, which goes back to the welcome to check before Hire. Nothing is changed here.
 public partial class MainWindow
 {
- sealed class SetupTalk(string companion, JsonElement library)
+ sealed class SetupTalk(string companion, JsonElement library, string making = "")
  {
   public readonly string Companion = companion;
+  public readonly string Making = making; // make mode: the name of the companion being made
+  public object? Made; // make mode: what it wrote about itself
   public readonly JsonElement Library = library; // Still's companions as the welcome hires them, with their role and area
   public IEnumerable<JsonElement> Crew => Library.ValueKind == JsonValueKind.Array ? Library.EnumerateArray().Where(x => x.ValueKind == JsonValueKind.Object) : [];
   public string? Session;
@@ -28,6 +33,7 @@ public partial class MainWindow
   public string Value = value;
   public readonly Action Undo = undo;
   public readonly Func<string, string?>? Edit = edit; // puts the user's own wording in: what's shown after, or null if none of it is kept
+  public Action? Hire; // a suggested companion: hired only when the user picks Hire
   public bool Undone;
  }
  static SetupTalk? setupTalk;
@@ -36,8 +42,8 @@ public partial class MainWindow
  [GeneratedRegex(@"^\s*(please\s+)?(set\s+(me|it|still)\s+up\s+again|redo\s+(my\s+)?setup|run\s+setup\s+again)\b[\s.!?]*$", RegexOptions.IgnoreCase)] private static partial Regex SetUpAgain();
 
  static void PublishSetup() { foreach (var w in Windows) w.ShellSend(new { kind = "setup", data = setupTalk is not { } s ? null : new {
-  busy = s.Busy, error = s.Error, done = s.Done, turns = s.Turns,
-  changes = s.Changes.Select(c => new { key = c.Key, label = c.Label, value = c.Value, undone = c.Undone, editable = c.Edit != null }) } }); }
+  busy = s.Busy, error = s.Error, done = s.Done, turns = s.Turns, made = s.Made,
+  changes = s.Changes.Select(c => new { key = c.Key, label = c.Label, value = c.Value, undone = c.Undone, editable = c.Edit != null, hire = c.Hire != null }) } }); }
 
  static string Field(JsonElement e, string k) => e.ValueKind == JsonValueKind.Object && e.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
 
@@ -46,7 +52,7 @@ public partial class MainWindow
   string S(string k) => Field(data, k);
   switch (op) {
    case "setupStart":
-    setupTalk = new SetupTalk(S("companion"), data.TryGetProperty("library", out var library) ? library.Clone() : default); welcomeTalk = false;
+    setupTalk = new SetupTalk(S("companion"), data.TryGetProperty("library", out var library) ? library.Clone() : default, S("making") is { Length: > 0 and <= 24 } making ? making : ""); welcomeTalk = false;
     await SetupAsk("Start now: say hello in one line and ask your first question.", "");
     break;
    case "setupAnswer" when setupTalk is { Busy: false } && S("text").Trim() is { Length: > 0 and <= 2000 } answer:
@@ -59,6 +65,10 @@ public partial class MainWindow
    case "setupEdit" when setupTalk?.Changes.FirstOrDefault(c => c.Key == S("key") && c is { Undone: false, Edit: not null }) is { } edited && S("value").Trim() is { Length: > 0 and <= 1000 } value:
     if (edited.Edit!(value) is { } shown) edited.Value = shown;
     else { edited.Undone = true; Toast("That looks like a password or a code, so it isn't kept."); }
+    SaveLater(); PublishAll(); PublishAiEverywhere(); PublishSetup();
+    break;
+   case "setupHire" when setupTalk?.Changes.FirstOrDefault(c => c.Key == S("key") && c is { Undone: false, Hire: not null }) is { } pick:
+    setupTalk.Changes.Remove(pick); pick.Hire!();
     SaveLater(); PublishAll(); PublishAiEverywhere(); PublishSetup();
     break;
    case "setupEnd": setupTalk = null; PublishSetup(); break;
@@ -75,12 +85,12 @@ public partial class MainWindow
  async Task SetupAsk(string text, string shown)
  {
   var s = setupTalk!;
-  var who = Companions.FirstOrDefault(c => c.Id == s.Companion) ?? Companions.FirstOrDefault();
+  var who = s.Making.Length > 0 ? null : Companions.FirstOrDefault(c => c.Id == s.Companion) ?? Companions.FirstOrDefault();
   var cli = AiClis.FirstOrDefault(c => c.Id == (who is { Ai.Length: > 0 } ? who.Ai : Prefs.AiHarness));
   if (shown.Length > 0) s.Turns.Add(new { role = "user", text = shown });
   if (cli == null || FindCli(cli.Command) is not { } exe) { s.Error = "No AI app is set up yet."; PublishSetup(); return; }
   s.Busy = true; s.Error = ""; PublishSetup();
-  string prompt = (s.Started ? "" : await SetupPrompt(who, cli, s) + "\n\n") + text, folder = Path.Combine(AiFolder, "setup"), said = "";
+  string prompt = (s.Started ? "" : (s.Making.Length > 0 ? await MakePrompt(s.Making, cli) : await SetupPrompt(who, cli, s)) + "\n\n") + text, folder = Path.Combine(AiFolder, "setup"), said = "";
   List<string> mcp = ["--mcp", "--no-tools", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   var (model, effort) = ForMode(cli.Id, "efficient"); // the quickest model: setup is small talk
@@ -109,7 +119,14 @@ public partial class MainWindow
   if (said.Length > 0) {
    var reply = ParseObject(said);
    string Str(string k) => reply?[k] is JsonValue v && v.TryGetValue<string>(out var x) ? x.Trim() : "";
-   if (reply?["done"] is JsonValue d && d.TryGetValue<bool>(out var done) && done && reply["settings"] is JsonObject settings) {
+   bool finished = reply?["done"] is JsonValue d && d.TryGetValue<bool>(out var done) && done;
+   if (finished && s.Making.Length > 0 && reply!["companion"] is JsonObject made) {
+    // Only words go back, each kept short: the welcome shows them to check and edit before anything is saved.
+    s.Made = new { help = Of(made, "help", 300), instructions = Texts(made, "instructions", 5, 200), summary = Texts(made, "summary", 4, 120),
+     length = Of(made, "length", 10).ToLowerInvariant() is var length && length is "short" or "balanced" or "detailed" ? length : "" };
+    s.Done = true;
+    s.Turns.Add(new { role = "ai", text = Str("say") is { Length: > 0 } bye ? bye : "Got it." });
+   } else if (finished && reply!["settings"] is JsonObject settings) {
     foreach (var c in s.Changes.Where(c => !c.Undone)) UndoSetup(s, c); // a second round (the user asked for a change) starts from where they were
     s.Changes.Clear(); s.Done = true;
     SetupApply(settings, who);
@@ -157,13 +174,16 @@ public partial class MainWindow
    .Replace("{{cli}}", cli.Name);
  }
 
+ static async Task<string> MakePrompt(string name, AgentAdapter cli) => (await AppContent.ReadAsset("make.md")).Replace("{{name}}", name).Replace("{{cli}}", cli.Name);
+
+ static string Of(JsonNode? n, string k, int max = 200) => n?[k] is JsonValue v && v.TryGetValue<string>(out var x) ? (x.Trim() is var t && t.Length > max ? t[..max] : t) : "";
+ static List<string> Texts(JsonNode? n, string k, int max, int len) => n?[k] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : "").Where(t => t.Length is > 1 && t.Length <= len).Take(max)] : [];
+
  /// Applies what the interview settled on. Each change keeps its own undo; anything invalid is left out.
  void SetupApply(JsonObject st, Companion? who)
  {
   var s = setupTalk!;
   var changes = s.Changes;
-  static string Of(JsonNode? n, string k, int max = 200) => n?[k] is JsonValue v && v.TryGetValue<string>(out var x) ? (x.Trim() is var t && t.Length > max ? t[..max] : t) : "";
-  static List<string> Texts(JsonNode? n, string k, int max, int len) => n?[k] is JsonArray a ? [.. a.Select(x => x is JsonValue v && v.TryGetValue<string>(out var t) ? t.Trim() : "").Where(t => t.Length is > 1 && t.Length <= len).Take(max)] : [];
   string Str(string k, int max = 200) => Of(st, k, max);
   List<(string Title, string Url)> Sites(string k, int max) => st[k] is JsonArray a ? [.. a.OfType<JsonObject>()
    .Select(o => (Title: (o["title"] as JsonValue)?.ToString().Trim() ?? "", Url: (o["url"] as JsonValue)?.ToString().Trim() ?? ""))
@@ -228,41 +248,53 @@ public partial class MainWindow
    changes.Add(new("interests", "Ideas about", string.Join(", ", interests), () => Prefs.Interests = old));
   }
 
-  // Companions from Still's library whose work matches theirs, hired as the library hires them: routine off.
+  // Companions from Still's library whose work matches theirs: suggested, never hired until the user picks Hire. Then
+  // one is hired as the library hires it (routine off) and takes what setup has for it.
   Dictionary<string, Companion> hired = [];
-  foreach (var crew in Texts(st, "hire", 3, 24))
-   if (!Companions.Any(c => c.Crew == crew) && s.Crew.FirstOrDefault(x => Field(x, "crew") == crew) is { ValueKind: JsonValueKind.Object } entry) {
-    var c = hired[crew] = SaveCompanion(entry);
-    changes.Add(new("hire:" + crew, "New on your team", $"{Field(entry, "role")} {c.Name} · {Field(entry, "area")}", () => DropCompanion(c), owner: c.Id));
-   }
   Companion? Find(string id) => hired.GetValueOrDefault(id) ?? Companions.FirstOrDefault(c => c.Id == id) ?? Companions.FirstOrDefault(c => id.Length > 0 && c.Crew == id);
   string Whose(Companion c, string mine, string theirs) => c == who ? mine : string.Format(theirs, c.Name);
+  var asks = (st["companions"] as JsonArray ?? []).OfType<JsonObject>().Take(10).ToList();
+  var plans = (st["routines"] as JsonArray ?? []).OfType<JsonObject>().Take(3).ToList();
+  List<string> shared = []; // what the whole team learns about the user: a companion hired from a suggestion learns it too
+  foreach (var crew in Texts(st, "hire", 3, 24))
+   if (!Companions.Any(c => c.Crew == crew) && s.Crew.FirstOrDefault(x => Field(x, "crew") == crew) is { ValueKind: JsonValueKind.Object } entry) {
+    var line = $"{Field(entry, "role")} {Field(entry, "name")} · {Field(entry, "area")}";
+    changes.Add(new("suggest:" + crew, "Suggested for your team", line, () => { }) { Hire = () => {
+     var c = hired[crew] = SaveCompanion(entry);
+     changes.Add(new("hire:" + crew, "New on your team", line, () => DropCompanion(c), owner: c.Id));
+     Remember("memory:" + c.Id + ":you", c.Name + " will remember", [c], shared, c.Id);
+     Give(c);
+    } });
+   }
 
   if (who != null) {
    List<string> facts = Facts(Texts(st, "memories", 8, 200));
    if (Str("name", 40) is { Length: > 0 } name) facts.Insert(0, "Likes to be called " + name + ".");
    if (interests.Count > 0) facts.Add("Works on " + string.Join(", ", interests).ToLowerInvariant() + ".");
+   shared = facts;
    Remember("memory", Companions.Count > 1 ? "Your team will remember" : "I'll remember", [.. Companions.OrderBy(c => c != who)], facts);
   }
-  // What each companion focuses on for them goes under its own instructions, after "For me:", so setting up again
-  // replaces it.
-  foreach (var o in (st["companions"] as JsonArray ?? []).OfType<JsonObject>().Take(10)) {
-   if (Find(Of(o, "id", 24)) is not { } c) continue;
-   if (Of(o, "instructions", 600) is { Length: > 10 } focus && c.Job.Split("\n\nFor me: ")[0] is { Length: < 900 } before) {
-    var old = c.Job;
-    string Focus(string t) { t = t.Length > 990 - before.Length ? t[..(990 - before.Length)] : t; c.Job = $"{before}\n\nFor me: {t}".TrimStart(); return t; }
-    changes.Add(new("focus:" + c.Id, Whose(c, "What I'll focus on", "What {0} will focus on"), Focus(focus), () => c.Job = old, Focus, c.Id));
-   }
-   Remember("memory:" + c.Id, Whose(c, "I'll also remember", "{0} will also remember"), [c], Facts(Texts(o, "memories", 6, 200)), c.Id);
-  }
-  foreach (var o in (st["routines"] as JsonArray ?? []).OfType<JsonObject>().Take(3)) {
-   if (Find(Of(o, "id", 24)) is not { } c) continue;
-   var r = (JsonObject)o.DeepClone(); r.Remove("id"); r["on"] = false;
-   if (ReadRoutines(JsonSerializer.SerializeToElement(new JsonArray(r)), []) is not [var routine]) continue;
-   c.Routines.Add(routine);
-   changes.Add(new("routine:" + routine.Id, Whose(c, "My routine, off for now", "{0}'s routine, off for now"), $"{Days(routine.Days)} at {routine.Time}: {routine.Text}", () => c.Routines.Remove(routine), owner: c.Id));
-  }
+  foreach (var c in Companions.ToList()) Give(c);
   // What they want help with first: the welcome offers it as their first task.
   if (Str("first", 300) is { Length: > 3 } first) changes.Add(new("first", "First, I'll help with", first, () => { }, t => t));
+
+  // What one companion focuses on for them goes under its own instructions, after "For me:", so setting up again
+  // replaces it; then what it remembers and its routines, off.
+  void Give(Companion c) {
+   foreach (var o in asks.Where(o => Find(Of(o, "id", 24)) == c)) {
+    if (Of(o, "instructions", 600) is { Length: > 10 } focus && c.Job.Split("\n\nFor me: ")[0] is { Length: < 900 } before) {
+     var old = c.Job;
+     string Focus(string t) { t = t.Length > 990 - before.Length ? t[..(990 - before.Length)] : t; c.Job = $"{before}\n\nFor me: {t}".TrimStart(); return t; }
+     changes.Add(new("focus:" + c.Id, Whose(c, "What I'll focus on", "What {0} will focus on"), Focus(focus), () => c.Job = old, Focus, c.Id));
+    }
+    Remember("memory:" + c.Id, Whose(c, "I'll also remember", "{0} will also remember"), [c], Facts(Texts(o, "memories", 6, 200)), c.Id);
+   }
+   foreach (var o in plans.Where(o => Find(Of(o, "id", 24)) == c)) {
+    var r = (JsonObject)o.DeepClone(); r.Remove("id"); r["on"] = false;
+    if (ReadRoutines(JsonSerializer.SerializeToElement(new JsonArray(r)), []) is not [var routine]) continue;
+    c.Routines.Add(routine);
+    changes.Add(new("routine:" + routine.Id, Whose(c, "My routine, off for now", "{0}'s routine, off for now"), $"{Days(routine.Days)} at {routine.Time}: {routine.Text}", () => c.Routines.Remove(routine), owner: c.Id));
+   }
+  }
  }
 }

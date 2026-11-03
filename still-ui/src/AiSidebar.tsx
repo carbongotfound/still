@@ -8,7 +8,7 @@ import { Separator } from "@/components/ui/separator"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { CollisionBoundary } from "@/components/ui/collision"
-import { fadeTop } from "@/lib/utils"
+import { fadeTop, MAC } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
@@ -66,6 +66,7 @@ const IDEAS = [
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 /// What the user likes to be called, from what their companion remembers (setup saves it as the "name" fact).
 export const calledBy = (c?: Companion) => c?.memory?.find(f => f.key === "name")?.text.match(/^Likes to be called (.+?)\.?$/)?.[1]
+const SHELL = MAC ? "Terminal" : "PowerShell" // where install and sign-in commands run
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
@@ -117,7 +118,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    {s === "signedOut" && h.terminalSignIn && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to sign in<ChevronDown /></Button>}
    {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => send("openPanel", { name: "settings", value: "models" })}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
    {howTo === h.id && s === "signedOut" && h.terminalSignIn && <div className="byo-how">
-    <p>{h.app} signs in from a terminal. Run this in PowerShell, sign in with your plan in the browser it opens, then come back:</p>
+    <p>{h.app} signs in from a terminal. Run this in {SHELL}, sign in with your plan in the browser it opens, then come back:</p>
     <code className="byo-cmd">{h.terminalSignIn}</code>
     <div className="ai-row">
      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
@@ -127,7 +128,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {s === "missing" && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to install<ChevronDown /></Button>}
    {howTo === h.id && s === "missing" && <div className="byo-how">
-    <p>Run this in PowerShell, then come back:</p>
+    <p>Run this in {SHELL}, then come back:</p>
     <code className="byo-cmd">{h.installCommand}</code>
     <div className="ai-row">
      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.installCommand)}><Copy />Copy</Button>
@@ -528,7 +529,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
-   <p>{current.name} needs {current.maker}'s app on this PC. Run this in PowerShell, then sign in with your plan.</p>
+   <p>{current.name} needs {current.maker}'s app on this {MAC ? "Mac" : "PC"}. Run this in {SHELL}, then sign in with your plan.</p>
    <code className="byo-cmd">{current.installCommand}</code>
    {current.installer && <>
     <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>

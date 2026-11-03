@@ -1,18 +1,23 @@
 // "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
 // what they say until it knows them, then sets Still up around them (setup.md): settings, companions from Still's
-// library, what each companion focuses on and remembers, and starter routines, off. Every change keeps an undo, and the
+// library to hire (suggested only: each needs the user's Hire), what each companion focuses on and remembers, and starter
+// routines, off. Every change keeps an undo, and the
 // text ones can be reworded in the summary. Quick setup never comes here and never runs an AI (ported from MainWindow.Setup.cs).
+// The same talk in make mode (make.md) is setup's Create step: a few plain questions, then the new companion's own
+// wording, which goes back to the welcome to check before Hire. Nothing is changed here.
 import AppKit
 
 final class SetupTalk {
  let companion: String
+ let making: String // make mode: the name of the companion being made
+ var made: [String: Any]? // make mode: what it wrote about itself
  let library: [[String: Any]] // Still's companions as the welcome hires them, with their role and area
  var session: String?
  var started = false, busy = false, done = false
  var error = ""
  var turns: [[String: Any]] = [] // what was said, for the welcome to show: { role, text, options }
  var changes: [SetupChange] = []
- init(_ companion: String, _ library: [[String: Any]]) { self.companion = companion; self.library = library }
+ init(_ companion: String, _ library: [[String: Any]], making: String = "") { self.companion = companion; self.library = library; self.making = making }
 }
 final class SetupChange {
  let key: String, label: String
@@ -21,19 +26,22 @@ final class SetupChange {
  let undo: () -> Void
  let edit: ((String) -> String?)? // puts the user's own wording in: what's shown after, or nil if none of it is kept
  var undone = false
+ var hire: (() -> Void)? // a suggested companion: hired only when the user picks Hire
  init(_ key: String, _ label: String, _ value: String, owner: String, edit: ((String) -> String?)?, _ undo: @escaping () -> Void) {
   self.key = key; self.label = label; self.value = value; self.owner = owner; self.edit = edit; self.undo = undo
  }
 }
 var setupTalk: SetupTalk?
+let sampleHost = "sample.still.internal" // Shell/sample: setup's first task (main.swift loadSample)
+var sampleLoads = Set<ObjectIdentifier>() // views about to show it: their next sample navigation goes through
 var welcomeTalk = false // setup opens straight into the interview ("set me up again")
 
 let setUpAgain = try! NSRegularExpression(pattern: #"^\s*(please\s+)?(set\s+(me|it|still)\s+up\s+again|redo\s+(my\s+)?setup|run\s+setup\s+again)\b[\s.!?]*$"#, options: .caseInsensitive)
 func setUpAgainAsked(_ text: String) -> Bool { setUpAgain.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil }
 
 func publishSetup() {
- let data: Any = setupTalk.map { s in ["busy": s.busy, "error": s.error, "done": s.done, "turns": s.turns,
-  "changes": s.changes.map { ["key": $0.key, "label": $0.label, "value": $0.value, "undone": $0.undone, "editable": $0.edit != nil] }] as [String: Any] } ?? NSNull()
+ let data: Any = setupTalk.map { s in ["busy": s.busy, "error": s.error, "done": s.done, "turns": s.turns, "made": s.made ?? NSNull(),
+  "changes": s.changes.map { ["key": $0.key, "label": $0.label, "value": $0.value, "undone": $0.undone, "editable": $0.edit != nil, "hire": $0.hire != nil] }] as [String: Any] } ?? NSNull()
  for browser in browsers { browser.send(["kind": "setup", "data": data]) }
 }
 
@@ -59,7 +67,7 @@ extension Browser {
   func s(_ k: String) -> String { data[k] as? String ?? "" }
   switch op {
   case "setupStart":
-   setupTalk = SetupTalk(s("companion"), (data["library"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? []); welcomeTalk = false
+   setupTalk = SetupTalk(s("companion"), (data["library"] as? [Any])?.compactMap { $0 as? [String: Any] } ?? [], making: (1...24).contains(s("making").count) ? s("making") : ""); welcomeTalk = false
    Task { await setupAsk("Start now: say hello in one line and ask your first question.", "") }
   case "setupAnswer":
    let answer = tidy(s("text"))
@@ -73,19 +81,23 @@ extension Browser {
    guard let c = setupTalk?.changes.first(where: { $0.key == s("key") && !$0.undone && $0.edit != nil }), (1...1000).contains(value.count) else { break }
    if let shown = c.edit?(value) { c.value = shown } else { c.undone = true; toast("That looks like a password or a code, so it isn't kept.") }
    storeCompanions(); publishEverywhere(); publishAiEverywhere(); publishSetup()
+  case "setupHire":
+   guard let talk = setupTalk, let pick = talk.changes.first(where: { $0.key == s("key") && !$0.undone && $0.hire != nil }) else { break }
+   talk.changes.removeAll { $0 === pick }; pick.hire?()
+   storeCompanions(); publishEverywhere(); publishAiEverywhere(); publishSetup()
   default: setupTalk = nil; publishSetup() // setupEnd
   }
  }
 
  @MainActor func setupAsk(_ text: String, _ shown: String) async {
   guard let s = setupTalk else { return }
-  let who = companions.first { $0.id == s.companion } ?? companions.first
+  let who: Companion? = s.making.isEmpty ? (companions.first(where: { $0.id == s.companion }) ?? companions.first) : nil
   let harness = who.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
   let cli = aiClis.first { $0.id == harness }
   if !shown.isEmpty { s.turns.append(["role": "user", "text": shown]) }
   guard let cli, let exe = findCli(cli.command) else { s.error = "No AI app is set up yet."; publishSetup(); return }
   s.busy = true; s.error = ""; publishSetup()
-  let prompt = (s.started ? "" : setupPrompt(who, cli, s) + "\n\n") + text, folder = (aiFolder as NSString).appendingPathComponent("setup")
+  let prompt = (s.started ? "" : (s.making.isEmpty ? setupPrompt(who, cli, s) : makePrompt(s.making, cli)) + "\n\n") + text, folder = (aiFolder as NSString).appendingPathComponent("setup")
   var mcp = ["--mcp", "--no-tools", "--as", cli.name, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
   if isQa { mcp.insert("--qa", at: 1) }
   var (model, effort) = forMode(cli.id, "efficient") // the quickest model: setup is small talk
@@ -118,7 +130,15 @@ extension Browser {
   if !said.isEmpty {
    let reply = parseObject(said)
    func str(_ k: String) -> String { tidy(reply?[k] as? String ?? "") }
-   if AgentStream.isTrue(reply?["done"]), let settings = reply?["settings"] as? [String: Any] {
+   if AgentStream.isTrue(reply?["done"]), !s.making.isEmpty, let made = reply?["companion"] as? [String: Any] {
+    // Only words go back, each kept short: the welcome shows them to check and edit before anything is saved.
+    func texts(_ k: String, _ most: Int, _ len: Int) -> [String] { Array((made[k] as? [Any] ?? []).map { tidy($0 as? String ?? "") }.filter { (2...len).contains($0.count) }.prefix(most)) }
+    let length = tidy(made["length"] as? String ?? "").lowercased()
+    s.made = ["help": String(tidy(made["help"] as? String ?? "").prefix(300)), "instructions": texts("instructions", 5, 200), "summary": texts("summary", 4, 120),
+     "length": ["short", "balanced", "detailed"].contains(length) ? length : ""]
+    s.done = true
+    s.turns.append(["role": "ai", "text": str("say").isEmpty ? "Got it." : str("say")])
+   } else if AgentStream.isTrue(reply?["done"]), let settings = reply?["settings"] as? [String: Any] {
     for c in s.changes where !c.undone { undoSetup(s, c) } // a second round (the user asked for a change) starts from where they were
     s.changes.removeAll(); s.done = true
     setupApply(settings, who)
@@ -154,6 +174,10 @@ extension Browser {
    .replacingOccurrences(of: "{{library}}", with: free.isEmpty ? "(none, they have them all)" : free.joined(separator: "\n"))
    .replacingOccurrences(of: "{{now}}", with: "tabs \(pref("TabLayout", "Classic") == "Modern" ? "down the side" : "across the top"), theme \(pref("Theme", "System")), search \(pref("SearchEngine", "Google"))")
    .replacingOccurrences(of: "{{cli}}", with: cli.name)
+ }
+ func makePrompt(_ name: String, _ cli: AgentAdapter) -> String {
+  ((try? String(contentsOf: resources.appendingPathComponent("make.md"), encoding: .utf8)) ?? "")
+   .replacingOccurrences(of: "{{name}}", with: name).replacingOccurrences(of: "{{cli}}", with: cli.name)
  }
 
  /// How often the AI asks before clicking and typing, for every site and companion (Windows: SetPermission("", "interact", "", mode)).
@@ -247,42 +271,54 @@ extension Browser {
    change("interests", "Ideas about", interests.joined(separator: ", ")) { [self] in prefs["Interests"] = old }
   }
 
-  // Companions from Still's library whose work matches theirs, hired as the library hires them: routine off.
+  // Companions from Still's library whose work matches theirs: suggested, never hired until the user picks Hire. Then
+  // one is hired as the library hires it (routine off) and takes what setup has for it.
   var hired: [String: Companion] = [:]
-  for crew in texts("hire", 3, 24) where !companions.contains(where: { $0.crew == crew }) {
-   guard let entry = talk.library.first(where: { $0["crew"] as? String == crew }) else { continue }
-   let c = saveCompanion(entry); hired[crew] = c
-   change("hire:" + crew, "New on your team", "\(entry["role"] as? String ?? "") \(c.name) · \(entry["area"] as? String ?? "")", owner: c.id) { [self] in dropCompanion(c) }
-  }
   func find(_ id: String) -> Companion? { hired[id] ?? companions.first { $0.id == id } ?? companions.first { !id.isEmpty && $0.crew == id } }
   func whose(_ c: Companion, _ mine: String, _ theirs: String) -> String { c === who ? mine : theirs.replacingOccurrences(of: "{0}", with: c.name) }
+  let asks = Array((st["companions"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }.prefix(10))
+  let plans = Array((st["routines"] as? [Any] ?? []).compactMap { $0 as? [String: Any] }.prefix(3))
+  // What one companion focuses on for them goes under its own instructions, after "For me:", so setting up again
+  // replaces it; then what it remembers and its routines, off.
+  func give(_ c: Companion) {
+   for o in asks where find(str("id", 24, o)) === c {
+    let focus = str("instructions", 600, o), before = c.job.components(separatedBy: "\n\nFor me: ")[0]
+    if focus.count > 10 && before.count < 900 {
+     let old = c.job
+     func focusOn(_ t: String) -> String { let t = String(t.prefix(990 - before.count)); c.job = (before + "\n\nFor me: " + t).trimmingCharacters(in: .whitespacesAndNewlines); return t }
+     change("focus:" + c.id, whose(c, "What I'll focus on", "What {0} will focus on"), focusOn(focus), owner: c.id, edit: focusOn) { c.job = old }
+    }
+    remember("memory:" + c.id, whose(c, "I'll also remember", "{0} will also remember"), [c], sentences(texts("memories", 6, 200, o)), owner: c.id)
+   }
+   for o in plans where find(str("id", 24, o)) === c {
+    var r = o; r["id"] = nil; r["on"] = false
+    guard let routine = Routine.read([r], old: []).first else { continue }
+    c.routines.append(routine)
+    change("routine:" + routine.id, whose(c, "My routine, off for now", "{0}'s routine, off for now"), "\(routineDays(routine.days)) at \(routine.time): \(routine.text)", owner: c.id) { c.routines.removeAll { $0.id == routine.id } }
+   }
+  }
+  var shared: [String] = [] // what the whole team learns about the user: a companion hired from a suggestion learns it too
+  for crew in texts("hire", 3, 24) where !companions.contains(where: { $0.crew == crew }) {
+   guard let entry = talk.library.first(where: { $0["crew"] as? String == crew }) else { continue }
+   let line = "\(entry["role"] as? String ?? "") \(entry["name"] as? String ?? "") · \(entry["area"] as? String ?? "")"
+   change("suggest:" + crew, "Suggested for your team", line) {}
+   talk.changes.last?.hire = { [self] in
+    let c = saveCompanion(entry); hired[crew] = c
+    change("hire:" + crew, "New on your team", line, owner: c.id) { [self] in dropCompanion(c) }
+    remember("memory:" + c.id + ":you", c.name + " will remember", [c], shared, owner: c.id)
+    give(c)
+   }
+  }
 
   if let who {
    var facts = sentences(texts("memories", 8, 200))
    let name = str("name", 40)
    if !name.isEmpty { facts.insert("Likes to be called " + name + ".", at: 0) }
    if !interests.isEmpty { facts.append("Works on " + interests.joined(separator: ", ").lowercased() + ".") }
+   shared = facts
    remember("memory", companions.count > 1 ? "Your team will remember" : "I'll remember", [who] + companions.filter { $0 !== who }, facts)
   }
-  // What each companion focuses on for them goes under its own instructions, after "For me:", so setting up again
-  // replaces it.
-  for o in (st["companions"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).prefix(10) {
-   guard let c = find(str("id", 24, o)) else { continue }
-   let focus = str("instructions", 600, o), before = c.job.components(separatedBy: "\n\nFor me: ")[0]
-   if focus.count > 10 && before.count < 900 {
-    let old = c.job
-    func focusOn(_ t: String) -> String { let t = String(t.prefix(990 - before.count)); c.job = (before + "\n\nFor me: " + t).trimmingCharacters(in: .whitespacesAndNewlines); return t }
-    change("focus:" + c.id, whose(c, "What I'll focus on", "What {0} will focus on"), focusOn(focus), owner: c.id, edit: focusOn) { c.job = old }
-   }
-   remember("memory:" + c.id, whose(c, "I'll also remember", "{0} will also remember"), [c], sentences(texts("memories", 6, 200, o)), owner: c.id)
-  }
-  for o in (st["routines"] as? [Any] ?? []).compactMap({ $0 as? [String: Any] }).prefix(3) {
-   guard let c = find(str("id", 24, o)) else { continue }
-   var r = o; r["id"] = nil; r["on"] = false
-   guard let routine = Routine.read([r], old: []).first else { continue }
-   c.routines.append(routine)
-   change("routine:" + routine.id, whose(c, "My routine, off for now", "{0}'s routine, off for now"), "\(routineDays(routine.days)) at \(routine.time): \(routine.text)", owner: c.id) { c.routines.removeAll { $0.id == routine.id } }
-  }
+  for c in companions { give(c) }
   // What they want help with first: the welcome offers it as their first task.
   let first = str("first", 300)
   if first.count > 3 { change("first", "First, I'll help with", first, edit: { $0 }) {} }

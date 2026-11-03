@@ -568,6 +568,7 @@ public partial class MainWindow
   while (t.Loading && DateTime.UtcNow < until) await Task.Delay(100);
  }
  /// What an agent may open: web pages, and files inside its companion's working folder (a builder tests what it made there).
+ internal const string SampleHost = "sample.still.internal"; // Shell/sample, mapped into every tab
  static string WebUrl(string input, string engine, string folder = "")
  {
   var url = ResolveAddress(input, engine);

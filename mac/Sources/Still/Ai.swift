@@ -844,7 +844,7 @@ extension Browser {
   let v = aiView
   var harness = v.chat?.harness ?? pref("AiHarness", "")
   switch op {
-  case "setupStart", "setupAnswer", "setupUndo", "setupEdit", "setupEnd": handleSetup(op, data); return true
+  case "setupStart", "setupAnswer", "setupUndo", "setupEdit", "setupHire", "setupEnd": handleSetup(op, data); return true
   case "welcomeAgain": welcome = true; welcomeTalk = b("talk"); publishEverywhere(); return true
   case "interests":
    var seen = Set<String>()

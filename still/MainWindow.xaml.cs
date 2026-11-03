@@ -391,6 +391,8 @@ public partial class MainWindow : Window
    // Alerts, confirms and prompts show inside Still (and AI agents can answer them) instead of a Windows dialog.
    core.Settings.AreDefaultScriptDialogsEnabled = false;
    ApplyProtection(core);
+   // Setup's first task works on a made-up comparison page that ships with Still: an https address agents may open.
+   core.SetVirtualHostNameToFolderMapping(SampleHost, Path.Combine(await AppContent.ShellFolder, "sample"), CoreWebView2HostResourceAccessKind.DenyCors);
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
    // Black while a page loads (no white flash in the dark theme), then the normal canvas: white unless the page asks for dark, as in Edge.

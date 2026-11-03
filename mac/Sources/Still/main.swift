@@ -1025,8 +1025,23 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if action.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
    decisionHandler(.cancel); return
   }
+  if let url = action.request.url, url.host == sampleHost, action.targetFrame?.isMainFrame == true, sampleLoads.remove(ObjectIdentifier(view)) == nil {
+   decisionHandler(.cancel); loadSample(view, url); return
+  }
   if action.targetFrame?.isMainFrame == true { applyBlocking(view, host: action.request.url?.host) }
   decisionHandler(.allow)
+ }
+
+ /// Setup's first task works on a made-up comparison page that ships with Still (Shell/sample), at an https address
+ /// agents may open. WebKit can't serve an https host from files, so the page is handed over as if it came from there
+ /// (Windows maps the host to the folder).
+ func loadSample(_ view: WKWebView, _ url: URL) {
+  let folder = resources.appendingPathComponent("Shell/sample").standardizedFileURL
+  let file = folder.appendingPathComponent(url.lastPathComponent.isEmpty || url.path == "/" ? "compare.html" : url.lastPathComponent).standardizedFileURL
+  guard file.deletingLastPathComponent() == folder, file.pathExtension == "html", let data = try? Data(contentsOf: file),
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/html; charset=utf-8"]) else { return }
+  sampleLoads.insert(ObjectIdentifier(view))
+  _ = view.loadSimulatedRequest(URLRequest(url: url), response: response, responseData: data)
  }
 
  func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
