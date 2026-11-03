@@ -253,7 +253,7 @@ def edit(process):
     tab(process, "Face")
     took.append(timed(process, ".look-dialog [data-option=sleepy]"))
     tab(process, "Extras")
-    took.append(timed(process, ".look-dialog [data-option=antennae]"))
+    took.append(timed(process, ".look-dialog [data-option=tuft]"))  # Kit (Sky column) already has antennae
     tab(process, "Colors")
     took.append(timed(process, ".look-pairs [aria-label='Mint and teal']"))
     ok = [t for t in took if t is not None and t >= 0]
