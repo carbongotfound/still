@@ -108,16 +108,18 @@ def main():
         click(process, ".mate-switch-more[aria-label='Hire a companion']")
         until(lambda: js(process, "!!document.querySelector('.companion-library')"), 5)
         click_text(process, ".library-more .role-head", "Make your own")
-        until(lambda: js(process, "!!document.querySelector('.companion-dialog')"), 5)
-        type_into(process, ".companion-dialog input[required]", "Ines")
-        type_into(process, ".companion-dialog textarea", "A careful researcher who cites sources.")
-        click_text(process, ".companion-look button", "Customize")  # the look editor: Periwinkle
+        until(lambda: js(process, "!!document.querySelector('.profile-panel .profile-foot')"), 5)
+        type_into(process, ".profile-panel .profile-field input", "Ines")  # Name comes first, then Role
+        type_into(process, ".profile-panel .profile-field textarea", "A careful researcher who cites sources.")  # Instructions
+        click_text(process, ".profile-stage-actions button", "Edit look")  # the look editor: Periwinkle
         until(lambda: js(process, "!!document.querySelector('.look-dialog .look-colors')"), 8)
         click(process, ".look-colors [aria-label=Periwinkle]")
         click(process, ".look-save")
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
-        click_text(process, ".companion-modes button", "Thorough")
-        click(process, ".companion-save")
+        js(process, "document.querySelector(\".profile-tablist [role=tab][id$='-trigger-model']\")?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))")
+        until(lambda: js(process, "!!document.querySelector('.profile-panel [aria-label=\"Default tier\"]')"), 3)
+        click_text(process, ".profile-panel [aria-label='Default tier'] button", "Thorough")
+        click_text(process, ".profile-foot button", "Hire Ines")
         ines = until(lambda: mates().get("Ines"), 10)
         check(until(lambda: js(process, "document.querySelector('.joined-card [data-slot=dialog-title]')?.innerText") == "Ines joined your team", 5), "Ines joined: the card says so")
         click_text(process, ".joined-card button", "Not now")

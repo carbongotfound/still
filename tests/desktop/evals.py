@@ -9,6 +9,7 @@ Writes artifacts/evals-<label>-<id>/result.json and transcripts.md. Score them w
 import http.server
 import json
 import re
+import subprocess
 import sys
 import threading
 import time
@@ -141,7 +142,10 @@ def main():
         until(lambda: next((x for x in chats() if x["Id"] == ids["followup"]), {}).get("Running"), 30, .5)
         settle(process)
         rpc(process, "quit")
-        process.wait(timeout=15)
+        try:
+            process.wait(timeout=30)
+        except subprocess.TimeoutExpired:
+            pass  # killed below; the results still get written
     finally:
         if process.poll() is None:
             process.kill()

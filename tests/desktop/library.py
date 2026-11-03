@@ -180,7 +180,7 @@ def main():
         time.sleep(1.5)
         capture(p, "profile.png")
         click(p, ".hire-profile-full")
-        check(until(lambda: "## When you join the team" in (js(p, "document.querySelector('.hire-profile-instructions')?.innerText") or ""), 3)
+        check(until(lambda: "## How you judge the work" in (js(p, "document.querySelector('.hire-profile-instructions')?.innerText") or ""), 3)
               and js(p, "document.querySelector('.hire-profile-full').getAttribute('aria-expanded')") == "true", "See full instructions opens the whole job brief")
         escape(p)
         check(until(lambda: shown(p, ".companion-library") and not shown(p, ".hire-profile"), 5) and "Talia" not in mates(), "Esc goes back to the library without hiring")
@@ -212,12 +212,12 @@ def main():
         check(until(lambda: mates().get("Pasty", {}).get("Job") == "Checks prices.", 5) and until(lambda: not shown(p, ".companion-library"), 3), "Pasting a shared companion adds them and closes the library")
         check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "and says Pasty joined")
 
-        # Make your own opens the create dialog. The Companions page's button opens the library too.
+        # Make your own opens the companion editor on a new companion. The Companions page's button opens the library too.
         open_library(p)
         click(p, ".library-more .role-head", "Make your own")
-        check(until(lambda: shown(p, ".companion-dialog") and not shown(p, ".companion-library"), 5), "Make your own opens the create dialog")
+        check(until(lambda: shown(p, ".profile-panel .profile-foot") and not shown(p, ".companion-library"), 5), "Make your own opens the companion editor, with Hire at the bottom")
         escape(p)
-        until(lambda: not shown(p, ".companion-dialog"), 3)
+        until(lambda: not shown(p, ".profile-panel"), 3)
         companions_page(p)
         click(p, ".home-new", "Hire a companion")
         check(until(lambda: shown(p, ".companion-library"), 5), "The Companions page's Hire a companion opens the library")

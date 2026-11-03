@@ -14,7 +14,7 @@ import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, CompanionProfile, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginKeySetting, PluginStack } from "./Plugins"
-import { ChatHistory, ChatLink, CompanionEditor, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
+import { ChatHistory, ChatLink, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
 import { DEFAULT_LOOK } from "./look"
@@ -321,7 +321,7 @@ export default function App() {
  const [ai, setAi] = useState<AiState>()
  const [aiView, setAiView] = useState<"chat" | "settings">("chat")
  const [buddy, setBuddy] = useState("") // the companion picked on the new tab page
- const [editing, setEditing] = useState<Companion | null>(null)
+ const [draft, setDraft] = useState<Companion | null>(null) // "Make your own": the profile panel on a companion not hired yet
  const [joined, setJoined] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
  const [library, setLibrary] = useState(false) // "Hire a companion" opens Still's companion library first
@@ -464,7 +464,7 @@ export default function App() {
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
  const oldName = state.welcome || state.secondary ? undefined : ai?.companions?.find(c => c.askName) // a companion with an old stock name, asked once
- const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!editing || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
+ const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!draft || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
@@ -758,7 +758,7 @@ export default function App() {
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={mine!} send={send} onNew={() => setView("home")} />
-         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setEditing(randomCompanion())} onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
+         : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setDraft(randomCompanion())} onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
          : view === "skills" ? <SkillsPage ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
@@ -985,13 +985,13 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   <AlertDialog open={!!confirm} onOpenChange={o => { if (!o) setConfirm(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.body}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (confirm) send(confirm.op); setConfirm(null) }}>Clear</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
-  {oldName && !editing && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
+  {oldName && !draft && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
   {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onSkills={() => { setProfile(""); goHome("skills") }} />}
   {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onProfile={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
-   onOwn={() => { setLibrary(false); setEditing(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
+   onOwn={() => { setLibrary(false); setDraft(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
    onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
-  {editing && ai && <CompanionEditor ai={ai} companion={editing} onClose={() => setEditing(null)} onSave={c => { if (c.id) send("companionSave", c); else hire(c); setEditing(null) }} />}
+  {draft && ai && <ProfilePanel ai={ai} id="" draft={draft} send={send} onPick={setProfile} onClose={() => setDraft(null)} onOpenFile={openFile} onSkills={() => { setDraft(null); goHome("skills") }} onHire={c => { hire(c); setDraft(null) }} />}
   {joined && <JoinedCard companion={joined} onLater={() => setJoined(null)} onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />

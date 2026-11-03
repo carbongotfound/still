@@ -14,15 +14,19 @@ final class Companion {
  var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
  var routines: [Routine] = [] // what it does on a schedule (Routines.swift)
  var instructions = "" // the user's edit of its role's instructions (Assets/roles), "" = Still's own
- var greet = false // new on the team: it starts its first chat itself, once (aiKickoff)
+ var greet = false // new on the team: its first chat hasn't happened yet (aiKickoff, and Setup loads then)
+ var role = "" // its title, shown before its name ("Research Maya"); "" = its crew role, or none
+ var personality = "" // direct, warm, playful or formal; "" = only the Tone box
+ var length = "balanced" // how long its replies are: short, balanced or detailed
  init() {}
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
   mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions"); greet = d["Greet"] as? Bool ?? false
+  role = s("Role"); personality = s("Personality"); length = d["Length"] as? String ?? "balanced"
   routines = (d["Routines"] as? [[String: Any]] ?? []).map(Routine.init)
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions, "Greet": greet] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Role": role, "Personality": personality, "Length": length, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions, "Greet": greet] }
 }
 
 /// A Markdown file's front matter (its keys in lowercase) and its body.
@@ -43,16 +47,52 @@ func frontMatter(_ raw: String) -> (head: [String: String], body: String) {
 struct Skill {
  let id: String, name: String, description: String, when: String, body: String
  static var folder: URL { support.appendingPathComponent("skills") }
+ /// Setup: every companion's first chat loads it (runAi), and only then. The user can edit and reset it, not delete it.
+ static let setupId = "setup"
+ /// Still's own version of each skill it ships, by id: the roles' kits (roles/<role>/skills) and Setup.
+ static let stock: [String: String] = {
+  var found: [String: String] = [:]
+  let roles = resources.appendingPathComponent("roles"), fm = FileManager.default
+  for role in ((try? fm.contentsOfDirectory(atPath: roles.path)) ?? []).sorted() {
+   let dir = roles.appendingPathComponent(role).appendingPathComponent("skills")
+   for f in ((try? fm.contentsOfDirectory(atPath: dir.path)) ?? []).sorted() where f.hasSuffix(".md") {
+    if let text = try? String(contentsOf: dir.appendingPathComponent(f), encoding: .utf8), found[(f as NSString).deletingPathExtension] == nil { found[(f as NSString).deletingPathExtension] = text }
+   }
+  }
+  if let text = try? String(contentsOf: resources.appendingPathComponent("skills/setup.md"), encoding: .utf8) { found[setupId] = text }
+  return found
+ }()
+ /// The role kits' skills as Still shipped them before 2.10 (FNV of the whole file): an unedited copy upgrades itself.
+ static let oldStock: Set<UInt32> = [0xaf1cf5db, 0xd7d58bf7, 0xa715eacc, 0x32e37129, 0x78b99600, 0xe02375fc, 0x8bd51c71, 0xc6bb0558, 0x72ebbe34, 0x104fc02a, 0x48b7541f, 0x3e21ce26, 0x207faf0b, 0x7c34139c, 0xd8310490, 0x2d88ebe7, 0x991ab0c3, 0xc81d73a4, 0x3ae93229, 0x6432ba92, 0x2b74fc03, 0xa8f82b24, 0x5f606ef0, 0x534f5b5c]
  static var cache: [Skill]?
  static var all: [Skill] { if let cache { return cache }; let list = load(); cache = list; return list }
  static func load() -> [Skill] {
   let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).filter { $0.hasSuffix(".md") }.sorted().prefix(200)
-  return names.compactMap { file in
-   guard let raw = try? String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8) else { return nil }
-   let (head, body) = frontMatter(raw)
+  var list: [Skill] = names.compactMap { file in
+   guard var raw = try? String(contentsOf: folder.appendingPathComponent(file), encoding: .utf8) else { return nil }
    let id = (file as NSString).deletingPathExtension
-   return Skill(id: id, name: head["name"].flatMap { $0.isEmpty ? nil : $0 } ?? id, description: head["description"] ?? "", when: head["when"] ?? "", body: body)
+   if let now = stock[id], oldStock.contains(fnv(raw.replacingOccurrences(of: "\r\n", with: "\n"))) { try? now.write(to: folder.appendingPathComponent(file), atomically: true, encoding: .utf8); raw = now }
+   return parse(id, raw)
   }
+  if !list.contains(where: { $0.id == setupId }), let setup = stock[setupId] { // every profile has Setup, even one whose file went missing
+   try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+   try? setup.write(to: folder.appendingPathComponent(setupId + ".md"), atomically: true, encoding: .utf8)
+   list.append(parse(setupId, setup))
+  }
+  return list
+ }
+ static func parse(_ id: String, _ raw: String) -> Skill {
+  let (head, body) = frontMatter(raw)
+  return Skill(id: id, name: head["name"].flatMap { $0.isEmpty ? nil : $0 } ?? id, description: head["description"] ?? "", when: head["when"] ?? "", body: body)
+ }
+ /// Whether the user changed a skill Still ships (so Reset has something to undo).
+ var edited: Bool { guard let text = Skill.stock[id] else { return false }; let s = Skill.parse(id, text); return s.body != body || s.name != name || s.description != description || s.when != when }
+ /// Puts back Still's version of a skill it ships.
+ static func reset(_ id: String) throws {
+  guard let text = stock[id] else { return }
+  try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+  try text.write(to: folder.appendingPathComponent(id + ".md"), atomically: true, encoding: .utf8)
+  cache = nil
  }
  /// Adds a skill file as it is, unless there's one by that id already (the user's own stays as it is).
  static func add(_ id: String, _ text: String) throws {
@@ -78,14 +118,14 @@ struct Skill {
   cache = nil
   return id
  }
- static func delete(_ id: String) throws { if all.contains(where: { $0.id == id }) { try FileManager.default.removeItem(at: folder.appendingPathComponent(id + ".md")); cache = nil } }
+ static func delete(_ id: String) throws { if id != setupId && all.contains(where: { $0.id == id }) { try FileManager.default.removeItem(at: folder.appendingPathComponent(id + ".md")); cache = nil } }
  /// The skills a message invokes: "/id" at the start or after a space.
- static func invoked(_ text: String) -> [Skill] { all.filter { text.range(of: #"(^|\s)/"# + NSRegularExpression.escapedPattern(for: $0.id) + #"(?=\s|$)"#, options: .regularExpression) != nil } }
+ static func invoked(_ text: String) -> [Skill] { all.filter { $0.id != setupId && text.range(of: #"(^|\s)/"# + NSRegularExpression.escapedPattern(for: $0.id) + #"(?=\s|$)"#, options: .regularExpression) != nil } }
  var prompt: String { "[Skill \"\(name)\"\(when.isEmpty ? "" : ", for: " + when)]\n\(body)" }
  /// A companion's skills as an index for its first turn: id, name and when to use it, one line each, under a hard cap.
  static let indexCap = 2400
  static func index(_ ids: [String]) -> String {
-  let lines = all.filter { ids.contains($0.id) }.prefix(30).map { k -> String in
+  let lines = all.filter { $0.id != setupId && ids.contains($0.id) }.prefix(30).map { k -> String in
    let w = k.when.isEmpty ? k.description : k.when
    let l = ("- " + k.id + ": " + k.name + (w.isEmpty ? "" : ". " + w)).replacingOccurrences(of: #"\r\n|[\r\n]"#, with: " ", options: .regularExpression)
    return l.count > 160 ? String(l.prefix(159)) + "…" : l
@@ -294,12 +334,6 @@ func official(_ cli: AgentAdapter, _ url: String) -> Bool {
 /// A step in the chat. A new companion's first chat opens with its own words: no step shows before its hello.
 func chatStep(_ chat: AiChat, _ label: String) { if !label.isEmpty && !(kickoffs.contains(chat.id) && !chat.messages.contains { $0.role == "assistant" }) { chat.messages.append(AiMessage("tool", label)) } }
 
-/// The tabs a new companion can see as it starts (private ones never show), so its hello can build on them.
-func openTabsNote() -> String {
- let open = browsers.flatMap(\.tabs).filter { !$0.isPrivate && $0.url.hasPrefix("http") }.prefix(8).map { "\"\(clipped($0.title, 80))\" \($0.url)" }
- return open.isEmpty ? "" : "\n[Still] Tabs they have open: " + open.joined(separator: "; ") + "."
-}
-
 /// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
 /// from the user's first message.
 @MainActor func nameFromHello(_ chat: AiChat, _ hello: String) {
@@ -497,7 +531,7 @@ func untangle(_ team: AiChat) {
 }
 
 func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _ folder: String, plugins: Bool = true) -> String {
- (who.map { "Your name is \($0.name). The user set you up as: \($0.job)\n" + ($0.tone.isEmpty ? "" : "Your personality and how you talk: \($0.tone)\n") + "\n" } ?? "") + """
+ (who.map { whoYouAre($0) + "\n" } ?? "") + """
  You are the AI assistant built into Still, the user's web browser, running on \(cli.app). You work with the user in a chat.
  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
  \(folder.isEmpty ? "You are not in a terminal: you have no files or shell here" : "You may read and write files in the user's working folder \(folder), and nowhere else. There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
@@ -546,6 +580,32 @@ func fetchMedia(_ url: String) async -> [String: Any] {
   for try await byte in bytes { data.append(byte); if data.count > mediaMax { return ["url": url, "error": "The image is too big to show here."] } }
   return ["url": url, "src": "data:\(type);base64," + data.base64EncodedString()]
  } catch { return ["url": url, "error": "The image didn't load."] }
+}
+
+let personalities = [
+ "direct": "Direct: get to the point, say what you think plainly, skip the small talk.",
+ "warm": "Warm: friendly and encouraging, with a word of thanks or credit where it's due.",
+ "playful": "Playful: light and upbeat, a little humor when it fits, never at the cost of the work.",
+ "formal": "Formal: polished and courteous, full sentences, no slang or jokes.",
+]
+let replyLengths = [
+ "short": "Short: a few lines, the answer first. Add detail only when asked.",
+ "balanced": "Balanced: as long as the task needs and no longer.",
+ "detailed": "Detailed: full answers that show your reasoning, the evidence and the edge cases.",
+]
+/// A companion's role (its own, or its crew role's: the first line of roles/<crew>.md), "" when it has none.
+func roleOf(_ c: Companion) -> String {
+ if !c.role.isEmpty || c.crew.isEmpty { return c.role }
+ guard let text = try? String(contentsOf: resources.appendingPathComponent("roles/\(c.crew).md"), encoding: .utf8) else { return "" }
+ return tidy((text.components(separatedBy: "\n").first ?? "").drop { $0 == "#" })
+}
+/// Who the companion is, in a few short lines: name and role, what the user set it up for, personality, reply length.
+func whoYouAre(_ who: Companion) -> String {
+ let role = roleOf(who)
+ return "Your name is \(who.name)." + (role.isEmpty ? "" : " Your role: \(role). Introduce yourself role first, as \(role) \(who.name).") + " The user set you up as: \(who.job)\n"
+  + (personalities[who.personality].map { "Your personality: \($0)\n" } ?? "")
+  + (who.tone.isEmpty ? "" : "How you talk, in the user's words: \(who.tone)\n")
+  + "Reply length: \(replyLengths[who.length] ?? replyLengths["balanced"]!)\n"
 }
 
 /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
@@ -633,8 +693,15 @@ extension Browser {
   if data["ai"] != nil { c.ai = aiClis.contains { $0.id == s("ai") } ? s("ai") : "" }
   if ["efficient", "default", "expert"].contains(s("mode")) { c.mode = s("mode") }
   if data["folder"] != nil { var folder: ObjCBool = false; c.folder = s("folder").hasPrefix("/") && FileManager.default.fileExists(atPath: s("folder"), isDirectory: &folder) && folder.boolValue ? s("folder") : "" }
-  if let picked = data["skills"] as? [Any] { var seen = Set<String>(); c.skills = picked.map { $0 as? String ?? "" }.filter { k in Skill.all.contains { $0.id == k } && seen.insert(k).inserted } }
+  if let picked = data["skills"] as? [Any] {
+   var seen = Set<String>(); let ids = picked.map { $0 as? String ?? "" }.filter { $0 != Skill.setupId && seen.insert($0).inserted }
+   for id in ids where !Skill.all.contains(where: { $0.id == id }) { if let kit = Skill.stock[id] { try? Skill.add(id, kit) } } // from Still's library: never an empty file
+   c.skills = Array(ids.filter { k in Skill.all.contains { $0.id == k } }.prefix(30))
+  }
   if data["tone"] != nil { c.tone = String(tidy(s("tone")).prefix(600)) }
+  if data["role"] != nil { c.role = tidy(String(tidy(s("role").replacingOccurrences(of: #"\r\n|[\r\n]"#, with: " ", options: .regularExpression)).prefix(30))) }
+  if data["personality"] != nil, ["", "direct", "warm", "playful", "formal"].contains(s("personality")) { c.personality = s("personality") }
+  if ["short", "balanced", "detailed"].contains(s("length")) { c.length = s("length") }
   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
   if data["instructions"] != nil { c.instructions = String(s("instructions").trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000)) }
   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
@@ -856,9 +923,9 @@ extension Browser {
    fresh.greet = false; storeCompanions()
    let kick = AiChat()
    kick.companion = fresh.id; kick.title = fresh.name; kick.profile = newChatProfile(false); kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
-   aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
+   aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id); setupNext.insert(kick.id)
    go(appTab(), "chat:" + kick.id); v.chat = kick
-   runAi(kick, kickoffAsk + openTabsNote(), shown: "") // the title comes from its hello
+   runAi(kick, kickoffAsk, shown: "") // the title comes from its hello
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
     let picker = NSOpenPanel()
@@ -979,7 +1046,10 @@ extension Browser {
    guard !tidy(s("name")).isEmpty else { break }
    do { _ = try Skill.save(s("id"), tidy(s("name")), s("description"), s("when"), s("body")) } catch { toast("Couldn't save that skill."); NSLog("Still: skill: \(error)") }
    publishOthers()
-  case "skillDelete":
+  case "skillReset" where Skill.stock[s("id")] != nil:
+   do { try Skill.reset(s("id")) } catch { toast("Couldn't reset that skill."); NSLog("Still: skill: \(error)") }
+   publishAiEverywhere()
+  case "skillDelete" where s("id") != Skill.setupId:
    try? Skill.delete(s("id"))
    let using = companions.filter { $0.skills.contains(s("id")) }
    for c in using { c.skills.removeAll { $0 == s("id") } }
@@ -1138,9 +1208,12 @@ extension Browser {
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
   if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
+  // A companion's first chat (an incognito one doesn't count): Still loads Setup itself, the one skill it loads for the AI.
+  let setup = who != nil && !chat.ephemeral && (setupNext.remove(chat.id) != nil || who!.greet)
   if let who, who.greet, !chat.ephemeral { who.greet = false; storeCompanions() } // they spoke first: no kickoff
-  let skills = Skill.invoked(shown) // the user asked for these by name; a companion's own load with load_skill
-  for k in skills { chatStep(chat, "Used skill " + k.name) }
+  var skills = Skill.invoked(shown) // the user asked for these by name; a companion's own load with load_skill
+  if setup, let first = Skill.all.first(where: { $0.id == Skill.setupId }) { skills.insert(first, at: 0) }
+  for k in skills { if k.id == Skill.setupId { chat.messages.append(AiMessage("tool", "Used skill " + k.name)) } else { chatStep(chat, "Used skill " + k.name) } } // Setup's step shows even before a hello
   toTop(chat); publishAiEverywhere()
 
   var isFolder: ObjCBool = false
@@ -1320,7 +1393,7 @@ extension Browser {
    "error": shown.map { $0.error.isEmpty ? view.error : $0.error } ?? view.error, "profile": "Default", "files": libraryFiles(), "tiers": tiersOf(),
    "models": aiClis.flatMap { c in (aiModels[c.id] ?? []).map { ["harness": c.id, "id": $0.id, "name": $0.name, "efforts": $0.efforts] as [String: Any] } },
    "advanced": pref("AiAdvanced", false),
-   "skills": Skill.all.map { ["id": $0.id, "name": $0.name, "description": $0.description, "when": $0.when, "body": $0.body] },
+   "skills": Skill.all.map { ["id": $0.id, "name": $0.name, "description": $0.description, "when": $0.when, "body": $0.body, "stock": Skill.stock[$0.id] != nil, "edited": $0.edited] as [String: Any] },
    "model": pref("AiModels", [String: String]())[harness] ?? "", "effort": pref("AiEfforts", [String: String]())[harness] ?? "", "usage": aiUsage[harness] ?? "",
    "harnesses": aiClis.map { c -> [String: Any] in ["id": c.id, "name": c.name, "app": c.app, "maker": c.maker, "installed": findCli(c.command) != nil, "status": aiStatus[c.id] ?? "",
     "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "forgets": c.forgets,
@@ -1330,7 +1403,7 @@ extension Browser {
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
-   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
+   "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "role": c.role, "personality": c.personality, "length": c.length, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body] },
     "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key, "guessed": f.guessed,
      "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
