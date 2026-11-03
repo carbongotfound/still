@@ -1,10 +1,10 @@
 import * as THREE from "three"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
-import { lookKey, type Look } from "./look"
+import { HOLD, isV2, lookKey, type Look } from "./look"
 import { STATES, clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
-import { Rigged, bounds, model, rigFor } from "./rig"
-export { onRigReady } from "./rig"
+import { Rigged, bounds, model, rigFor, zoned, type Zones } from "./rig"
+export { onRigReady, model as preload } from "./rig"
 
 // The companions as soft blobs, built here from code: no model files. A body is a sphere pushed into a silhouette
 // (SHAPE), with two glossy bead eyes, a tiny smile, two nub arms, one job prop and maybe an accessory. Motion is
@@ -136,7 +136,6 @@ function blob(g: THREE.Object3D, mat: THREE.Material, sx: number, sy: number, sz
 // The props (Blender: rig/props.py): ten real things, at their real sizes, in one glb. Each is cloned from it as it's
 // held, and a look with a prop isn't drawn until they're in (make waits, as for a rig). The six roles carry none.
 // How each is carried: in both nubs in front of the belly, in the right nub, or worn.
-export const HOLD: Record<string, "both" | "hand" | "worn"> = { laptop: "both", notebook: "both", camera: "both", mug: "hand", phone: "hand", magnifier: "hand", wrench: "hand", paintbrush: "hand", briefcase: "hand", headphones: "worn" }
 const METERS = 1.5 // the models are in meters; a blob is about 1 tall. Small things are drawn bigger (s), so they read
 // Each as it's held: the point of it that sits on the hold point (at, in meters: in the nub, where it's gripped), its
 // turn toward the companion (r: x, y, z), its scale (s) and where the eyes go to look at it (gx, gy).
@@ -213,6 +212,11 @@ function accessory(id: string, b: Built): { node: THREE.Group; onFace: boolean }
  const a = ACCESSORY_AT[id], c = new THREE.Vector3(s.lean * .6, s.h * .6, 0), d = new THREE.Vector3(Math.sin(a), Math.cos(a), .12).normalize()
  const h = b.hit(c.clone().addScaledVector(d, 3), d.clone().negate())
  g.position.copy(h.p); g.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), h.n)
+ trim(id, g)
+ return { node: g, onFace: false }
+}
+/// A bow, a sprout or a flower, pointing up from the origin, for a blob 1 tall.
+function trim(id: string, g: THREE.Group) {
  if (id === "bow") {
   const red = soft("#ef6f7d")
   for (const k of [-1, 1]) { const m = blob(g, red, .055, .034, .022, k * .05, .02, 0); m.rotation.z = k * -.35 }
@@ -226,8 +230,26 @@ function accessory(id: string, b: Built): { node: THREE.Group; onFace: boolean }
   for (let i = 0; i < 5; i++) { const q = i / 5 * Math.PI * 2; blob(g, petal, .03, .012, .03, Math.cos(q) * .036, .018, Math.sin(q) * .036) }
   blob(g, soft("#f6c445"), .02, .014, .02, 0, .028, 0)
  }
- return { node: g, onFace: false }
 }
+
+// A look v2's top feature and accessory (rig.ts wears them on the head): each pointing up from the origin, for a blob 1
+// tall, in the look's colors, and the way from the middle of the head to where it sits. Small and clear of the eyes, so
+// they read at 18px.
+const UP = new THREE.Vector3(0, 1, 0), ASIDE = (a: number) => new THREE.Vector3(Math.sin(a), Math.cos(a), .12)
+Rigged.decor = (look: Look) => {
+ const out: [THREE.Object3D, THREE.Vector3][] = [], main = soft(look.color), second = soft(look.second ?? look.color)
+ const deep = soft(`#${new THREE.Color(look.color).multiplyScalar(.8).getHexString()}`)
+ const g = new THREE.Group()
+ if (look.top === "antennae") for (const k of [-1, 1]) { put(g, tube([[k * .03, -.01, 0], [k * .045, .08, 0], [k * .085, .15, 0]], .011), main); blob(g, second, .032, .032, .032, k * .088, .165, 0) }
+ else if (look.top === "tuft") for (const [x, h, r] of [[-.035, .07, .35], [0, .095, 0], [.035, .065, -.4]]) { const m = blob(g, deep, .024, h, .024, x, h * .65, 0); m.rotation.z = r }
+ else if (look.top === "cap") { const dome = put(g, new THREE.SphereGeometry(.21, 28, 12, 0, TAU, 0, Math.PI / 2), second, 0, -.075, 0); dome.scale.set(1, .6, 1); blob(g, second, .036, .036, .036, 0, .05, 0) }
+ else if (look.top === "sprout") trim("sprout", g)
+ if (g.children.length) out.push([g, UP])
+ if (look.accessory && look.accessory in ACCESSORY_AT) { const a = new THREE.Group(); trim(look.accessory, a); out.push([a, ASIDE(ACCESSORY_AT[look.accessory])]) }
+ return out
+}
+// A kept prop (Keep prop, on a look from before v2 that held one), as the classic blob held it. Worn props stay classic.
+Rigged.held = (id: string) => { const m = HOLD[id] && HOLD[id] !== "worn" ? model("props") : null; return m ? held(m.scene, id) : null }
 
 // ---------------------------------------------------------------- motion
 
@@ -700,7 +722,7 @@ const instances = new Map<string, Body>()
 /// A body for a look, or null while its model loads.
 function make(look: Look): Body | null {
  const id = rigFor(look), m = id ? model(id) : null
- if (id && !m || !id && HOLD[look.prop] && !model("props")) return null
+ if (id && !m || HOLD[look.prop] && !model("props")) return null
  const c = m ? new Rigged(m, makeShadow()) : new Companion()
  c.setLook(look)
  return c
@@ -714,12 +736,24 @@ function fit(look: Look) {
  const key = lookKey(look), known = fits.get(key)
  if (known) return known
  const id = rigFor(look), m = id && model(id)
- if (m) return frameOf(key, bounds(m))
+ if (m) return frameOf(key, isV2(look) ? worn(m, look) : bounds(m))
  const c = new Companion(), box = new THREE.Box3()
  c.setLook(look)
  sweep(c, (what, t) => { if (what !== "drop" || t > .38) box.expandByObject(c.root) })
  c.dispose()
  return frameOf(key, box)
+}
+/// A v2 look's bounds: its foundation's, grown by as much as its top feature and accessory stand out from the body at rest.
+function worn(m: NonNullable<ReturnType<typeof model>>, look: Look) {
+ const box = bounds(m).clone()
+ if (look.top === "none" && !look.accessory && !look.prop) return box
+ const r = new Rigged(m)
+ r.setLook(look); r.live = false; r.update(0, .3, null); r.root.updateMatrixWorld(true)
+ const body = r.body(), b = body ? new THREE.Box3().setFromObject(body) : null, parts = new THREE.Box3()
+ for (const p of r.worn) parts.expandByObject(p)
+ if (b && !parts.isEmpty()) { box.max.y += Math.max(0, parts.max.y - b.max.y); box.min.x -= Math.max(0, b.min.x - parts.min.x); box.max.x += Math.max(0, parts.max.x - b.max.x) }
+ r.dispose()
+ return box
 }
 function frameOf(key: string, box: THREE.Box3) {
  const size = box.getSize(new THREE.Vector3()), mid = box.getCenter(new THREE.Vector3())
@@ -829,7 +863,7 @@ export function picture(look: Look, state: MascotState, px: number, frame: Frame
  if (!c) return null // its model is loading (onRigReady)
  c.state = state; c.live = false
  c.update(0, STILL_AT[state] ?? .3, null)
- const made = flat ? flatten(c) : []
+ const made = flat ? flatten(c, TONES, isV2(look)) : []
  instances.set("__picture", c)
  draw(c, px, frame)
  let out = document.createElement("canvas"); out.width = out.height = px
@@ -849,9 +883,10 @@ function head(look: Look, px: number, tier: "icon" | "portrait") {
  const c = make(look)
  if (!c) return null // its model is loading (onRigReady)
  c.state = "idle"; c.live = false
+ if (tier === "icon" && "rest" in c && c.rest) c.rest = { ...c.rest, lid: Math.min(c.rest.lid, .15) } // at 18px half-shut lids hide the pupils
  c.update(0, 0, null)
  if (c instanceof Companion && c.prop && HOLD[look.prop] !== "worn") c.prop.visible = false // held props stay out; worn ones are on the head
- const icon = tier === "icon", made = flatten(c, icon ? ONE_TONE : TONES)
+ const icon = tier === "icon", made = flatten(c, icon ? ONE_TONE : TONES, isV2(look))
  if (icon) for (const e of c instanceof Companion ? c.eyes : ["eye.L", "eye.R", "brow.L", "brow.R"].map(n => node(c.root, n))) e?.scale.multiplyScalar(1.25)
  instances.set("__picture", c)
  const S = 512
@@ -917,14 +952,24 @@ function share(c: HTMLCanvasElement) {
 // Blender companions ship theirs (rig/anim.py "flat"); any other look is drawn so from its model.
 const toon = (shades: number[]) => { const t = new THREE.DataTexture(new Uint8Array(shades), shades.length, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t }
 const TONES = toon([200, 255]), ONE_TONE = toon([255]) // the head icon: one tone
-function flatten(c: Body, tones = TONES) {
+function flatten(c: Body, tones = TONES, v2 = false) {
  const made: THREE.Material[] = []
  if (c.shadow) c.shadow.visible = false
  c.group.traverse(o => {
   const mesh = o as THREE.Mesh, m = mesh.material as THREE.MeshStandardMaterial
   if (!mesh.isMesh || !m?.isMeshStandardMaterial || m.blending !== THREE.NormalBlending) return // the eye shine stays
+  if (v2 && (m as THREE.MeshPhysicalMaterial).transmission > 0) { mesh.visible = false; return } // the foundations' clear eye cap: flat, it would hide the pupil
   // toon takes no environment light: its own color, glowing about half, stands in for it so the body keeps its color
   const t = new THREE.MeshToonMaterial({ color: m.color, emissive: m.color, emissiveIntensity: .5, map: m.map, vertexColors: m.vertexColors, gradientMap: tones, side: m.side, transparent: m.transparent, opacity: m.opacity })
+  const z = m.userData.zones as Zones | undefined
+  if (z) { t.emissive.set(0); zoned(t, { ...z, uGlow: { value: .5 } }) } // a v2 body: its zones' colors glow, not one
+  // A foundation paints its pupils and mouth in vertex colors: the glow takes them too, or it washes them out to grey.
+  // Only for v2 looks, so no picture of an older look changes.
+  if (v2 && m.vertexColors) {
+   const before = t.onBeforeCompile.bind(t)
+   t.onBeforeCompile = (s, r) => { before(s, r); s.fragmentShader = s.fragmentShader.replace("#include <emissivemap_fragment>", "#include <emissivemap_fragment>\ntotalEmissiveRadiance *= vColor.rgb;") }
+   t.customProgramCacheKey = () => (z ? "zones" : "") + "-painted"
+  }
   mesh.material = t; made.push(t)
  })
  return made

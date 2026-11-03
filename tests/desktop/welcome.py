@@ -451,10 +451,10 @@ def setup(process):
         time.sleep(1)
         click_text(process, ".crew-card.is-own button", "Make your own")
         check(until(lambda: js(process, "!!document.querySelector('.ob-colors')"), 3) and js(process, "document.querySelectorAll('.ob-faces button').length") == 0, "Your own starts as a plain shape, before a color")
-        click(process, ".ob-colors button[aria-label=Sky]")
-        check(until(lambda: js(process, "document.querySelectorAll('.ob-faces button').length") == 8, 3), "Picking a color brings up shapes")
+        click(process, ".ob-colors button[aria-label='Sky and navy']")
+        check(until(lambda: js(process, "document.querySelectorAll('.ob-faces button').length") == 5, 3), "Picking colors brings up the five bodies")
         time.sleep(1.2)
-        click(process, ".ob-faces button[aria-label='Tall']")
+        click(process, ".ob-faces button[aria-label='Column']")
         until(lambda: js(process, "!!document.querySelector('.ob-name-box input')"), 3)
         time.sleep(1.2)
         check(js(process, "document.querySelector('.ob-next').disabled && !document.querySelector('.ob-chips')"), "Your own needs a name you type: Still doesn't hand one out")
@@ -479,7 +479,7 @@ def setup(process):
         check(until(lambda: companions() == ["Miso", "Maya"], 5), f"Both are added, Miso first as the main one ({companions()})")
         mate = until(lambda: next((c for c in state().get("Preferences", {}).get("Companions", []) if c["Name"] == "Miso"), None), 5)
         look = json.loads(mate["Look"]) if mate and mate.get("Look") else {}
-        check(look.get("color") == "#8cc3ee" and look.get("shape") == "tall" and mate.get("Job") == "Plans my trips and keeps receipts in order.", "Step 4 saves your companion's name, color, shape and job")
+        check(look.get("v") == 2 and look.get("color") == "#8cc3ee" and look.get("second") == "#3a5a9c" and look.get("form") == "column" and look.get("shape") == "tall" and mate.get("Job") == "Plans my trips and keeps receipts in order.", "Step 4 saves your companion's name, colors, body (new style, with a classic shape for older builds) and job")
         options = js(process, "[...document.querySelectorAll('.ob-option')].map(b => b.innerText)") or []
         check(len(options) == 2 and "Set it up with Miso" in options[0] and "Uses a little of your" in options[0] and "Uses no AI at all" in options[1], "Step 5: set up with Miso (with what it uses) or Quick setup")
         time.sleep(1)
