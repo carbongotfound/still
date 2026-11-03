@@ -8,6 +8,7 @@ import { BLANK, ROLE_LOOKS, lookKey, type Look } from "./look"
 import { Mascot } from "./Mascot"
 import { lookOf, type Companion } from "./Buddy"
 import { PluginChip, andList, pluginName } from "./Plugins"
+import type { LibrarySkill } from "./generate"
 
 // Still's own instructions for each official role (still/Assets/roles, the same files the hosts send), by crew id.
 export const ROLE_TEXT: Record<string, string> = Object.fromEntries(Object.entries(import.meta.glob<string>("../../still/Assets/roles/*.md", { query: "?raw", import: "default", eager: true }))
@@ -16,17 +17,19 @@ export const ROLE_TEXT: Record<string, string> = Object.fromEntries(Object.entri
 // What each official role comes with (still/Assets/roles/<role>/): its skills, which Still adds to your skills and turns on
 // for it when it's hired, and its knowledge files, which start empty and fill in as it works. Both are Markdown with front
 // matter; the profile only needs each one's name and its line.
-type KitFile = { id: string; name: string; line: string }
+type KitFile = { id: string; name: string; line: string; when: string }
 function kit(files: Record<string, string>, key: string) {
  const out: Record<string, KitFile[]> = {}
  for (const [path, text] of Object.entries(files)) {
   const [role, , file] = path.split("/").slice(-3), id = file.slice(0, -3), head: Record<string, string> = {}
   for (const l of /^---\r?\n([\s\S]*?)\r?\n---/.exec(text)?.[1].split(/\r?\n/) ?? []) { const i = l.indexOf(":"); if (i > 0) head[l.slice(0, i).trim()] = l.slice(i + 1).trim() }
-  ;(out[role] ??= []).push({ id, name: head.name || id, line: head[key] ?? "" })
+  ;(out[role] ??= []).push({ id, name: head.name || id, line: head[key] ?? "", when: head.when ?? "" })
  }
  return out
 }
 export const KIT_SKILLS = kit(import.meta.glob<string>("../../still/Assets/roles/*/skills/*.md", { query: "?raw", import: "default", eager: true }), "description")
+/// Still's skill library for "Make your own" (generate.ts): every role kit's skills.
+export const LIBRARY: LibrarySkill[] = Object.entries(KIT_SKILLS).flatMap(([role, list]) => list.map(k => ({ id: k.id, role, name: k.name, text: k.line + " " + k.when })))
 export const KIT_KNOWLEDGE = kit(import.meta.glob<string>("../../still/Assets/roles/*/knowledge/*.md", { query: "?raw", import: "default", eager: true }), "about")
 const SKILL_ICONS: Record<string, LucideIcon> = { "call-brief": Phone, "lead-list": Target, "follow-up": Mail, "pipeline-check": ListChecks, "funnel-audit": Funnel, "experiment-plan": FlaskConical,
  "lifecycle-emails": Mail, "weekly-numbers": TrendingUp, "plan-tomorrow": CalendarCheck, "meeting-brief": Users, "reply-queue": Inbox, "project-checklist": ListTodo, "voice-match": PenLine,
@@ -160,7 +163,8 @@ export const PREMADES: Premade[] = [
 export const premadeOf = (c?: { crew?: string }) => c?.crew ? PREMADES.find(p => p.id === c.crew) : undefined
 /// How a companion is introduced: its role in front of its name ("Research Maya"). Chat headers and the switcher use the name.
 export const titled = (p: Premade, name = p.name) => p.role + " " + name
-export const introName = (c: Companion) => { const p = premadeOf(c); return p ? titled(p, c.name) : c.name }
+/// A companion's name, role first like "Research Maya": its own Role, else its crew role, else just the name.
+export const introName = (c: Companion) => { const p = premadeOf(c), role = c.role?.trim() || p?.role; return role ? role + " " + c.name : c.name }
 const DAY_NAMES = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
 /// When a routine runs, the way people say it: "Every weekday at 9:00".
 export const schedule = (days: number[], time: string) => (days.length === 7 ? "Every day" : days.join() === "1,2,3,4,5" ? "Every weekday" : days.join() === "0,6" ? "Every weekend"
@@ -204,7 +208,9 @@ export function fromShared(text: string): Companion | null {
  try {
   const got = JSON.parse(text)
   if (got?.kind !== SHARE_KIND || typeof got.name !== "string" || !got.name.trim()) return null
-  return { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? "") }
+  const personality = ["direct", "warm", "playful", "formal"].includes(got.personality) ? got.personality : "", length = ["short", "detailed"].includes(got.length) ? got.length : "balanced"
+  return { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? ""),
+   role: String(got.role ?? "").slice(0, 30), personality, length }
  } catch { return null }
 }
 

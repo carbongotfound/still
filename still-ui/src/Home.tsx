@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -7,9 +7,8 @@ import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigge
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { AiLogo } from "./AiLogo"
-import { Face, hueOf, type Companion, type Mode } from "./Buddy"
+import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
-import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade, fromShared } from "./crew"
@@ -157,8 +156,10 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
   const list = <div className="skill-list">{found.map(k => <div key={k.id} className="skill-row">
    <span className="skill-icon"><BookOpen /></span>
    <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.description && " · " + k.description}</small></button>
-   <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />
-   <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>
+   {k.id === "setup" ? <small className="skill-always">Every companion, on their first chat</small>
+    : <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />}
+   {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => send("skillReset", { id: k.id })}><RotateCcw /></button>}
+   {k.id !== "setup" && <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>}
   </div>)}</div>
   return q ? <section className="plug-group skills-part" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2></div>{list}</section>
    : found.length ? list : <p className="home-empty skills-empty">Skills are short how-tos your companions follow: type / in a message to use one. <button className="plug-all" onClick={blank}>Write your first one</button></p>
@@ -169,7 +170,7 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
  </>
 }
 
-function SkillEditor({ skill, onClose, onSave }: { skill: Skill; onClose: () => void; onSave: (k: Skill) => void }) {
+export function SkillEditor({ skill, onClose, onSave }: { skill: Skill; onClose: () => void; onSave: (k: Skill) => void }) {
  const [k, setK] = useState(skill)
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog skill-dialog">
@@ -231,53 +232,3 @@ export function RenameAsk({ companion, onSave }: { companion: Companion; onSave:
  </Dialog>
 }
 
-// Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
-const MODE_NAMES: [Mode, string][] = [["efficient", "Quick"], ["default", "Everyday"], ["expert", "Thorough"]]
-/// `only`: it's the last companion, and Still always keeps one, so Delete explains instead.
-export function CompanionEditor({ ai, companion, onClose, onSave }: { ai: AiState; companion: Companion; onClose: () => void; onSave: (c: Companion) => void }) {
- const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
- const [styling, setStyling] = useState(false)
- const skills = ai.skills ?? []
- useEffect(() => { // the folder picked in Windows' own dialog
-  const got = (e: MessageEvent) => { if (e.data?.kind === "folder") setC(old => ({ ...old, folder: e.data.data.path })) }
-  window.chrome?.webview?.addEventListener("message", got); return () => window.chrome?.webview?.removeEventListener("message", got)
- }, [])
- const state = (id: string) => { const h = ai.harnesses.find(x => x.id === id); return !h ? "" : !h.installed || h.status === "missing" ? "Not installed" : h.status === "signedOut" ? "Sign in first" : "" }
- return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-  <DialogContent className="app-dialog companion-dialog" style={{ "--hue": hueOf(c) } as CSSProperties}>
-   <DialogHeader><DialogTitle>{companion.id ? "Edit " + companion.name : "New companion"}</DialogTitle><DialogDescription>Who you work with in a chat. Their job tells your AI how to help.</DialogDescription></DialogHeader>
-   <form className="companion-form" onSubmit={e => { e.preventDefault(); if (c.name.trim()) onSave({ ...c, name: c.name.trim() }) }}>
-    <div className="companion-preview"><Face companion={c} size={120} follow />
-     <div className="companion-look">
-      <Button type="button" variant="outline" size="sm" onClick={() => setStyling(true)}><Palette />Customize</Button>
-      <Button type="button" variant="ghost" size="sm" className="companion-random" onClick={() => setC({ ...c, look: lookKey(surprise()) })}><Dices />Surprise me</Button>
-     </div>
-    </div>
-    {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { setC({ ...c, look }); setStyling(false) }} />}
-    <label><span>Name</span><Input required maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} /></label>
-    <label><span>What should they do?</span><textarea className="companion-job" rows={3} maxLength={1000} placeholder="For example: a careful researcher who checks sources and cites them." value={c.job} onChange={e => setC({ ...c, job: e.target.value })} /></label>
-    <div className="companion-row">
-     <label><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai} onChange={e => setC({ ...c, ai: e.target.value })}>
-      <option value="">Your AI{ai.harnesses.find(h => h.id === ai.harness) ? " (" + ai.harnesses.find(h => h.id === ai.harness)!.name + ")" : ""}</option>
-      {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
-     </select></span></label>
-     <div className="companion-field"><span>Thinking</span><div className="companion-modes" role="radiogroup" aria-label="Thinking">{MODE_NAMES.map(([m, label]) => <button type="button" key={m} role="radio" aria-checked={c.mode === m} onClick={() => setC({ ...c, mode: m })}>{label}</button>)}</div></div>
-    </div>
-    {c.ai && state(c.ai) && <p className="companion-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {c.name || "they"} can start.</p>}
-    <div className="companion-field"><span>Skills they always use</span>
-     {skills.length ? <div className="companion-skills">{skills.map(k => { const on = c.skills?.includes(k.id); return <button type="button" key={k.id} aria-pressed={on} title={k.description} onClick={() => setC({ ...c, skills: on ? c.skills?.filter(x => x !== k.id) : [...(c.skills ?? []), k.id] })}><BookOpen />{k.name}{on && <X />}</button> })}</div>
-      : <p className="companion-note">No skills yet. Make some on the Skills page, then give them to {c.name || "your companion"} here.</p>}</div>
-    <div className="companion-field"><span>Working folder</span>
-     <div className="companion-folder"><code title={c.folder}>{c.folder || "None, so they can't touch your files."}</code>
-      <Button type="button" variant="outline" size="sm" onClick={() => window.chrome?.webview?.postMessage({ op: "pickFolder" })}><FolderOpen />{c.folder ? "Change" : "Pick a folder"}</Button>
-      {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
-     {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
-    <label><span>How should {c.name.trim() || "they"} talk?</span><textarea className="companion-job" rows={2} maxLength={600} placeholder="For example: upbeat and quick, with short answers and a joke now and then." value={c.tone} onChange={e => setC({ ...c, tone: e.target.value })} /></label>
-    <div className="companion-actions">
-     <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-     <Button type="submit" className="companion-save" disabled={!c.name.trim()}>Save</Button>
-    </div>
-   </form>
-  </DialogContent>
- </Dialog>
-}

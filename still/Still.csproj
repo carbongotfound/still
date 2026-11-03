@@ -16,6 +16,7 @@
   <EmbeddedResource Include="Shell\**\*" LogicalName="Still.Content.Shell/%(RecursiveDir)%(Filename)%(Extension)" />
   <EmbeddedResource Include="Assets\Readability.js;Assets\LoginObserver.js;Assets\setup.md" LogicalName="Still.Content.Assets/%(Filename)%(Extension)" />
   <EmbeddedResource Include="Assets\roles\**\*.md" LogicalName="Still.Content.Assets/roles/%(RecursiveDir)%(Filename)%(Extension)" />
+  <EmbeddedResource Include="Assets\skills\*.md" LogicalName="Still.Content.Assets/skills/%(Filename)%(Extension)" />
   <Content Include="Assets\still.ico" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="Never" />
   <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.12" />
   <PackageReference Include="Microsoft.Web.WebView2" Version="1.0.4191.47" />

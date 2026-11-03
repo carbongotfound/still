@@ -141,7 +141,7 @@ def main():
         check(rows == [f"Skills {len(z.get('Skills') or [])}", f"Routines {len(z.get('Routines') or [])}"], f"Skills and Routines rows with their counts, above the instructions ({rows})")
         box = ".profile-field.is-instructions textarea"
         brief = js(p, f"document.querySelector('{box}')?.value") or ""
-        check(brief.startswith("# Sales") and "## When you join the team" in brief and "offer_routine" in brief, "Companion instructions show Still's whole setup for the role")
+        check(brief.startswith("# Sales") and "## How you judge the work" in brief and "offer_routine" in brief, "Instructions show Still's whole setup for the role")
         type_into(p, box, brief + "\n\nALWAYS END WITH A HAIKU.")
         check(until(lambda: mates().get("Zesty", {}).get("Instructions", "").endswith("ALWAYS END WITH A HAIKU."), 5), "An edit saves as you type")
         check(until(lambda: click(p, ".profile-instructions-foot button", "Reset to Still's version"), 3) and until(lambda: mates().get("Zesty", {}).get("Instructions") == "", 5)
@@ -167,7 +167,7 @@ def main():
         log = BIN / "prompts.jsonl"
         ran = until(lambda: log.exists() and "ROUTINE check the price" in log.read_text(), 45, .5)
         check(ran, "At its time, the routine runs through the fake agent")
-        check(ran and "ALWAYS END WITH A HAIKU." in log.read_text() and "## When you join the team" in log.read_text(), "and it follows the edited instructions")
+        check(ran and "ALWAYS END WITH A HAIKU." in log.read_text() and "## How you judge the work" in log.read_text(), "and it follows the edited instructions")
         last = until(lambda: (mates().get("Zesty", {}).get("Routines") or [{}])[0].get("Last"), 5)
         check(last == now.strftime("%Y-%m-%d"), "and it's marked as run today, so it runs once")
         time.sleep(32)

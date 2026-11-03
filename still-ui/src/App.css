@@ -900,6 +900,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-icon { display:grid; place-items:center; width:34px; height:34px; flex:none; border-radius:10px; background:var(--muted); } .skill-icon svg { width:16px; height:16px; }
 .skill-open { flex:1; min-width:0; display:flex; flex-direction:column; text-align:left; } .skill-open b { font-size:14px; font-weight:560; }
 .skill-open small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--muted-foreground); }
+.skill-always { flex:none; font-size:12px; color:var(--muted-foreground); }
 
 /* The companion editor's extra rows */
 .companion-look { display:flex; flex-direction:column; gap:10px; }
@@ -1587,6 +1588,13 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-modes button:hover { background:var(--muted); }
 .profile-modes button[aria-checked=true] { border-color:var(--hue); background:color-mix(in oklab,var(--hue) 10%,transparent); box-shadow:inset 0 0 0 1px var(--hue); }
 .profile-modes b { font-size:14px; font-weight:600; } .profile-modes small { font-size:12px; color:var(--muted-foreground); }
+/* Personality and reply length: side by side, wrapping on a narrow panel. */
+.profile-modes.is-row { grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); } .profile-modes.is-row button { padding:10px 12px; }
+.profile-field > span small { margin-left:4px; font-weight:400; color:var(--muted-foreground); }
+/* Make your own: the generator under Instructions, and Hire at the bottom of the panel. */
+.profile-suggest { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:-8px; }
+.profile-draft-title { font-size:15px; font-weight:600; }
+.profile-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
 .profile-routine { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border); border-radius:12px; }
 .profile-routine textarea { border:0; padding:4px; resize:none; }
 /* A hired companion's knowledge files, under its memory: each one's name, what it holds and what's in it so far. */

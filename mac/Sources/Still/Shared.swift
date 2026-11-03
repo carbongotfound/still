@@ -117,8 +117,9 @@ final class ChatRun {
 
 var runs: [String: ChatRun] = [:] // by chat id
 var kickoffs = Set<String>() // chats a new companion started itself: its first question's answer goes to its memory
-// A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
-let kickoffAsk = "[Still] You were just hired and this is your first chat, so start it yourself now. The user never sees this note. Never open with a generic \"how can I help\", a tool call or a question: your first words are your own message. Greet the user by name if you know it, then say in one or two sentences what you'll do for them first for your role, built on what you know about them: what you remember, what they told Still in setup, the open tabs below and the apps connected for you. Then start that work right away with your real tools. Only after that, and only if you genuinely need something to go further, call ask_user once with one focused question and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then carry on. If they skip, go on with your best guess and say what you assumed."
+var setupNext = Set<String>() // chats whose next turn is a companion's first (aiKickoff): Setup loads with it, once
+// A new companion's first turn, sent for it (aiKickoff): its Setup skill, loaded with it, says how to open the chat.
+let kickoffAsk = "[Still] This is your first chat with the user and they haven't written yet, so start it yourself now, following your Setup skill above. The user never sees this note."
 var aiChats: [AiChat] = [] // newest first; Ai.swift loads and saves them
 var browsers: [Browser] = [] // every open window, kept by main.swift
 /// The Mac's appearance as QA sets it ("Light" or "Dark"); nil = the real one. Only the QA channel sets it.

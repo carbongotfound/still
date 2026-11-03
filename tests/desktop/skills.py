@@ -210,7 +210,7 @@ def main():
         calls = {c["id"]: c for c in got.get("calls", [])}
         check("load_skill" in got.get("tools", []), "The AI is offered load_skill")
         own = calls.get("option-compare", {})
-        check(not own.get("error") and "Agree the options and what matters most" in own.get("text", ""), "load_skill gives the body of the companion's own skill")
+        check(not own.get("error") and "Fix the list of options" in own.get("text", ""), "load_skill gives the body of the companion's own skill")
         used = [m["Text"] for m in chat(nora)["Messages"] if m["Role"] == "tool"][steps_before:]
         check(used.count("Used skill Compare options") == 1, "and the chat shows one step: Used skill Compare options")
         theirs = calls.get("follow-up", {})
@@ -222,7 +222,7 @@ def main():
         n = len(lines("qa-prompts.jsonl"))
         again(p, nora, "/option-compare which is cheaper?")
         typed = (lines("qa-prompts.jsonl")[n:] or [{}])[0].get("prompt", "")
-        check("Agree the options and what matters most" in typed, "A /skill the user types brings its body into that turn")
+        check("Fix the list of options" in typed, "A /skill the user types brings its body into that turn")
         check(any(m["Role"] == "tool" and m["Text"] == "Used skill Compare options" for m in chat(nora)["Messages"][-4:]), "with a Used skill step")
 
         # Next steps show as buttons, without the markup.

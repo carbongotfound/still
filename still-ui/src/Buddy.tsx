@@ -8,9 +8,12 @@ export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; knowledge?: Note[]; tone?: string; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; knowledge?: Note[]; tone?: string; role?: string; personality?: Personality; length?: ReplyLength; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
  crew?: string // the crew member it was picked from (crew.tsx)
  askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
+/// A companion's personality preset ("" = only its Tone in the user's words) and how long its replies are.
+export type Personality = "" | "direct" | "warm" | "playful" | "formal"
+export type ReplyLength = "short" | "balanced" | "detailed"
 /// Something a companion does on a schedule, in a new chat: days are 0 (Sunday) to 6, time is HH:MM on this PC's clock.
 export type Routine = { id: string; text: string; time: string; days: number[]; on: boolean }
 /// One of a companion's knowledge files (still/Assets/roles/<role>/knowledge): the working notes of its job, filled in as it works.

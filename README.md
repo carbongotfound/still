@@ -37,12 +37,12 @@ Six companions come ready to hire. Each one owns a part of your work and has its
 | **Leo** | Marketing | One idea turned into posts for every platform, launch posts and newsletters in your voice, drafts only: nothing posts without you |
 | **Ivan** | Engineer | Small tools and pages built and tested in Still, bug reports with steps to reproduce, specs with acceptance checks from messy feedback |
 | **Maya** | Research | Deep research with cited sources, options compared side by side, claims fact-checked before you share them |
-| **Make your own** | Any job | Pick its look, name, job, way of talking, AI and skills, and give it a prop to hold |
+| **Make your own** | Any job | Pick its look, name, role, personality and reply length, say what it's for, and Still drafts its instructions and picks its first skills for you to review. Give it a prop to hold |
 
 <p align="center"><img src="docs/screenshots/library.png" alt="Hire a companion: each card shows the character, its role and name, what it does in a line, Hire or Hired, and View profile" width="900"></p>
 
 - **Hire in one click.** Each card shows the character, its role and what to expect. **View profile** shows its full instructions before you hire.
-- **They get to work.** A new hire opens its first chat by itself, says what it will do first and starts on real work.
+- **They get to work.** A new hire opens its first chat by itself: it says who it is and what it can do now, asks a question or two, and offers its first tasks. Start with a task and it just does it.
 - **Yours to shape.** Edit a companion's look, instructions, skills, routines, files and model. Its memory stays on your computer, and you can see, edit and forget anything it keeps.
 - **They work together.** A companion can ask a teammate for help or hand work over, and you see who asked whom.
 

@@ -76,7 +76,10 @@ public sealed class Companion
  public List<string> PluginsOff { get; set; } = []; // connected plugins (Composio toolkit slugs) the user turned off for it
  public List<Routine> Routines { get; set; } = []; // what it does on a schedule (MainWindow.Routines.cs)
  public string Instructions { get; set; } = ""; // the user's edit of its role's instructions (Assets/roles), "" = Still's own
- public bool Greet { get; set; } // new on the team: it starts its first chat itself, once (aiKickoff)
+ public bool Greet { get; set; } // new on the team: its first chat hasn't happened yet (aiKickoff, and Setup loads then)
+ public string Role { get; set; } = ""; // its title, shown before its name ("Research Maya"); "" = its crew role, or none
+ public string Personality { get; set; } = ""; // direct, warm, playful or formal; "" = only the Tone box
+ public string Length { get; set; } = "balanced"; // how long its replies are: short, balanced or detailed
 }
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
@@ -85,6 +88,27 @@ public sealed class Companion
 public sealed partial record Skill(string Id, string Name, string Description, string When, string Body)
 {
  internal static string Folder => Path.Combine(App.DataRoot, "skills");
+ /// Setup: every companion's first chat loads it (RunAi), and only then. The user can edit and reset it, not delete it.
+ internal const string SetupId = "setup";
+ static Dictionary<string, string>? stock;
+ /// Still's own version of each skill it ships, by id: the roles' kits (Assets/roles/<role>/skills) and Setup.
+ internal static Dictionary<string, string> Stock { get {
+  if (stock != null) return stock;
+  var assembly = typeof(AppContent).Assembly; Dictionary<string, string> found = [];
+  foreach (var res in assembly.GetManifestResourceNames()) {
+   string path = res.Replace('\\', '/');
+   if (!(path.StartsWith("Still.Content.Assets/roles/", StringComparison.Ordinal) && path.Contains("/skills/")) && path != "Still.Content.Assets/skills/setup.md") continue;
+   using var reader = new StreamReader(assembly.GetManifestResourceStream(res)!);
+   found.TryAdd(Path.GetFileNameWithoutExtension(path), reader.ReadToEnd());
+  }
+  return stock = found;
+ } }
+ /// Whether the user changed a skill Still ships (so Reset has something to undo).
+ internal bool Edited => Stock.TryGetValue(Id, out var text) && Split(text) is var (head, body) && (body != Body || head.GetValueOrDefault("name", Id) != Name || head.GetValueOrDefault("description", "") != Description || head.GetValueOrDefault("when", "") != When);
+ /// Puts back Still's version of a skill it ships.
+ internal static void Reset(string id) { if (!Stock.TryGetValue(id, out var text)) return; Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, id + ".md"), text); all = null; }
+ /// The role kits' skills as Still shipped them before 2.10 (FNV of the whole file): an unedited copy upgrades itself.
+ static readonly HashSet<uint> OldStock = [0xaf1cf5db, 0xd7d58bf7, 0xa715eacc, 0x32e37129, 0x78b99600, 0xe02375fc, 0x8bd51c71, 0xc6bb0558, 0x72ebbe34, 0x104fc02a, 0x48b7541f, 0x3e21ce26, 0x207faf0b, 0x7c34139c, 0xd8310490, 0x2d88ebe7, 0x991ab0c3, 0xc81d73a4, 0x3ae93229, 0x6432ba92, 0x2b74fc03, 0xa8f82b24, 0x5f606ef0, 0x534f5b5c];
  static List<Skill>? all;
  internal static List<Skill> All => all ??= Load();
  static List<Skill> Load()
@@ -92,9 +116,14 @@ public sealed partial record Skill(string Id, string Name, string Description, s
   List<Skill> list = [];
   try {
    if (Directory.Exists(Folder)) foreach (var file in Directory.EnumerateFiles(Folder, "*.md").Order().Take(200)) {
-    var (head, body) = Split(File.ReadAllText(file));
-    string id = Path.GetFileNameWithoutExtension(file);
+    string id = Path.GetFileNameWithoutExtension(file), text = File.ReadAllText(file);
+    if (Stock.TryGetValue(id, out var now) && OldStock.Contains(MainWindow.Fnv(text.ReplaceLineEndings("\n")))) File.WriteAllText(file, text = now);
+    var (head, body) = Split(text);
     list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body));
+   }
+   if (!list.Any(s => s.Id == SetupId) && Stock.TryGetValue(SetupId, out var setup)) { // every profile has Setup, even one whose file went missing
+    Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, SetupId + ".md"), setup);
+    var (head, body) = Split(setup); list.Add(new(SetupId, head.GetValueOrDefault("name", "Setup"), head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body));
    }
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
   return list;
@@ -123,14 +152,14 @@ public sealed partial record Skill(string Id, string Name, string Description, s
   File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
   all = null; return id;
  }
- internal static void Delete(string id) { if (All.Any(s => s.Id == id)) { File.Delete(Path.Combine(Folder, id + ".md")); all = null; } }
+ internal static void Delete(string id) { if (id != SetupId && All.Any(s => s.Id == id)) { File.Delete(Path.Combine(Folder, id + ".md")); all = null; } }
  /// The skills a message invokes: "/id" at the start or after a space.
- internal static List<Skill> Invoked(string text) => All.Where(s => Regex.IsMatch(text, @"(^|\s)/" + Regex.Escape(s.Id) + @"(?=\s|$)")).ToList();
+ internal static List<Skill> Invoked(string text) => All.Where(s => s.Id != SetupId && Regex.IsMatch(text, @"(^|\s)/" + Regex.Escape(s.Id) + @"(?=\s|$)")).ToList();
  internal string Prompt => $"[Skill \"{Name}\"{(When.Length > 0 ? ", for: " + When : "")}]\n{Body}";
  /// A companion's skills as an index for its first turn: id, name and when to use it, one line each, under a hard cap.
  internal static string Index(IEnumerable<string> ids)
  {
-  var lines = All.Where(k => ids.Contains(k.Id)).Take(30).Select(k => "- " + k.Id + ": " + k.Name + ((k.When.Length > 0 ? k.When : k.Description) is { Length: > 0 } w ? ". " + w : ""))
+  var lines = All.Where(k => k.Id != SetupId && ids.Contains(k.Id)).Take(30).Select(k => "- " + k.Id + ": " + k.Name + ((k.When.Length > 0 ? k.When : k.Description) is { Length: > 0 } w ? ". " + w : ""))
    .Select(l => (l = l.ReplaceLineEndings(" ")).Length > 160 ? l[..159] + "…" : l).ToList();
   if (lines.Count == 0) return "";
   string index = "Your skills. Before you start, check this list: when a line describes the task, call load_skill with its id first and follow what it says. When no line fits, load none:\n" + string.Join("\n", lines);
@@ -270,7 +299,7 @@ public partial class MainWindow
  /// don't live on in the source. A companion with one may have been named by Still rather than the user.
  static readonly HashSet<uint> OldNames = [0x0a086212, 0x0a405c49, 0x38390dbb, 0x3c228501, 0x422bb03e, 0x4c12a741, 0x4dae4233, 0x5540dda6, 0x6ab98305, 0x6b68e403, 0x6cf7bb37, 0x71d1513f, 0x78472df1,
   0x8193e2df, 0x848e7456, 0x884169d7, 0x9cfd111b, 0xa4478b14, 0xabda2b41, 0xcf19c854, 0xe2363da1, 0xf28032a5, 0xf6531953, 0xfd0b7fb4, 0xfe41f444];
- static uint Fnv(string s) { uint h = 2166136261; foreach (char ch in s.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return h; }
+ internal static uint Fnv(string s) { uint h = 2166136261; foreach (char ch in s.Trim().ToLowerInvariant()) h = (h ^ ch) * 16777619u; return h; }
  internal static bool OldName(string name) => OldNames.Contains(Fnv(name));
  /// The roles before the blobs and before the six had people's names (their ids hashed the same way), and the role that
  /// took over each, with its name. The fixer's work went to the planner.
@@ -431,7 +460,7 @@ public partial class MainWindow
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, tiers = TiersOf(),
-  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body }),
+  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter }),
@@ -446,7 +475,7 @@ public partial class MainWindow
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
   sensitiveSites = Prefs.SensitiveSites,
   plugins = PluginsPayload(), apis = ApiPayload(),
-  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
+  companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, role = c.Role, personality = c.Personality, length = c.Length, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body }),
    memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, guessed = f.Guessed, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
   chats = AiChats.Where(_ => !incognito).Take(200).Select(ChatRow), privateChats = privateChats.Select(ChatRow) } }); }
@@ -527,9 +556,9 @@ public partial class MainWindow
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
     fresh.Greet = false; SaveLater();
     var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Profile = NewChatProfile(false), Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
-    AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
+    AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id); setupNext.Add(kick.Id);
     await Go(await AppTab(), "chat:" + kick.Id);
-    await RunAi(kick, KickoffAsk + OpenTabsNote(), ""); // the title comes from its hello
+    await RunAi(kick, KickoffAsk, ""); // the title comes from its hello
     break; }
    case "aiPickFiles": {
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
@@ -629,7 +658,10 @@ public partial class MainWindow
     try { Skill.Save(S("id"), skillName, S("description"), S("when"), S("body")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't save that skill."); App.Log(ex); }
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
-   case "skillDelete":
+   case "skillReset" when Skill.Stock.ContainsKey(S("id")):
+    try { Skill.Reset(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't reset that skill."); App.Log(ex); }
+    PublishAiEverywhere(); break;
+   case "skillDelete" when S("id") != Skill.SetupId:
     try { Skill.Delete(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
     if (Prefs.Companions.Count(c => c.Skills.Remove(S("id"))) > 0) SaveLater();
     foreach (var w in Windows) if (w != this) w.PublishAi();
@@ -669,7 +701,7 @@ public partial class MainWindow
   if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
  }
 
- static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : $"Your name is {who.Name}. The user set you up as: {who.Job}\n" + (who.Tone.Length > 0 ? $"Your personality and how you talk: {who.Tone}\n" : "") + "\n") + $"""
+ static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : WhoYouAre(who) + "\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
   {(folder.Length > 0 ? $"You may read and write files in the user's working folder {folder}, and nowhere else. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
@@ -698,11 +730,10 @@ public partial class MainWindow
   """ + (plugins ? PluginInstructions(who) : "") + RoleSetup(who);
 
  /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
- // A new companion's first turn, sent for it (aiKickoff): it opens the chat with a task for its role and one question.
- const string KickoffAsk = "[Still] You were just hired and this is your first chat, so start it yourself now. The user never sees this note. Never open with a generic \"how can I help\", a tool call or a question: your first words are your own message. Greet the user by name if you know it, then say in one or two sentences what you'll do for them first for your role, built on what you know about them: what you remember, what they told Still in setup, the open tabs below and the apps connected for you. Then start that work right away with your real tools. Only after that, and only if you genuinely need something to go further, call ask_user once with one focused question and 2 or 3 short options. When they answer, remember what it tells you about how they want you to work, then carry on. If they skip, go on with your best guess and say what you assumed.";
- /// The tabs a new companion can see as it starts (private ones never show), so its hello can build on them.
- string OpenTabsNote() => Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Where(t => !t.Private && t.Url.StartsWith("http")).Take(8).Select(t => $"\"{Clip(t.Title, 80)}\" {t.Url}").ToList() is { Count: > 0 } open
-  ? "\n[Still] Tabs they have open: " + string.Join("; ", open) + "." : "";
+ // A new companion's first turn, sent for it (aiKickoff): its Setup skill, loaded with it, says how to open the chat.
+ const string KickoffAsk = "[Still] This is your first chat with the user and they haven't written yet, so start it yourself now, following your Setup skill above. The user never sees this note.";
+ // Chats whose next turn is a companion's first (aiKickoff): Setup loads with it, once.
+ static readonly HashSet<string> setupNext = [];
  /// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
  /// from the user's first message.
  void NameFromHello(AiChat chat, string hello)
@@ -713,6 +744,33 @@ public partial class MainWindow
   foreach (var w in Windows) foreach (var t in w.tabs.Where(t => t.ChatId == chat.Id)) t.Title = chat.Title;
   SaveAiChats(); SaveLater();
   _ = NameChat(chat, hello);
+ }
+ static readonly Dictionary<string, string> Personalities = new() {
+  ["direct"] = "Direct: get to the point, say what you think plainly, skip the small talk.",
+  ["warm"] = "Warm: friendly and encouraging, with a word of thanks or credit where it's due.",
+  ["playful"] = "Playful: light and upbeat, a little humor when it fits, never at the cost of the work.",
+  ["formal"] = "Formal: polished and courteous, full sentences, no slang or jokes.",
+ };
+ static readonly Dictionary<string, string> Lengths = new() {
+  ["short"] = "Short: a few lines, the answer first. Add detail only when asked.",
+  ["balanced"] = "Balanced: as long as the task needs and no longer.",
+  ["detailed"] = "Detailed: full answers that show your reasoning, the evidence and the edge cases.",
+ };
+ /// A companion's role (its own, or its crew role's: the first line of Assets/roles/<crew>.md), "" when it has none.
+ internal static string RoleOf(Companion c)
+ {
+  if (c.Role.Length > 0 || c.Crew.Length == 0) return c.Role;
+  using var file = typeof(AppContent).Assembly.GetManifestResourceStream("Still.Content.Assets/roles/" + c.Crew + ".md");
+  return file == null ? "" : new StreamReader(file).ReadLine()?.TrimStart('#').Trim() ?? "";
+ }
+ /// Who the companion is, in a few short lines: name and role, what the user set it up for, personality, reply length.
+ static string WhoYouAre(Companion who)
+ {
+  string role = RoleOf(who);
+  return $"Your name is {who.Name}." + (role.Length > 0 ? $" Your role: {role}. Introduce yourself role first, as {role} {who.Name}." : "") + $" The user set you up as: {who.Job}\n"
+   + (Personalities.GetValueOrDefault(who.Personality) is { } p ? $"Your personality: {p}\n" : "")
+   + (who.Tone.Length > 0 ? $"How you talk, in the user's words: {who.Tone}\n" : "")
+   + $"Reply length: {Lengths.GetValueOrDefault(who.Length) ?? Lengths["balanced"]}\n";
  }
  static string RoleSetup(Companion? who)
  {
@@ -880,9 +938,12 @@ public partial class MainWindow
   if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
+  // A companion's first chat (an incognito one doesn't count): Still loads Setup itself, the one skill it loads for the AI.
+  bool setup = who != null && !chat.Ephemeral && (setupNext.Remove(chat.Id) | who.Greet);
   if (who is { Greet: true } && !chat.Ephemeral) { who.Greet = false; SaveLater(); } // they spoke first: no kickoff
   var skills = Skill.Invoked(shown); // the user asked for these by name; a companion's own load with load_skill
-  foreach (var k in skills) Step(chat, "Used skill " + k.Name);
+  if (setup && Skill.All.FirstOrDefault(k => k.Id == Skill.SetupId) is { } setupSkill) skills.Insert(0, setupSkill);
+  foreach (var k in skills) if (k.Id == Skill.SetupId) chat.Messages.Add(new() { Role = "tool", Text = "Used skill " + k.Name }); else Step(chat, "Used skill " + k.Name); // Setup's step shows even before a hello
   var list = ListOf(chat); list.Remove(chat); list.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
   string work = !chat.Ephemeral && cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
@@ -1008,8 +1069,15 @@ public partial class MainWindow
   if (data.TryGetProperty("ai", out _)) c.Ai = AiClis.Any(x => x.Id == S("ai")) ? S("ai") : "";
   if (S("mode") is "efficient" or "default" or "expert") c.Mode = S("mode");
   if (data.TryGetProperty("folder", out _)) c.Folder = S("folder") is { Length: > 0 } dir && Path.IsPathFullyQualified(dir) && Directory.Exists(dir) ? dir : "";
-  if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) c.Skills = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => Skill.All.Any(x => x.Id == k)).Distinct().ToList();
+  if (data.TryGetProperty("skills", out var picked) && picked.ValueKind == JsonValueKind.Array) {
+   var ids = picked.EnumerateArray().Select(k => k.ValueKind == JsonValueKind.String ? k.GetString()! : "").Where(k => k != Skill.SetupId).Distinct().ToList();
+   foreach (var id in ids) if (!Skill.All.Any(x => x.Id == id) && Skill.Stock.TryGetValue(id, out var kit)) Skill.Add(id, kit); // from Still's library: never an empty file
+   c.Skills = ids.Where(k => Skill.All.Any(x => x.Id == k)).Take(30).ToList();
+  }
   if (data.TryGetProperty("tone", out _)) c.Tone = S("tone").Trim() is var tone && tone.Length > 600 ? tone[..600] : tone;
+  if (data.TryGetProperty("role", out _)) c.Role = S("role").ReplaceLineEndings(" ").Trim() is var role && role.Length > 30 ? role[..30].Trim() : role;
+  if (data.TryGetProperty("personality", out _) && S("personality") is "" or "direct" or "warm" or "playful" or "formal") c.Personality = S("personality");
+  if (S("length") is "short" or "balanced" or "detailed") c.Length = S("length");
   if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
   if (data.TryGetProperty("instructions", out _)) c.Instructions = S("instructions").Trim() is var ins && ins.Length > 8000 ? ins[..8000] : ins;
   if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
