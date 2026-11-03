@@ -4,7 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } 
 import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
-import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, companionOf, isRunning, type AiState } from "./AiSidebar"
+import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, isRunning, since, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
@@ -65,7 +65,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string;tool?:string;target?:string;since?:string;count?:number;recent?:string[]};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
@@ -613,7 +613,7 @@ export default function App() {
     </ContextMenuContent></ContextMenu>
     <div className="page-tools">
      {!state.noAi && ai && <><RunningTasks ai={ai} send={send} onOpen={setTasksOpen} tabs={state.tabs} /><RunAnnouncer ai={ai} /></>}
-     {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={34} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
+     {!state.noAi && !active?.chatId && <Button variant="outline" size="sm" className={cn("ai-pill", ai?.open && "is-open")} aria-pressed={!!ai?.open} title="Chat about this page · Ctrl+Shift+A" onClick={() => { setAiView("chat"); send("aiToggle") }}><Face companion={companionOf(ai, ai?.chatCompanion)} size={24} mood={ai?.busy ? "working" : "idle"} />Chat</Button>}
      {!chatTab && <><IconButton label="Bookmark this page" caption="Bookmark" onClick={() => send("bookmark")}><Bookmark className={state.bookmarks.some(b => b.url === active?.url) ? "bookmarked" : ""} /></IconButton>
      <IconButton label={state.siteBlocking === false && state.preferences.blocking && active?.url ? "Site controls (ad blocking is off here)" : "Site controls"} caption="Site" onClick={() => open("site")}>{state.siteBlocking === false && state.preferences.blocking && active?.url ? <ShieldOff className="text-amber-500" /> : <Shield />}</IconButton>
      <IconButton label="Reading mode" caption="Reader" onClick={() => send("reader")}><BookOpen /></IconButton></>}
@@ -752,9 +752,9 @@ export default function App() {
        onPointerDown={e => e.currentTarget.setPointerCapture(e.pointerId)}
        onPointerMove={e => { if (!e.currentTarget.hasPointerCapture(e.pointerId)) return; const r = pageRef.current!.getBoundingClientRect(); send("splitRatio", { ratio: (e.clientX - r.left - 3) / (r.width - 6) }) }} />}
       {ghost?.side && <div className="split-zones" aria-hidden><div className={cn("split-zone", ghost.side === "left" && "is-on")}><span><Columns2 />Open on the left</span></div><div className={cn("split-zone", ghost.side === "right" && "is-on")}><span><Columns2 />Open on the right</span></div></div>}
-      {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} />}
+      {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} ai={ai} />}
       {pair && snapshot && pairShot && <img className={cn("page-snapshot", pair.right !== active?.id && "is-right")} src={pairShot} alt="" style={{ width: `calc((100% - 6px) * ${pair.right === active?.id ? pair.ratio : 1 - pair.ratio})` }} />}
-      {active?.url || active?.chatId ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : (!active?.isPrivate || state.incognito && view !== "home") && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+      {active?.url || active?.chatId || active?.id === "empty" /* the placeholder before the host's tabs: nothing, not a new tab with a live companion */ ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : (!active?.isPrivate || state.incognito && view !== "home") && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={mine!} send={send} onNew={() => setView("home")} />
@@ -830,7 +830,7 @@ export default function App() {
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
   </div>}
   {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} layout={state.preferences.tabLayout} theme={state.preferences.theme} talk={state.welcomeTalk} ai={ai} noAi={state.noAi} hidden={pane === "import"} sounds={state.preferences.sounds !== false} soundsBlocked={soundsBlocked} send={send} onImport={() => open("import")} />}
-  {!state.welcome && !state.secondary && <Tour name={companion?.name ?? "Your companion"} ready={!modal && !active?.url && !active?.chatId && !active?.isPrivate && !!ai && !state.noAi} />}
+  {!state.welcome && !state.secondary && <Tour name={companion?.name ?? "Your companion"} ready={!modal && !!active && active.id !== "empty" && !active.url && !active.chatId && !active.isPrivate && !!ai && !state.noAi} />}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
     <DialogTitle className="sr-only">{displayPane === "tabs" ? "Find a tab" : "Go somewhere"}</DialogTitle>
@@ -1064,28 +1064,95 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
 }
 
 // The chat's details, top right: its companion, the AI it runs on, the pages it opened and usage.
-/// An AI is driving the page in view: a glow runs around the page and its controls float over it. The page's window
-/// leaves those spots open (pageHoles), so they show through and take the clicks.
-function PageControl({ tab, agent, who, chat }: { tab: Tab; agent: NonNullable<State["agent"]>; who: Companion; chat: boolean }) {
- const ref = useRef<HTMLDivElement>(null)
+/// What a companion is doing right now, in the present tense: from the tool it's running and its target (a site, a
+/// search, a teammate), as the host sends them. Between tools it's thinking.
+const DOING: Record<string, string> = {
+ web_search: "Searching for “$”", read_url: "Reading $", open_tab: "Opening $", navigate: "Going to $", read_page: "Reading $", find: "Looking through $",
+ click: "Clicking on $", type: "Typing on $", press_key: "Pressing a key on $", scroll: "Scrolling $", wait_for: "Waiting for $", screenshot: "Looking at $",
+ go_back: "Going back", go_forward: "Going forward", reload: "Reloading $", switch_tab: "Switching to $", close_tab: "Closing a tab", save_file: "Saving $",
+ upload_file: "Attaching a file", handle_dialog: "Answering a dialog on $", ask_user: "Waiting for your answer", ask_companion: "Asking $", tell_companion: "Handing work to $",
+ remember: "Saving to memory", recall: "Checking memory", forget: "Updating memory", read_knowledge: "Reading notes", update_knowledge: "Updating notes", load_skill: "Getting ready",
+ read_attachment: "Reading your file", list_tabs: "Checking the tabs", offer_routine: "Suggesting a routine", list_companions: "Checking the team", list_profiles: "Checking profiles",
+ run_plugin_action: "Using $", get_plugin_tools: "Opening $", find_plugins: "Looking for an app", list_connected_plugins: "Checking your apps", open_memory_source: "Opening a source", user_confirmed: "Going ahead",
+}
+const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page" }
+export const doing = (tool = "", target = "") => !tool ? "Thinking about the next step" : !target && ALONE[tool] ? ALONE[tool] : (DOING[tool] ?? "Working on $").replace("$", target || "the page")
+/// A value that changes at most every ms (the step line: fast tools would flicker), always ending on the latest.
+function useSettled<T>(value: T, ms: number) {
+ const [shown, setShown] = useState(value), at = useRef(0)
+ useEffect(() => {
+  const wait = at.current + ms - Date.now()
+  const go = () => { at.current = Date.now(); setShown(value) }
+  if (wait <= 0) { go(); return }
+  const t = setTimeout(go, wait); return () => clearTimeout(t)
+ }, [value, ms])
+ return shown
+}
+const cut = (e: React.MouseEvent<HTMLElement>) => { const el = e.currentTarget; el.title = el.scrollWidth > el.clientWidth ? el.textContent ?? "" : "" } // the whole line, only when it's cut
+
+/// An AI is driving the page in view: a glow runs around the page and the pill floats over it, with who is working, what
+/// they're doing right now and how to step in; a chevron (or Enter) opens their last steps above it. Others at work
+/// elsewhere sit beside it as a stack of heads that opens Running tasks. The page's window leaves each of those spots
+/// open (pageHoles), so they show through and take the clicks.
+function PageControl({ tab, agent, who, chat, ai }: { tab: Tab; agent: NonNullable<State["agent"]>; who: Companion; chat: boolean; ai?: AiState }) {
+ const dock = useRef<HTMLDivElement>(null), pill = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null), stack = useRef<HTMLButtonElement>(null)
+ const [open, setOpen] = useState(false), [gone, setGone] = useState(false), [, tick] = useState(0)
+ const run = ai?.runs?.find(r => r.id === agent.key)
+ const done = !!agent.key && !run && !!chatOf(ai, agent.key) && !agent.paused // Still's own chat whose run just finished
+ const others = (ai?.runs ?? []).filter(r => r.id !== agent.key).map(r => companionOf(ai, chatOf(ai, r.id)?.companion) ?? FALLBACK)
+ const asks = !!run?.asks?.length
+ const step = useSettled(agent.paused ? "" : asks ? "Waiting for your OK" : doing(agent.tool, agent.target), 600)
+ const started = run?.started ?? agent.since, n = (agent.count ?? 0) + (agent.tool ? 1 : 0)
+ useEffect(() => { const t = setInterval(() => tick(x => x + 1), 1000); return () => clearInterval(t) }, [])
+ useEffect(() => { if (!done) return; const t = setTimeout(() => setGone(true), 2400); return () => clearTimeout(t) }, [done])
+ useEffect(() => { if (!open) return; const esc = (e: KeyboardEvent) => { if (e.key === "Escape") { e.stopPropagation(); setOpen(false); pill.current?.focus() } }; addEventListener("keydown", esc, true); return () => removeEventListener("keydown", esc, true) }, [open])
  useLayoutEffect(() => {
-  const pill = ref.current, slot = pill?.parentElement
-  if (!pill || !slot) return
-  const sync = () => { const s = slot.getBoundingClientRect(), r = pill.getBoundingClientRect(); send("pageHoles", { tab: tab.id, frame: 3, spots: [{ x: r.x - s.x, y: r.y - s.y, width: r.width, height: r.height, radius: r.height / 2 }], viewportWidth: innerWidth }) }
-  const observer = new ResizeObserver(sync); observer.observe(pill); observer.observe(slot); sync()
-  return () => { observer.disconnect(); send("pageHoles", { tab: tab.id, frame: 0, spots: [] }) }
- }, [tab.id])
+  const slot = dock.current?.parentElement
+  if (!slot || gone) return
+  const sync = () => {
+   const s = slot.getBoundingClientRect()
+   const spots = [pill.current, panel.current, stack.current].flatMap(el => { if (!el) return []; const r = el.getBoundingClientRect(); return [{ x: r.x - s.x, y: r.y - s.y, width: r.width, height: r.height, radius: el === panel.current ? 16 : r.height / 2 }] })
+   send("pageHoles", { tab: tab.id, frame: 3, spots, viewportWidth: innerWidth })
+  }
+  const observer = new ResizeObserver(sync)
+  for (const el of [slot, pill.current, panel.current, stack.current]) if (el) observer.observe(el)
+  sync()
+  return () => observer.disconnect()
+ }, [tab.id, open, others.length > 0, gone])
+ useEffect(() => () => send("pageHoles", { tab: tab.id, frame: 0, spots: [] }), [tab.id])
+ useEffect(() => { if (gone) send("pageHoles", { tab: tab.id, frame: 0, spots: [] }) }, [gone, tab.id])
+ if (gone) return null
  const kind = agentFace(who.face) || "claude"
  const where = tab.isPrivate ? "Private tab" : tab.engine === "Companion" ? "Companion profile" : "Your profile" // which sign-ins this page has
  const hue = who.id ? { "--drive": hueOf(who) } as CSSProperties : undefined // a companion wears its hue; another AI app its maker's color
+ const time = started ? clock(since(started)) : ""
+ const title = agent.paused ? agent.signIn ? "Sign in, then hand it back" : "You're in control" : done ? "Done" : asks ? "Needs your OK" : step
+ const line = agent.paused && agent.signIn ? `${where} · ${who.name} never sees your password` : agent.paused ? `${who.name} is waiting for you` : [who.name, time].filter(Boolean).join(", ")
+ const openChat = () => send("agentChat", { id: tab.id })
+ const buttons = <>
+  <button className="page-take" title={agent.paused ? "Hand back to " + who.name : "Take over from " + who.name} onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand /><span>{agent.paused ? "Hand back" : "Take over"}</span></button>
+  {chat && tab.runChat && <button className="page-chat" title={asks ? "Open the chat to answer" : "Open chat"} onClick={openChat}>{asks ? <MessageSquare /> : <ArrowUpRight />}<span>Open chat</span></button>}
+  <button className="page-stop" aria-label={"Stop " + who.name} title={"Stop " + who.name} onClick={() => send("agentStop", { key: agent.key })}><Square /></button>
+ </>
+ const state = agent.paused ? agent.signIn ? "signin" : "paused" : done ? "done" : asks ? "approval" : "working"
  return <>
   <div className="page-glow" data-kind={kind} style={hue} aria-hidden />
-  <div ref={ref} className={cn("page-control", agent.paused && "is-paused")} data-kind={kind} style={hue} role="status" aria-label={agent.paused ? who.name + " is waiting for you" : who.name + " is working"}>
-   <Face companion={who} size={28} mood={agent.paused ? "listening" : "working"} />
-   <span className="page-control-text"><b>{agent.paused ? agent.signIn ? "Sign in, then hand it back" : "You're in control" : who.name + " is working…"}</b>{agent.paused && agent.signIn ? <small>{where} · {who.name} never sees your password</small> : <small>{[where, !agent.paused && agent.action].filter(Boolean).join(" · ")}</small>}</span>
-   <button className="page-take" onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand />{agent.paused ? "Hand back" : "Take over"}</button>
-   {chat && tab.runChat && <button className="page-chat" onClick={() => send("agentChat", { id: tab.id })}><ArrowUpRight />Open chat</button>}
-   <button className="page-stop" aria-label="Stop" title="Stop" onClick={() => send("agentStop", { key: agent.key })}><Square /></button>
+  <div ref={dock} className="page-dock" data-kind={kind} style={hue}>
+   {open && <div ref={panel} className="page-panel" role="region" aria-label={who.name + "'s steps"}>
+    <b>{who.name}{time && <small>{time}</small>}</b>
+    <ol>{(agent.recent ?? []).slice(-4).map((s, i) => <li key={i + s}>{s}</li>)}{!agent.paused && !done && <li className="is-now">{title}</li>}</ol>
+    <div className="page-panel-buttons">{buttons}</div>
+   </div>}
+   {others.length > 0 && <button ref={stack} className="page-others" aria-label={`Running tasks: ${others.length} more at work`} title="Running tasks" onClick={() => dispatchEvent(new Event("still-tasks"))}>
+    {others.slice(0, 3).map((c, i) => <Face key={i} companion={c} size={20} mood="working" />)}<b>+{others.length}</b>
+   </button>}
+   <div ref={pill} className={cn("page-control", agent.paused && "is-paused")} data-state={state} tabIndex={0} role="group" aria-label={who.name + ": " + title}
+    onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); setOpen(o => !o) } }}>
+    <button className="page-more" tabIndex={-1} aria-expanded={open} aria-label={open ? "Hide steps" : "Show steps"} title={open ? "Hide steps" : "Show steps"} onClick={() => setOpen(o => !o)}><ChevronDown /></button>
+    <span className="page-head" style={{ "--n": n } as CSSProperties}><Face companion={who} size={24} tier="icon" mood={agent.paused ? "listening" : "working"} /></span>
+    <span className="page-control-text" role="status"><b key={title} onMouseEnter={cut}>{title}</b><small onMouseEnter={cut}>{line}{!agent.paused && !done && n > 0 && <span className="page-count">, step {n}</span>}</small></span>
+    {!done && buttons}
+   </div>
   </div>
  </>
 }

@@ -823,6 +823,7 @@ export const stop = () => cancelAnimationFrame(raf)
 const STILL_AT: Partial<Record<MascotState, number>> = { idle: .3, working: .3, needs: .55, done: .3, error: .5, thinking: .5, talking: .2, pointing: .3 }
 /// A still picture of a look, for small places and for reduced motion.
 export function picture(look: Look, state: MascotState, px: number, frame: Frame, flat = false) {
+ if (frame === "icon" || frame === "portrait") return head(look, px, frame)
  start()
  const c = make(look)
  if (!c) return null // its model is loading (onRigReady)
@@ -838,24 +839,99 @@ export function picture(look: Look, state: MascotState, px: number, frame: Frame
  return out.toDataURL("image/webp", .9)
 }
 
+/// A look's head for the small tiers (Mascot.tsx), as rig/anim.py "heads" makes the Blender ones: the rest pose drawn flat
+/// with no prop, the head (from the top down to the shoulders, read off the picture) framed so what's drawn takes 87% of
+/// the box across its longer side (85 to 90%, as tools/heads/pack.py fills the shipped ones), circled at 88% with a line
+/// in the outline's color where the body goes on past the circle. The icon is one tone, its eyes a quarter bigger and its
+/// outline twice as thick.
+function head(look: Look, px: number, tier: "icon" | "portrait") {
+ start()
+ const c = make(look)
+ if (!c) return null // its model is loading (onRigReady)
+ c.state = "idle"; c.live = false
+ c.update(0, 0, null)
+ if (c instanceof Companion && c.prop && HOLD[look.prop] !== "worn") c.prop.visible = false // held props stay out; worn ones are on the head
+ const icon = tier === "icon", made = flatten(c, icon ? ONE_TONE : TONES)
+ if (icon) for (const e of c instanceof Companion ? c.eyes : ["eye.L", "eye.R", "brow.L", "brow.R"].map(n => node(c.root, n))) e?.scale.multiplyScalar(1.25)
+ instances.set("__picture", c)
+ const S = 512
+ draw(c, S, "full")
+ const raw = document.createElement("canvas"); raw.width = raw.height = S
+ const g = raw.getContext("2d", { willReadFrequently: true })!
+ g.drawImage(renderer.domElement, 0, 0, S, S, 0, 0, S, S)
+ // the eyes on screen: the head goes from its top down past them as far again and a quarter (about the chin), as the
+ // Blender heads are framed; below that is the body
+ const eyes = (c instanceof Companion ? c.eyes : ["eye.L", "eye.R"].map(n => node(c.root, n))).filter(e => !!e) as THREE.Object3D[]
+ const ey = eyes.reduce((s, e) => s + (1 - (e.getWorldPosition(new THREE.Vector3()).project(camera).y + 1) / 2) * S, 0) / Math.max(1, eyes.length)
+ scene.remove(c.group); instances.delete("__picture"); c.dispose(); made.forEach(m => m.dispose())
+ const a = g.getImageData(0, 0, S, S).data
+ let top = -1, left = S, right = -1
+ for (let y = 0; y < S && top < 0; y++) for (let x = 0; x < S; x++) if (a[(y * S + x) * 4 + 3] > 8) { top = y; break }
+ const low = Math.round(ey + 1.25 * (ey - top))
+ if (!eyes.length || top < 0 || low <= top) return null
+ for (let y = top; y <= Math.min(low, S - 1); y++) for (let x = 0; x < S; x++) if (a[(y * S + x) * 4 + 3] > 8) { left = Math.min(left, x); right = Math.max(right, x) }
+ let side = Math.max(right - left + 1, low - top) / .87
+ const cx = (left + right + 1) / 2, cy = (top + low) / 2
+ const ink = `#${new THREE.Color(look.color).multiplyScalar(.1).getHexString()}`
+ const lined = outline(raw, look.color, side * 2.6 / 96 * (icon ? 2 : 1))
+ // Framed, then measured (the outline and the circle change what's drawn: a narrow head is cut by the circle at its
+ // shoulders, so it grows slowly), and the frame closed in or opened out by halves until it takes 86 to 89%
+ let lo = side * .3, hi = side * 1.3, box = frame(side), s = share(box)
+ for (let i = 0; i < 12 && s && (s < .86 || s > .89); i++) {
+  if (s < .86) hi = side; else lo = side
+  side = (lo + hi) / 2; box = frame(side); s = share(box)
+ }
+ return box.toDataURL("image/webp", .9)
+
+ // into the box, then circled, with the line along the cut
+ function frame(side: number) {
+ const box = document.createElement("canvas"); box.width = box.height = px
+ const b = box.getContext("2d")!
+ b.drawImage(lined, cx - side / 2, cy - side / 2, side, side, 0, 0, px, px)
+ const R = px * .44, w = Math.max(1, px * 2.6 / 96 * (icon ? 2 : 1)), disc = (k: CanvasRenderingContext2D, r: number) => { k.beginPath(); k.arc(px / 2, px / 2, r, 0, TAU); k.fill() }
+ const past = document.createElement("canvas"), rim = document.createElement("canvas"); past.width = past.height = rim.width = rim.height = px
+ const p = past.getContext("2d")!, r = rim.getContext("2d")!
+ p.drawImage(box, 0, 0); p.globalCompositeOperation = "destination-out"; disc(p, R) // the body past the circle
+ r.lineWidth = w; r.strokeStyle = ink; r.beginPath(); r.arc(px / 2, px / 2, R - w / 2, 0, TAU); r.stroke()
+ r.globalCompositeOperation = "destination-in"
+ const near = document.createElement("canvas"); near.width = near.height = px
+ const n = near.getContext("2d")!
+ for (let i = 0; i < 16; i++) n.drawImage(past, Math.cos(i / 16 * TAU) * w * 1.5, Math.sin(i / 16 * TAU) * w * 1.5)
+ r.drawImage(near, 0, 0); r.drawImage(box, 0, 0)
+ b.globalCompositeOperation = "destination-in"; disc(b, R)
+ b.globalCompositeOperation = "source-over"; b.drawImage(rim, 0, 0)
+ return box
+ }
+}
+/// A rig's node by its Blender name (three.js drops the dots: "eye.L" is "eyeL").
+const node = (root: THREE.Object3D, name: string) => root.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name))
+/// What's drawn (alpha at half and up) across the longer side, as a share of the box.
+function share(c: HTMLCanvasElement) {
+ const a = c.getContext("2d", { willReadFrequently: true })!.getImageData(0, 0, c.width, c.height).data
+ let l = c.width, t = c.height, r = -1, b = -1
+ for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) if (a[(y * c.width + x) * 4 + 3] >= 128) { l = Math.min(l, x); r = Math.max(r, x); t = Math.min(t, y); b = Math.max(b, y) }
+ return r < 0 ? 0 : Math.max(r - l + 1, b - t + 1) / c.width
+}
+
 // 2D, for chat sizes (Mascot.tsx): every part in its own color in two flat tones, the same face, a bold outline. The
 // Blender companions ship theirs (rig/anim.py "flat"); any other look is drawn so from its model.
-const TONES = (() => { const t = new THREE.DataTexture(new Uint8Array([200, 255]), 2, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t })()
-function flatten(c: Body) {
+const toon = (shades: number[]) => { const t = new THREE.DataTexture(new Uint8Array(shades), shades.length, 1, THREE.RedFormat); t.minFilter = t.magFilter = THREE.NearestFilter; t.needsUpdate = true; return t }
+const TONES = toon([200, 255]), ONE_TONE = toon([255]) // the head icon: one tone
+function flatten(c: Body, tones = TONES) {
  const made: THREE.Material[] = []
  if (c.shadow) c.shadow.visible = false
  c.group.traverse(o => {
   const mesh = o as THREE.Mesh, m = mesh.material as THREE.MeshStandardMaterial
   if (!mesh.isMesh || !m?.isMeshStandardMaterial || m.blending !== THREE.NormalBlending) return // the eye shine stays
   // toon takes no environment light: its own color, glowing about half, stands in for it so the body keeps its color
-  const t = new THREE.MeshToonMaterial({ color: m.color, emissive: m.color, emissiveIntensity: .5, map: m.map, vertexColors: m.vertexColors, gradientMap: TONES, side: m.side, transparent: m.transparent, opacity: m.opacity })
+  const t = new THREE.MeshToonMaterial({ color: m.color, emissive: m.color, emissiveIntensity: .5, map: m.map, vertexColors: m.vertexColors, gradientMap: tones, side: m.side, transparent: m.transparent, opacity: m.opacity })
   mesh.material = t; made.push(t)
  })
  return made
 }
-/// The picture with a dark line in the look's own color round its silhouette, about 2.5% of its width.
-function outline(src: HTMLCanvasElement, color: string) {
- const px = src.width, r = Math.max(1, px * .025), out = document.createElement("canvas"), sil = document.createElement("canvas")
+/// The picture with a dark line in the look's own color round its silhouette, about 2.5% of its width (or r px).
+function outline(src: HTMLCanvasElement, color: string, r = Math.max(1, src.width * .025)) {
+ const px = src.width, out = document.createElement("canvas"), sil = document.createElement("canvas")
  out.width = out.height = sil.width = sil.height = px
  const s = sil.getContext("2d")!, g = out.getContext("2d")!
  s.drawImage(src, 0, 0); s.globalCompositeOperation = "source-in"; s.fillStyle = `#${new THREE.Color(color).multiplyScalar(.1).getHexString()}`; s.fillRect(0, 0, px, px)

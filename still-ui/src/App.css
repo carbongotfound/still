@@ -388,7 +388,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 :root:not(.dark) .selected-tab { box-shadow:0 1px 2px #2a201410,0 0 0 1px #2a20140d; }
 
 /* AI: the face, the brand marks, the AI's own tabs */
-.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 0; gap:1px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
+.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 3px; gap:8px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
 .ai-pill.is-open[data-slot="button"], .ai-pill.is-open[data-slot="button"]:hover { background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); }
 .ai-logo { display:inline-grid; place-items:center; flex:none; line-height:1; }
 .ai-logo.is-letter { border-radius:50%; box-shadow:inset 0 0 0 1.25px color-mix(in oklab,currentColor 35%,transparent); font-weight:650; color:var(--muted-foreground); }
@@ -728,6 +728,8 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mascot { position:relative; display:inline-block; flex:none; width:var(--s); height:var(--s); }
 .mascot > img, .mascot > canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; user-select:none; }
 .mascot > canvas { opacity:0; }
+.dark .mascot.is-head::after { content:"";position:absolute;inset:6%;border-radius:50%;box-shadow:0 0 0 1px rgb(255 255 255/.16);pointer-events:none; } /* the dark outline would sink into a dark page */
+.mascot-initial { position:absolute;inset:6%;display:grid;place-items:center;border-radius:50%;font:600 calc(var(--s) * .48)/1 var(--font-sans);font-style:normal;user-select:none; }
 .mascot > canvas[data-live] { opacity:1; }
 .mascot:has(> canvas[data-live]) > img { visibility:hidden; }
 .mascot-sheet { min-height:100vh; padding:28px 32px; background:var(--background); color:var(--foreground); display:grid; gap:18px; align-content:start; }
@@ -740,20 +742,41 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 [data-kind=claude] { --drive:#de7d58; } [data-kind=chatgpt] { --drive:#3fb79a; } [data-kind=grok] { --drive:#a6d930; }
 .page-glow { position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 3px var(--drive),inset 0 0 26px 4px color-mix(in oklab,var(--drive) 50%,transparent);animation:page-glow 2.4s ease-in-out infinite; }
 @keyframes page-glow { 50% { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--drive) 70%,transparent),inset 0 0 18px 2px color-mix(in oklab,var(--drive) 35%,transparent); } }
-/* The pill: the companion at work, then Take over and Stop. It breathes in the companion's hue. */
-.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:8px 8px 8px 10px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 16%,var(--card));color:var(--foreground);box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border));animation:page-control-in 260ms cubic-bezier(.22,1,.36,1),page-pill 2.6s ease-in-out 260ms infinite; }
-.page-control.is-paused { background:color-mix(in oklab,#e2a33b 24%,var(--card)); animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
-@keyframes page-pill { 50% { box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border)),0 0 0 5px color-mix(in oklab,var(--drive,#888) 28%,transparent); } }
-.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;gap:2px;padding:0 8px 0 2px;line-height:1.25; }
-.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; } .page-control-text small { font-size:11.5px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.page-control button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
-.page-control button svg { width:14px;height:14px; }
-.page-take { background:color-mix(in oklab,var(--drive,#888) 42%,var(--card));color:var(--foreground); } .page-take:hover { background:color-mix(in oklab,var(--drive,#888) 58%,var(--card)); }
-.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
-.page-stop { width:32px;padding:0 !important;background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-stop:hover { color:var(--destructive);background:color-mix(in oklab,var(--destructive) 12%,transparent); }
-.page-stop svg { width:12px !important;height:12px !important;fill:currentColor;stroke:none; }
+/* The pill: who's at work and what they're doing right now, then Take over, Open chat and Stop. A solid card with a
+   border and a shadow, so it reads over any page; the companion's hue only tints it and turns in the ring round its head. */
+.page-dock { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px; }
+.page-control { position:relative;min-width:0;display:flex;align-items:center;gap:6px;padding:5px 6px 5px 2px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 7%,var(--card));color:var(--foreground);border:1px solid color-mix(in oklab,var(--drive,#888) 38%,var(--border));box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 2px 6px -2px rgb(0 0 0/.16);outline:none;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
+.page-control:focus-visible { box-shadow:0 0 0 2px var(--ring),0 14px 34px -16px rgb(0 0 0/.45); }
+.page-control:is([data-state=paused],[data-state=signin]) { background:color-mix(in oklab,#e2a33b 12%,var(--card));border-color:color-mix(in oklab,#e2a33b 50%,var(--border)); }
+.page-control[data-state=approval] { border-color:color-mix(in oklab,#e2a33b 70%,var(--border)); }
+.page-control[data-state=done] { animation:page-done 2.4s ease forwards; }
+@keyframes page-done { 0%,70% { opacity:1; } 100% { opacity:0; translate:0 6px; } }
+.page-more { width:22px !important;height:32px;padding:0 !important;background:transparent;color:var(--muted-foreground); } .page-more:hover { color:var(--foreground); }
+.page-more svg { transition:rotate 160ms; } .page-more[aria-expanded=true] svg { rotate:180deg; }
+.page-head { position:relative;flex:none;width:32px;height:32px;display:grid;place-items:center; }
+.page-head::before { content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--drive,#888) 0 30%,color-mix(in oklab,var(--drive,#888) 26%,transparent) 30% 100%);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));animation:page-ring 3s linear infinite; }
+.page-control:not([data-state=working]) .page-head::before { animation:none;background:color-mix(in oklab,var(--drive,#888) 75%,transparent); }
+@keyframes page-ring { to { rotate:1turn; } }
+.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;gap:1px;padding:0 6px 0 2px;line-height:1.25; }
+.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:page-step 200ms ease; }
+@keyframes page-step { from { opacity:0; } }
+.page-control-text small { font-size:12px;color:color-mix(in oklab,var(--foreground) 74%,var(--card));white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.page-count { display:none; }
+.page-control button, .page-panel button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
+.page-control button svg, .page-panel button svg { width:14px;height:14px; }
+.page-take { background:var(--foreground);color:var(--background); } .page-take:hover { background:color-mix(in oklab,var(--foreground) 84%,var(--background)); }
+.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 18%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
+.page-stop { width:32px;padding:0 !important;margin-left:4px;background:color-mix(in oklab,var(--destructive) 13%,var(--card));color:var(--destructive); } .page-stop:hover { background:color-mix(in oklab,var(--destructive) 24%,var(--card)); }
+.page-stop svg { fill:currentColor;stroke:none; }
+.page-panel { position:absolute;right:0;bottom:calc(100% + 8px);width:min(320px,calc(100vw - 32px));display:grid;gap:10px;padding:12px 12px 10px;border-radius:16px;background:var(--card);color:var(--foreground);border:1px solid var(--border);box-shadow:0 18px 40px -18px rgb(0 0 0/.5);animation:page-control-in 200ms ease; }
+.page-panel > b { display:flex;justify-content:space-between;gap:8px;font-size:13px; } .page-panel > b small { font-weight:400;color:var(--muted-foreground); }
+.page-panel ol { margin:0;padding:0 0 0 18px;display:grid;gap:4px;font-size:12.5px;color:color-mix(in oklab,var(--foreground) 76%,var(--card)); } .page-panel li.is-now { color:var(--foreground);font-weight:600; }
+.page-panel-buttons { display:flex;gap:6px;justify-content:flex-end; }
+.page-others { display:flex;align-items:center;height:36px;padding:0 10px 0 6px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--foreground);box-shadow:0 10px 24px -14px rgb(0 0 0/.45);font-size:12px;font-weight:600;flex:none; }
+.page-others .mascot + .mascot { margin-left:-6px; } .page-others b { margin-left:5px; }
+@media (max-width:520px) { .page-take span, .page-chat span { display:none; } .page-take, .page-chat { width:32px;padding:0 !important; } .page-control-text { max-width:150px; } }
 @keyframes page-control-in { from { opacity:0; } }
-@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-control.is-paused, .page-tabs i { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-head::before, .page-control-text b, .page-panel, .page-tabs i { animation:none; } .page-count { display:inline; } }
 
 /* The home (new tab): a slim rail, the companion switcher, the face, the message box, chips and ideas. Pages swap in on the right. */
 .home-rail { width:56px; flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 0 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 45%,var(--background)); }
