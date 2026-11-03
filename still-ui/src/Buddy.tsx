@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { motion } from "motion/react"
-import { Mascot, pictureOf, useMascotVersion, type MascotState } from "./Mascot"
+import { Mascot, pictureOf, useMascotVersion, type MascotState, type Tier } from "./Mascot"
 import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, ROLE_PROPS, isOld, parseLook, type Look } from "./look"
 
 // The old companion hues: a companion saved before looks existed keeps its color.
@@ -49,11 +49,11 @@ export function lookOf(c?: Companion): Look {
 /// The companion's color, used as its accent while you work with it.
 export const hueOf = (c?: Companion) => lookOf(c).color
 
-export function Face({ companion, mood = "idle", size = 56, follow, gesture, gestureAt, className }: { companion?: Companion; mood?: Mood; size?: number; follow?: boolean; gesture?: string; gestureAt?: number; className?: string }) {
+export function Face({ companion, mood = "idle", size = 56, tier, follow, gesture, gestureAt, className }: { companion?: Companion; mood?: Mood; size?: number; tier?: Tier; follow?: boolean; gesture?: string; gestureAt?: number; className?: string }) {
  const fallback = useContext(CompanionContext)
  const c = companion ?? fallback
  const look = useMemo(() => lookOf(c), [c?.look, c?.color, c?.face, c?.id]) // eslint-disable-line react-hooks/exhaustive-deps
- return <Mascot look={look} state={mood === "sleep" ? "idle" : mood} size={size} follow={follow} gesture={gesture} gestureAt={gestureAt}
+ return <Mascot look={look} state={mood === "sleep" ? "idle" : mood} size={size} tier={tier} name={c?.name} follow={follow} gesture={gesture} gestureAt={gestureAt}
   className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face

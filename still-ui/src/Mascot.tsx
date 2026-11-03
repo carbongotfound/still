@@ -10,7 +10,7 @@ import { AGENT_LOOKS, BLANK, DEFAULT_LOOK, RIGS, ROLE_LOOKS, lookKey, type Look 
 // every companion is a still picture.
 export const STATES = ["idle", "listening", "thinking", "working", "needs", "done", "error", "talking", "pointing"] as const
 export type MascotState = (typeof STATES)[number]
-export type Frame = "full" | "bust"
+export type Frame = "full" | "bust" | "icon" | "portrait"
 
 export type Slot = { id: string; look: Look; state: MascotState; follow: boolean; gesture: string; gestureAt: number; frame: Frame; canvas: HTMLCanvasElement; visible: boolean }
 export const slots = new Map<string, Slot>()
@@ -77,13 +77,13 @@ function drain() {
 /// A still picture of a look in a state: rendered once (loading the engine if it must), then kept. flat: drawn 2D.
 export function pictureOf(look: Look, state: MascotState, px: number, frame: Frame, render = true, flat = false): string | undefined {
  state = pictureState(state)
- const lk = lookKey(look), key = `${px}${frame[0]}${flat ? "f" : ""}-${state}-${hash(lk)}`
+ const lk = lookKey(look), key = `${px}${frame[0]}${flat ? "f" : ""}-${state}-${hash(lk)}`, head = frame === "icon" || frame === "portrait"
  const preset = PRESETS.find(p => p[1] === lk)?.[0]
- const shipped = preset && bundled[`./assets/companion/${preset}-${flat ? "flat" : frame}-${state}.webp`] // the default look's idle, 2D too
+ const shipped = preset && bundled[`./assets/companion/${preset}-${head ? frame : flat ? "flat" : frame}-${state}.webp`] // the default look's idle, 2D and its heads too
  if (shipped) return shipped
  let url = memo.get(key)
  if (!url) try { url = localStorage.getItem(STORE + key) ?? undefined; if (url) memo.set(key, url) } catch { /* no storage */ }
- if (url || !render || !webgl) return url ?? bundled[`./assets/companion/default-${flat ? "flat" : frame}-idle.webp`] // no WebGL: the default look, drawn ahead
+ if (url || !render || !webgl) return url ?? (head ? undefined : bundled[`./assets/companion/default-${flat ? "flat" : frame}-idle.webp`]) // no WebGL: the default look, drawn ahead (a head: its initial)
  if (!wanted.has(key)) { wanted.set(key, { look, state, px, frame, flat }); if (engine) queueMicrotask(drain); else void loadEngine() }
  return undefined
 }
@@ -98,8 +98,33 @@ const AVATAR = new Map(RIGS.map(([l, f]) => [lookKey(l), [avatarFiles[`./assets/
 const strips = import.meta.glob("./assets/sprite/*/*.webp", { eager: true, query: "?url", import: "default" }) as Record<string, string>
 const sheets = import.meta.glob("./assets/sprite/*/*.json", { eager: true, import: "default" }) as Record<string, Record<string, { frames: number; fps: number; rows?: number }>>
 const RIG = new Map(RIGS.map(([l, f]) => [lookKey(l), f]))
-/// A look's 2D face as a picture, for an <img> (a mention in the message box).
-export const avatarOf = (look: Look) => AVATAR.get(lookKey(look))?.[0] ?? pictureOf(look, "idle", 96, "full", true, true)
+
+// Small sizes show the head, not the whole body, so the face reads: up to ICON px a simplified icon (one tone, a bolder
+// outline, eyes a quarter bigger, no props), up to PORTRAIT px a head portrait in the chat look; from 40px the whole
+// companion. Each is framed on the rest pose's head and circled, nothing at the box's edge. The Blender companions ship
+// theirs at 1x, 2x and 3x (rig/anim.py "heads", packed to assets/head); any other look is rendered once and kept.
+export type Tier = "icon" | "portrait" | "full"
+export const ICON = 20, PORTRAIT = 39
+export const tierOf = (size: number): Tier => size <= ICON ? "icon" : size <= PORTRAIT ? "portrait" : "full"
+const headFiles = import.meta.glob("./assets/head/*.png", { eager: true, import: "default" }) as Record<string, string>
+const HEAD_PX = { icon: [16, 20, 32, 40, 48, 60], portrait: [40, 80, 120] } // 16 and 32 so 16px gets a file drawn for it
+/// A look's head at a tier: the shipped files as a srcset, or one picture rendered at 3x the tier's largest size.
+export function headOf(look: Look, tier: "icon" | "portrait", render = true): { src: string; srcSet?: string } | undefined {
+ const id = RIG.get(lookKey(look)), files = id ? HEAD_PX[tier].map(px => headFiles[`./assets/head/${id}-${tier}-${px}.png`]) : undefined
+ if (files?.every(Boolean)) return { src: files[0], srcSet: files.map((f, i) => `${f} ${HEAD_PX[tier][i]}w`).join(", ") }
+ const src = pictureOf(look, "idle", HEAD_PX[tier].at(-1)!, tier, render, true)
+ return src ? { src } : undefined
+}
+/// A look's face as one picture for an <img> drawn at size px (a mention in the message box): the tier's sharpest file.
+export function avatarOf(look: Look, size: number) {
+ const tier = tierOf(size)
+ if (tier === "full") return AVATAR.get(lookKey(look))?.[0] ?? pictureOf(look, "idle", 96, "full", true, true)
+ const h = headOf(look, tier)
+ return h?.srcSet ? h.srcSet.split(", ").at(-1)!.split(" ")[0] : h?.src
+}
+// Dark or light letters on a companion's color, whichever reads (the initial when a head picture can't be had).
+const inkOn = (hex: string) => { const n = parseInt(hex.slice(1), 16), l = (c: number) => { c /= 255; return c <= .04045 ? c / 12.92 : ((c + .055) / 1.055) ** 2.4 }
+ return .2126 * l(n >> 16 & 255) + .7152 * l(n >> 8 & 255) + .0722 * l(n & 255) > .18 ? "#1d1b19" : "#ffffff" }
 const STRIP: Partial<Record<MascotState, string>> = { working: "working", thinking: "thinking", done: "nod", error: "shrug", needs: "wave" } // the rest idle
 function strip(look: Look, state: MascotState, gesture = "") {
  const id = RIG.get(lookKey(look)), clip = gesture === "yes" ? "yes" : STRIP[state] ?? "idle_a", url = strips[`./assets/sprite/${id}/${id}-${clip}.webp`], info = sheets[`./assets/sprite/${id}/${id}.json`]?.[clip]
@@ -108,12 +133,25 @@ function strip(look: Look, state: MascotState, gesture = "") {
 
 // ---------------------------------------------------------------- the component
 
-export function Mascot({ look, state = "idle", size, follow = false, gesture = "", gestureAt = 0, className, style }: {
- look: Look; state?: MascotState; size: number; follow?: boolean; gesture?: string; gestureAt?: number; className?: string; style?: CSSProperties
+export function Mascot({ look, state = "idle", size, tier: want, name = "", follow = false, gesture = "", gestureAt = 0, className, style }: {
+ look: Look; state?: MascotState; size: number; tier?: Tier; name?: string; follow?: boolean; gesture?: string; gestureAt?: number; className?: string; style?: CSSProperties
+}) {
+ useVersion()
+ const tier = want ?? tierOf(size), [broken, setBroken] = useState("")
+ const head = tier !== "full" ? headOf(look, tier) : undefined
+ if (tier !== "full") return <span className={cn("mascot is-head", className)} data-state={state} data-tier={tier} data-rig={RIG.get(lookKey(look))} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
+  {head && broken !== head.src ? <img src={head.src} srcSet={head.srcSet} sizes={head.srcSet && `${size}px`} alt="" draggable={false} onError={() => setBroken(head.src)} />
+   : <i className="mascot-initial" style={{ background: look.color, color: inkOn(look.color) }}>{name.trim().charAt(0).toUpperCase()}</i>}
+ </span>
+ return <Body look={look} state={state} size={size} follow={follow} gesture={gesture} gestureAt={gestureAt} className={className} style={style} />
+}
+
+/// The whole companion (40px and up): 2D at chat sizes, live 3D when bigger.
+function Body({ look, state, size, follow, gesture, gestureAt, className, style }: {
+ look: Look; state: MascotState; size: number; follow: boolean; gesture: string; gestureAt: number; className?: string; style?: CSSProperties
 }) {
  const id = useId()
  const ref = useRef<HTMLCanvasElement>(null)
- useVersion()
  const reduced = useReduced()
  const flat = size <= FLAT
  const [played, setPlayed] = useState(0) // the gestureAt whose "yes" strip has played: then back to the state's

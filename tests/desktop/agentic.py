@@ -106,6 +106,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 SITE = f"http://127.0.0.1:{SERVER.server_port}"
+# The pill is up with Maya at work: her step line, then her name and time.
+MAYA_AT_WORK = "(c => c?.dataset.state === 'working' && c.innerText.includes('Maya'))(document.querySelector('.page-control'))"
 CSV = "Name,Price,Store\n" + "".join(f"\"{n.replace(chr(34), chr(34) * 2)}\",{p},Pinecone Store\n" for n, p in CHEAP)
 
 # ---- the fake AI app: Still's MCP server, driven by a script ----
@@ -312,8 +314,9 @@ def laptops(process):
     chat = chats().get(f"LAPTOPS {SITE}", {})
     check(page and page["InChat"] == chat.get("Id") and len(strip(process)) == mine + 1, "Its page opens as a background tab of the chat, and your tabs stay as they were")
     check(js(process, "!!document.querySelector('.page-column.is-split .chat-pane') && !!document.querySelector('.page-column.is-split .page-pane')"), "The chat splits to show its page on the right")
-    check(until(lambda: "Maya is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "The pill says who's working")
-    check(js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')") == "Take over|Stop", "The pill offers Take over and Stop")
+    check(until(lambda: js(process, MAYA_AT_WORK), 5), "The pill says who's working")
+    buttons = js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')")
+    check(buttons == "Show steps|Take over|Stop Maya", "The pill offers its steps, Take over and Stop: " + str(buttons))
     cursor = rpc(process, "eval", tab=page["Id"], world="still", script="(() => { const h = window[Symbol.for('still.cursor')]; return h ? h[Symbol.for('still.cursor')].tag.textContent : '' })()")
     check(cursor == "Maya", "The AI's cursor shows in the page with its name")
     check(rpc(process, "eval", tab=page["Id"], script="document.querySelector('#q').value") == "laptop", "Typing reached the search field")
@@ -408,8 +411,7 @@ def parallel(process):
     click(process, ".page-mine")
     moved = until(lambda: next((t for t in tabs(process) if t["Id"] == a["Id"] and not t["InChat"]), None), 5)
     check(moved and rpc(process)["activeId"] == a["Id"] and len(strip(process)) == before + 1, "Move to my tabs puts Maya's page in your tab strip, in front")
-    check(until(lambda: "Maya is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or "")
-                and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Maya keeps working there, with the pill and its mark on the tab")
+    check(until(lambda: js(process, MAYA_AT_WORK) and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Maya keeps working there, with the pill and its mark on the tab")
     time.sleep(.5)
     capture(process, "mine-v01")
     click(process, ".page-stop")

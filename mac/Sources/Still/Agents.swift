@@ -40,6 +40,9 @@ final class Worker {
  var paused = false // the user took over: its calls wait until they hand it back
  var signIn = "" // paused on a sign-in page of this site: the user signs in, then hands it back
  var signedIn: (site: String, at: Date)? // when the user last handed back after signing in
+ // For the pill: the tool running now and what it works on (a site, a search, a teammate; never what's typed),
+ // the steps done since this stretch of work began, and the last few of them in the past tense.
+ var tool = "", target = "", count = 0, since: Date? = nil, recent: [String] = []
 }
 var workers: [String: Worker] = [:]
 func worker(_ who: String) -> Worker {
@@ -65,8 +68,27 @@ func hue(_ companion: Companion?) -> String {
  }
 }
 /// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
-func atWork() -> [String: Worker] { workers.filter { approvedAgents.contains($0.value.name.lowercased()) && ($0.value.paused || Date().timeIntervalSince($0.value.seen) < 120) } }
-func did(_ who: String, _ action: String) { worker(who).action = action.count > 90 ? String(action.prefix(90)) + "…" : action }
+func atWork() -> [String: Worker] { workers.filter { approvedAgents.contains($0.value.name.lowercased()) && ($0.value.paused || !$0.value.tool.isEmpty || Date().timeIntervalSince($0.value.seen) < 120) } }
+func did(_ who: String, _ action: String) {
+ let me = worker(who)
+ me.action = action.count > 90 ? String(action.prefix(90)) + "…" : action
+ me.recent.append(me.action); if me.recent.count > 5 { me.recent.removeFirst() }
+}
+/// What a step works on, for the pill: the search, the teammate (with what it's about) or the site; never typed text.
+func targetOf(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
+ if tool == "web_search" { return clipped(argText(args, "query").trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " "), 60) }
+ if tool == "ask_companion" || tool == "tell_companion" {
+  let name = argText(args, "name").trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+  var title = argText(args, "title").trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: ".")).replacingOccurrences(of: "\n", with: " ")
+  if title.count > 1, title.dropFirst().first?.isLowercase == true { title = title.prefix(1).lowercased() + title.dropFirst() } // "Pricing research" reads as "about pricing research"; "SEO audit" stays
+  return name.isEmpty ? "" : title.isEmpty ? name : name + " about " + clipped(title, 50)
+ }
+ if ["run_plugin_action", "get_plugin_tools", "find_plugins", "list_connected_plugins"].contains(tool) { return "" }
+ var url = argText(args, "url")
+ if url.isEmpty, let id = agentTabs[who] { url = findTab(id)?.tab.url ?? "" }
+ guard let scheme = URL(string: url)?.scheme, scheme == "http" || scheme == "https" else { return "" }
+ return hostName(url)
+}
 
 // One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
 var approvalWaiters: [Once<Bool?>]? = nil
@@ -487,6 +509,7 @@ extension Browser {
    }
   }
   let me = worker(who)
+  if Date().timeIntervalSince(me.seen) > 120 && !me.paused { me.since = Date(); me.count = 0; me.recent = [] } // a new stretch of work
   me.seen = Date()
   // The user took over: wait for them to hand it back, like a person would.
   let paused = Date().addingTimeInterval(40)
@@ -520,6 +543,8 @@ extension Browser {
   // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
   let going = runs[who]
   if let going, let intent = going.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
+  me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
+  defer { me.tool = ""; me.count += 1; me.seen = Date() }
   let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }), result: String
   switch raced {
   case .done(let reply): result = reply ?? agentFail("Failed.")
@@ -530,6 +555,7 @@ extension Browser {
    if let ran = going.intent { if case .done = raced { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off: uncertain
    checkpoint(going, tool, result)
   }
+  if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
   return result
  }
 
@@ -605,7 +631,9 @@ extension Browser {
    let x = agentTabs[a.key] == shownId, y = agentTabs[b.key] == shownId
    return x != y ? !x : a.value.seen < b.value.seen
   }) else { return nil }
-  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "signIn": me.signIn, "key": key]
+  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "signIn": me.signIn, "key": key,
+   "tool": me.tool, "target": me.target, "count": me.count, "recent": me.recent]
+  if let since = me.since { data["since"] = ISO8601DateFormatter().string(from: since) }
   if let tab = agentTabs[key] { data["tab"] = tab }
   return data
  }

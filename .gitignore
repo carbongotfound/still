@@ -5,6 +5,7 @@ artifacts/
 tools/*
 !tools/mascot/
 !tools/sound/
+!tools/heads/
 tools/mascot/out/
 *.user
 .vs/
