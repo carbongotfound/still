@@ -111,9 +111,11 @@ def main():
         until(lambda: js(process, "!!document.querySelector('.profile-panel .profile-foot')"), 5)
         type_into(process, ".profile-panel .profile-field input", "Ines")  # Name comes first, then Role
         type_into(process, ".profile-panel .profile-field textarea", "A careful researcher who cites sources.")  # Instructions
-        click_text(process, ".profile-stage-actions button", "Edit look")  # the look editor: Periwinkle
-        until(lambda: js(process, "!!document.querySelector('.look-dialog .look-colors')"), 8)
-        click(process, ".look-colors [aria-label=Periwinkle]")
+        click_text(process, ".profile-stage-actions button", "Edit look")  # the look editor (a new look is v2): Periwinkle and lemon
+        until(lambda: js(process, "!!document.querySelector('.look-dialog .look-tabs')"), 8)
+        click_text(process, ".look-tabs [role=tab]", "Colors")
+        until(lambda: js(process, "!!document.querySelector('.look-dialog .look-pairs')"), 3)
+        click(process, ".look-pairs [aria-label='Periwinkle and lemon']")
         click(process, ".look-save")
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
         js(process, "document.querySelector(\".profile-tablist [role=tab][id$='-trigger-model']\")?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))")
@@ -124,7 +126,7 @@ def main():
         check(until(lambda: js(process, "document.querySelector('.joined-card [data-slot=dialog-title]')?.innerText") == "Ines joined your team", 5), "Ines joined: the card says so")
         click_text(process, ".joined-card button", "Not now")
         until(lambda: not js(process, "!!document.querySelector('.joined-card')"), 3)
-        check(ines and '"color":"#a7b5f0"' in ines["Look"].replace(" ", "") and ines["Mode"] == "expert" and "research" in ines["Job"], "Create a companion: name, job, look and mode are saved")
+        check(ines and '"color":"#a7b5f0"' in ines["Look"].replace(" ", "") and '"second":"#f6d56a"' in ines["Look"].replace(" ", "") and ines["Mode"] == "expert" and "research" in ines["Job"], "Create a companion: name, job, look and mode are saved")
         check(until(lambda: js(process, "!!document.querySelector('.mate-switch-face[aria-label=Ines]')"), 5), "The new companion is in the switcher")
 
         # Switching companions changes the accent right away.

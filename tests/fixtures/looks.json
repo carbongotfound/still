@@ -1,0 +1,42 @@
+{
+ "v1": [
+  "{\"color\":\"#ddd4c6\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f7a26a\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f2a5c4\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#a6cf9c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f6d56a\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#8cc3ee\",\"shape\":\"bump\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#c0a3ec\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#2fa496\",\"shape\":\"crest\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#86d0c8\",\"shape\":\"squat\",\"prop\":\"mug\",\"accessory\":\"glasses\"}",
+  "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"laptop\",\"accessory\":\"bow\"}",
+  "{\"color\":\"#9aa3b2\",\"shape\":\"round\",\"prop\":\"camera\",\"accessory\":\"sprout\"}",
+  "{\"color\":\"#d9b2e6\",\"shape\":\"tall\",\"prop\":\"headphones\",\"accessory\":\"flower\"}",
+  "{\"color\":\"#8cc3ee\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#93d6bd\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}"
+ ],
+ "legacy": [
+  "{\"shape\":\"mochi\",\"eyes\":\"dot\",\"body\":\"\",\"color\":\"#f6c3b0\",\"hat\":\"bow\"}",
+  "{\"shape\":\"kitty\",\"color\":\"#8cc3ee\",\"glasses\":true}",
+  "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"headset\",\"accessory\":\"\"}"
+ ],
+ "parsed": {
+  "{\"color\":\"#ddd4c6\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#ddd4c6\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f7a26a\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#f7a26a\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f2a5c4\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#f2a5c4\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#a6cf9c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#a6cf9c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#f6d56a\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#f6d56a\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#8cc3ee\",\"shape\":\"bump\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#8cc3ee\",\"shape\":\"bump\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#c0a3ec\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#c0a3ec\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#2fa496\",\"shape\":\"crest\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#2fa496\",\"shape\":\"crest\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#86d0c8\",\"shape\":\"squat\",\"prop\":\"mug\",\"accessory\":\"glasses\"}": "{\"color\":\"#86d0c8\",\"shape\":\"squat\",\"prop\":\"mug\",\"accessory\":\"glasses\"}",
+  "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"laptop\",\"accessory\":\"bow\"}": "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"laptop\",\"accessory\":\"bow\"}",
+  "{\"color\":\"#9aa3b2\",\"shape\":\"round\",\"prop\":\"camera\",\"accessory\":\"sprout\"}": "{\"color\":\"#9aa3b2\",\"shape\":\"round\",\"prop\":\"camera\",\"accessory\":\"sprout\"}",
+  "{\"color\":\"#d9b2e6\",\"shape\":\"tall\",\"prop\":\"headphones\",\"accessory\":\"flower\"}": "{\"color\":\"#d9b2e6\",\"shape\":\"tall\",\"prop\":\"headphones\",\"accessory\":\"flower\"}",
+  "{\"color\":\"#8cc3ee\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#8cc3ee\",\"shape\":\"bean\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"color\":\"#93d6bd\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}": "{\"color\":\"#93d6bd\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\"}",
+  "{\"shape\":\"mochi\",\"eyes\":\"dot\",\"body\":\"\",\"color\":\"#f6c3b0\",\"hat\":\"bow\"}": "{\"color\":\"#f6c3b0\",\"shape\":\"squat\",\"prop\":\"\",\"accessory\":\"bow\"}",
+  "{\"shape\":\"kitty\",\"color\":\"#8cc3ee\",\"glasses\":true}": "{\"color\":\"#8cc3ee\",\"shape\":\"bump\",\"prop\":\"\",\"accessory\":\"glasses\"}",
+  "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"headset\",\"accessory\":\"\"}": "{\"color\":\"#f39079\",\"shape\":\"bean\",\"prop\":\"headphones\",\"accessory\":\"\"}"
+ }
+}

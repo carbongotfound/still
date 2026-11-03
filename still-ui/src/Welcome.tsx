@@ -7,7 +7,7 @@ import { AiPicker, type AiState } from "./AiSidebar"
 import { lookOf, type Companion } from "./Buddy"
 import { CrewCards, INTERESTS, PREMADES, SETUP_CREW, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
-import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
+import { DEFAULT_LOOK, FORMS, PAIRS, lookKey, surprise, v2, type Look } from "./look"
 import { LookEditor, LookThumb } from "./LookEditor"
 import { Mascot, type MascotState } from "./Mascot"
 import { PluginBelt, PluginGrid, PluginKey, ThirdParty, pluginName } from "./Plugins"
@@ -26,7 +26,9 @@ const EASE = [.22, 1, .36, 1] as const
 const POP: Record<"from" | "to" | "rest", TargetAndTransition> & { timing: Transition } = { from: { scaleX: .3, scaleY: .3, y: 60, opacity: 0 }, to: { scaleX: [.3, 1.16, .92, 1.03, 1], scaleY: [.3, .84, 1.1, .98, 1], y: [60, 0, -16, 0, 0], opacity: [0, 1, 1, 1, 1] },
  rest: { scaleX: 1, scaleY: 1, y: 0, opacity: 1 }, timing: { duration: .85, times: [0, .38, .62, .82, 1], ease: "easeOut" } }
 
-const COLORS = BODY_COLORS.slice(0, 12)
+const COLORS = PAIRS.slice(0, 12)
+// Make your own starts from a plain oat bean in the new style.
+const OWN = v2({ form: "bean", color: "#ddd4c6", second: "#8a6a50", marking: "none", eye: "round", mouth: "smile", top: "none", finish: "matte" })
 const THEMES = [["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const
 const newId = () => "c" + Math.random().toString(36).slice(2, 11)
 const blank = (): Companion => ({ id: newId(), name: "", face: "", color: "", job: "", mode: "default" })
@@ -316,9 +318,9 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
  }
 
  const mood: MascotState = introOn ? "idle" : at === "charge" && !allowed ? "needs" : talking ? "talking" : "idle"
- const pickColor = (hex: string) => { setLook(l => ({ ...l, color: hex })); setGrown(g => Math.max(g, 1)); react("admire") }
- const pickShape = (shape: string) => { setLook(l => ({ ...l, shape })); setGrown(g => Math.max(g, 2)); react("happy") }
- const startOwn = () => { setMaking(true); setDraft(blank()); setLook(BLANK); setGrown(0) }
+ const pickColor = (color: string, second: string) => { setLook(l => v2({ ...l as Required<Look>, color, second })); setGrown(g => Math.max(g, 1)); react("admire") }
+ const pickShape = (form: string) => { setLook(l => v2({ ...l as Required<Look>, form })); setGrown(g => Math.max(g, 2)); react("happy") }
+ const startOwn = () => { setMaking(true); setDraft(blank()); setLook(OWN); setGrown(0) }
  const shown = peek ?? layout ?? "Classic"
  const slide = reduce ? { initial: { opacity: 0 }, animate: { opacity: 1 }, exit: { opacity: 0 } } : { initial: { opacity: 0, x: 24 }, animate: { opacity: 1, x: 0 }, exit: { opacity: 0, x: -18 } }
  const soundOn = sounds && !soundsBlocked
@@ -367,8 +369,8 @@ export function Welcome({ isDefault, agents, layout, theme, talk, ai, noAi, hidd
      {at === "crew" && making && <>
       <Bubbles lines={["Let's make one that's all yours.", "Pick a color and a shape, give me a name, and tell me what I'm here to do."]} />
       <Reveal after={2}><div className="ob-build">
-       <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([hex, label]) => <button key={hex} role="radio" aria-checked={look.color === hex} aria-label={label} title={label} style={{ "--swatch": hex } as CSSProperties} onClick={() => pickColor(hex)} />)}</div></div>
-       {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Shape</span><div className="ob-faces" role="radiogroup" aria-label="Shape">{SHAPES.map(([k, label]) => <button key={k} role="radio" aria-checked={look.shape === k} aria-label={label} title={label} onClick={() => pickShape(k)}><LookThumb look={{ ...look, shape: k }} /></button>)}</div></motion.div>}
+       <div className="ob-row"><span>Color</span><div className="ob-colors" role="radiogroup" aria-label="Color">{COLORS.map(([a, b, label]) => <button key={a + b} role="radio" aria-checked={look.color === a && look.second === b} aria-label={label} title={label} style={{ "--swatch": `linear-gradient(135deg,${a} 0 55%,${b} 55%)` } as CSSProperties} onClick={() => pickColor(a, b)} />)}</div></div>
+       {grown >= 1 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Shape</span><div className="ob-faces" role="radiogroup" aria-label="Shape">{FORMS.map(([k, label]) => <button key={k} role="radio" aria-checked={look.form === k} aria-label={label} title={label} onClick={() => pickShape(k)}><LookThumb look={v2({ ...look as Required<Look>, form: k })} /></button>)}</div></motion.div>}
        {grown >= 2 && <motion.div className="ob-row" initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }}><span>Name</span>
         <div className="ob-name-box"><input aria-label="Name your companion" placeholder="Their name" maxLength={24} value={draft.name} onChange={e => { setDraft({ ...draft, name: e.target.value }); setGrown(3) }} /></div>
        </motion.div>}

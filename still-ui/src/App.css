@@ -1157,7 +1157,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 @media (prefers-reduced-motion: reduce) { .tab-group-chevron, .close-tab { transition:none; } }
 
 /* Customize: the companion big on the left, its parts in tabs on the right */
-.look-dialog[data-slot=dialog-content] { max-width:min(940px,calc(100vw - 48px)); width:min(940px,calc(100vw - 48px)); height:min(640px,calc(100vh - 60px)); padding:0; gap:0; display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); overflow:hidden; }
+.look-dialog[data-slot=dialog-content] { max-width:min(940px,calc(100vw - 48px)); width:min(940px,calc(100vw - 48px)); height:min(720px,calc(100vh - 60px)); padding:0; gap:0; display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); overflow:hidden; }
 .look-stage { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px; background:radial-gradient(circle at 1px 1px,color-mix(in oklab,var(--foreground) 9%,transparent) 1px,transparent 0) 0 0/18px 18px,color-mix(in oklab,var(--hue) 10%,var(--background)); }
 .look-stage b { font:500 22px/1.2 var(--font-serif,serif); }
 .look-panel { display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); }
@@ -1187,7 +1187,20 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .look-check { display:flex; align-items:center; gap:8px; font-size:13px; }
 .look-row { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted-foreground); } .look-row span { width:84px; }
 .look-row button { height:28px; padding:0 12px; border-radius:999px; box-shadow:0 0 0 1px var(--border); color:var(--foreground); } .look-row button.is-picked { box-shadow:0 0 0 2px var(--foreground); }
-.look-foot { display:flex; justify-content:flex-end; gap:8px; padding:14px 20px; border-top:1px solid var(--border); }
+.look-foot { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:14px 20px; border-top:1px solid var(--border); }
+.look-stage { gap:10px; } .look-stage .mascot { max-width:100%; max-height:46vh; }
+.look-actual { display:flex; gap:6px; }
+.look-sizes { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px; background:var(--background); color:var(--foreground); box-shadow:0 0 0 1px var(--border); }
+.look-surprise, .look-classic { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; } .look-classic p { max-width:30ch; font-size:13px; color:var(--muted-foreground); }
+.look-locks { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+.look-locks button { display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 9px; border-radius:999px; font-size:12px; color:var(--muted-foreground); box-shadow:0 0 0 1px var(--border); } .look-locks svg { width:12px; height:12px; }
+.look-locks button[aria-pressed=true] { color:var(--foreground); box-shadow:0 0 0 1.5px var(--foreground); }
+.look-heading { font-size:13px; font-weight:600; } .look-hint { font-size:12.5px; color:var(--muted-foreground); margin-top:-8px; } .look-foot .look-hint { margin:0; }
+.look-pairs { display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:10px; }
+.look-pairs button { aspect-ratio:1; border-radius:50%; background:linear-gradient(135deg,var(--a) 0 55%,var(--b) 55%); box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 10%,transparent); transition:box-shadow .15s,transform .2s var(--ease-spring); }
+.look-pairs button:hover { transform:scale(1.08); } .look-pairs button.is-picked { box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--foreground); }
+.look-grid.is-3d .look-option canvas, .look-grid.is-3d .look-option img { width:72px; height:72px; }
+.look-tabs button:disabled { opacity:.4; }
 @media (max-width:720px) { .look-dialog[data-slot=dialog-content] { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); height:calc(100vh - 40px); } .look-stage .mascot { --s:160px !important; } .look-panel { border-left:0; border-top:1px solid var(--border); } }
 
 /* Setup: full window, light, a warm dot grid; your helper big on the left, talking in bubbles on the right */
