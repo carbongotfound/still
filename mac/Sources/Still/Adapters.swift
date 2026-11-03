@@ -85,6 +85,7 @@ class AgentAdapter {
  var domains: [String] = [] // the only sites a sign-in page may be on
  var secondary = false      // a manifest agent: listed under "More agents"
  var terminalSignIn = ""    // no sign-in command: the user runs this in a terminal to sign in
+ var compatible = false     // built from the app's docs and package, not yet run live: labelled Compatible
 
  init(id: String, name: String, app: String, command: String) { self.id = id; self.name = name; self.app = app; self.command = command }
  func with(_ setup: (AgentAdapter) -> Void) -> Self { setup(self); return self }
@@ -177,6 +178,17 @@ class AgentAdapter {
   OpenCodeAdapter(id: "opencode", name: "OpenCode", app: "OpenCode", command: "opencode").with {
    $0.maker = "OpenCode"; $0.installCommand = "npm install -g opencode-ai"; $0.site = "https://opencode.ai"; $0.secondary = true
   },
+  // Compatible: built from their docs and packages, tested with fake apps only. Signed in from a terminal.
+  QwenAdapter(id: "qwen", name: "Qwen Code", app: "Qwen Code", command: "qwen").with {
+   $0.maker = "Qwen"; $0.installCommand = "npm install -g @qwen-code/qwen-code"; $0.site = "https://github.com/QwenLM/qwen-code"; $0.terminalSignIn = "qwen"; $0.secondary = true; $0.compatible = true
+  },
+  CopilotAdapter(id: "copilot", name: "GitHub Copilot", app: "Copilot CLI", command: "copilot").with {
+   $0.maker = "GitHub"; $0.installCommand = "npm install -g @github/copilot"; $0.site = "https://github.com/github/copilot-cli"; $0.terminalSignIn = "copilot login"; $0.secondary = true; $0.compatible = true
+  },
+  // Mac only: Amp's docs run it on Windows through WSL, which Still doesn't drive.
+  AmpAdapter(id: "amp", name: "Amp", app: "Amp", command: "amp").with {
+   $0.maker = "Amp"; $0.installCommand = "curl -fsSL https://ampcode.com/install.sh | bash"; $0.site = "https://ampcode.com"; $0.terminalSignIn = "amp login"; $0.secondary = true; $0.compatible = true
+  },
  ]
 }
 
@@ -210,6 +222,98 @@ final class GeminiAdapter: AgentAdapter {
   return args
  }
  override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.gemini(e) }
+}
+
+/// Qwen Code (`qwen`), built from its docs and its 0.26.6 package, not run live: the prompt on stdin (it reads a piped
+/// prompt), Claude-style stream-json, Still's MCP server in the run folder's settings, and every built-in tool off.
+final class QwenAdapter: AgentAdapter {
+ // Its built-in tools in 0.26.6, all hidden from the model. tools.core (an allowlist of none) also turns off file, shell and
+ // search tools a later version adds.
+ static let builtInTools = ["exec", "edit", "write_file", "read_file", "zoom_image", "grep_search", "glob", "run_shell_command", "todo_write",
+  "save_memory", "manage_memory", "search_memory", "agent", "skill", "exit_plan_mode", "enter_plan_mode", "web_fetch", "web_search", "image_gen",
+  "list_directory", "lsp", "ask_user_question", "cron_create", "cron_list", "cron_delete", "autofix_pr", "loop_wakeup", "create_sub_session", "list_agents",
+  "task_stop", "task_create", "task_update", "task_list", "team_create", "team_delete", "team_plan_approval", "request_shutdown", "send_message",
+  "structured_output", "monitor", "notebook_edit", "tool_call", "tool_search", "read_mcp_resource", "advisor", "enter_worktree", "exit_worktree", "workflow",
+  "artifact", "record_artifact", "record_source", "report_findings", "get_goal", "update_goal", "propose_goal", "display_image",
+  "omni_downsample_image", "omni_downscale_video", "omni_downsample_audio", "omni_extract_keyframes", "omni_extract_audio", "omni_clip_video",
+  "omni_convert_image", "omni_transcribe_audio", "omni_clip_image", "omni_clip_audio", "omni_caption_image", "omni_caption_audio", "omni_ocr_image",
+  "omni_understand_video_segments", "omni_recall_media_memory"]
+ override var forgets: Bool { true } // general.chatRecording off: an incognito chat saves nothing
+ override var gaps: [String] { ["To sign in, run qwen in a terminal and pick a sign-in.", "No model or effort settings in Still yet, so every mode uses the model you set in Qwen Code."] }
+ static var home: String { ProcessInfo.processInfo.environment["QWEN_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory() + "/.qwen" }
+ // Folder trust (off unless the user turned it on): Still's own list, trusting its AI folder (incognito runs are in it
+ // too), so the run folder's settings load.
+ override var env: [String: String] {
+  let trust = aiFolder + "/qwen-trusted-folders.json"
+  try? FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
+  try? JSONSerialization.data(withJSONObject: [aiFolder: "TRUST_FOLDER"], options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: trust))
+  return ["QWEN_CODE_TRUSTED_FOLDERS_PATH": trust]
+ }
+ /// Signed in with Qwen OAuth: its settings pick that sign-in and it has saved one. Another sign-in (an API key): it can't say.
+ override func detect(_ exe: String) async -> Bool? {
+  let settings = (try? Data(contentsOf: URL(fileURLWithPath: Self.home + "/settings.json"))).flatMap { try? JSONSerialization.jsonObject(with: $0, options: [.json5Allowed]) } as? [String: Any]
+  let type = ((settings?["security"] as? [String: Any])?["auth"] as? [String: Any])?["selectedType"] as? String ?? ""
+  return type.isEmpty ? false : type == "qwen-oauth" ? FileManager.default.fileExists(atPath: Self.home + "/oauth_creds.json") : nil
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let dir = r.folder + "/.qwen"
+  try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+  let settings: [String: Any] = [
+   "mcpServers": ["still": ["command": stillExecutable, "args": r.mcp, "trust": true, "timeout": 660000]], // ask_user waits for the user
+   "permissions": ["allow": ["mcp__still"]],
+   "tools": ["core": ["mcp__still"], "disabled": Self.builtInTools],
+   "general": ["chatRecording": !r.forget]]
+  try JSONSerialization.data(withJSONObject: settings, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: dir + "/settings.json"))
+  var args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--approval-mode", "default"]
+  if r.resume, let session = r.session { args += ["--resume", session] }
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.messages(e, tokenUsage: true) }
+}
+
+/// GitHub Copilot CLI (`copilot`), built from its docs, not run live: the prompt on stdin, only its reply printed (-s),
+/// Still's MCP server added for the run, every built-in tool kind denied (deny wins over any allow).
+final class CopilotAdapter: AgentAdapter {
+ // A UUID that names no session yet starts one with that id; the same id resumes it.
+ override var namesSession: Bool { true }
+ override var gaps: [String] { ["To sign in, run copilot login in a terminal.", "Shows its reply once it's done, not each step.",
+  "Copilot keeps its own record of incognito chats on this computer.", "Effort applies on the models Copilot offers it for."] }
+ override func models(_ exe: String) async -> [AgentModel] { [AgentModel(id: "", name: "Default", efforts: agentEfforts), AgentModel(id: "auto", name: "Auto", efforts: [])] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let config = r.folder + "/copilot-mcp.json"
+  let json: [String: Any] = ["mcpServers": ["still": ["type": "local", "command": stillExecutable, "args": r.mcp, "tools": ["*"], "timeout": 660000]]]
+  try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: config))
+  var args = ["-s", "--additional-mcp-config", "@" + config, "--allow-tool", "still", "--deny-tool", "shell,write,read,url,memory",
+   "--disable-builtin-mcps", "--no-ask-user", "--no-custom-instructions", "--session-id", r.session ?? ""]
+  if !r.model.isEmpty { args += ["--model", r.model] }
+  if !r.effort.isEmpty { args += ["--effort", r.effort] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { plain(jsonText(e)) }
+ override func plain(_ line: String) -> [AgentEvent] { line.trimmingCharacters(in: .whitespaces).isEmpty ? [] : [.message(line, join: "\n")] }
+}
+
+/// Amp (`amp`), built from its docs, not run live: execute mode with the prompt on stdin, Claude-style stream-json, a
+/// settings file of Still's own for the run (Still's MCP server, every built-in tool off), and its mode as the effort.
+/// Still can't continue an Amp thread by id from its docs, so each message brings the chat so far.
+final class AmpAdapter: AgentAdapter {
+ override var gaps: [String] { ["To sign in, run amp login in a terminal.", "Amp saves each thread to your Amp account, incognito chats too.",
+  "Each message starts a new Amp thread with the chat so far.", "Effort is Amp's mode: low, medium, high or ultra."] }
+ override func models(_ exe: String) async -> [AgentModel] { [AgentModel(id: "", name: "Default", efforts: ["low", "medium", "high", "ultra"])] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let settings = r.folder + "/amp-settings.json"
+  // builtin:* turns off Amp's own tools only; its documented tool names are listed too, for an Amp that doesn't take the glob.
+  let json: [String: Any] = ["amp.mcpServers": ["still": ["command": stillExecutable, "args": r.mcp]],
+   "amp.tools.disable": ["builtin:*", "builtin:Bash", "builtin:create_file", "builtin:edit_file", "builtin:glob", "builtin:Grep", "builtin:Read",
+    "builtin:read_web_page", "builtin:Task", "builtin:todo_read", "builtin:todo_write", "builtin:undo_edit", "builtin:web_search"]]
+  try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: settings))
+  var args = ["-x", "--stream-json", "--settings-file", settings]
+  if !r.effort.isEmpty { args += ["--mode", r.effort] }
+  return args
+ }
+ // Its thread id isn't kept: a next message can't continue the thread, so it starts a new one with the chat so far.
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.messages(e, tokenUsage: true).filter { if case .session = $0 { return false } else { return true } } }
 }
 
 /// OpenCode, on whichever provider the user set up inside it: a plan sign-in, that provider's key kept by OpenCode, or
@@ -440,7 +544,7 @@ final class ManifestAdapter: AgentAdapter {
    guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
          let json = (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) as? [String: Any] else { NSLog("Still: skipped agents/\(name)"); continue }
    let s = Spec(json)
-   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode"].contains(s.id),
+   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode", "qwen", "copilot", "amp"].contains(s.id),
          !s.command.isEmpty, !s.run.isEmpty else { continue }
    let adapter = ManifestAdapter(id: s.id, name: s.name.isEmpty ? s.id : s.name, app: s.name.isEmpty ? s.command : s.name, command: s.command)
    adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.signIn = s.signin; adapter.domains = s.domains; adapter.secondary = true

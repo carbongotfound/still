@@ -1,4 +1,4 @@
-import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
 import { Dices, Lock, LockOpen, Redo2, RotateCcw, Sparkles, Undo2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -6,24 +6,32 @@ import { cn } from "@/lib/utils"
 import { lookOf, type Companion } from "./Buddy"
 import { PREMADES } from "./crew"
 import {
- BODY_COLORS, EXTRAS, HOLD, EYE_SHAPES, FINISHES, FORMS, MARKINGS, MOUTHS, PAIRS, PROPS, STARTS, TEAM_LOOKS, TOPS,
- change, history, isV2, lookKey, newStyle, redo, reset, surprise, undo, v2, type History, type Locks, type Look,
+ BODY_COLORS, EXTRAS, HOLD, EYE_SHAPES, FINISHES, FORMS, MARKINGS, MOUTHS, PROPS, SOLIDS, STARTS, TEAM_LOOKS, TOPS,
+ change, hasAccent, history, isV2, lookKey, markColor, newStyle, redo, reset, surprise, undo, v2, type History, type Locks, type Look,
 } from "./look"
 import { Mascot, loadEngine, pictureOf, useMascotVersion, type Frame } from "./Mascot"
 
 // Customize: a big live preview that changes with each pick, the companion at the sizes it's seen at (40, 24 and 18px,
 // light and dark), and its look in tabs: where to start (curated looks, or a team look to make your own), the body,
-// colors and markings, the face, and a top feature and accessory. Every pick can be undone; Reset goes back to the look
+// colors (a solid body, an optional accent, a marking only if picked, each in any color), the face, and a top feature and
+// accessory. Every pick can be undone; Reset goes back to the look
 // it opened with; Cancel keeps the saved look as it was. A look from before the new style is shown as it is, with Try
 // the new style: nothing changes until then.
 const TABS = [["start", "Start"], ["body", "Body"], ["colors", "Colors"], ["face", "Face"], ["extras", "Extras"]] as const
 type Tab = (typeof TABS)[number][0]
 const LOCKS: [keyof Locks, string][] = [["body", "Body"], ["colors", "Colors"], ["face", "Face"], ["feature", "Feature"]]
 
-/// The color swatches, as a radio group.
-export function Swatches({ value, onPick, label = "Body color", list = BODY_COLORS, small }: { value: string; onPick: (hex: string) => void; label?: string; list?: [string, string][]; small?: boolean }) {
- return <div className={cn("look-colors", small && "is-small")} role="radiogroup" aria-label={label}>{list.map(([hex, name]) =>
-  <button type="button" key={hex} role="radio" aria-checked={value === hex} aria-label={name} title={name} style={{ "--swatch": hex } as CSSProperties} className={cn(value === hex && "is-picked")} onClick={() => onPick(hex)} />)}</div>
+/// The color swatches, as a radio group: none first (its label) when the color is optional, and any color last (the
+/// system's picker, its picks live while it's dragged).
+export function Swatches({ value, onPick, label = "Body color", list = BODY_COLORS, small, none, custom }: { value: string; onPick: (hex: string, live?: boolean) => void; label?: string; list?: [string, string][]; small?: boolean; none?: string; custom?: boolean }) {
+ const own = !!value && !list.some(([hex]) => hex === value)
+ return <div className={cn("look-colors", small && "is-small")} role="radiogroup" aria-label={label}>
+  {none && <button type="button" role="radio" aria-checked={!value} aria-label={none} title={none} className={cn("is-none", !value && "is-picked")} onClick={() => onPick("")} />}
+  {list.map(([hex, name]) =>
+  <button type="button" key={hex} role="radio" aria-checked={value === hex} aria-label={name} title={name} style={{ "--swatch": hex } as CSSProperties} className={cn(value === hex && "is-picked")} onClick={() => onPick(hex)} />)}
+  {custom && <label className={cn("look-custom", own && "is-picked")} title="Any color" style={own ? { "--swatch": value } as CSSProperties : undefined}>
+   <input type="color" aria-label={`${label}: any color`} value={value || "#ffffff"} onChange={e => onPick(e.target.value, true)} /></label>}
+ </div>
 }
 
 /// A still picture of the look with one part changed, or a spinner while it's drawn.
@@ -52,8 +60,13 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
  const settled = useSettled(look, 220)
  const hadProp = !isV2(saved) && saved.prop
  useEffect(() => { void loadEngine().then(m => FORMS.forEach(([f]) => m?.preload("f-" + f))) }, []) // the five bodies load as the editor opens: a pick shows at once
- const go = (next: Look, wave = true) => { setH(x => change(x, next)); if (wave) setNudge(n => n + 1) }
- const set = (patch: Partial<Look>) => go(v2({ ...(look as Required<Look>), ...patch }))
+ const live = useRef({ from: "", at: 0 }) // the color picker being dragged: its picks a second apart or less are one change
+ const go = (next: Look, wave = true, from = "") => {
+  const merge = !!from && live.current.from === from && Date.now() - live.current.at < 1000
+  live.current = { from, at: Date.now() }
+  setH(x => merge ? { ...x, now: next, future: [] } : change(x, next)); if (wave) setNudge(n => n + 1)
+ }
+ const set = (patch: Partial<Look>, from: string | false = "") => go(v2({ ...(look as Required<Look>), ...patch }), !from, from || "")
  const startFrom = (l: Look, from = "") => { go(l); setTeam(from && lookKey(l)); setTab("body") }
  const step = (f: (h: History) => History) => setH(x => f(x))
  useEffect(() => {
@@ -71,9 +84,6 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
    <button type="button" key={k || "none"} role="radio" aria-checked={now === k} aria-label={name} title={name} className={cn("look-option", now === k && "is-picked")} data-option={k || "none"} onClick={() => go(pick(k))}>
     <LookThumb look={pick(k)} frame={frame} /><small>{name}</small></button>)}</div>
  const part = (key: keyof Look) => (k: string) => v2({ ...(settled.v === 2 ? settled : look) as Required<Look>, [key]: k })
- const pairs = <div className="look-pairs" role="radiogroup" aria-label="Colors">{PAIRS.slice(0, 14).map(([a, b, name]) =>
-  <button type="button" key={a + b} role="radio" aria-checked={look.color === a && look.second === b} aria-label={name} title={name} style={{ "--a": a, "--b": b } as CSSProperties}
-   className={cn(look.color === a && look.second === b && "is-picked")} onClick={() => set({ color: a, second: b })} />)}</div>
  const lock = <div className="look-locks" role="group" aria-label="Keep these when you surprise">{LOCKS.map(([k, label]) =>
   <button type="button" key={k} aria-pressed={!!locks[k]} title={(locks[k] ? "Kept: " : "Keep ") + label.toLowerCase()} onClick={() => setLocks(l => ({ ...l, [k]: !l[k] }))}>{locks[k] ? <Lock /> : <LockOpen />}{label}</button>)}</div>
  const body: Record<Tab, ReactNode> = {
@@ -89,9 +99,14 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
   </>,
   body: tiles("Body", FORMS, part("form"), look.form ?? ""),
   colors: <>
-   {pairs}
+   <h4 className="look-heading">Body color</h4>
+   <Swatches small custom list={SOLIDS} value={look.color} onPick={(c, live) => set({ color: c, second: hasAccent(look) ? look.second : c }, live && "body")} />
+   <h4 className="look-heading">Accent</h4>
+   <p className="look-hint">Optional. A second color for the feet and anything on top.</p>
+   <Swatches small custom none="No accent" label="Accent" list={SOLIDS} value={hasAccent(look) ? look.second! : ""} onPick={(c, live) => set({ second: c || look.color }, live && "accent")} />
    <h4 className="look-heading">Marking</h4>
    {tiles("Marking", MARKINGS, part("marking"), look.marking ?? "")}
+   {look.marking && look.marking !== "none" && <Swatches small custom label="Marking color" list={SOLIDS} value={markColor(look)} onPick={(c, live) => set({ mark: c }, live && "mark")} />}
    <div className="look-row" role="radiogroup" aria-label="Finish"><span>Finish</span>{FINISHES.map(([k, name]) =>
     <button type="button" key={k} role="radio" aria-checked={look.finish === k} className={cn(look.finish === k && "is-picked")} onClick={() => set({ finish: k })}>{name}</button>)}</div>
   </>,
@@ -113,7 +128,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
  const sizes = (dark: boolean) => <div className={cn("look-sizes", dark && "dark")}>{[40, 24, 18].map(s => <Mascot key={s} look={settled} size={s} name={companion.name} />)}</div>
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog look-dialog" style={{ "--hue": look.color } as CSSProperties}>
-   <DialogHeader className="sr-only"><DialogTitle>Customize {companion.name || "your companion"}</DialogTitle><DialogDescription>Pick where to start, a body, colors and a marking, a face, and something on top.</DialogDescription></DialogHeader>
+   <DialogHeader className="sr-only"><DialogTitle>Customize {companion.name || "your companion"}</DialogTitle><DialogDescription>Pick where to start, a body, colors, a face, and something on top.</DialogDescription></DialogHeader>
    <div className="look-stage">
     <Mascot look={look} size={360} follow gesture={nudge ? "admire" : ""} gestureAt={nudge} />
     <b>{companion.name || "Your companion"}</b>

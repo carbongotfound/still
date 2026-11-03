@@ -156,7 +156,7 @@ def main():
         send(p, "aiToggle")
         send(p, "aiCheck")
         shown = until(lambda: (t := text(p)) and "More agents" in t and "Gemini" in t and t, 30) or ""
-        check("More agents (1)" in shown and "OpenCode" not in shown, "Gemini is a headline AI, OpenCode is under More agents")
+        check(f"More agents ({4 if MAC else 3})" in shown and "OpenCode" not in shown, "Gemini is a headline AI, OpenCode is under More agents (with Qwen Code, GitHub Copilot, and Amp on the Mac)")
         js(p, "document.querySelector('.byo-more')?.click()")
         rows = until(lambda: (t := text(p)) and "OpenCode\nSigned in" in t and "Gemini\nSigned in" in t and t, 30) or text(p)
         check("Gemini\nSigned in" in rows, "Gemini signed in with Google is ready (its settings file may have comments)")

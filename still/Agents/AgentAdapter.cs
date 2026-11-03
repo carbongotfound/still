@@ -34,6 +34,7 @@ public abstract class AgentAdapter
  public string[] Domains { get; init; } = [];    // the only sites a sign-in page may be on
  public bool Secondary { get; init; }            // listed under "More agents": OpenCode and manifest agents
  public string TerminalSignIn { get; init; } = ""; // no sign-in command: the user runs this in a terminal to sign in
+ public bool Compatible { get; init; }           // built from the app's docs and package, not yet run live: labelled Compatible
  public virtual bool PromptOnStdin => true;
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
  public virtual bool NamesSession => false;
@@ -275,6 +276,85 @@ sealed partial class OpenCodeAdapter : AgentAdapter
  public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.OpenCode(e);
 }
 
+/// Qwen Code (`qwen`), built from its docs and its 0.26.6 package, not run live: the prompt on stdin (it reads a piped
+/// prompt), Claude-style stream-json, Still's MCP server in the run folder's settings, and every built-in tool off.
+sealed class QwenAdapter : AgentAdapter
+{
+ // Its built-in tools in 0.26.6, all hidden from the model. tools.core (an allowlist of none) also turns off file, shell and
+ // search tools a later version adds.
+ static readonly string[] BuiltIn = ["exec", "edit", "write_file", "read_file", "zoom_image", "grep_search", "glob", "run_shell_command", "todo_write",
+  "save_memory", "manage_memory", "search_memory", "agent", "skill", "exit_plan_mode", "enter_plan_mode", "web_fetch", "web_search", "image_gen",
+  "list_directory", "lsp", "ask_user_question", "cron_create", "cron_list", "cron_delete", "autofix_pr", "loop_wakeup", "create_sub_session", "list_agents",
+  "task_stop", "task_create", "task_update", "task_list", "team_create", "team_delete", "team_plan_approval", "request_shutdown", "send_message",
+  "structured_output", "monitor", "notebook_edit", "tool_call", "tool_search", "read_mcp_resource", "advisor", "enter_worktree", "exit_worktree", "workflow",
+  "artifact", "record_artifact", "record_source", "report_findings", "get_goal", "update_goal", "propose_goal", "display_image",
+  "omni_downsample_image", "omni_downscale_video", "omni_downsample_audio", "omni_extract_keyframes", "omni_extract_audio", "omni_clip_video",
+  "omni_convert_image", "omni_transcribe_audio", "omni_clip_image", "omni_clip_audio", "omni_caption_image", "omni_caption_audio", "omni_ocr_image",
+  "omni_understand_video_segments", "omni_recall_media_memory"];
+ public override bool Forgets => true; // general.chatRecording off: an incognito chat saves nothing
+ public override string[] Gaps => ["To sign in, run qwen in a terminal and pick a sign-in.", "No model or effort settings in Still yet, so every mode uses the model you set in Qwen Code."];
+ static string Home => Environment.GetEnvironmentVariable("QWEN_HOME") is { Length: > 0 } h ? h : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".qwen");
+ // Folder trust (off unless the user turned it on): Still's own list, trusting its AI folder (incognito runs are in it
+ // too), so the run folder's settings load.
+ public override IReadOnlyDictionary<string, string> Env {
+  get {
+   string trust = Path.Combine(MainWindow.AiFolder, "qwen-trusted-folders.json");
+   try { Directory.CreateDirectory(MainWindow.AiFolder); File.WriteAllText(trust, JsonSerializer.Serialize(new Dictionary<string, string> { [MainWindow.AiFolder] = "TRUST_FOLDER" })); }
+   catch (IOException ex) { Still.App.Log(ex); }
+   return new Dictionary<string, string> { ["QWEN_CODE_TRUSTED_FOLDERS_PATH"] = trust };
+  }
+ }
+ /// Signed in with Qwen OAuth: its settings pick that sign-in and it has saved one. Another sign-in (an API key): it can't say.
+ public override Task<bool?> Detect(string exe)
+ {
+  string? type = null;
+  try {
+   var settings = JsonNode.Parse(File.ReadAllText(Path.Combine(Home, "settings.json")), null, new() { CommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
+   type = settings?["security"]?["auth"]?["selectedType"]?.GetValue<string>();
+  } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidOperationException) { }
+  return Task.FromResult<bool?>(type is null or "" ? false : type == "qwen-oauth" ? File.Exists(Path.Combine(Home, "oauth_creds.json")) : null);
+ }
+ public override Task<List<string>> Args(string exe, RunRequest r)
+ {
+  string dir = Path.Combine(r.Folder, ".qwen");
+  Directory.CreateDirectory(dir);
+  File.WriteAllText(Path.Combine(dir, "settings.json"), JsonSerializer.Serialize(new Dictionary<string, object> {
+   ["mcpServers"] = new { still = new { command = Environment.ProcessPath, args = r.Mcp, trust = true, timeout = 660000 } }, // ask_user waits for the user
+   ["permissions"] = new { allow = new[] { "mcp__still" } },
+   ["tools"] = new { core = new[] { "mcp__still" }, disabled = BuiltIn },
+   ["general"] = new { chatRecording = !r.Forget } }));
+  List<string> args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--approval-mode", "default"];
+  if (r.Resume && r.Session != null) args.AddRange(["--resume", r.Session]);
+  if (r.Model.Length > 0) args.AddRange(["-m", r.Model]);
+  return Task.FromResult(args);
+ }
+ public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.Messages(e, true);
+}
+
+/// GitHub Copilot CLI (`copilot`), built from its docs, not run live: the prompt on stdin, only its reply printed (-s),
+/// Still's MCP server added for the run, every built-in tool kind denied (deny wins over any allow).
+sealed class CopilotAdapter : AgentAdapter
+{
+ // A UUID that names no session yet starts one with that id; the same id resumes it.
+ public override bool NamesSession => true;
+ public override string[] Gaps => ["To sign in, run copilot login in a terminal.", "Shows its reply once it's done, not each step.",
+  "Copilot keeps its own record of incognito chats on this computer.", "Effort applies on the models Copilot offers it for."];
+ public override Task<AgentModel[]> Models(string exe) => Task.FromResult<AgentModel[]>([new("", "Default", ["low", "medium", "high"]), new("auto", "Auto", [])]);
+ public override Task<bool?> Detect(string exe) => Task.FromResult<bool?>(null); // no status command
+ public override Task<List<string>> Args(string exe, RunRequest r)
+ {
+  string config = Path.Combine(r.Folder, "copilot-mcp.json");
+  File.WriteAllText(config, JsonSerializer.Serialize(new { mcpServers = new { still = new { type = "local", command = Environment.ProcessPath, args = r.Mcp, tools = new[] { "*" }, timeout = 660000 } } }));
+  List<string> args = ["-s", "--additional-mcp-config", "@" + config, "--allow-tool", "still", "--deny-tool", "shell,write,read,url,memory",
+   "--disable-builtin-mcps", "--no-ask-user", "--no-custom-instructions", "--session-id", r.Session!];
+  if (r.Model.Length > 0) args.AddRange(["--model", r.Model]);
+  if (r.Effort.Length > 0) args.AddRange(["--effort", r.Effort]);
+  return Task.FromResult(args);
+ }
+ public override IEnumerable<AgentEvent> Parse(JsonNode e) => Plain(e.ToJsonString());
+ public override IEnumerable<AgentEvent> Plain(string line) => line.Trim().Length > 0 ? [new AgentEvent.Message(line, "\n")] : [];
+}
+
 /// Any other agent CLI, described by a JSON file in Still's agents folder (see docs/agentic/agents.md). Placeholders in
 /// its args: {prompt} (only for .exe commands; .cmd ones go through cmd.exe), {promptFile}, {model}, {effort}, {cwd},
 /// {mcpConfig} (a standard mcp.json for Still) and {session}. Without {prompt} or {promptFile} the prompt goes to stdin.
@@ -332,7 +412,7 @@ sealed class ManifestAdapter : AgentAdapter
    foreach (var file in Directory.EnumerateFiles(Folder, "*.json").Order()) {
     try {
      var s = JsonSerializer.Deserialize<Spec>(File.ReadAllText(file), new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" || s.Command.Length == 0 || s.Run.Length == 0) continue;
+     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" or "qwen" or "copilot" || s.Command.Length == 0 || s.Run.Length == 0) continue;
      found.Add(new ManifestAdapter { spec = s, Id = s.Id, Name = s.Name.Length > 0 ? s.Name : s.Id, App = s.Name.Length > 0 ? s.Name : s.Command, Command = s.Command,
       Site = s.Site, InstallCommand = s.Install, SignIn = s.Signin, Domains = s.Domains, Secondary = true });
     } catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { Still.App.Log(ex); }

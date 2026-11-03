@@ -1474,7 +1474,7 @@ extension Browser {
    "skills": Skill.all.map { ["id": $0.id, "name": $0.name, "description": $0.description, "when": $0.when, "body": $0.body, "stock": Skill.stock[$0.id] != nil, "edited": $0.edited] as [String: Any] },
    "model": pref("AiModels", [String: String]())[harness] ?? "", "effort": pref("AiEfforts", [String: String]())[harness] ?? "", "usage": aiUsage[harness] ?? "",
    "harnesses": aiClis.map { c -> [String: Any] in ["id": c.id, "name": c.name, "app": c.app, "maker": c.maker, "installed": findCli(c.command) != nil, "status": aiStatus[c.id] ?? "",
-    "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "forgets": c.forgets,
+    "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "compatible": c.compatible, "forgets": c.forgets,
     "gaps": c.gaps, "terminalSignIn": c.terminalSignIn, "api": c is ApiAdapter] },
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),

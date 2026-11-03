@@ -30,7 +30,7 @@ test("a v2 look survives a save, and an older Still reads its v1 fields", () => 
 
 test("a v2 look with parts this build doesn't know falls back part by part", () => {
  const l = L.parseLook(JSON.stringify({ v: 2, color: "#ABCDEF", shape: "tall", prop: "", accessory: "glasses", form: "cube", second: "red", marking: "spots", eye: "x", mouth: "o", top: "hat", finish: "chrome" }))
- assert.deepEqual(l, L.v2({ form: "column", color: "#abcdef", second: L.BLANK_V2.second!, marking: "none", eye: "round", mouth: "o", top: "none", finish: "matte", accessory: "" }))
+ assert.deepEqual(l, L.v2({ form: "column", color: "#abcdef", second: "#abcdef", marking: "none", eye: "round", mouth: "o", top: "none", finish: "matte", accessory: "" }), "an unreadable accent: none")
 })
 
 test("Surprise me: 500 draws, each a good look that keeps what's locked", () => {
@@ -42,7 +42,8 @@ test("Surprise me: 500 draws, each a good look that keeps what's locked", () => 
   assert.deepEqual(L.lookIssues(l), [], L.lookKey(l))
   assert.deepEqual(L.parseLook(L.lookKey(l)), l) // every part a known one
   if (locks.body) assert.equal(l.form, base.form)
-  if (locks.colors) assert.deepEqual([l.color, l.second, l.marking, l.finish], [base.color, base.second, base.marking, base.finish])
+  if (locks.colors) assert.deepEqual([l.color, l.second, l.marking, l.mark, l.finish], [base.color, base.second, base.marking, base.mark, base.finish])
+  else assert.equal(l.marking, "none", "Surprise me never adds a marking")
   if (locks.face) assert.deepEqual([l.eye, l.mouth], [base.eye, base.mouth])
   if (locks.feature) assert.deepEqual([l.top, l.accessory], [base.top, base.accessory])
   base = l
@@ -54,7 +55,31 @@ test("the curated looks and pairs pass the small-size checks", () => {
  for (const [a, b, name] of L.PAIRS) assert.ok(L.deltaE(a, b) >= 15, name)
  assert.deepEqual(L.TEAM_LOOKS.map(([r]) => r), ["sales", "growth", "planner", "marketing", "engineer", "research"])
  assert.equal(L.STARTS.length, 10)
- assert.ok(L.lookIssues(L.v2({ ...L.BLANK_V2, form: "pebble", second: L.BLANK_V2.color, marking: "none", eye: "round", mouth: "smile", top: "none", finish: "matte" } as never)).length > 0, "a second color the same as the body is flagged")
+ assert.deepEqual(L.lookIssues(L.v2({ ...L.BLANK_V2, form: "pebble", second: L.BLANK_V2.color, marking: "none", eye: "round", mouth: "smile", top: "none", finish: "matte" } as never)), [], "one solid color is a good look")
+ assert.ok(L.lookIssues(L.v2({ ...L.BLANK_V2, form: "pebble", second: L.BLANK_V2.color, marking: "belly", mark: L.BLANK_V2.color, eye: "round", mouth: "smile", top: "none", finish: "matte" } as never)).length > 0, "a marking in the body's own color is flagged")
+})
+
+test("colors: solid by default, an accent only if picked, no marking unless picked, each part its own color", () => {
+ for (const [name, l] of [...L.STARTS, ...L.TEAM_LOOKS]) assert.equal(l.marking, "none", name)
+ assert.ok(!L.hasAccent(L.BLANK_V2), "Make your own starts solid")
+ assert.equal(L.STARTS.filter(([, l]) => !L.hasAccent(l)).length, 6, "most starting looks are one color")
+ assert.equal(L.SOLIDS.length, 24); assert.equal(new Set(L.SOLIDS.map(([h]) => h)).size, 24)
+ assert.ok(L.SOLIDS.every(([h]) => /^#[0-9a-f]{6}$/.test(h)))
+ assert.equal(L.BODY_COLORS.length, 16, "plugins take their colors from BODY_COLORS by name: it stays as it was")
+ // a look saved before 2.10: its second color on the feet and the marking, as it was drawn
+ const old = L.parseLook('{"v":2,"color":"#a6cf9c","shape":"block","prop":"","accessory":"","form":"block","second":"#4f8a4a","marking":"belly","eye":"sleepy","mouth":"smile","top":"none","finish":"matte"}')
+ assert.ok(L.hasAccent(old)); assert.equal(L.markColor(old), "#4f8a4a"); assert.equal(old.mark, undefined)
+ assert.ok(!("mark" in JSON.parse(L.lookKey(old))), "no marking color saved: its string is as it was")
+ // each part its own color, and it survives a save
+ const own = L.v2({ ...(old as Required<L.Look>), second: old.color, mark: "#4a5263" })
+ assert.ok(!L.hasAccent(own)); assert.equal(L.markColor(own), "#4a5263")
+ assert.deepEqual(L.parseLook(L.lookKey(own)), own)
+ // a marking picked on a solid look with no color of its own: a deeper body color (a lighter one on a dark body)
+ const solid = L.v2({ ...(old as Required<L.Look>), second: old.color, marking: "tips" })
+ assert.notEqual(L.markColor(solid), solid.color); assert.deepEqual(L.lookIssues(solid), [])
+ const dark = L.v2({ ...(solid as Required<L.Look>), color: "#4a5263", second: "#4a5263" })
+ assert.deepEqual(L.lookIssues(dark), [], L.markColor(dark))
+ for (const [hex] of L.SOLIDS) assert.deepEqual(L.lookIssues(L.v2({ ...(solid as Required<L.Look>), color: hex, second: hex, mark: undefined })), [], hex)
 })
 
 test("undo, redo, Reset and Cancel", () => {
