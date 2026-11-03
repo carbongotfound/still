@@ -189,11 +189,12 @@ extension Browser {
   func remember(_ key: String, _ label: String, _ to: [Companion], _ lines: [String], owner: String = "") {
    func keep(_ lines: [String]) -> [(String, Fact)] {
     to.filter { c in companions.contains { $0 === c } }.flatMap { c in lines.compactMap { f in
-     CompanionMemory.remember(c.id, f, "preference", "", f.hasPrefix("Likes to be called ") ? "name" : f.hasPrefix("Works on ") ? "interests" : "").map { (c.id, $0) } } }
+     var no = ""
+     return CompanionMemory.remember(c.id, f, &no, kind: "preference", key: f.hasPrefix("Likes to be called ") ? "name" : f.hasPrefix("Works on ") ? "interests" : "", source: "onboarding", sayAgain: true).map { (c.id, $0) } } }
    }
    var kept = keep(lines)
    func shown() -> String { kept.filter { $0.0 == to[0].id }.map(\.1.text).joined(separator: "\n") }
-   func forget() { for (id, f) in kept { CompanionMemory.forget(id, f.id) } }
+   func forget() { for (id, f) in kept { var m: [Fact] = [], no = ""; _ = CompanionMemory.forget(id, f.id, &m, &no) } }
    if kept.contains(where: { $0.0 == to[0].id }) {
     change(key, label, shown(), owner: owner, edit: { text in forget(); kept = keep(sentences([text])); return kept.isEmpty ? nil : shown() }) { forget() }
    }

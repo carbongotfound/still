@@ -40,7 +40,7 @@ public partial class MainWindow
   foreach (var c in Companions.ToList()) foreach (var r in c.Routines.Where(r => Due(r, now))) {
    r.Last = now.ToString("yyyy-MM-dd"); SaveLater(); ran = true;
    var shown = aiChat; // the chat in the sidebar stays; the routine's chat shows in the list and the running tasks
-   _ = RunAi(null, r.Text, companion: c.Id);
+   _ = RunAi(null, r.Text, companion: c.Id, routine: true);
    aiChat = shown;
   }
   if (ran) PublishAiEverywhere();

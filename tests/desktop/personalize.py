@@ -211,8 +211,8 @@ def main():
         send(p, "companionSave", id="scout1", name="Pip", job="Finds the best price before I buy.", role="Scout", personality="direct", length="short",
              tone="Dry wit.", skills=["lead-list", "setup", "made-up"])
         pip = until(lambda: mates().get("Pip"), 5) or {}
-        check(pip.get("Role") == "Scout" and pip.get("Personality") == "direct" and pip.get("Length") == "short" and pip.get("Greet") is True,
-              f"Role, Personality and Reply length save, and Pip is new ({ {k: pip.get(k) for k in ('Role', 'Personality', 'Length', 'Greet')} })")
+        check(pip.get("Role") == "Scout" and pip.get("Personality") == "direct" and pip.get("Length") == "short" and pip.get("Setup") == "pending",
+              f"Role, Personality and Reply length save, and Pip is new ({ {k: pip.get(k) for k in ('Role', 'Personality', 'Length', 'Setup')} })")
         check(pip.get("Skills") == ["lead-list"], f"Setup and unknown ids aren't kept as its skills ({pip.get('Skills')})")
         check(skill("lead-list") == stock("lead-list"), "A library skill picked for it is added as Still's file, not an empty one")
         send(p, "companionSave", id="scout1", name="Pip", job="Finds the best price before I buy.", role="Scout", personality="sarcastic", length="huge")
@@ -230,7 +230,7 @@ def main():
         check("Your role: Scout. Introduce yourself role first, as Scout Pip." in sent, "The prompt names its role, role first")
         check("Your personality: Direct:" in sent and "How you talk, in the user's words: Dry wit." in sent and "Reply length: Short:" in sent, "Personality, Tone and Reply length are short lines")
         check("- setup:" not in sent and "- lead-list:" in sent, "Setup isn't in the skill index; its own skills are")
-        check(until(lambda: mates().get("Pip", {}).get("Greet") is False, 5), "Pip isn't new anymore")
+        check(until(lambda: mates().get("Pip", {}).get("Setup") == "done", 5), "Pip isn't new anymore")
         later = again(p, first, "HELLO AGAIN")
         check(later and SETUP not in later and "Open with your own words" not in later, "A later turn in that chat has no Setup")
         second = start(p, "scout1", "HI AGAIN")
@@ -257,7 +257,7 @@ def main():
         until(lambda: len(runs()) > n, 30)
         private = runs()[-1] if len(runs()) > n else ""
         check("PRIVATE HI" in private and SETUP not in private, "An incognito chat with a new companion has no Setup")
-        check(mates().get("Maya", {}).get("Greet") is True, "and she's still new")
+        check(mates().get("Maya", {}).get("Setup") == "pending", "and she's still new")
         mine = start(p, "maya", "HI MAYA")
         sent = runs()[-1] if runs() else ""
         check(sent.count(SETUP) == 1 and "Your role: Research. Introduce yourself role first, as Research Maya." in sent, "Her first regular chat gets Setup once, with her crew role")

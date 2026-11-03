@@ -39,6 +39,8 @@ public sealed class AiChat
  public bool Unread { get; set; } // a reply landed while the user was elsewhere
  public bool Archived { get; set; }
  public bool NoMemory { get; set; } // "Don't remember this chat": nothing from it goes into the companion's memory
+ public bool Routine { get; set; } // started by a routine, not by the user: never counts as the companion's first chat
+ [System.Text.Json.Serialization.JsonIgnore] public long SeenChange; // the last memory change its session has heard about
  [System.Text.Json.Serialization.JsonIgnore] public bool Ephemeral { get; set; } // an incognito window's chat: kept in that window only, never written down
  public int Worked { get; set; } // how long its last run took, in seconds
  public bool Running { get; set; } // saved while a run goes on: still set at startup means Still closed mid-run
@@ -76,7 +78,14 @@ public sealed class Companion
  public List<string> PluginsOff { get; set; } = []; // connected plugins (Composio toolkit slugs) the user turned off for it
  public List<Routine> Routines { get; set; } = []; // what it does on a schedule (MainWindow.Routines.cs)
  public string Instructions { get; set; } = ""; // the user's edit of its role's instructions (Assets/roles), "" = Still's own
- public bool Greet { get; set; } // new on the team: its first chat hasn't happened yet (aiKickoff, and Setup loads then)
+ // Before 2.10: true for a companion whose first chat hadn't happened. Read once into Setup, never written.
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public bool? Greet { get => null; set { if (value == true) Setup = "pending"; else if (Setup.Length == 0) Setup = "done"; } }
+ public string Setup { get; set; } = ""; // pending: its Setup (the first chat) hasn't run; done, or "" from before 2.10: it has
+ public DateTime? SetupAt { get; set; } // when Setup was done
+ public string SetupVersion { get; set; } = ""; // the version of the Setup skill it ran
+ public string SetupChat { get; set; } = ""; // the chat Setup ran in: Clear personalization forgets what was learned there
+ public bool Capture { get; set; } = true; // off: nothing new goes into its memory (it still reads what's there)
+ public bool JoinKept { get; set; } // the user kept the old "When you join the team" section in their Instructions
  public string Role { get; set; } = ""; // its title, shown before its name ("Research Maya"); "" = its crew role, or none
  public string Personality { get; set; } = ""; // direct, warm, playful or formal; "" = only the Tone box
  public string Length { get; set; } = "balanced"; // how long its replies are: short, balanced or detailed
@@ -476,9 +485,14 @@ public partial class MainWindow
   sensitiveSites = Prefs.SensitiveSites,
   plugins = PluginsPayload(), apis = ApiPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, role = c.Role, personality = c.Personality, length = c.Length, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
-   knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body }),
-   memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, key = f.Key, guessed = f.Guessed, chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }) }),
-  chats = AiChats.Where(_ => !incognito).Take(200).Select(ChatRow), privateChats = privateChats.Select(ChatRow) } }); }
+   setup = c.Setup == "pending" ? "pending" : "done", capture = c.Capture, joinSection = !c.JoinKept && JoinSection(c.Instructions) != null,
+   knowledge = CompanionMemory.Notes(c.Id).Select(n => new { id = n.Id, name = n.Name, about = n.About, text = n.Body, version = n.Version, updated = n.Updated, revisions = CompanionMemory.RevisionCount(c.Id, n.Id) }),
+   memory = CompanionMemory.Of(c.Id).OrderByDescending(f => f.At).Select(f => new { id = f.Id, text = f.Text, kind = f.Kind, at = f.At, chat = f.Chat, msg = f.Msg, key = f.Key, guessed = f.Guessed, source = f.Source, sourceText = SourceOf(f), subject = f.Subject, status = f.Status, supersedes = f.Supersedes,
+    chatTitle = f.Chat.Length > 0 ? AiChats.FirstOrDefault(x => x.Id == f.Chat)?.Title : null }),
+   summaries = CompanionMemory.Summaries(c.Id).List.OrderByDescending(s => s.At).Select(s => new { chat = s.Chat, title = AiChats.FirstOrDefault(x => x.Id == s.Chat)?.Title ?? s.Title, at = s.At, legacy = s.Legacy, text = CompanionMemory.SummaryText(s), exists = AiChats.Any(x => x.Id == s.Chat) }) }),
+  chatSummaries = Prefs.ChatSummaries != "off",
+  chats = AiChats.Where(_ => !incognito).Take(200).Select(ChatRow), privateChats = privateChats.Select(ChatRow) } });
+  if (shellReady && CompanionMemory.TakeProblem() is { } memoryProblem) Toast(memoryProblem); } // a memory file that couldn't be read
  // An incognito window's chats go as privateChats: never in the chat list, so never in history.
  static object ChatRow(AiChat c) => new { id = c.Id, title = c.Title, harness = c.Harness, updated = c.Updated, companion = c.Companion, from = c.From, unread = c.Unread, archived = c.Archived, noMemory = c.NoMemory, profile = c.Profile ?? "regular" };
 
@@ -513,6 +527,7 @@ public partial class MainWindow
     if (doomed.Any(runs.ContainsKey)) break;
     foreach (var id in doomed) ForgetTask(id);
     foreach (var gone in MyChats.Where(c => doomed.Contains(c.Id)).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
+    foreach (var c in MyChats.Where(c => doomed.Contains(c.Id) && c.Companion.Length > 0)) CompanionMemory.DropSummary(c.Companion, c.Id);
     MyChats.RemoveAll(c => doomed.Contains(c.Id)); if (aiChat != null && doomed.Contains(aiChat.Id)) aiChat = null; SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId != null && doomed.Contains(t.ChatId)).ToList()) await CloseTab(t, true);
     break; }
@@ -552,13 +567,13 @@ public partial class MainWindow
     if (active?.ChatId != null || B("home")) aiChat = target;
     await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
     break; }
-   case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Greet: true } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0): {
+   case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Setup: "pending" } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0)
+    && !AiChats.Any(c => c.Companion == fresh.Id && c.From == null && !c.Routine && (kickoffs.Contains(c.Id) || c.Messages.Any(m => m.Role == "user"))): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
-    fresh.Greet = false; SaveLater();
     var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Profile = NewChatProfile(false), Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
-    AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id); setupNext.Add(kick.Id);
+    AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
     await Go(await AppTab(), "chat:" + kick.Id);
-    await RunAi(kick, KickoffAsk, ""); // the title comes from its hello
+    await RunAi(kick, Activation(fresh, true), ""); // the title comes from its hello
     break; }
    case "aiPickFiles": {
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
@@ -573,7 +588,7 @@ public partial class MainWindow
     var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
     answering.Question = null;
-    if (kickoffs.Remove(asked.Id) && answer.Length > 0) CompanionMemory.Remember(asked.Companion, $"From our first chat: asked \"{q.Text}\", they said \"{answer}\"", "preference");
+    kickoffs.Remove(asked.Id); // what's worth keeping from the answer, the companion saves itself (Setup says how)
     asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
     break; }
@@ -636,13 +651,46 @@ public partial class MainWindow
     SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi(); break;
    // The Memory page: see, add, edit and forget what a companion remembers.
    case "memoryAdd" when Companions.Any(c => c.Id == S("companion")):
-    if (CompanionMemory.Remember(S("companion"), S("text"), S("kind"), "", S("key")) == null && S("text").Trim().Length > 2) Toast("That looks like a password or a code, so it isn't kept.");
+    if (MemoryRefuses(null, S("text")) is { } refused) Toast(refused);
+    else if (CompanionMemory.Remember(S("companion"), S("text"), out var notKept, S("kind"), key: S("key"), source: "settings", subject: S("subject"), sayAgain: true) == null && S("text").Trim().Length > 2) Toast(notKept);
     PublishAiEverywhere(); break;
    case "memoryEdit" when Companions.Any(c => c.Id == S("companion")):
-    if (!CompanionMemory.Edit(S("companion"), S("id"), S("text"))) Toast("That looks like a password or a code, so it isn't kept.");
+    if (MemoryRefuses(null, S("text")) is { } editRefused) Toast(editRefused);
+    else if (!CompanionMemory.Edit(S("companion"), S("id"), S("text"), out var notEdited)) Toast(notEdited);
     PublishAiEverywhere(); break;
-   case "memoryForget" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Forget(S("companion"), S("id")); PublishAiEverywhere(); break;
-   case "memoryClear" when Companions.Any(c => c.Id == S("companion")): CompanionMemory.Clear(S("companion")); PublishAiEverywhere(); break;
+   case "memoryForget" when Companions.Any(c => c.Id == S("companion")) && S("id").Length > 0:
+    if (CompanionMemory.Forget(S("companion"), S("id"), out _, out var notForgotten) == null) Toast(notForgotten);
+    PublishAiEverywhere(); break;
+   case "memoryForgetChat" when Companions.Any(c => c.Id == S("companion")) && S("chat").Length > 0:
+    if (!CompanionMemory.ForgetChat(S("companion"), S("chat"))) Toast("Still couldn't save the change: the memory file couldn't be written.");
+    PublishAiEverywhere(); break;
+   case "memoryClear" when Companions.Any(c => c.Id == S("companion")):
+    if (!CompanionMemory.Clear(S("companion"))) Toast("Still couldn't save the change: the memory file couldn't be written.");
+    PublishAiEverywhere(); break;
+   case "memoryCapture" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } capturing:
+    capturing.Capture = B("on"); SaveLater(); PublishAiEverywhere(); break;
+   case "chatSummaries": Prefs.ChatSummaries = B("on") ? "" : "off"; SaveLater(); PublishAiEverywhere(); break;
+   case "knowledgeReset" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } resetting: ResetKnowledge(resetting); PublishAiEverywhere(); break;
+   case "knowledgeUndo" when Companions.Any(c => c.Id == S("companion")):
+    if (!CompanionMemory.Undo(S("companion"), S("file"))) Toast("There's no earlier version to go back to.");
+    PublishAiEverywhere(); break;
+   case "memoryResetAll" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } wiping: {
+    // Reset everything: memory, summaries, knowledge and Setup, and its chats start new sessions (they bring the chat so far).
+    bool kept = CompanionMemory.Clear(wiping.Id); ResetKnowledge(wiping);
+    wiping.Setup = "pending"; wiping.SetupAt = null; SaveLater();
+    foreach (var c in AiChats.Where(c => c.Companion == wiping.Id && !runs.ContainsKey(c.Id))) { c.Session = null; c.Started = false; c.Sessions = null; }
+    SaveAiChats(); if (!kept) Toast("Still couldn't save the change: the memory file couldn't be written.");
+    PublishAiEverywhere(); break; }
+   case "personalizationClear" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } plain:
+    plain.Role = ""; plain.Personality = ""; plain.Length = "balanced"; SaveLater();
+    if (plain.SetupChat.Length > 0) CompanionMemory.ForgetChat(plain.Id, plain.SetupChat);
+    PublishAiEverywhere(); break;
+   case "companionSetupAgain" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } again: // Introduce yourself again
+    again.Setup = "pending"; SaveLater(); PublishAiEverywhere(); break;
+   case "instructionsJoin" when Companions.FirstOrDefault(c => c.Id == S("companion")) is { } joined && JoinSection(joined.Instructions) is { } section:
+    if (B("apply")) { joined.Instructions = joined.Instructions.Replace(section, "").Trim(); CompanionMemory.Changed(joined.Id, "The user removed \"When you join the team\" from your instructions: how you open a first chat is your Setup skill's.", ""); }
+    else joined.JoinKept = true;
+    SaveLater(); PublishAiEverywhere(); break;
    case "aiChatProfile" when !incognito && S("profile") is "companion" or "regular" && MyChats.FirstOrDefault(c => c.Id == S("id")) is { Ephemeral: false, From: null } switched && !runs.ContainsKey(switched.Id): {
     string? to = S("profile") == CompanionProfile ? CompanionProfile : null;
     if (switched.Profile == to) break;
@@ -731,9 +779,32 @@ public partial class MainWindow
 
  /// How a companion hired from Still's crew works in its field: its method, tools and quality rules (Assets/roles).
  // A new companion's first turn, sent for it (aiKickoff): its Setup skill, loaded with it, says how to open the chat.
- const string KickoffAsk = "[Still] This is your first chat with the user and they haven't written yet, so start it yourself now, following your Setup skill above. The user never sees this note.";
+ /// What starts Setup, with what Still knows: whether this is the first use, what the user has told Still already, how the
+ /// companion was made, and whether the user's message is its first task. The user never sees it.
+ static string Activation(Companion who, bool kickoff)
+ {
+  var known = CompanionMemory.Active(who.Id).Where(f => !f.Guessed).ToList();
+  int setup = known.Count(f => f.Source == "onboarding");
+  return "[Still] " + (who.SetupAt is { } met ? $"You've met the user before (your Setup ran on {met.ToLocalTime():yyyy-MM-dd}); they asked you to introduce yourself again, so keep it short and use what you remember. " : "This is your first chat with the user, and your Setup hasn't run before. ")
+   + (kickoff ? "They haven't written yet, so start the chat yourself now, following your Setup skill above. " : "Their message below is your first task: do it, following your Setup skill above. ")
+   + "What they've told Still already: " + (known.Count == 0 ? "nothing yet. " : $"{known.Count} {(known.Count == 1 ? "thing" : "things")} in your memory above{(setup > 0 ? $", {setup} from Still's own setup" : "")}. ")
+   + (who.Crew.Length > 0 ? "You were hired from Still's crew, with your role's setup. " : "The user made you with Make your own, from the instructions above. ")
+   + "The user never sees this note.";
+ }
+ /// The old "When you join the team" section in a user's edited Instructions, if it's still there (the profile offers to take it out).
+ static string? JoinSection(string text) => text.IndexOf("## When you join the team", StringComparison.Ordinal) is int at and >= 0
+  ? text[at..(text.IndexOf("\n## ", at + 5, StringComparison.Ordinal) is int end and > 0 ? end + 1 : text.Length)] : null;
+ /// Reset knowledge files: back to the role's empty seeds (the old text kept as a version you can go back to).
+ static void ResetKnowledge(Companion c)
+ {
+  if (c.Crew.Length == 0) return;
+  var assembly = typeof(AppContent).Assembly; string root = "Still.Content.Assets/roles/" + c.Crew + "/knowledge/";
+  foreach (var res in assembly.GetManifestResourceNames().Where(r => r.Replace('\\', '/').StartsWith(root, StringComparison.Ordinal)))
+   try { using var reader = new StreamReader(assembly.GetManifestResourceStream(res)!); CompanionMemory.Seed(c.Id, Path.GetFileNameWithoutExtension(res.Replace('\\', '/')), reader.ReadToEnd(), over: true); }
+   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+  CompanionMemory.Changed(c.Id, "The user reset your knowledge files to empty: what they held is gone from your notes.", "");
+ }
  // Chats whose next turn is a companion's first (aiKickoff): Setup loads with it, once.
- static readonly HashSet<string> setupNext = [];
  /// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
  /// from the user's first message.
  void NameFromHello(AiChat chat, string hello)
@@ -904,16 +975,17 @@ public partial class MainWindow
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null). asker: the teammate
  /// whose message this is, when one companion asks another (Exchange).
- async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null)
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null, bool routine = false)
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito) }; // a private window remembers nothing
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito), Routine = routine }; // a private window remembers nothing
    MyChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { if (into.ChatId != chat.Id) { into.Back.Add(Spot(into)); into.Forward.Clear(); } into.ChatId = chat.Id; into.Home = ""; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
   }
   // An incognito chat runs in its own window (its folder, its private tabs), and not at all once that window is gone.
+  if (chat.Ephemeral) CompanionMemory.Incognito.Add(chat.Id); // its stores refuse anything from it, whatever asks
   if (chat.Ephemeral && OwnerOf(chat) != this) { if (OwnerOf(chat) is { closing: false } owner) await owner.RunAi(chat, text, shown, into, companion, noMemory, asker, files); return; }
   if (chat.Harness.Length == 0) chat.Harness = Companions.FirstOrDefault(c => c.Id == chat.Companion) is { Ai.Length: > 0 } own ? own.Ai : Prefs.AiHarness;
   if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
@@ -938,22 +1010,33 @@ public partial class MainWindow
   if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
-  // A companion's first chat (an incognito one doesn't count): Still loads Setup itself, the one skill it loads for the AI.
-  bool setup = who != null && !chat.Ephemeral && (setupNext.Remove(chat.Id) | who.Greet);
-  if (who is { Greet: true } && !chat.Ephemeral) { who.Greet = false; SaveLater(); } // they spoke first: no kickoff
+  // Setup, while it's pending: Still loads it itself, the one skill it loads for the AI, in the companion's regular chats
+  // with the user (never an incognito, delegated or routine one), until the companion has answered the user once. A
+  // session that already has it (a task resumed after a restart) doesn't get it again.
+  bool regular = who != null && !chat.Ephemeral && chat.From == null && !chat.Routine;
+  var setupSkill = Skill.All.FirstOrDefault(k => k.Id == Skill.SetupId);
+  bool hadSetup = setupSkill != null && chat.Messages.Any(m => m.Role == "tool" && m.Text == "Used skill " + setupSkill.Name);
+  bool setup = setupSkill != null && regular && who!.Setup == "pending" && !(hadSetup && chat.Started);
   var skills = Skill.Invoked(shown); // the user asked for these by name; a companion's own load with load_skill
-  if (setup && Skill.All.FirstOrDefault(k => k.Id == Skill.SetupId) is { } setupSkill) skills.Insert(0, setupSkill);
-  foreach (var k in skills) if (k.Id == Skill.SetupId) chat.Messages.Add(new() { Role = "tool", Text = "Used skill " + k.Name }); else Step(chat, "Used skill " + k.Name); // Setup's step shows even before a hello
+  if (setup) { skills.Insert(0, setupSkill!); who!.SetupChat = chat.Id; if (!kickoffs.Contains(chat.Id)) text = Activation(who, false) + "\n\n" + text; }
+  foreach (var k in skills) if (k.Id != Skill.SetupId) Step(chat, "Used skill " + k.Name); else if (!hadSetup) chat.Messages.Add(new() { Role = "tool", Text = "Used skill " + k.Name }); // Setup's step shows even before a hello
   var list = ListOf(chat); list.Remove(chat); list.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
   string work = !chat.Ephemeral && cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
-  string memory = who == null ? "" : CompanionMemory.Brief(who.Id, shown);
+  // Memory goes in when a session starts: what fits this message and the chat so far (a vague "carry on" finds the chat's
+  // own summary). Later turns hear what changed since, once.
+  string query = shown + "\n" + string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(4).Select(m => CompanionMemory.Clip(m.Text, 500)))
+   + (who != null && CompanionMemory.Summaries(who.Id).List.FirstOrDefault(s => s.Chat == chat.Id) is { } sofar ? "\n" + CompanionMemory.SummaryText(sofar) : "");
+  string memory = who == null || chat.Started ? "" : CompanionMemory.Brief(who.Id, query, touch: !chat.Ephemeral);
+  string changed = who != null && chat.Started ? CompanionMemory.ChangesFor(who.Id, chat.Id, ref chat.SeenChange) : "";
+  if (!chat.Started) chat.SeenChange = CompanionMemory.Seq;
   string prompt = (chat.Started ? "" : AiInstructions(cli, ProfileCatalog.CurrentName(), who, work, !chat.Ephemeral) + "\n\n"
    + (memory.Length > 0 ? "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n" : "")
    + (who == null ? "" : CompanionMemory.NotesBrief(who.Id) + Skill.Index(who.Skills))
-   + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
+   + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so your memory is read only (you can recall, not remember or forget), knowledge files can be read, not changed, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
    + (chat.Profile == CompanionProfile && !chat.Ephemeral ? CompanionNote + "\n\n" : ""))
    + (profileSwitched.Remove(chat.Id) && chat.Started ? "[Still] " + (chat.Profile == CompanionProfile ? "The user switched this chat to browse in the companion profile: " + CompanionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : "")
+   + (changed.Length > 0 ? changed + "\n\n" : "")
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   if (App.IsQa && !chat.Ephemeral) try { File.AppendAllText(Path.Combine(App.DataRoot, "qa-prompts.jsonl"), JsonSerializer.Serialize(new { chat = chat.Id, companion = chat.Companion, prompt }) + "\n"); } catch (IOException) { }
   // Each chat runs in its own folder: the app keeps the chat's session there, and parallel runs never share config files.
@@ -1008,12 +1091,8 @@ public partial class MainWindow
     await RunAi(chat, shown.Length > 0 ? shown : ResumeBrief(me.Task), shown: shown, asker: asker);
     return;
    }
-   // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if (said && chat.From == null && !chat.NoMemory && !chat.Ephemeral && who != null && MemoryRefuses(me, chat.Title) == null && chat.Messages.LastOrDefault(m => m.Role == "assistant") is { } last) { // a title can name a private tab too
-    string end = last.Text.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).FirstOrDefault(l => !l.StartsWith(">>")) ?? "";
-    end = end.Replace("**", "").Trim(); if (end.Length > 160) end = end[..160] + "…";
-    CompanionMemory.Remember(who.Id, chat.Title + (end.Length > 0 && MemoryRefuses(me, end) == null ? ": " + end : ""), "chat", chat.Id, "chat:" + chat.Id);
-   }
+   // Setup is done once the companion has answered the user in a regular chat that had it.
+   if (said && regular && (setup || hadSetup) && who!.Setup == "pending") { who.Setup = "done"; who.SetupAt = DateTime.UtcNow; who.SetupVersion = CompanionMemory.Ver(setupSkill!.Body); SaveLater(); }
    if (run.TimedOut) chat.Error = $"{cli.Name} stopped after {AgentRun.Limit.TotalMinutes:0} minutes. Ask again to carry on.";
    else if (run.ExitCode != 0 && !said && !stopped && chat.Error.Length == 0)
     chat.Error = $"{cli.App} stopped: " + (run.Errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {run.ExitCode}");
@@ -1062,7 +1141,7 @@ public partial class MainWindow
   var name = S("name").Trim();
   var list = Companions.ToList();
   var c = list.FirstOrDefault(x => x.Id == S("id"));
-  if (c == null) list.Add(c = new() { Greet = true, Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
+  if (c == null) list.Add(c = new() { Setup = "pending", Id = S("id") is { Length: > 3 and <= 24 } nid && nid.All(char.IsAsciiLetterOrDigit) ? nid : Guid.NewGuid().ToString("N")[..10] }); // setup names it first, to start a chat with it
   c.Name = name.Length > 24 ? name[..24] : name; c.Face = S("face") is { Length: <= 20 } f ? f : ""; c.Color = S("color") is { Length: <= 20 } cl ? cl : "";
   if (data.TryGetProperty("look", out _)) c.Look = S("look") is { Length: <= 2000 } lk && lk.StartsWith('{') ? lk : "";
   c.Job = S("job").Trim() is var job && job.Length > 1000 ? job[..1000] : job;
@@ -1079,7 +1158,11 @@ public partial class MainWindow
   if (data.TryGetProperty("personality", out _) && S("personality") is "" or "direct" or "warm" or "playful" or "formal") c.Personality = S("personality");
   if (S("length") is "short" or "balanced" or "detailed") c.Length = S("length");
   if (data.TryGetProperty("routines", out var routines) && routines.ValueKind == JsonValueKind.Array) c.Routines = ReadRoutines(routines, c.Routines);
-  if (data.TryGetProperty("instructions", out _)) c.Instructions = S("instructions").Trim() is var ins && ins.Length > 8000 ? ins[..8000] : ins;
+  if (data.TryGetProperty("instructions", out _) && (S("instructions").Trim() is var ins && ins.Length > 8000 ? ins[..8000] : ins) is var instructions && instructions != c.Instructions) {
+   var added = instructions.Split('\n').Select(l => l.Trim()).Where(l => l.Length > 0).Except(c.Instructions.Split('\n').Select(l => l.Trim())).ToList();
+   if (c.Name.Length > 0) CompanionMemory.Changed(c.Id, "The user changed your instructions in your profile; the new version applies in full from your next chat" + (added.Count > 0 ? ". New: " + CompanionMemory.Clip(string.Join(" / ", added), 240) : ""), "");
+   c.Instructions = instructions;
+  }
   if (data.TryGetProperty("crew", out _)) c.Crew = S("crew") is { Length: <= 24 } crew && crew.All(char.IsAsciiLetterLower) ? crew : "";
   Equip(c);
   c.AskName = false; // saved, renamed or kept: it's the user's name now
@@ -1128,26 +1211,33 @@ public partial class MainWindow
   var cli = chosen ?? AiClis.FirstOrDefault(c => c.Id == chat.Harness);
   if (cli == null || FindCli(cli.Command) is not { } exe) return;
   var (model, effort) = chosen != null ? (pick[1], "") : ForMode(cli.Id, "efficient");
+  string said = await OneShot(cli, exe, model, effort, "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + Clip(first, 2000), "titles", 60);
+  var title = said.Split('\n').Select(l => Regex.Replace(l, @"^(?i:title)\s*:", "").Trim().Trim('"', '\'', '*', '#', '“', '”', '.').Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
+  if (title.Length == 0 || chat.Title != was || !AiChats.Contains(chat)) return;
+  chat.Title = Clip(title, 60); SaveAiChats();
+  foreach (var w in Windows) foreach (var t in w.tabs.Where(t => t.ChatId == chat.Id)) t.Title = chat.Title;
+  SaveLater(); PublishAll(); PublishAiEverywhere();
+ }
+
+ /// One prompt, no tools, one answer, nothing to resume: titles and chat summaries.
+ async Task<string> OneShot(AgentAdapter cli, string exe, string model, string effort, string prompt, string job, int seconds)
+ {
   if (!aiModels.GetValueOrDefault(cli.Id, []).Any(m => m.Id == model)) model = effort = "";
-  string said = "", prompt = "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + Clip(first, 2000);
+  string said = "";
   List<string> mcp = ["--mcp", "--no-tools", "--as", cli.Name, "--this-profile", "--profile", App.DataRoot, "--profiles-root", App.ProfileHome];
   if (App.IsQa) mcp.Insert(1, "--qa");
   AgentRun? run = null; RunRequest? request = null;
   try {
-   request = new RunRequest(prompt, model, effort, Path.Combine(AiFolder, "titles"), mcp, cli.NamesSession ? Guid.NewGuid().ToString() : null, false) { Job = "titles", Forget = cli.Forgets }; // one-shot: nothing to resume
+   request = new RunRequest(prompt, model, effort, Path.Combine(AiFolder, job), mcp, cli.NamesSession ? Guid.NewGuid().ToString() : null, false) { Job = job, Forget = cli.Forgets };
    run = await cli.Start(exe, request);
-   using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+   using var limit = new CancellationTokenSource(TimeSpan.FromSeconds(seconds));
    await foreach (var e in run.Events(limit.Token)) if (e is AgentEvent.Message m) said += (m.Join ?? "\n") + m.Text; else if (e is AgentEvent.Spent s) Spend(cli, s);
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception) { App.Log(ex); }
   finally {
    run?.Dispose();
    try { if (request != null) File.Delete(request.PromptFile); } catch (IOException) { }
   }
-  var title = said.Split('\n').Select(l => Regex.Replace(l, @"^(?i:title)\s*:", "").Trim().Trim('"', '\'', '*', '#', '“', '”', '.').Trim()).FirstOrDefault(l => l.Length > 0) ?? "";
-  if (title.Length == 0 || chat.Title != was || !AiChats.Contains(chat)) return;
-  chat.Title = Clip(title, 60); SaveAiChats();
-  foreach (var w in Windows) foreach (var t in w.tabs.Where(t => t.ChatId == chat.Id)) t.Title = chat.Title;
-  SaveLater(); PublishAll(); PublishAiEverywhere();
+  return said;
  }
 
  /// Asks each AI app whether it's signed in. These are local checks that use none of the user's AI usage.
@@ -1276,7 +1366,7 @@ public partial class MainWindow
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
-   "load_skill" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
+   "load_skill" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "read_knowledge" => "Read a knowledge file", "open_memory_source" => "Checked where a memory came from", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
    _ => tool.Replace('_', ' ') + (arg.Length > 0 ? " " + arg : ""),
   };
   static string? o2(JsonNode? n, string k) => n?[k]?.ToString() is { Length: > 0 } v ? "“" + v + "”" : null;
@@ -1390,13 +1480,15 @@ public partial class MainWindow
   return Reply(new { added = true, routine = $"{Days(days)} at {time}" });
  }
 
+ static readonly Dictionary<string, AiMessage> memorySteps = []; // a memory tool's step, until its result says whether it worked
  /// One step of a run, shown in the chat. Returns true when the AI said something.
  bool ApplyEvent(AiChat chat, AgentAdapter cli, AgentEvent e)
  {
   switch (e) {
    case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last && last.Who == null: last.Text += join + m.Text; return true;
    case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text }); return true;
-   case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); break;
+   case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); if (t.Name.Replace("mcp__still__", "").Replace("still__", "") is "remember" or "forget" or "update_knowledge" && chat.Messages.LastOrDefault() is { Role: "tool" } step) memorySteps[t.Id] = step; break;
+   case AgentEvent.ToolResult { Ok: false } r when memorySteps.Remove(r.Id, out var failed): failed.Text = failed.Text switch { "Saved to memory" => "Didn't save to memory", "Removed from memory" => "Nothing removed from memory", _ => "Didn't update a knowledge file" }; break;
    case AgentEvent.Session session when !chat.Started || chat.Session == null: chat.Session ??= session.Id; chat.Started = true; SaveAiChats(); break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
    case AgentEvent.Error error: chat.Error = $"{cli.Name}: " + error.Text; break;

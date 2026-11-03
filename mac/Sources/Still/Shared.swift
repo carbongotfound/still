@@ -49,6 +49,8 @@ final class AiChat: Codable {
  var team: [String]?, sessions: [String: String]? // only read to split up a team chat from before companions messaged each other (untangle)
  var unread = false, archived = false
  var noMemory = false // "Don't remember this chat": nothing from it goes into the companion's memory
+ var routine = false // started by a routine, not by the user: never counts as the companion's first chat
+ var seenChange = 0 // the last memory change its session has heard about (not saved)
  var ephemeral = false // an incognito window's chat: never saved, and gone with its window (so not in CodingKeys)
  var worked = 0 // how long its last run took, in seconds
  var running = false // saved while a run goes on: still set at startup means Still closed mid-run
@@ -57,13 +59,13 @@ final class AiChat: Codable {
  var messages: [AiMessage] = []
  var allowed: [String] = [] // "action site" the user allowed for the rest of this chat
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, worked, running, updated, messages, allowed, audit }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, audit }
  init() {}
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
   team = c.value(.team, team); sessions = c.value(.sessions, sessions); from = c.value(.from, from); profile = c.value(.profile, profile); id = c.value(.id, id)
   title = c.value(.title, title); harness = c.value(.harness, harness); session = c.value(.session, session); started = c.value(.started, started)
-  companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory)
+  companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory); routine = c.value(.routine, routine)
   worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)
   messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); audit = c.value(.audit, audit)
  }
@@ -116,10 +118,7 @@ final class ChatRun {
 }
 
 var runs: [String: ChatRun] = [:] // by chat id
-var kickoffs = Set<String>() // chats a new companion started itself: its first question's answer goes to its memory
-var setupNext = Set<String>() // chats whose next turn is a companion's first (aiKickoff): Setup loads with it, once
-// A new companion's first turn, sent for it (aiKickoff): its Setup skill, loaded with it, says how to open the chat.
-let kickoffAsk = "[Still] This is your first chat with the user and they haven't written yet, so start it yourself now, following your Setup skill above. The user never sees this note."
+var kickoffs = Set<String>() // chats a new companion started itself, until its first question is answered
 var aiChats: [AiChat] = [] // newest first; Ai.swift loads and saves them
 var browsers: [Browser] = [] // every open window, kept by main.swift
 /// The Mac's appearance as QA sets it ("Light" or "Dark"); nil = the real one. Only the QA channel sets it.

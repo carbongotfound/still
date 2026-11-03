@@ -250,6 +250,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    startAgentServer()
    startAi()
    Browser.watchRoutines()
+   watchSummaries()
    if isQa { startQa() }
    startUpdateChecks()
   }

@@ -63,7 +63,7 @@ public partial class MainWindow : Window
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
   // Test windows open where the test runner says (its own screen), never over the user's work.
   if (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_POS")?.Split(',') is [var qx, var qy]) { WindowStartupLocation = WindowStartupLocation.Manual; Left = double.Parse(qx); Top = double.Parse(qy); }
-  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); WatchRoutines(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
+  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); WatchRoutines(); WatchSummaries(); CompanionMemory.NameOf = NameOf; int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    StartupMetrics.Mark("window-loaded");
    if (!secondary) RestoreOtherWindows();
