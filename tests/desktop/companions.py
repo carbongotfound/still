@@ -200,7 +200,8 @@ def main():
         prompts = BIN / "prompts.jsonl"
         sent = until(lambda: prompts.exists() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
-        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "peer-reviewed" in sent and "Maya" not in sent, "Ines's memory goes into the first prompt, and not Maya's")
+        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "Maya" not in sent, "Ines's memory that fits the message goes into the first prompt, and not Maya's")
+        check("peer-reviewed" not in sent, "and one that doesn't fit stays out (recall finds it)")
         check("Calm and precise, always with sources." in sent, "So does how Ines talks")
         check("Your name is Ines" in sent and "cites sources" in sent, "Ines's name and job go into the prompt")
         args = json.loads(prompts.read_text().splitlines()[-1])["args"]

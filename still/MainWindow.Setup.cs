@@ -176,11 +176,11 @@ public partial class MainWindow
   // user's lines in. The summary shows what the first companion keeps.
   void Remember(string key, string label, List<Companion> to, List<string> facts, string owner = "")
   {
-   List<(string Id, Fact Fact)> Keep(List<string> lines) => [.. to.Where(Companions.Contains).SelectMany(c => lines.Select(f => (c.Id, CompanionMemory.Remember(c.Id, f, "preference", "",
-    f.StartsWith("Likes to be called ") ? "name" : f.StartsWith("Works on ") ? "interests" : "")))).Where(k => k.Item2 != null).Select(k => (k.Id, k.Item2!))];
+   List<(string Id, Fact Fact)> Keep(List<string> lines) => [.. to.Where(Companions.Contains).SelectMany(c => lines.Select(f => (c.Id, CompanionMemory.Remember(c.Id, f, out _, "preference",
+    key: f.StartsWith("Likes to be called ") ? "name" : f.StartsWith("Works on ") ? "interests" : "", source: "onboarding", sayAgain: true)))).Where(k => k.Item2 != null).Select(k => (k.Id, k.Item2!))];
    var kept = Keep(facts);
    string Shown() => string.Join("\n", kept.Where(k => k.Id == to[0].Id).Select(k => k.Fact.Text));
-   void Forget() { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f.Id); }
+   void Forget() { foreach (var (id, f) in kept) CompanionMemory.Forget(id, f.Id, out _, out _); }
    if (kept.Any(k => k.Id == to[0].Id)) changes.Add(new(key, label, Shown(), Forget, text => { Forget(); kept = Keep(Facts([text])); return kept.Count > 0 ? Shown() : null; }, owner));
   }
 

@@ -700,7 +700,7 @@ def interview(process):
               "Each companion's instructions get a paragraph about the user")
         check(talia.get("Crew") == "growth" and len(talia.get("Routines", [])) == 2 and not any(r["On"] for r in talia["Routines"])
               and any(r["Time"] == "08:30" and r["Days"] == [1, 2, 3, 4, 5] for r in talia["Routines"]), f"Talia's routines, its own and the new one, start off ({talia.get('Routines')})")
-        facts, maya, bloom_facts = [f["Text"] for f in memory("Miso")], [f["Text"] for f in memory("Maya")], [f["Text"] for f in memory("Talia")]
+        facts, maya, bloom_facts = [f["Text"] for f in memory("Miso") if f.get("Status", "active") == "active"], [f["Text"] for f in memory("Maya")], [f["Text"] for f in memory("Talia")]
         check(mate.get("Tone") == "Keep it short and cheerful." and "Runs a small bakery that sells to cafes." in facts and "Uses Gmail and Shopify all day." in facts and "Has two cats." in facts
               and "Likes to be called Sammy." in facts and "Likes to be called Sam." not in facts and "Bakes sourdough for six cafes." in facts, f"Miso's tone and memories are set, and the new name replaces the old ({facts})")
         check("Has two cats." in maya and "Bakes sourdough for six cafes." not in maya and "Has two cats." in bloom_facts and "Hiring a second baker for early shifts." in bloom_facts,

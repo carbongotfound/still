@@ -377,7 +377,7 @@ def main():
         until(lambda: js(P, "!!document.querySelector('.home-rail')"), 10)
         js(P, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         js(P, "document.querySelector('.home-rail-item[aria-label=Chats]')?.click()")
-        listed = until(lambda: js(P, "[...document.querySelectorAll('.history-row')].map(r => r.innerText).join('|')"), 5) or ""
+        listed = until(lambda: (lambda s: s if (s or "").strip("|") else "")(js(P, "[...document.querySelectorAll('.history-row')].map(r => r.innerText).join('|')")), 5) or ""  # rows can be there before their text is laid out
         check("Find me a desk lamp" in listed and "asked" not in listed and "Shipping" not in listed, f"Chat History lists Maya's chat, not the child tasks ({listed[:200]!r})")
 
         # Handing over: tell_companion doesn't wait; the card turns Done when Nora finishes. Maya uses Nora's old name.

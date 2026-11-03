@@ -26,7 +26,7 @@ EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("hire-" + uuid.uuid4().hex[:8])
 BIN = X.BIN = RUN / "bin"
 FAILED = []
-KICK = "[Still] This is your first chat with the user"
+KICK = "They haven't written yet, so start the chat yourself now"  # the kickoff's activation note (a first message gets a different one)
 SRC = Path(__file__).resolve().parents[2]
 
 
@@ -135,7 +135,7 @@ def hiring():
         got = card(p) or {}
         check(got.get("buttons") == ["Not now", "Start chatting"] and got.get("mascot") and got.get("badge") and "first task" in (got.get("line") or ""),
               f"The card has Leo celebrating with a check, a line on what's next, Not now and Start chatting ({got})")
-        check(until(lambda: mates(profile).get("Leo", {}).get("Greet") is True, 5), "Leo is new: its first chat is still to come")
+        check(until(lambda: mates(profile).get("Leo", {}).get("Setup") == "pending", 5), "Leo is new: its first chat is still to come")
         time.sleep(1.2)
         rpc(p, "capture", name="hire-joined.png")
         click(p, ".joined-card button", "Not now")
@@ -162,14 +162,15 @@ def hiring():
         time.sleep(.8)
         rpc(p, "capture", name="hire-kickoff.png")
         click(p, ".ask-option", "Instagram")
-        check(until(lambda: "Instagram" in memory(profile, "Leo") and "Where do you post most?" in memory(profile, "Leo"), 10), "The answer goes to Leo's memory")
+        check(until(lambda: any(m["Role"] == "user" and "Instagram" in m["Text"] for m in (first_chat(profile, "Leo") or {}).get("Messages", [])), 10) and "Instagram" not in memory(profile, "Leo"),
+              "The answer goes to Leo as the user's message, and Still doesn't save it for Leo (its Setup decides what to keep)")
         check(until(lambda: (first_chat(profile, "Leo") or {}).get("Title") == "Spring catalog launch", 15), f"The title model names the chat from Leo's hello ({(first_chat(profile, 'Leo') or {}).get('Title')!r})")
         check(any(q["name"] == "nobody" and "First up, a launch plan" in q["prompt"] for q in X.prompts()), "and it's given the hello, not the hidden note")
         chat = first_chat(profile, "Leo") or {}
         said = chat.get("Messages", [])
         check(len(said) > 1 and said[0]["Role"] == "tool" and said[0]["Text"] == "Used skill Setup" and said[1]["Role"] == "assistant" and [m["Role"] for m in said].count("user") == 1 and said[[m["Role"] for m in said].index("user")]["Text"] == "Instagram"
               and not [m for m in said if "[Still]" in m["Text"]], f"Saved: Setup's step, then Leo spoke first, the user's only message is their answer, and the note isn't there ({[m['Role'] for m in said]})")
-        check(until(lambda: mates(profile).get("Leo", {}).get("Greet") is False, 5), "and Leo isn't new anymore")
+        check(until(lambda: mates(profile).get("Leo", {}).get("Setup") == "done", 5), "and Leo isn't new anymore")
 
         # Reopening never starts it again.
         check(say_hi(p, "Leo"), "Say hi again")
@@ -188,7 +189,7 @@ def hiring():
         js(p, "document.querySelector('.ask-own input')?.focus()")
         W.type_into(p, ".ask-own input", "Whichever brings the biggest accounts")
         js(p, "document.querySelector('.ask-own button[type=submit]')?.click()")
-        check(until(lambda: "biggest accounts" in memory(profile, "Talia"), 10), "Your own words go to its memory too")
+        check(until(lambda: any(m["Role"] == "user" and "biggest accounts" in m["Text"] for m in (first_chat(profile, "Talia") or {}).get("Messages", [])), 10), "Your own words go to it too")
         time.sleep(3)
         check(len(kickoffs("Talia")) == 1, "Pressed twice, it still starts once")
 
@@ -204,7 +205,7 @@ def hiring():
         say_hi(p, "Nora")
         time.sleep(4)
         said = [q["prompt"][-200:] for q in X.prompts() if q["name"] == "Nora"]
-        check(not kickoffs("Nora") and mates(profile).get("Nora", {}).get("Greet") is False, f"Talking to a new companion first means it never kicks off ({said}, {mates(profile).get('Nora', {}).get('Greet')})")
+        check(not kickoffs("Nora") and mates(profile).get("Nora", {}).get("Setup") == "done", f"Talking to a new companion first means it never kicks off ({said}, {mates(profile).get('Nora', {}).get('Setup')})")
 
         # A tool before the hello: Still holds it, then refuses, so the chat still opens with Ivan's words.
         check(library_add(p, "Ivan"), "Hiring Ivan says Ivan joined")
@@ -254,7 +255,7 @@ def after_setup():
         time.sleep(.8)
         rpc(p, "capture", name="hire-after-setup.png")
         click(p, ".ask-option", "Suppliers")
-        check(until(lambda: "Suppliers" in memory(profile, "Maya"), 10), "The answer goes to Maya's memory")
+        check(until(lambda: any(m["Role"] == "user" and "Suppliers" in m["Text"] for m in (first_chat(profile, "Maya") or {}).get("Messages", [])), 10), "The answer goes to Maya")
         js(p, "location.reload()")
         time.sleep(2)
         say_hi(p, "Maya")

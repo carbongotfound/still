@@ -102,6 +102,7 @@ public sealed class Preferences
  public bool NamesChecked { get; set; } // companions with an old stock name were flagged to ask about it (FlagOldNames)
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode
  public Dictionary<string, string[]> AiTiers { get; set; } = []; // per "ai:mode": [model, effort] picked in Settings; none = the defaults
+ public string ChatSummaries { get; set; } = ""; // "off": companions don't summarize finished chats into their memory
  public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", "gemini", "opencode", an API provider's or a manifest's id, or "" until chosen
  public List<ApiProvider> ApiProviders { get; set; } = []; // API providers the user added: settings and spending only, never the key (ApiKeyStore)
  public bool Autofill { get; set; } = true;

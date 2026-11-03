@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, FileText, FolderOpen, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, X } from "lucide-react"
+import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, FileText, FolderOpen, Hand, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Undo2, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -99,6 +99,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
      <DropdownMenuContent align="end" className="w-56">
       <DropdownMenuItem onSelect={() => { setTab("general"); setTimeout(() => { name.current?.focus(); name.current?.select() }, 50) }}><Pencil />Rename</DropdownMenuItem>
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
+      {saved?.setup !== "pending" && <DropdownMenuItem onSelect={() => send("companionSetupAgain", { companion: c.id })}><Hand />Introduce yourself again</DropdownMenuItem>}
       {premade && <DropdownMenuItem onSelect={() => setAsk("reset")}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={() => setAsk("fire")}><Trash2 />Fire {c.name}</DropdownMenuItem>
@@ -138,6 +139,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
        </div>
        <label className="profile-field is-instructions"><span>Instructions</span>
         <textarea rows={14} maxLength={8000} spellCheck={false} value={c.instructions || ROLE_TEXT[premade.id]} onChange={e => save({ ...c, instructions: e.target.value.trim() === ROLE_TEXT[premade.id] ? "" : e.target.value }, true)} /></label>
+       {saved?.joinSection && c.instructions && <JoinSection text={c.instructions} label={label} onApply={apply => send("instructionsJoin", { companion: c.id, apply })} />}
        <div className="profile-instructions-foot"><p className="profile-note">{c.instructions ? "Your edit." : `Still's version for ${premade.role}.`} {label} follows these in every chat.</p>
         {!!c.instructions && <Button size="sm" variant="ghost" onClick={() => save({ ...c, instructions: "" })}><RotateCcw />Reset to Still's version</Button>}</div>
       </>}
@@ -190,7 +192,8 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
       {!!saved.knowledge?.length && <section className="profile-section"><h4>Knowledge files</h4>
        <p className="profile-lead">The working notes of {label}'s job, kept on this computer. {label} fills them in as you work together and reads them at the start of every chat.</p>
        <ul className="profile-knowledge">{saved.knowledge.map(n => <li key={n.id}><FileText aria-hidden /><div><b>{n.name}</b><small>{n.about}</small>
-        {n.text ? <div className="profile-knowledge-text" tabIndex={0}>{n.text}</div> : <p className="profile-note">Empty so far.</p>}</div></li>)}</ul></section>}
+        {n.text ? <div className="profile-knowledge-text" tabIndex={0}>{n.text}</div> : <p className="profile-note">Empty so far.</p>}
+        {!!n.revisions && <Button size="xs" variant="ghost" onClick={() => send("knowledgeUndo", { companion: saved.id, file: n.id })}><Undo2 />Undo last change</Button>}</div></li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="model">
       <label className="profile-field"><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
@@ -258,4 +261,17 @@ function RoutineForm({ who, onAdd }: { who: string; onAdd: (r: Routine) => void 
    <Button type="submit" size="sm" disabled={!text.trim() || !days.length}><Plus />Add</Button>
   </div>
  </form>
+}
+
+/// The old "When you join the team" section in Instructions the user edited before 2.10: how a companion opens its first
+/// chat is the Setup skill's now, so the profile offers to take it out, showing exactly what goes.
+function JoinSection({ text, label, onApply }: { text: string; label: string; onApply: (apply: boolean) => void }) {
+ const at = text.indexOf("## When you join the team"), end = text.indexOf("\n## ", at + 5)
+ if (at < 0) return null
+ const gone = text.slice(at, end > 0 ? end + 1 : undefined).trim()
+ return <div className="profile-join" role="group" aria-label="Instructions update">
+  <p className="profile-note">How {label} opens a first chat is the Setup skill's now, so this section of your instructions isn't needed. Remove it?</p>
+  <pre className="profile-diff">{gone.split("\n").map((l, i) => <del key={i}>{"- " + l + "\n"}</del>)}</pre>
+  <div><Button size="sm" onClick={() => onApply(true)}>Remove it</Button><Button size="sm" variant="ghost" onClick={() => onApply(false)}>Keep mine</Button></div>
+ </div>
 }

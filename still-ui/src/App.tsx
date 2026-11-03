@@ -893,7 +893,7 @@ export default function App() {
        <SetCard title="Your team">
         <SetRow id="team" title="Companions" help={`${ai.companions?.length ?? 0} on your team. Add one, change how they look and what they do, or let one go.`}><Button variant="outline" size="sm" onClick={() => { close(); goHome("companions") }}><UsersRound />Open</Button></SetRow>
        </SetCard>
-       <SetCard title="What they remember"><div className="set-pad" id="set-memory"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} /></div></SetCard>
+       <SetCard title="What they remember"><div className="set-pad" id="set-memory"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} summaries={ai.chatSummaries ?? true} onOpenChat={id => { close(); send("chatOpen", { id }) }} /></div></SetCard>
       </>}
       {settingsPage === "models" && <>
        {hasAi && <SetCard title="Quick, Everyday and Thorough">

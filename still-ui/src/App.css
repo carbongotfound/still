@@ -1457,6 +1457,13 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .memory-row { display:flex; align-items:center; gap:4px; padding:8px 8px 8px 12px; border-radius:10px; background:var(--muted); }
 .memory-row > div { flex:1; min-width:0; } .memory-row p { margin:0; font-size:13.5px; line-height:1.4; overflow-wrap:anywhere; } .memory-row small { font-size:11.5px; color:var(--muted-foreground); }
 .memory-row[data-kind=chat] { background:none; box-shadow:inset 0 0 0 1px var(--border); } .memory-row.is-editing { gap:6px; padding:0; background:none; }
+.memory-row small { display:block; } .memory-source { opacity:.85; } .memory-summary { color:var(--foreground) !important; margin:2px 0; line-height:1.4; }
+.memory-versions { margin:4px 0 0 12px; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px; font-size:12px; color:var(--muted-foreground); } .memory-versions small { margin-left:6px; }
+.memory-switch { display:flex; align-items:center; gap:12px; padding:8px 12px; border-radius:10px; box-shadow:inset 0 0 0 1px var(--border); } .memory-switch > div { flex:1; min-width:0; } .memory-switch b { display:block; font-size:13px; font-weight:550; } .memory-switch small { font-size:11.5px; color:var(--muted-foreground); }
+.memory-note { margin:6px 0 0; font-size:12px; line-height:1.5; color:var(--muted-foreground); } .memory-note b { font-weight:550; color:var(--foreground); }
+.memory-controls { display:flex; flex-wrap:wrap; gap:4px; }
+.profile-join { display:flex; flex-direction:column; gap:6px; margin:6px 0; padding:10px; border-radius:10px; box-shadow:inset 0 0 0 1px var(--border); } .profile-join > div { display:flex; gap:6px; }
+.profile-diff { margin:0; max-height:160px; overflow:auto; font-size:11.5px; white-space:pre-wrap; } .profile-diff del { color:var(--destructive); text-decoration:none; }
 /* An empty chat: the companion, big, saying hi, with ideas from what the user is into */
 .chat-hello-face { margin-bottom:2px; }
 .chat-starters { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; max-width:640px; margin-top:16px; }

@@ -14,7 +14,12 @@ final class Companion {
  var pluginsOff: [String] = [] // connected plugins (Composio toolkit slugs) the user turned off for it (Plugins.swift)
  var routines: [Routine] = [] // what it does on a schedule (Routines.swift)
  var instructions = "" // the user's edit of its role's instructions (Assets/roles), "" = Still's own
- var greet = false // new on the team: its first chat hasn't happened yet (aiKickoff, and Setup loads then)
+ var setup = "" // pending: its Setup (the first chat) hasn't run; done, or "" from before 2.10: it has
+ var setupAt: Date? // when Setup was done
+ var setupVersion = "" // the version of the Setup skill it ran
+ var setupChat = "" // the chat Setup ran in: Clear personalization forgets what was learned there
+ var capture = true // off: nothing new goes into its memory (it still reads what's there)
+ var joinKept = false // the user kept the old "When you join the team" section in their Instructions
  var role = "" // its title, shown before its name ("Research Maya"); "" = its crew role, or none
  var personality = "" // direct, warm, playful or formal; "" = only the Tone box
  var length = "balanced" // how long its replies are: short, balanced or detailed
@@ -22,11 +27,14 @@ final class Companion {
  init(_ d: [String: Any]) {
   func s(_ k: String) -> String { d[k] as? String ?? "" }
   id = s("Id"); name = s("Name"); face = s("Face"); color = s("Color"); look = s("Look"); job = s("Job"); ai = s("Ai"); folder = s("Folder"); tone = s("Tone"); crew = s("Crew")
-  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions"); greet = d["Greet"] as? Bool ?? false
+  mode = d["Mode"] as? String ?? "default"; skills = d["Skills"] as? [String] ?? []; askName = d["AskName"] as? Bool ?? false; pluginsOff = d["PluginsOff"] as? [String] ?? []; instructions = s("Instructions")
+  setup = s("Setup"); setupAt = (d["SetupAt"] as? String).flatMap(isoDate); setupVersion = s("SetupVersion"); setupChat = s("SetupChat"); capture = d["Capture"] as? Bool ?? true; joinKept = d["JoinKept"] as? Bool ?? false
+  if setup.isEmpty, let greet = d["Greet"] as? Bool { setup = greet ? "pending" : "done" } // before 2.10: Greet, true until its first chat
   role = s("Role"); personality = s("Personality"); length = d["Length"] as? String ?? "balanced"
   routines = (d["Routines"] as? [[String: Any]] ?? []).map(Routine.init)
  }
- var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Role": role, "Personality": personality, "Length": length, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions, "Greet": greet] }
+ var dict: [String: Any] { ["Id": id, "Name": name, "Face": face, "Color": color, "Look": look, "Job": job, "Ai": ai, "Mode": mode, "Skills": skills, "Folder": folder, "Tone": tone, "Role": role, "Personality": personality, "Length": length, "Crew": crew, "AskName": askName, "Routines": routines.map(\.dict), "PluginsOff": pluginsOff, "Instructions": instructions,
+  "Setup": setup, "SetupAt": setupAt.map { isoText($0) as Any } ?? NSNull(), "SetupVersion": setupVersion, "SetupChat": setupChat, "Capture": capture, "JoinKept": joinKept] }
 }
 
 /// A Markdown file's front matter (its keys in lowercase) and its body.
@@ -286,24 +294,8 @@ func tiersOf() -> [String: Any] {
  let pick = picked.split(separator: "/", maxSplits: 1).map(String.init)
  let chosen = pick.count == 2 ? aiClis.first { $0.id == pick[0] && findCli($0.command) != nil } : nil
  guard let cli = chosen ?? aiClis.first(where: { $0.id == chat.harness }), let exe = findCli(cli.command) else { return }
- var (model, effort) = chosen != nil ? (pick[1], "") : forMode(cli.id, "efficient")
- if !(aiModels[cli.id] ?? []).contains(where: { $0.id == model }) { model = ""; effort = "" }
- let prompt = "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + clipped(first, 2000)
- var mcp = ["--mcp", "--no-tools", "--as", cli.name, "--this-profile", "--profile", support.path, "--profiles-root", profileHome.path]
- if isQa { mcp.insert("--qa", at: 1) }
- var r = RunRequest(prompt: prompt, model: model, effort: effort, folder: (aiFolder as NSString).appendingPathComponent("titles"), mcp: mcp, session: cli.namesSession ? UUID().uuidString.lowercased() : nil, resume: false)
- r.job = "titles"; r.forget = cli.forgets // one-shot: nothing to resume
- var said = ""
- do {
-  let run = try await cli.start(exe, r)
-  let limit = DispatchWorkItem { run.cancel() }
-  DispatchQueue.main.asyncAfter(deadline: .now() + 60, execute: limit)
-  for await e in run.events() {
-   if case .message(let m, let join) = e { said += (join ?? "\n") + m } else if case .spent(let i, let o, let c, let job) = e { spend(cli, i, o, c, job) }
-  }
-  limit.cancel()
- } catch { NSLog("Still: chat title: \(error)") }
- try? FileManager.default.removeItem(atPath: r.promptFile)
+ let (model, effort) = chosen != nil ? (pick[1], "") : forMode(cli.id, "efficient")
+ let said = await oneShot(cli, exe, model, effort, "Write a title for a chat that starts with the message below: 2 to 6 words, in the message's language, no quotes, no full stop. Reply with the title and nothing else.\n\n" + clipped(first, 2000), "titles", 60)
  let title = said.split(separator: "\n").map { String($0).replacingOccurrences(of: #"^(?i:title)\s*:"#, with: "", options: .regularExpression).trimmingCharacters(in: CharacterSet(charactersIn: "\"'*#“”. ").union(.whitespaces)) }.first { !$0.isEmpty } ?? ""
  if title.isEmpty || chat.title != was || !aiChats.contains(where: { $0 === chat }) { return }
  chat.title = clipped(title, 60); saveAiChats(chat)
@@ -377,19 +369,48 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "recall": return "Checked memory"
  case "load_skill": return ""
  case "forget": return "Removed from memory"
+ case "read_knowledge": return "Read a knowledge file"
+ case "open_memory_source": return "Checked where a memory came from"
  case "list_connected_plugins", "find_plugins": return "Looked at apps"
  case "get_plugin_tools": return "Looked at " + (AgentStream.str(o?["plugin"]) ?? "an app")
  default: return tool.replacingOccurrences(of: "_", with: " ") + (arg.isEmpty ? "" : " " + arg)
  }
 }
 
+/// A chat Setup belongs in while the companion's is pending: one of its regular chats with the user (never an incognito,
+/// delegated or routine one).
+func setupDue(_ chat: AiChat) -> Bool {
+ guard let who = companions.first(where: { $0.id == chat.companion }) else { return false }
+ return who.setup == "pending" && !chat.ephemeral && chat.from == nil && !chat.routine
+}
+/// What starts Setup, with what Still knows: whether this is the first use, what the user has told Still already, how the
+/// companion was made, and whether the user's message is its first task. The user never sees it.
+func activation(_ who: Companion, _ kickoff: Bool) -> String {
+ let known = CompanionMemory.active(who.id).filter { !$0.guessed }, setup = known.filter { $0.source == "onboarding" }.count
+ return "[Still] " + (who.setupAt.map { "You've met the user before (your Setup ran on \(dayText($0))); they asked you to introduce yourself again, so keep it short and use what you remember. " } ?? "This is your first chat with the user, and your Setup hasn't run before. ")
+  + (kickoff ? "They haven't written yet, so start the chat yourself now, following your Setup skill above. " : "Their message below is your first task: do it, following your Setup skill above. ")
+  + "What they've told Still already: " + (known.isEmpty ? "nothing yet. " : "\(known.count) \(known.count == 1 ? "thing" : "things") in your memory above\(setup > 0 ? ", \(setup) from Still's own setup" : ""). ")
+  + (!who.crew.isEmpty ? "You were hired from Still's crew, with your role's setup. " : "The user made you with Make your own, from the instructions above. ")
+  + "The user never sees this note."
+}
+/// The old "When you join the team" section in a user's edited Instructions, if it's still there (the profile offers to take it out).
+func joinSection(_ text: String) -> String? {
+ guard let at = text.range(of: "## When you join the team") else { return nil }
+ let end = text.range(of: "\n## ", range: text.index(at.lowerBound, offsetBy: 5)..<text.endIndex).map { text.index(after: $0.lowerBound) } ?? text.endIndex
+ return String(text[at.lowerBound..<end])
+}
+var memorySteps: [String: AiMessage] = [:] // a memory tool's step, until its result says whether it worked
 /// One step of a run, shown in the chat. Returns true when the AI said something.
 func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
  switch e {
  case .message(let text, let join):
   if let join, let last = chat.messages.last, last.role == "assistant", last.who == nil { last.text += join + text } else { chat.messages.append(AiMessage("assistant", text)) }
   return true
- case .toolCall(_, let name, let args): chatStep(chat, toolLabel(name, args))
+ case .toolCall(let id, let name, let args):
+  chatStep(chat, toolLabel(name, args))
+  if ["remember", "forget", "update_knowledge"].contains(name.replacingOccurrences(of: "mcp__still__", with: "").replacingOccurrences(of: "still__", with: "")), let step = chat.messages.last, step.role == "tool" { memorySteps[id] = step }
+ case .toolResult(let id, false):
+  if let failed = memorySteps.removeValue(forKey: id) { failed.text = failed.text == "Saved to memory" ? "Didn't save to memory" : failed.text == "Removed from memory" ? "Nothing removed from memory" : "Didn't update a knowledge file" }
  case .session(let id) where chat.session == nil || !chat.started: chat.session = chat.session ?? id; chat.started = true; saveAiChats(chat) // on disk now: a crash mid-run doesn't lose it
  case .session: break
  case .usage(let text): aiUsage[cli.id] = text
@@ -684,7 +705,7 @@ extension Browser {
   let c = companions.first { $0.id == s("id") } ?? {
    let c = Companion(), nid = s("id") // setup names it first, to start a chat with it
    c.id = (4...24).contains(nid.count) && nid.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } ? nid : String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(10))
-   c.greet = true; companions.append(c)
+   c.setup = "pending"; companions.append(c)
    return c
   }()
   c.name = String(name.prefix(24)); c.face = s("face").count <= 20 ? s("face") : ""; c.color = s("color").count <= 20 ? s("color") : ""
@@ -703,7 +724,12 @@ extension Browser {
   if data["personality"] != nil, ["", "direct", "warm", "playful", "formal"].contains(s("personality")) { c.personality = s("personality") }
   if ["short", "balanced", "detailed"].contains(s("length")) { c.length = s("length") }
   if let list = data["routines"] as? [Any] { c.routines = Routine.read(list, old: c.routines) }
-  if data["instructions"] != nil { c.instructions = String(s("instructions").trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000)) }
+  if data["instructions"] != nil, case let instructions = String(s("instructions").trimmingCharacters(in: .whitespacesAndNewlines).prefix(8000)), instructions != c.instructions {
+   let was = Set(c.instructions.components(separatedBy: "\n").map(tidy))
+   let added = instructions.components(separatedBy: "\n").map(tidy).filter { !$0.isEmpty && !was.contains($0) }
+   if !c.name.isEmpty { CompanionMemory.changed(c.id, "The user changed your instructions in your profile; the new version applies in full from your next chat" + (added.isEmpty ? "" : ". New: " + CompanionMemory.clip(added.joined(separator: " / "), 240)), "") }
+   c.instructions = instructions
+  }
   if data["crew"] != nil { c.crew = s("crew").count <= 24 && s("crew").allSatisfy { $0.isASCII && $0.isLowercase } ? s("crew") : "" }
   equip(c)
   c.askName = false // saved, renamed or kept: it's the user's name now
@@ -878,6 +904,7 @@ extension Browser {
    guard !doomed.contains(where: { runs[$0] != nil }) else { break }
    for gone in myChats.filter({ doomed.contains($0.id) }).flatMap(\.messages).flatMap({ $0.files ?? [] }) { try? FileManager.default.removeItem(atPath: attachmentsHere + "/" + gone.id) }
    doomed.forEach(forgetTask)
+   for c in myChats where doomed.contains(c.id) && !c.companion.isEmpty { CompanionMemory.dropSummary(c.companion, c.id) }
    if incognito { v.privateChats.removeAll { doomed.contains($0.id) } } else { aiChats.removeAll { doomed.contains($0.id) } }
    if let c = v.chat, doomed.contains(c.id) { v.chat = nil }
    if !incognito { saveAiChats() }
@@ -916,16 +943,16 @@ extension Browser {
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
   case "aiKickoff": // a new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup
-   guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.greet, !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty) else {
+   guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.setup == "pending", !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty),
+         !aiChats.contains(where: { c in c.companion == fresh.id && c.from == nil && !c.routine && (kickoffs.contains(c.id) || c.messages.contains { $0.role == "user" }) }) else {
     if b("home") { go(appTab(), "home:") } // Say hi to a companion that already said hello: the home, with them picked
     break
    }
-   fresh.greet = false; storeCompanions()
    let kick = AiChat()
    kick.companion = fresh.id; kick.title = fresh.name; kick.profile = newChatProfile(false); kick.harness = fresh.ai.isEmpty ? pref("AiHarness", "") : fresh.ai
-   aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id); setupNext.insert(kick.id)
+   aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
    go(appTab(), "chat:" + kick.id); v.chat = kick
-   runAi(kick, kickoffAsk, shown: "") // the title comes from its hello
+   runAi(kick, activation(fresh, true), shown: "") // the title comes from its hello
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
     let picker = NSOpenPanel()
@@ -948,7 +975,7 @@ extension Browser {
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))
    answering.question = nil
-   if kickoffs.remove(answering.chat.id) != nil, !answer.isEmpty { CompanionMemory.remember(answering.chat.companion, "From our first chat: asked \"\(q.text)\", they said \"\(answer)\"", "preference") }
+   kickoffs.remove(answering.chat.id) // what's worth keeping from the answer, the companion saves itself (Setup says how)
    answering.chat.messages.append(answer.isEmpty ? AiMessage("note", "Skipped the question.") : AiMessage("user", answer))
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
@@ -1020,14 +1047,58 @@ extension Browser {
   // The Memory page: see, add, edit and forget what a companion remembers.
   case "memoryAdd":
    guard companions.contains(where: { $0.id == s("companion") }) else { break }
-   if CompanionMemory.remember(s("companion"), s("text"), s("kind"), "", s("key")) == nil && tidy(s("text")).count > 2 { toast("That looks like a password or a code, so it isn't kept.") }
+   var notKept = ""
+   if let refused = memoryRefuses(nil, s("text")) { toast(refused) }
+   else if CompanionMemory.remember(s("companion"), s("text"), &notKept, kind: s("kind"), key: s("key"), source: "settings", subject: s("subject"), sayAgain: true) == nil && tidy(s("text")).count > 2 { toast(notKept) }
    publishAiEverywhere()
   case "memoryEdit":
    guard companions.contains(where: { $0.id == s("companion") }) else { break }
-   if !CompanionMemory.edit(s("companion"), s("id"), s("text")) { toast("That looks like a password or a code, so it isn't kept.") }
+   var notEdited = ""
+   if let refused = memoryRefuses(nil, s("text")) { toast(refused) }
+   else if !CompanionMemory.edit(s("companion"), s("id"), s("text"), &notEdited) { toast(notEdited) }
    publishAiEverywhere()
-  case "memoryForget": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.forget(s("companion"), s("id")); publishAiEverywhere() }
-  case "memoryClear": if companions.contains(where: { $0.id == s("companion") }) { CompanionMemory.clear(s("companion")); publishAiEverywhere() }
+  case "memoryForget":
+   guard companions.contains(where: { $0.id == s("companion") }), !s("id").isEmpty else { break }
+   var matches: [Fact] = [], notForgotten = ""
+   if CompanionMemory.forget(s("companion"), s("id"), &matches, &notForgotten) == nil { toast(notForgotten) }
+   publishAiEverywhere()
+  case "memoryForgetChat":
+   guard companions.contains(where: { $0.id == s("companion") }), !s("chat").isEmpty else { break }
+   if !CompanionMemory.forgetChat(s("companion"), s("chat")) { toast("Still couldn't save the change: the memory file couldn't be written.") }
+   publishAiEverywhere()
+  case "memoryClear":
+   guard companions.contains(where: { $0.id == s("companion") }) else { break }
+   if !CompanionMemory.clear(s("companion")) { toast("Still couldn't save the change: the memory file couldn't be written.") }
+   publishAiEverywhere()
+  case "memoryCapture":
+   guard let capturing = companions.first(where: { $0.id == s("companion") }) else { break }
+   capturing.capture = b("on"); storeCompanions(); publishAiEverywhere()
+  case "chatSummaries": prefs["ChatSummaries"] = b("on") ? "" : "off"; saveLater(); publishAiEverywhere()
+  case "knowledgeReset": if let resetting = companions.first(where: { $0.id == s("companion") }) { resetKnowledge(resetting); publishAiEverywhere() }
+  case "knowledgeUndo":
+   guard companions.contains(where: { $0.id == s("companion") }) else { break }
+   if !CompanionMemory.undo(s("companion"), s("file")) { toast("There's no earlier version to go back to.") }
+   publishAiEverywhere()
+  case "memoryResetAll": // memory, summaries, knowledge and Setup, and its chats start new sessions (they bring the chat so far)
+   guard let wiping = companions.first(where: { $0.id == s("companion") }) else { break }
+   let kept = CompanionMemory.clear(wiping.id); resetKnowledge(wiping)
+   wiping.setup = "pending"; wiping.setupAt = nil; storeCompanions()
+   for c in aiChats where c.companion == wiping.id && runs[c.id] == nil { c.session = nil; c.started = false; c.sessions = nil }
+   saveAiChats(); if !kept { toast("Still couldn't save the change: the memory file couldn't be written.") }
+   publishAiEverywhere()
+  case "personalizationClear":
+   guard let plain = companions.first(where: { $0.id == s("companion") }) else { break }
+   plain.role = ""; plain.personality = ""; plain.length = "balanced"; storeCompanions()
+   if !plain.setupChat.isEmpty { CompanionMemory.forgetChat(plain.id, plain.setupChat) }
+   publishAiEverywhere()
+  case "companionSetupAgain": // Introduce yourself again
+   guard let again = companions.first(where: { $0.id == s("companion") }) else { break }
+   again.setup = "pending"; storeCompanions(); publishAiEverywhere()
+  case "instructionsJoin":
+   guard let joined = companions.first(where: { $0.id == s("companion") }), let section = joinSection(joined.instructions) else { break }
+   if b("apply") { joined.instructions = joined.instructions.replacingOccurrences(of: section, with: "").trimmingCharacters(in: .whitespacesAndNewlines); CompanionMemory.changed(joined.id, "The user removed \"When you join the team\" from your instructions: how you open a first chat is your Setup skill's.", "") }
+   else { joined.joinKept = true }
+   storeCompanions(); publishAiEverywhere()
   case "aiChatProfile":
    guard !incognito, ["companion", "regular"].contains(s("profile")), let switched = myChats.first(where: { $0.id == s("id") }), !switched.ephemeral, switched.from == nil, runs[switched.id] == nil else { break }
    let to: String? = s("profile") == "companion" ? "companion" : nil
@@ -1164,9 +1235,9 @@ extension Browser {
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is nil). asker: the teammate
  /// whose message this is, when one companion asks another (exchange).
- func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, asker: String? = nil, files: [AiFile] = []) {
+ func runAi(_ chat: AiChat?, _ text: String, shown: String? = nil, into: Tab? = nil, companion: String = "", noMemory: Bool = false, asker: String? = nil, files: [AiFile] = [], routine: Bool = false) {
   if let chat, chat.ephemeral, ownerOf(chat) !== self { // an incognito chat runs in its window, or not at all once that closed
-   ownerOf(chat)?.runAi(chat, text, shown: shown, into: into, companion: companion, noMemory: noMemory, asker: asker, files: files); return
+   ownerOf(chat)?.runAi(chat, text, shown: shown, into: into, companion: companion, noMemory: noMemory, asker: asker, files: files, routine: routine); return
   }
   let v = aiView
   var text = text
@@ -1176,13 +1247,14 @@ extension Browser {
    let chat = AiChat()
    chat.harness = with.map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "")
    chat.title = line.count > 60 ? String(line.prefix(60)) + "…" : line
-   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito; chat.profile = newChatProfile(incognito) // a private window keeps nothing
+   chat.companion = with?.id ?? ""; chat.noMemory = noMemory || incognito; chat.ephemeral = incognito; chat.profile = newChatProfile(incognito); chat.routine = routine // a private window keeps nothing
    v.chat = chat
    toTop(chat, in: self)
    if let into, !into.closed { if into.chatId != chat.id { into.back.append(spot(into)); into.forward = [] }; into.chatId = chat.id; into.home = ""; into.title = chat.title; saveLater() }
    if asker == nil { let first = shown ?? text; Task { await nameChat(chat, first) } }
    return chat
   }()
+  if chat.ephemeral { CompanionMemory.incognito.insert(chat.id) } // its stores refuse anything from it, whatever asks
   if chat.harness.isEmpty { chat.harness = companions.first(where: { $0.id == chat.companion }).map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "") }
   if chat.harness.isEmpty { v.pending = text; return } // asked before picking an AI: runs once it's set up
   let cli = aiClis.first { $0.id == chat.harness } ?? aiClis[0]
@@ -1208,26 +1280,35 @@ extension Browser {
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
   if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
-  // A companion's first chat (an incognito one doesn't count): Still loads Setup itself, the one skill it loads for the AI.
-  let setup = who != nil && !chat.ephemeral && (setupNext.remove(chat.id) != nil || who!.greet)
-  if let who, who.greet, !chat.ephemeral { who.greet = false; storeCompanions() } // they spoke first: no kickoff
+  // Setup, while it's pending: Still loads it itself, the one skill it loads for the AI, in the companion's regular chats
+  // with the user (never an incognito, delegated or routine one), until the companion has answered the user once. A
+  // session that already has it (a task resumed after a restart) doesn't get it again.
+  let setupSkill = Skill.all.first { $0.id == Skill.setupId }
+  let hadSetup = setupSkill.map { k in chat.messages.contains { $0.role == "tool" && $0.text == "Used skill " + k.name } } ?? false
+  let setup = setupSkill != nil && setupDue(chat) && !(hadSetup && chat.started)
   var skills = Skill.invoked(shown) // the user asked for these by name; a companion's own load with load_skill
-  if setup, let first = Skill.all.first(where: { $0.id == Skill.setupId }) { skills.insert(first, at: 0) }
-  for k in skills { if k.id == Skill.setupId { chat.messages.append(AiMessage("tool", "Used skill " + k.name)) } else { chatStep(chat, "Used skill " + k.name) } } // Setup's step shows even before a hello
+  if setup, let who, let setupSkill { skills.insert(setupSkill, at: 0); who.setupChat = chat.id; storeCompanions(); if !kickoffs.contains(chat.id) { text = activation(who, false) + "\n\n" + text } }
+  for k in skills { if k.id != Skill.setupId { chatStep(chat, "Used skill " + k.name) } else if !hadSetup { chat.messages.append(AiMessage("tool", "Used skill " + k.name)) } } // Setup's step shows even before a hello
   toTop(chat); publishAiEverywhere()
 
   var isFolder: ObjCBool = false
   let wf = who?.folder ?? ""
   let work = !chat.ephemeral && cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
-  let memory = who.map { CompanionMemory.brief($0.id, shown) } ?? ""
+  // Memory goes in when a session starts: what fits this message and the chat so far (a vague "carry on" finds the chat's
+  // own summary). Later turns hear what changed since, once.
+  let query = shown + "\n" + chat.messages.filter { $0.role == "user" || $0.role == "assistant" }.suffix(4).map { CompanionMemory.clip($0.text, 500) }.joined(separator: "\n")
+   + (who.flatMap { w in CompanionMemory.summaries(w.id).list.first { $0.chat == chat.id } }.map { "\n" + CompanionMemory.summaryText($0) } ?? "")
+  let memory = who == nil || chat.started ? "" : CompanionMemory.brief(who!.id, query, touch: !chat.ephemeral)
+  let changed = who != nil && chat.started ? CompanionMemory.changesFor(who!.id, chat.id, &chat.seenChange) : ""
+  if !chat.started { chat.seenChange = CompanionMemory.seq }
   let intro = chat.started ? "" : aiInstructions(cli, "Default", who, work, plugins: !chat.ephemeral) + "\n\n"
    + (memory.isEmpty ? "" : "What you remember about the user from before (use it naturally, don't recite it; recall finds more):\n" + memory + "\n\n")
    + (who.map { CompanionMemory.notesBrief($0.id) + Skill.index($0.skills) } ?? "")
-   + (chat.ephemeral ? "This is an incognito chat: Still keeps nothing from it, so memory, knowledge, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
+   + (chat.ephemeral ? "This is an incognito chat: Still keeps nothing from it, so your memory is read only (you can recall, not remember or forget), knowledge files can be read, not changed, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.noMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
    + (chat.profile == "companion" && !chat.ephemeral ? companionNote + "\n\n" : "")
   let switched = profileSwitched.remove(chat.id) != nil && chat.started
    ? "[Still] " + (chat.profile == "companion" ? "The user switched this chat to browse in the companion profile: " + companionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : ""
-  let prompt = intro + switched + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
+  let prompt = intro + switched + (changed.isEmpty ? "" : changed + "\n\n") + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   if isQa, !chat.ephemeral, let line = try? JSONSerialization.data(withJSONObject: ["chat": chat.id, "companion": chat.companion, "prompt": prompt]) { // QA builds: the evals and skill tests read it; never an incognito chat's
    let file = support.appendingPathComponent("qa-prompts.jsonl"), entry = line + Data("\n".utf8)
    if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(entry); try? h.close() } else { try? entry.write(to: file) }
@@ -1301,13 +1382,10 @@ extension Browser {
     finish(); runAi(chat, shown.isEmpty ? resumeBrief(me.task) : shown, shown: shown, asker: asker); publishAiEverywhere()
     return
    }
-   // The chat goes into the companion's memory as a past chat: what it was about and where it ended up.
-   if said, chat.from == nil, !chat.noMemory, !chat.ephemeral, let who = companions.first(where: { $0.id == chat.companion }), memoryRefuses(me, chat.title) == nil, // a title can name a private tab too
-      let last = chat.messages.last(where: { $0.role == "assistant" }) {
-    var end = last.text.components(separatedBy: "\n").map(tidy).first { !$0.isEmpty && !$0.hasPrefix(">>") } ?? ""
-    end = tidy(end.replacingOccurrences(of: "**", with: ""))
-    if end.count > 160 { end = String(end.prefix(160)) + "…" }
-    CompanionMemory.remember(who.id, chat.title + (!end.isEmpty && memoryRefuses(me, end) == nil ? ": " + end : ""), "chat", chat.id, "chat:" + chat.id)
+   // Setup is done once the companion has answered the user in a regular chat that had it.
+   if said, setupDue(chat), let who = companions.first(where: { $0.id == chat.companion }), let setupSkill = Skill.all.first(where: { $0.id == Skill.setupId }),
+      chat.messages.contains(where: { $0.role == "tool" && $0.text == "Used skill " + setupSkill.name }) {
+    who.setup = "done"; who.setupAt = Date(); who.setupVersion = CompanionMemory.ver(setupSkill.body); storeCompanions()
    }
    if started.timedOut { chat.error = "\(cli.name) stopped after \(Int(AgentRun.limit / 60)) minutes. Ask again to carry on." }
    else if started.exitCode != 0 && !said && !stopped && chat.error.isEmpty { chat.error = "\(cli.app) stopped: " + (started.errors.last { !tidy($0).isEmpty } ?? "exit code \(started.exitCode)") }
@@ -1404,15 +1482,21 @@ extension Browser {
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "role": c.role, "personality": c.personality, "length": c.length, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
-    "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body] },
-    "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "key": f.key, "guessed": f.guessed,
-     "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] }] },
+    "setup": c.setup == "pending" ? "pending" : "done", "capture": c.capture, "joinSection": !c.joinKept && joinSection(c.instructions) != nil,
+    "knowledge": CompanionMemory.notes(c.id).map { ["id": $0.id, "name": $0.name, "about": $0.about, "text": $0.body, "version": $0.version, "updated": day($0.updated), "revisions": CompanionMemory.revisionCount(c.id, $0.id)] as [String: Any] },
+    "memory": CompanionMemory.of(c.id).sorted { $0.at > $1.at }.map { f -> [String: Any] in ["id": f.id, "text": f.text, "kind": f.kind, "at": day(f.at), "chat": f.chat, "msg": f.msg, "key": f.key, "guessed": f.guessed,
+     "source": f.source, "sourceText": sourceOf(f), "subject": f.subject, "status": f.status, "supersedes": f.supersedes,
+     "chatTitle": f.chat.isEmpty ? NSNull() : aiChats.first { $0.id == f.chat }?.title ?? NSNull()] },
+    "summaries": CompanionMemory.summaries(c.id).list.sorted { $0.at > $1.at }.map { s -> [String: Any] in ["chat": s.chat, "title": aiChats.first { $0.id == s.chat }?.title ?? s.title, "at": day(s.at), "legacy": s.legacy,
+     "text": CompanionMemory.summaryText(s), "exists": aiChats.contains { $0.id == s.chat }] }] },
+   "chatSummaries": pref("ChatSummaries", "") != "off",
    "chats": (incognito ? [] : Array(aiChats.prefix(200))).map(chatRow), "privateChats": view.privateChats.map(chatRow)
   ]
   data["plugins"] = pluginsPayload()
   data["apis"] = apiPayload()
   data.merge(agentAiFields(shown)) { _, new in new } // approvals, audit, permissions, sensitiveSites
   send(["kind": "ai", "data": data])
+  if let problem = CompanionMemory.takeProblem() { toast(problem) } // a memory file that couldn't be read
  }
 
  /// The menu's AI commands: "chat" (Cmd+Shift+A), "stop" (Cmd+.), "tasks" (Cmd+Shift+K).
