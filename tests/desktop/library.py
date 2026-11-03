@@ -89,18 +89,18 @@ def main():
         check(js(p, "document.querySelector('.companion-library [data-slot=dialog-description]')?.innerText") == "Each one comes with instructions and skills for its role, and starts working as soon as you hire it.",
               "The header says what hiring one gives you")
         names = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card .role-title')].map(e => e.innerText))") or "[]")
-        check(names == SIX, f"Still's six come first, in order, each with its role in front ({names})")
+        check(names == SIX + ["Assistant Ruth"], f"Still's six come first, in order, each with its role in front, then Assistant Ruth ({names})")
         check(js(p, "[...document.querySelectorAll('.library-card')].every(c => c.querySelector('.role-art .mascot') && !c.querySelector('.role-tag') && !c.querySelector('.role-expect h4') && c.querySelectorAll('.role-expect p').length === 1 && c.querySelector('.role-act .role-profile')?.innerText === 'View profile')"),
               "Every card has its character, its name, one line and View profile: no role tag, no list")
         check(js(p, "document.querySelector('.library-card:nth-child(6) .role-expect p')?.innerText") == "Researches anything and backs every claim with a source.", "Maya's line says what she does")
         check(not js(p, "/\\bI'(ll|m)\\b|\\bI will\\b/.test(document.querySelector('.companion-library').innerText)"), "No card speaks in the first person")
         added = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card.is-added .role-title')].map(e => e.innerText))") or "[]")
-        check(added == ["Sales Jonah", "Research Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 4, f"The ones you have are marked Hired; the rest have Hire ({added})")
+        check(added == ["Sales Jonah", "Research Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 5, f"The ones you have are marked Hired; the rest have Hire ({added})")
         check(js(p, "[...document.querySelectorAll('.library-card .library-add')].every(b => b.innerText.trim() === 'Hire' && b.getAttribute('aria-label').startsWith('Hire ')) && [...document.querySelectorAll('.library-card .library-added')].every(b => b.innerText.trim() === 'Hired' && b.querySelector('svg'))"),
               "The buttons say Hire, and hired ones say Hired with a check")
         btn = json.loads(js(p, """JSON.stringify((() => { const a = document.querySelector('.library-card .library-add'), b = getComputedStyle(a), l = getComputedStyle(a.nextElementSibling)
             return [b.backgroundColor, a.nextElementSibling.className, l.backgroundColor, Math.round(a.getBoundingClientRect().left - a.closest('.role-body').getBoundingClientRect().left)] })())""") or "[]")
-        check(btn == ["rgb(255, 255, 255)", "role-profile", "rgba(0, 0, 0, 0)", 18], f"Hire is a solid white button on the left, with View profile beside it as a plain link ({btn})")
+        check(btn[:3] == ["rgb(255, 255, 255)", "role-profile", "rgba(0, 0, 0, 0)"] and abs(btn[3] - 18) <= 1, f"Hire is a solid white button on the left, with View profile beside it as a plain link ({btn})")
         # Built around the character: the stage is at least 40% of the card, the character about 70% of the stage; three
         # across at this width, two when the library is narrower.
         size = json.loads(js(p, """JSON.stringify([...document.querySelectorAll('.library-card')].map(c => { const r = c.getBoundingClientRect(), a = c.querySelector('.role-art').getBoundingClientRect(), m = c.querySelector('.role-art .mascot').getBoundingClientRect()

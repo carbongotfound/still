@@ -5,7 +5,7 @@ import { Button } from "@/components/ui/button"
 import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
 import { lookOf, type Companion } from "./Buddy"
-import { CrewCards, INTERESTS, PREMADES, fromPremade, premadeOf, starters, type Premade } from "./crew"
+import { CrewCards, INTERESTS, PREMADES, SETUP_CREW, fromPremade, premadeOf, starters, type Premade } from "./crew"
 import { IntroLayer } from "./Intro"
 import { BLANK, BODY_COLORS, DEFAULT_LOOK, SHAPES, lookKey, surprise, type Look } from "./look"
 import { LookEditor, LookThumb } from "./LookEditor"
@@ -93,7 +93,7 @@ function Interview({ who, send, onQuick, onDone }: { who: Companion; send: Send;
  useEffect(() => {
   const got = (e: MessageEvent) => { if (e.data?.kind === "setup") setS(e.data.data) }
   window.chrome?.webview?.addEventListener("message", got)
-  send("setupStart", { companion: who.id, library: PREMADES.map(p => ({ ...fromPremade(p), role: p.role, area: p.area })) })
+  send("setupStart", { companion: who.id, library: SETUP_CREW.map(p => ({ ...fromPremade(p), role: p.role, area: p.area })) })
   return () => window.chrome?.webview?.removeEventListener("message", got)
  }, []) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { log.current?.scrollTo({ top: log.current.scrollHeight, behavior: "smooth" }) }, [s?.turns.length, s?.busy, s?.done])

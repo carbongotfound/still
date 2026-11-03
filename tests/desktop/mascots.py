@@ -24,7 +24,7 @@ from qa import CREW, MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
 EXE = sys.argv[1]
 OUT = ROOT / "docs" / "agentic" / "compare"
 OUT.mkdir(parents=True, exist_ok=True)
-LOOKS, STATES = 7, 9  # Mascot.tsx: SHEET_LOOKS and STATES
+LOOKS, STATES = 8, 9  # Mascot.tsx: SHEET_LOOKS (the seven roles and blank) and STATES
 RESULT = []
 
 
@@ -129,10 +129,11 @@ def gifs():
         quit(process)
 
 
-# look.ts RIGS: the six roles' looks (no props) and Make your own's, and the model each wears
+# look.ts RIGS: the roles' looks (no props) and Make your own's, and the model each wears
 RIGS = [({"color": "#f7a26a", "shape": "tall", "prop": ""}, "jonah"), ({"color": "#f2a5c4", "shape": "gumdrop", "prop": ""}, "talia"),
         ({"color": "#a6cf9c", "shape": "block", "prop": ""}, "nora"), ({"color": "#f6d56a", "shape": "round", "prop": ""}, "leo"),
         ({"color": "#8cc3ee", "shape": "bump", "prop": ""}, "ivan"), ({"color": "#c0a3ec", "shape": "lean", "prop": ""}, "maya"),
+        ({"color": "#2fa496", "shape": "crest", "prop": ""}, "ruth"),
         ({"color": "#ddd4c6", "shape": "bean", "prop": ""}, "custom")]
 PROPS = ["laptop", "mug", "headphones", "notebook", "phone", "magnifier", "wrench", "paintbrush", "camera", "briefcase"]  # look.ts PROPS
 SHAPES = ["bean", "tall", "gumdrop", "block", "round", "squat", "bump", "lean"]  # look.ts SHAPES

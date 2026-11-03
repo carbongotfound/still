@@ -992,7 +992,8 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
    onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
   {draft && ai && <ProfilePanel ai={ai} id="" draft={draft} send={send} onPick={setProfile} onClose={() => setDraft(null)} onOpenFile={openFile} onSkills={() => { setDraft(null); goHome("skills") }} onHire={c => { hire(c); setDraft(null) }} />}
-  {joined && <JoinedCard companion={joined} onLater={() => setJoined(null)} onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
+  {joined && <JoinedCard companion={joined} main={ai?.companions?.[0]?.id === joined.id} onMain={() => send("companionMain", { id: joined.id })} onLater={() => setJoined(null)}
+   onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
   <Toaster theme={state.dark ? "dark" : "light"} position="top-center" offset={5} visibleToasts={1} duration={3000} toastOptions={{ className: "still-toast" }} />
  </TooltipProvider></MotionConfig></CompanionContext.Provider></UICtx.Provider>

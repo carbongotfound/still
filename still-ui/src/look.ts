@@ -10,6 +10,8 @@ export type Look = {
 export const SHAPES: [string, string][] = [
  ["bean", "Bean"], ["tall", "Tall"], ["gumdrop", "Gumdrop"], ["block", "Block"], ["round", "Round"], ["squat", "Squat"], ["bump", "Bump"], ["lean", "Lean"],
 ]
+// Silhouettes only a role wears (not offered in the shape picker): Assistant Ruth's crest, wide on top.
+const ROLE_SHAPES: [string, string][] = [["crest", "Crest"]]
 // Real things, modeled in Blender (rig/props.py): each picker tile shows the thing itself (assets/prop).
 export const PROPS: [string, string][] = [
  ["", "None"], ["laptop", "Laptop"], ["mug", "Coffee mug"], ["headphones", "Headphones"], ["notebook", "Notebook"], ["phone", "Phone"],
@@ -34,12 +36,13 @@ export const ROLE_LOOKS: Record<string, Look> = {
  marketing: { color: "#f6d56a", shape: "round", prop: "", accessory: "" },
  engineer: { color: "#8cc3ee", shape: "bump", prop: "", accessory: "" },
  research: { color: "#c0a3ec", shape: "lean", prop: "", accessory: "" },
+ assistant: { color: "#2fa496", shape: "crest", prop: "", accessory: "" }, // a deep jade: apart from the six at chat sizes, and not in the picker
 }
 /// Make your own: the neutral blob you start from.
 export const BLANK: Look = { color: "#ddd4c6", shape: "bean", prop: "", accessory: "" }
-/// The seven Blender companions: each one's model, avatar and sprites go by this name.
+/// The Blender companions: each one's model, avatar and sprites go by this name.
 export const RIGS: [Look, string][] = [[ROLE_LOOKS.sales, "jonah"], [ROLE_LOOKS.growth, "talia"], [ROLE_LOOKS.planner, "nora"], [ROLE_LOOKS.marketing, "leo"],
- [ROLE_LOOKS.engineer, "ivan"], [ROLE_LOOKS.research, "maya"], [BLANK, "custom"]]
+ [ROLE_LOOKS.engineer, "ivan"], [ROLE_LOOKS.research, "maya"], [ROLE_LOOKS.assistant, "ruth"], [BLANK, "custom"]]
 /// A friendly companion for places that don't have one yet.
 export const DEFAULT_LOOK: Look = { color: "#8cc3ee", shape: "bean", prop: "", accessory: "" }
 // Other AI apps working in Still wear these.
@@ -64,7 +67,7 @@ const OLD_SHAPES: Record<string, string> = { round: "round", mochi: "squat", bea
 /// body becomes the shape of the role whose color is closest), and glasses, a bow, a flower or a sprout kept.
 function fromOld(o: Record<string, unknown>, f: Look): Look {
  const color = hex(o.color, f.color)
- const nearest = Object.values(ROLE_LOOKS).reduce((a, b) => far(a.color, color) <= far(b.color, color) ? a : b)
+ const nearest = Object.values(ROLE_LOOKS).filter(l => l.shape !== "crest").reduce((a, b) => far(a.color, color) <= far(b.color, color) ? a : b)
  const shape = typeof o.body === "string" && o.body ? nearest.shape : OLD_SHAPES[o.shape as string] ?? f.shape
  const accessory = o.glasses ? "glasses" : o.hat === "flower" || o.hat === "bow" ? o.hat : o.hair === "sprout" ? "sprout" : ""
  return { color, shape, prop: "", accessory }
@@ -75,7 +78,7 @@ export function parseLook(raw: unknown, fallback: Look = DEFAULT_LOOK): Look {
  try { o = typeof raw === "string" ? (raw ? JSON.parse(raw) : {}) : (raw as Record<string, unknown>) ?? {} } catch { return fallback }
  if (!o || typeof o !== "object") return fallback
  if (isOld(o)) return fromOld(o, fallback)
- return { color: hex(o.color, fallback.color), shape: known(SHAPES, o.shape, fallback.shape), prop: known(PROPS, RENAMED[o.prop as string] ?? o.prop, fallback.prop), accessory: known(ACCESSORIES, o.accessory, fallback.accessory) }
+ return { color: hex(o.color, fallback.color), shape: known([...SHAPES, ...ROLE_SHAPES], o.shape, fallback.shape), prop: known(PROPS, RENAMED[o.prop as string] ?? o.prop, fallback.prop), accessory: known(ACCESSORIES, o.accessory, fallback.accessory) }
 }
 /// Saved before the blobs (it has a face of its own, or no prop field at all).
 export const isOld = (o: Record<string, unknown>) => "eyes" in o || "body" in o || !("prop" in o) && "shape" in o

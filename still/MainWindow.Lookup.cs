@@ -36,15 +36,22 @@ public partial class MainWindow
     c.DownloadStarting += (_, e) => e.Cancel = true;
    }
    var core = view.CoreWebView2;
-   var loaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-   void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) => loaded.TrySetResult(e.IsSuccess);
-   core.NavigationCompleted += Done;
+   // Only the latest navigation counts: an earlier one cut off by this one, or this one replaced by the page's own
+   // reload (Google reloads itself on a first visit), finishes as aborted and isn't this page's result. A reload that
+   // fails after the page loaded (one answered with no content) leaves the loaded page showing.
+   ulong latest = 0; bool? ok = null; bool shown = false;
+   void Started(object? s, CoreWebView2NavigationStartingEventArgs e) { latest = e.NavigationId; ok = null; }
+   void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) { if (e.NavigationId != latest) return; shown |= e.IsSuccess; ok = shown; }
+   core.NavigationStarting += Started; core.NavigationCompleted += Done;
    try {
     core.Navigate(url);
-    if (await Task.WhenAny(loaded.Task, Task.Delay(20000)) != loaded.Task) throw new InvalidOperationException("The page took too long to load.");
-    if (!await loaded.Task) throw new InvalidOperationException("The page didn't load.");
-   } finally { core.NavigationCompleted -= Done; }
-   await Task.Delay(350); // pages that draw their text with script
+    var until = DateTime.UtcNow.AddSeconds(20);
+    for (ulong seen = ~0UL; seen != latest && DateTime.UtcNow < until;) { // done once nothing new started during the pause
+     while (ok == null) { if (DateTime.UtcNow > until) throw new InvalidOperationException("The page took too long to load."); await Task.Delay(50); }
+     seen = latest; await Task.Delay(350); // pages that draw their text with script
+    }
+    if (ok != true) throw new InvalidOperationException("The page didn't load.");
+   } finally { core.NavigationStarting -= Started; core.NavigationCompleted -= Done; }
    return await Js(core, script, args);
   } finally {
    lookupGate.Release();
