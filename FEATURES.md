@@ -148,7 +148,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Off until enabled**: Settings "Let other AI apps use Still"; each app approved once in the agent bar (Preferences `AgentsEnabled`, `ApprovedAgents`).
 - ✅ **Profiles from MCP**: `list_profiles`; every tool takes `profile` (opens it if closed) or `"temp"`.
 - ✅ **Elicitation**: when you're away, MCP apps that support it ask you themselves; the AI never sees the question.
-- ✅ **CLI**: `Still.exe --cli <tool> key=value`; prints JSON, saves screenshots as PNG; `help` lists tools.
+- ✅ **CLI**: `Still.exe --cli <tool> key=value` (on the Mac, `Still --cli`, the binary inside Still.app); prints JSON, saves screenshots as PNG; `help` lists tools.
 - ✅ **Copy config**: Settings copies the MCP config with your real Still path (`App.tsx`).
 - 🚧 **Terminal prompt** (`still-2.10/stage-14-fixes`): under Connect an AI app by hand, Settings gives a prompt to paste into an agent app that runs Still from a terminal, written for this system's shell: Terminal on the Mac (`"<Still>" --cli ...`), PowerShell on Windows (`& "<Still.exe>" --cli ...`) (`App.tsx`; tests/desktop/agents.py).
 
