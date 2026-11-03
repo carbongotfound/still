@@ -14,6 +14,7 @@ final class Store {
  var history: [[String: Any]] = []
  var bookmarks: [[String: Any]] = []
  var welcome = true
+ var seenVersion = "" // the release (2.10) whose What's New was shown
  var groups: [TabGroup] = []
  var picks: [[String: Any]] = [] // what you typed and the site you picked (never private tabs): Typed, Url, Count, At
  var hidden: [String: [String]] = [:] // elements hidden on a site, by host
@@ -40,6 +41,8 @@ func loadStore() {
  store.history = savedState["History"] as? [[String: Any]] ?? []
  store.bookmarks = savedState["Bookmarks"] as? [[String: Any]] ?? []
  store.welcome = savedState["Welcome"] as? Bool ?? true
+ store.seenVersion = savedState["SeenVersion"] as? String ?? (savedState.isEmpty ? releaseLine : "") // a new install: the welcome setup, not What's New
+ if isQa && qaEnv("STILL_QA_WHATSNEW") == nil { store.seenVersion = releaseLine } // tests see What's New only when they ask
  store.picks = savedState["AddressPicks"] as? [[String: Any]] ?? []
  store.hidden = savedState["Hidden"] as? [String: [String]] ?? [:]
  store.groups = (savedState["Groups"] as? [[String: Any]] ?? []).map { item in
@@ -110,7 +113,7 @@ func saveAll() {
  let rows = savedState["Tabs"] as? [[String: Any]] ?? [], open = browsers.filter { !$0.closing }.flatMap(\.tabs)
  store.groups.removeAll { group in !open.contains { $0.group == group.id } && !rows.contains { $0["Group"] as? String == group.id } }
  let state: [String: Any] = [
-  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "ActiveId": savedState["ActiveId"] ?? "",
+  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "SeenVersion": store.seenVersion, "ActiveId": savedState["ActiveId"] ?? "",
   "Tabs": rows,
   "Groups": store.groups.map { ["Id": $0.id, "Name": $0.name, "Color": $0.color, "Collapsed": $0.collapsed] },
   "AddressPicks": store.picks, "Hidden": store.hidden

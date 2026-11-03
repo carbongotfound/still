@@ -10,6 +10,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { CollisionBoundary } from "@/components/ui/collision"
 import { fadeTop, MAC } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
+import { deleteAllChats, destroy } from "./Undo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
@@ -102,7 +103,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
  const row = (h: Harness) => {
   const s = statusOf(h), chosen = ai.harness === h.id
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">{h.api ? "Uses your API key" : "Signed in with your plan"}</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Signed in with your plan"}</span><Check aria-hidden /></>
    : s === "needsKey" ? "API provider · Needs a key"
    : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
@@ -159,12 +160,12 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
    <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue placeholder="Pick your AI" /></SelectTrigger>
    <SelectContent position="popper" side="top" align="start">{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
     {i > 0 && <SelectSeparator />}
-    {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} />{m.id ? m.name : h.name}</SelectItem>)
+    {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} /><span className="truncate">{m.id ? m.name : h.name}</span></SelectItem>)
      : <SelectItem value={`${h.id}|setup`}><AiLogo id={h.id} size={16} />{h.name}<span className="ai-pick-setup">Set up</span></SelectItem>}
    </SelectGroup>)}</SelectContent></Select>
   {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
    <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start"><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{effortName(e)} effort</SelectItem>)}</SelectContent></Select>}
+   <SelectContent position="popper" side="top" align="start"><SelectItem value="default"><span className="truncate">Default effort</span></SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}><span className="truncate">{effortName(e)} effort</span></SelectItem>)}</SelectContent></Select>}
  </>
 }
 
@@ -219,7 +220,7 @@ export function TierSettings({ ai, send }: { ai: AiState; send: Send }) {
    const models = (ai.models ?? []).filter(m => m.harness === h.id), tiers = ai.tiers![h.id]
    return <div key={h.id} className="tier-ai" id={"tiers-" + h.id}>
     <div className="tier-head"><AiLogo id={h.id} size={16} /><span>{h.name}</span>
-     <Button variant="ghost" size="sm" disabled={!MODES.some(([t]) => tiers[t]?.custom)} onClick={() => send("aiTiersReset", { harness: h.id })}>Reset to defaults</Button></div>
+     <Button variant="ghost" size="sm" disabled={!MODES.some(([t]) => tiers[t]?.custom)} onClick={() => destroy({ key: "tiers:" + h.id, title: `Reset ${h.name}'s models?`, body: "The models and effort you picked for Efficient, Default and Expert go back to Still's picks.", action: "Reset", done: "Models reset", run: () => send("aiTiersReset", { harness: h.id }) })}>Reset to defaults</Button></div>
     {MODES.map(([t, label, Icon]) => {
      const tier = tiers[t], model = models.find(m => m.id === tier.model)
      const effort = model?.efforts.includes(tier.effort) ? tier.effort : "default"
@@ -751,7 +752,7 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
   <section><h4>What it can see</h4><p>{ai.incognito ? "Only the private tabs it opens in this window. Never your other tabs, saved passwords or cookies." : <>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</>}</p></section>
   <Separator />
   {!ai.incognito && <section><h4>Chats</h4><p>{ai.chats.length ? `${ai.chats.length} saved on this PC.` : "None saved yet."}</p>
-   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>}
+   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => deleteAllChats(send, ai.chats.length)}><Trash2 />Delete all chats</Button></section>}
  </div>
 }
 

@@ -659,7 +659,7 @@ func waitSetupProcess(_ p: Spawned, _ each: @escaping (String) -> Void) async {
 }
 @MainActor func checkAi(_ cli: AgentAdapter) async {
  if ["installing", "signingIn"].contains(aiStatus[cli.id] ?? "") { return }
- if let api = cli as? ApiAdapter { aiStatus[cli.id] = !ApiKeys.has(api.provider.id) ? "needsKey" : ApiKeys.refused(api.provider.id) ? "badKey" : "ready"; return }
+ if let api = cli as? ApiAdapter { aiStatus[cli.id] = !ApiKeys.has(api.provider.id) && !api.provider.noKey ? "needsKey" : ApiKeys.refused(api.provider.id) ? "badKey" : "ready"; return }
  guard let exe = findCli(cli.command) else { aiStatus[cli.id] = "missing"; return }
  if let signedIn = await cli.detect(exe) { aiStatus[cli.id] = signedIn ? "ready" : "signedOut" } else { aiStatus[cli.id] = nil }
 }

@@ -133,7 +133,7 @@ def main():
         hue = lambda: js(process, "getComputedStyle(document.querySelector('.home-compose .ai-send')).backgroundColor")
         type_into(process, ".home-compose [aria-label=Message]", "hello")  # an empty box greys out the send button
         before = hue()
-        click(process, f".mate-switch-face[aria-label=Ines]")
+        click(process, ".mate-switch-face[aria-label=Ines]")
         check(until(lambda: hue() == "rgb(167, 181, 240)", 5) and before != "rgb(167, 181, 240)", f"Switching to Ines turns the send button periwinkle ({hue()})")
         check(js(process, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Ask Ines anything, or hand over a task…", "The message box now asks Ines")
         type_into(process, ".home-compose [aria-label=Message]", "")
@@ -260,7 +260,8 @@ def main():
         click(process, ".mate-fire[aria-label='Fire Ines']")
         until(lambda: asking(), 3)
         click(process, "[data-slot=alert-dialog-action]")
-        check(until(lambda: "Ines" not in mates(), 5) and until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 4, 5), "Fire removes the companion and its card")
+        check(until(lambda: js(process, "document.querySelectorAll('.mate-card').length") == 4, 3), "Fire hides the card at once, with Undo")
+        check(until(lambda: "Ines" not in mates(), 15), "Fire removes the companion once Undo is gone")
         check(until(lambda: not file.exists(), 5), "and its memory file")
         check("Codex" not in text(process), "No Codex on screen")
     finally:

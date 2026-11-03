@@ -216,7 +216,7 @@ final class GeminiAdapter: AgentAdapter {
 /// OpenCode's free models. Still never sees which. Its own tools, skills and sub-agents stay off.
 final class OpenCodeAdapter: AgentAdapter {
  var version = ""
- override var gaps: [String] { ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal), or its free models.",
+ override var gaps: [String] { ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal).",
   "OpenCode keeps its own record of incognito chats on this computer. It has no option to turn that off."]
   + (!version.isEmpty && !version.hasPrefix("1.") ? ["Still was checked with OpenCode 1. This is \(version), so it may not work."] : []) }
  static func modelLine(_ line: String) -> Bool { line.range(of: #"^[A-Za-z0-9][\w.@-]*/\S+$"#, options: .regularExpression) != nil }

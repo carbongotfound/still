@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, FileText, FolderOpen, Hand, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Undo2, X } from "lucide-react"
+import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, FileText, FolderOpen, Hand, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Undo2, UserX, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
 import { Face, hueOf, type Companion, type Mode, type Personality, type ReplyLength, type Routine } from "./Buddy"
 import { AiLogo } from "./AiLogo"
 import { LookEditor } from "./LookEditor"
@@ -14,7 +13,8 @@ import { MemorySettings } from "./Memory"
 import { PluginChip } from "./Plugins"
 import { FileCard } from "./Files"
 import { LIBRARY, ROLE_TEXT, SHARE_KIND, fromPremade, premadeOf } from "./crew"
-import { SkillEditor } from "./Home"
+import { SkillEditor, resetSkill } from "./Home"
+import { destroy, fire } from "./Undo"
 import { generate } from "./generate"
 import { lookKey, surprise } from "./look"
 import { andList } from "./Plugins"
@@ -48,7 +48,6 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  const [styling, setStyling] = useState(false)
  const [made, setMade] = useState<string[] | null>(null) // the skills the generator just picked, to say so
  const [skill, setSkill] = useState<Skill | null>(null) // a skill open in the editor
- const [ask, setAsk] = useState<"fire" | "reset" | null>(null)
  const [closing, setClosing] = useState(false)
  const name = useRef<HTMLInputElement>(null), typing = useRef(0)
  useEffect(() => { setC(saved) }, [id, !!saved]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -100,9 +99,11 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
       <DropdownMenuItem onSelect={() => { setTab("general"); setTimeout(() => { name.current?.focus(); name.current?.select() }, 50) }}><Pencil />Rename</DropdownMenuItem>
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
       {saved?.setup !== "pending" && <DropdownMenuItem onSelect={() => send("companionSetupAgain", { companion: c.id })}><Hand />Introduce yourself again</DropdownMenuItem>}
-      {premade && <DropdownMenuItem onSelect={() => setAsk("reset")}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
+      {premade && <DropdownMenuItem onSelect={() => { const before = c; destroy({ key: "reset:" + c.id, title: `Reset ${c.name}?`, action: "Reset", done: `${c.name} reset`,
+       body: `Their name, look, instructions, way of talking and thinking go back to how ${premade.name} started. What they remember about you, their skills and routines stay.`,
+       onConfirm: () => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai, instructions: "" }), run: () => {}, undo: () => save(before) }) }}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
       <DropdownMenuSeparator />
-      <DropdownMenuItem variant="destructive" onSelect={() => setAsk("fire")}><Trash2 />Fire {c.name}</DropdownMenuItem>
+      <DropdownMenuItem variant="destructive" onSelect={() => fire(send, c, only, close)}><Trash2 />Fire {c.name}</DropdownMenuItem>
      </DropdownMenuContent></DropdownMenu>
     <Button variant="ghost" size="icon-sm" aria-label="Close" onClick={close}><X /></Button>
    </header>}
@@ -143,6 +144,8 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
        <div className="profile-instructions-foot"><p className="profile-note">{c.instructions ? "Your edit." : `Still's version for ${premade.role}.`} {label} follows these in every chat.</p>
         {!!c.instructions && <Button size="sm" variant="ghost" onClick={() => save({ ...c, instructions: "" })}><RotateCcw />Reset to Still's version</Button>}</div>
       </>}
+      {!draft && <div className="profile-fire"><div><b>Fire {c.name}</b><small>They go, with what they remember about you and their routines. Your chats with them stay.</small></div>
+       <Button variant="outline" size="sm" className="team-fire" aria-label={"Fire " + c.name} onClick={() => fire(send, c, only, close)}><UserX />Fire</Button></div>}
      </TabsContent>
      <TabsContent value="skills">
       <section className="profile-section"><h4>Skills they can use</h4>
@@ -159,7 +162,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
       </section>
       {!draft && <section className="profile-section is-plugins"><h4>Plugins</h4>
       {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={onSkills} />
-       : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading is free. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
+       : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading goes ahead. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
         <ul className="profile-list">{plugins!.connected.map(p => { const on = !saved.pluginsOff?.includes(p.slug); return <li key={p.id}>
          <PluginChip slug={p.slug} name={p.name} />
          <Switch checked={on} aria-label={`${p.name} for ${c.name}`} onCheckedChange={v => send("pluginToggle", { companion: c.id, slug: p.slug, on: v })} />
@@ -211,38 +214,13 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
   </aside>
   {skill && <SkillEditor skill={skill} onClose={() => setSkill(null)} onSave={k => { send("skillSave", k); setSkill(null) }} />}
   {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { save({ ...c, look }); setStyling(false) }} />}
-  <AlertDialog open={ask === "reset" && !!premade} onOpenChange={o => { if (!o) setAsk(null) }}>
-   <AlertDialogContent>
-    {premade && <>
-     <AlertDialogHeader><AlertDialogTitle>Reset {c.name}?</AlertDialogTitle><AlertDialogDescription>Their name, look, instructions, way of talking and thinking go back to how {premade.name} started. What they remember about you, their skills and routines stay.</AlertDialogDescription></AlertDialogHeader>
-     <AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai, instructions: "" })}>Reset</AlertDialogAction></AlertDialogFooter>
-    </>}
-   </AlertDialogContent>
-  </AlertDialog>
-  {ask === "fire" && <FireDialog c={c} only={only} send={send} onClose={() => setAsk(null)} onGone={close} />}
  </>
-}
-
-/// Fire a companion: asks first, and when it's your only companion says Still
-/// needs one instead. The profile's More menu and the Companions page both use it.
-export function FireDialog({ c, only, send, onClose, onGone }: { c: Companion; only: boolean; send: Send; onClose: () => void; onGone?: () => void }) {
- return <AlertDialog open onOpenChange={o => { if (!o) onClose() }}>
-  <AlertDialogContent>
-   {only ? <>
-    <AlertDialogHeader><AlertDialogTitle>{c.name} is your only companion</AlertDialogTitle><AlertDialogDescription>Still needs at least one. Hire or make another first, then you can fire {c.name}.</AlertDialogDescription></AlertDialogHeader>
-    <AlertDialogFooter><AlertDialogCancel>OK</AlertDialogCancel></AlertDialogFooter>
-   </> : <>
-    <AlertDialogHeader><AlertDialogTitle>Fire {c.name}?</AlertDialogTitle><AlertDialogDescription>{c.name} goes, with everything they remember about you and their routines. Your chats with them stay.</AlertDialogDescription></AlertDialogHeader>
-    <AlertDialogFooter><AlertDialogCancel>Keep {c.name}</AlertDialogCancel><AlertDialogAction variant="destructive" onClick={() => { send("companionDelete", { id: c.id }); onGone?.() }}>Fire</AlertDialogAction></AlertDialogFooter>
-   </>}
-  </AlertDialogContent>
- </AlertDialog>
 }
 
 /// A skill's Edit, and Reset when it's one Still ships and the user changed it.
 function SkillActs({ k, onEdit, send }: { k: Skill; onEdit: (k: Skill) => void; send: Send }) {
  return <>
-  {k.stock && k.edited && <Button variant="ghost" size="icon-xs" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => send("skillReset", { id: k.id })}><RotateCcw /></Button>}
+  {k.stock && k.edited && <Button variant="ghost" size="icon-xs" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => resetSkill(send, k)}><RotateCcw /></Button>}
   <Button variant="ghost" size="icon-xs" aria-label={"Edit " + k.name} title="Edit" onClick={() => onEdit(k)}><Pencil /></Button>
  </>
 }

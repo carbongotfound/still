@@ -654,7 +654,9 @@ def disconnect(process):
     open_plugins(process)
     manage(process, "gmail")
     js(process, "[...document.querySelectorAll('.plug-manage button')].find(b => b.innerText.trim() === 'Disconnect')?.click()")
-    check(until(lambda: len(MOCK["deleted"]) == 1 and head(process) == "1 connected", 10), "Disconnect removes the account at Composio and from the page")
+    until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: len(MOCK["deleted"]) == 1 and head(process) == "1 connected", 15), "Disconnect asks, then removes the account at Composio and from the page")
     send(process, "openPanel", name="settings", value="skills")
     row = lambda: js(process, "document.querySelector('.set-main #set-composio')?.innerText") or ""
     check(until(lambda: "ending in" in row() and KEY[-4:] in row(), 10) and not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY[-8:])})"),
@@ -667,9 +669,9 @@ def disconnect(process):
     check(until(lambda: KEY2[-4:] in row() and not js(process, "!!document.querySelector('#set-composio input')"), 10) and until(lambda: MOCK["seen"][-1]["key"] == KEY2, 5),
           "and a good one does: Composio gets the new key from then on")
     js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete')?.click()")
-    check(until(lambda: "Delete the key?" in row(), 5) and key_file().exists(), "Delete asks first")
-    js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete key')?.click()")
-    check(until(lambda: not key_file().exists() and "Not set" in row() and js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 10),
+    check(until(lambda: "Delete the Composio key?" in (js(process, "document.querySelector('[data-slot=alert-dialog-content]')?.innerText") or ""), 5) and key_file().exists(), "Delete asks first")
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: not key_file().exists() and "Not set" in row() and js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 15),
           "Delete forgets the key, and Settings offers the field again")
     check(len(MOCK["deleted"]) == 1 and not nowhere(), "Your apps stay connected in your Composio account, and no key is left in any file")
     close_panel(process)

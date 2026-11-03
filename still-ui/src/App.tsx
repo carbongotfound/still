@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
 import { AiPanel, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, isRunning, since, type AiState } from "./AiSidebar"
@@ -30,7 +30,7 @@ import { Separator } from "@/components/ui/separator"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectGroup, SelectItem, SelectLabel, SelectSeparator } from "@/components/ui/select"
-import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter, AlertDialogCancel, AlertDialogAction } from "@/components/ui/alert-dialog"
+import { AlertDialog, AlertDialogContent, AlertDialogHeader, AlertDialogTitle, AlertDialogDescription, AlertDialogFooter } from "@/components/ui/alert-dialog"
 import { Toaster } from "@/components/ui/sonner"
 import { toast } from "sonner"
 import { cn, MAC } from "@/lib/utils"
@@ -40,6 +40,8 @@ import { BrowserTools } from "./BrowserTools"
 import { SaveLoginBar } from "./Passwords"
 import { GetStarted, Welcome, startCreating } from "./Welcome"
 import { Tour } from "./Tour"
+import { Confirmer, deleteChat, destroy, fire, isAsking, isGone, useGone } from "./Undo"
+import { WhatsNew, notesFor, releaseOf } from "./WhatsNew"
 import type { ToolData } from "./BrowserTools"
 
 type Tab = { id: string; title: string; url: string; home?: HomeView; pinned: boolean; isPrivate: boolean; engine?: string; loading: boolean; sleeping: boolean; blocked: number; muted: boolean; favicon?: string; secure?: boolean; certificateError?: boolean; inUse?: string; agent?: string; runChat?: string; driverChat?: string; aiGroup?: boolean; chatId?: string; inChat?: string; group?: string }
@@ -65,9 +67,19 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; welcomeTalk?:boolean; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string;tool?:string;target?:string;since?:string;count?:number;recent?:string[]};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; seenVersion?:string; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string;tool?:string;target?:string;since?:string;count?:number;recent?:string[]};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
+// What's waiting to be deleted behind an Undo toast stays out of every list (Undo.tsx).
+const withoutGone = (ai: AiState): AiState => ({ ...ai,
+ chats: isGone("chats:all") ? [] : ai.chats.filter(c => !isGone("chat:" + c.id)),
+ companions: ai.companions?.filter(c => !isGone("companion:" + c.id)).map(c => (isGone("memory:" + c.id) || isGone("memory-all:" + c.id)) ? { ...c, memory: [], summaries: [] }
+  : { ...c, memory: c.memory?.filter(f => !isGone("fact:" + f.id)), summaries: c.summaries?.filter(s => !isGone(`summary:${c.id}:${s.chat}`)) }),
+ skills: ai.skills?.filter(k => !isGone("skill:" + k.id)),
+ files: ai.files?.filter(f => !isGone("file:" + f.path)),
+ apis: ai.apis && { ...ai.apis, providers: ai.apis.providers.filter(p => !isGone("api:" + p.id)) },
+ plugins: ai.plugins && { ...ai.plugins, connected: ai.plugins.connected.filter(c => !isGone("plugin:" + c.id)) },
+})
 function send(op: string, payload: Record<string, unknown> = {}) { window.chrome?.webview?.postMessage({ op, ...payload }) }
 // Who is driving a tab: the companion of the chat that opened it, or another AI app under its own name.
 const driverOf = (ai: AiState | undefined, tab: Tab): Companion => tab.driverChat ?? tab.runChat ? companionOf(ai, chatOf(ai, tab.driverChat ?? tab.runChat)?.companion) ?? FALLBACK : { ...FALLBACK, id: "", name: tab.agent ?? "", face: agentFace(tab.agent) }
@@ -294,7 +306,9 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
  }
 
 export default function App() {
- const [state, setState] = useState<State>(initial)
+ const [stateRaw, setState] = useState<State>(initial)
+ const goneV = useGone() // what's waiting to be deleted, behind an Undo toast, stays out of view
+ const state = useMemo(() => goneV ? { ...stateRaw, history: isGone("clearHistory") ? [] : stateRaw.history, bookmarks: stateRaw.bookmarks.filter(b => !isGone("bookmark:" + b.url)) } : stateRaw, [stateRaw, goneV])
  const [pane, setPane] = useState("")
  const [displayPane, setDisplayPane] = useState("")
  const [settingsPage, setSettingsPage] = useState("general")
@@ -303,6 +317,7 @@ export default function App() {
  const [flash, setFlash] = useState("") // the setting a search result jumped to: it lights up for a moment
  const reduced = useReducedMotion()
  const [replay, setReplay] = useState(false) // About's "Replay the intro"
+ const [whatsNew, setWhatsNew] = useState(false) // What's New: once after an update, or from About
  // The little sounds (sound.ts): the Sounds setting, unless the system's own sounds are off or motion is reduced
  const soundsBlocked = state.preferences.osSoundsOff ? (MAC ? "Off because your Mac's sound effects are off" : "Off because Windows sounds are off") : reduced ? "Off because reduce motion is on" : ""
  const sounds = state.preferences.sounds !== false && !soundsBlocked
@@ -318,7 +333,8 @@ export default function App() {
  const [filter, setFilter] = useState("")
  const [menu, setMenu] = useState(false)
  const [extMenu, setExtMenu] = useState(false)
- const [ai, setAi] = useState<AiState>()
+ const [aiRaw, setAi] = useState<AiState>()
+ const ai = useMemo(() => aiRaw && goneV ? withoutGone(aiRaw) : aiRaw, [aiRaw, goneV])
  const [aiView, setAiView] = useState<"chat" | "settings">("chat")
  const [buddy, setBuddy] = useState("") // the companion picked on the new tab page
  const [draft, setDraft] = useState<Companion | null>(null) // "Make your own": the profile panel on a companion not hired yet
@@ -345,7 +361,8 @@ export default function App() {
  const [toolData,setToolData]=useState<Record<string,ToolData>>({})
  const [bookmarkDraft,setBookmarkDraft]=useState<{oldUrl:string;title:string;url:string}|null>(null)
  const editBookmark=(b:{title:string;url:string})=>{open("bookmarks");setBookmarkDraft({oldUrl:b.url,title:b.title,url:b.url})}
- const [confirm, setConfirm] = useState<{ title: string; body: string; op: string } | null>(null)
+ const clearData = (op: string, title: string, body: string, action: string, done: string) => destroy({ key: op, title, body, action, done, run: () => send(op) })
+ const clearHistory = () => clearData("clearHistory", "Clear your browsing history?", "Every page in your history goes. Your bookmarks and open tabs stay.", "Clear history", "History cleared")
  const pageRef = useRef<HTMLDivElement>(null)
  const tabsRef = useRef<HTMLDivElement>(null)
  const commandRef = useRef<HTMLInputElement>(null)
@@ -464,7 +481,7 @@ export default function App() {
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
  const oldName = state.welcome || state.secondary ? undefined : ai?.companions?.find(c => c.askName) // a companion with an old stock name, asked once
- const modal = !!oldName || (!!pane && pane !== "find") || menu || context || !!confirm || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!draft || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
+ const modal = !!oldName || (!!pane && pane !== "find") || menu || context || isAsking() || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!draft || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
@@ -505,7 +522,7 @@ export default function App() {
     // Still's window takes Esc before the page: the top layer (an open dropdown, the settings search, a dialog) gets it first.
     const esc = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true })
     ;(document.activeElement ?? document).dispatchEvent(esc)
-    if (!esc.defaultPrevented) { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); setConfirm(null); send("panel", { name: "" }) }
+    if (!esc.defaultPrevented) { setViewing(""); setUpload(u => { if (u) send("uploadAnswer", { id: u.id }); return null }); setPane(""); setMenu(false); setContext(false); send("panel", { name: "" }) }
    }
   }
   window.chrome?.webview?.addEventListener("message", listener)
@@ -569,7 +586,7 @@ export default function App() {
   (hasAi || !AI_PAGES.includes(page)) && !(id === "talk" && !hasAi) && !(["askInChat", "dev"].includes(id) && !state.preferences.agents) && !(id === "dev" && !state.mcpCommand) && !(["ai", "titles"].includes(id) && !hasAi) &&
   settingsFind.toLowerCase().split(/\s+/).filter(Boolean).every(w => `${label} ${more} ${pageName(page)}`.toLowerCase().includes(w))).slice(0, 12) : []
  const jumpTo = (f: Finding) => { setSettingsFind(""); setSettingsPage(f[1]); setFlash(f[0]) }
- const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT or Grok, through their own apps, with no API keys. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button><p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
+ const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT, Grok, Gemini or OpenCode through their own apps, or an OpenAI- or Claude-compatible API. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button>{notesFor(state.version) && <Button variant="ghost" className="about-replay" onClick={() => { close(); setWhatsNew(true) }}><Gift />What's new in {releaseOf(state.version)}</Button>}<p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
@@ -725,7 +742,7 @@ export default function App() {
        <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="Chat options" title="Chat options"><MoreHorizontal /></Button></DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-48">
          <DropdownMenuItem onSelect={() => goHome("home")}><SquarePen />New chat</DropdownMenuItem>
-         <DropdownMenuItem disabled={isRunning(ai, active.chatId)} onSelect={() => send("aiDeleteChat", { id: active.chatId })}><Trash2 />Delete chat</DropdownMenuItem>
+         <DropdownMenuItem disabled={isRunning(ai, active.chatId)} onSelect={() => deleteChat(send, { id: active.chatId!, title: chatOf(ai, active.chatId)?.title }, () => goHome("home"))}><Trash2 />Delete chat</DropdownMenuItem>
         </DropdownMenuContent></DropdownMenu>
        <Button variant="ghost" size="icon-sm" aria-label="Chat details" title="Chat details" aria-pressed={split ? splitInfo : info} className={cn((split ? splitInfo : info) && "is-on")} onClick={() => split ? setSplitInfo(!splitInfo) : setInfo(!info)}><Info /></Button>
        {chatPages.length > 0 && <Button variant="ghost" size="icon-sm" aria-label={split ? "Hide the page" : "Show the page"} title={split ? "Hide the page" : "Show the page"} onClick={() => send("chatPage", { on: !split })}>{split ? <PanelRightClose /> : <PanelRightOpen />}</Button>}
@@ -895,6 +912,9 @@ export default function App() {
       {settingsPage === "companions" && hasAi && <>
        <SetCard title="Your team">
         <SetRow id="team" title="Companions" help={`${ai.companions?.length ?? 0} on your team. Add one, change how they look and what they do, or let one go.`}><Button variant="outline" size="sm" onClick={() => { close(); goHome("companions") }}><UsersRound />Open</Button></SetRow>
+        <div className="team-rows">{ai.companions?.map(c => <div key={c.id} className="team-row"><Face companion={c} size={28} /><span className="team-row-text"><b>{c.name}</b><small>{c.role || c.job || "No job yet"}</small></span>
+         <Button variant="ghost" size="sm" aria-label={"Edit " + c.name} onClick={() => { close(); setProfile(c.id) }}><Pencil />Edit</Button>
+         <Button variant="outline" size="sm" className="team-fire" aria-label={"Fire " + c.name} onClick={() => fire(send, c, (ai.companions?.length ?? 0) <= 1)}><UserX />Fire</Button></div>)}</div>
        </SetCard>
        <SetCard title="What they remember"><div className="set-pad" id="set-memory"><MemorySettings key={memoryFor} companions={ai.companions ?? []} first={memoryFor} send={send} summaries={ai.chatSummaries ?? true} onOpenChat={id => { close(); send("chatOpen", { id }) }} /></div></SetCard>
       </>}
@@ -956,11 +976,11 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
        {hasAi && <SetCard title="What companions may do"><div className="set-pad" id="set-permissions"><PermissionsSettings ai={ai} send={send} /></div></SetCard>}
        {hasAi && !state.incognito && <SetCard title="Where companions browse">
         <SetRow id="agentProfile" title="New chats browse in" help="Your profile: companions are signed in wherever you are. Companion profile: a separate profile with its own sign-ins and cookies, so companions only get the sites you sign in to there. Each chat keeps the one it started with; change it under the chat's message box."><Select value={state.preferences.agentProfile ?? "regular"} onValueChange={v => preference("agentProfile", v)}><SelectTrigger className="w-52" aria-label="New chats browse in"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="regular">Your profile</SelectItem><SelectItem value="companion">{state.preferences.companionSession ? "Companion profile (signs out when Still quits)" : "Companion profile"}</SelectItem></SelectContent></Select></SetRow>
-        <SetRow id="clearCompanion" title="Clear the companion profile" help="Signs companions out of every site in their profile. Your own sign-ins stay."><Button variant="outline" size="sm" onClick={() => setConfirm({ title: "Clear the companion profile?", body: "Companions will be signed out of every site in their profile. Your own sign-ins stay.", op: "clearCompanionData" })}><Trash2 />Clear</Button></SetRow>
+        <SetRow id="clearCompanion" title="Clear the companion profile" help="Signs companions out of every site in their profile. Your own sign-ins stay."><Button variant="outline" size="sm" onClick={() => clearData("clearCompanionData", "Clear the companion profile?", "Its cookies and site data go, so companions are signed out of every site in their profile. Your own sign-ins stay.", "Clear", "Companion profile cleared")}><Trash2 />Clear</Button></SetRow>
        </SetCard>}
        <SetCard title="Clear data">
-        <SetRow id="clearHistory" title="Clear browsing history" help="Your bookmarks and open tabs stay."><Button variant="outline" size="sm" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear</Button></SetRow>
-        <SetRow id="clearCookies" title="Clear cookies and website data" help="This signs you out of websites in Still."><Button variant="outline" size="sm" onClick={() => setConfirm({ title: "Clear website data?", body: "This signs you out of websites in Still.", op: "clearCookies" })}><Trash2 />Clear</Button></SetRow>
+        <SetRow id="clearHistory" title="Clear browsing history" help="Your bookmarks and open tabs stay."><Button variant="outline" size="sm" onClick={clearHistory}><History />Clear</Button></SetRow>
+        <SetRow id="clearCookies" title="Clear cookies and website data" help="This signs you out of websites in Still."><Button variant="outline" size="sm" onClick={() => clearData("clearCookies", "Clear cookies and website data?", "Every website's cookies and stored data in Still go, so you're signed out of websites here.", "Clear", "Website data cleared")}><Trash2 />Clear</Button></SetRow>
        </SetCard>
       </>}
       {settingsPage === "shortcuts" && <SetCard title="Keys">{shortcuts.map(([label, key], i) => <div className="shortcut-row" id={"set-key-" + i} key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</SetCard>}
@@ -968,7 +988,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
       </>}
      </div>
     </div>}
-    {(displayPane === "history" || displayPane === "bookmarks") && <>{displayPane === "history" && state.history.length > 0 && <Button variant="ghost" className="settings-link" onClick={() => setConfirm({ title: "Clear your history?", body: "Your bookmarks and open tabs will stay.", op: "clearHistory" })}><History />Clear browsing history</Button>}{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
+    {(displayPane === "history" || displayPane === "bookmarks") && <>{displayPane === "history" && state.history.length > 0 && <Button variant="ghost" className="settings-link" onClick={clearHistory}><History />Clear browsing history</Button>}{bookmarkDraft&&displayPane==="bookmarks"&&<form className="bookmark-edit" onSubmit={e=>{e.preventDefault();send("bookmarkEdit",bookmarkDraft);setBookmarkDraft(null)}}><Input aria-label="Bookmark name" value={bookmarkDraft.title} onChange={e=>setBookmarkDraft({...bookmarkDraft,title:e.target.value})}/><Input type="url" required aria-label="Bookmark URL" value={bookmarkDraft.url} onChange={e=>setBookmarkDraft({...bookmarkDraft,url:e.target.value})}/><div><Button type="button" variant="ghost" onClick={()=>setBookmarkDraft(null)}>Cancel</Button><Button type="submit">Save bookmark</Button></div></form>}<Input placeholder={"Search " + displayPane} aria-label={"Search " + displayPane} value={filter} onChange={e => setFilter(e.target.value)} /><ScrollArea className="library-scroll">{filtered.length ? filtered.map((v, i) => <div className="library-row" key={v.url + i}><Button variant="ghost" className="library-open" onClick={() => go(v.url)}><span className="site-initial">{[...v.title][0]}</span><span><strong>{v.title}</strong><small>{host(v.url)}{v.at && " · " + new Date(v.at).toLocaleDateString()}</small></span></Button>{displayPane==="bookmarks"&&<Button variant="ghost" size="icon-xs" aria-label={"Edit " + v.title} onClick={()=>setBookmarkDraft({oldUrl:v.url,title:v.title,url:v.url})}><Pencil/></Button>}<Button variant="ghost" size="icon-xs" aria-label={"Remove " + v.title} onClick={() => send(displayPane === "bookmarks" ? "removeBookmark" : "removeHistory", { url: v.url })}><X /></Button></div>) : <p className="empty-state">{displayPane === "bookmarks" ? "No bookmarks yet. Ctrl D saves a page." : "No visits here yet."}</p>}</ScrollArea></>}
     {displayPane === "downloads" && <><Button variant="outline" className="justify-start" onClick={() => send("downloadsFolder")}><FolderOpen />Open download folder</Button><ScrollArea className="library-scroll">{state.downloads.length ? state.downloads.map(d => <div className="download-row" key={d.id} onDoubleClick={e => { if (d.status === "Completed" && !(e.target as HTMLElement).closest("button")) send("openDownload", { id: d.id }) }}><Download /><div><strong>{d.name}</strong><small>{d.status} · {(d.bytes / 1024).toFixed(0)} KB</small></div><Button variant="ghost" size="icon-sm" aria-label={d.status === "InProgress" ? "Cancel download" : "Show in folder"} onClick={() => send(d.status === "InProgress" ? "cancelDownload" : "showDownload", { id: d.id })}>{d.status === "InProgress" ? <X /> : <FolderOpen />}</Button></div>) : <p className="empty-state">Your downloads will appear here.</p>}</ScrollArea></>}
     {displayPane === "site" && <div className="site-settings"><div className="setting-row"><div><strong>Block ads & trackers</strong><p>{active?.blocked ?? 0} requests blocked on this page.</p></div><Switch aria-label="Blocking on this site" checked={state.siteBlocking} onCheckedChange={() => send("siteBlocking")} /></div><Separator /><Button variant="ghost" className="settings-link" onClick={() => action("hide")}><EyeOff />Hide something on this page</Button><Button variant="ghost" className="settings-link" onClick={() => action("unhide")}><RotateCw />Restore hidden elements</Button><Button variant="ghost" className="settings-link" onClick={() => send("pin")}><Pin />{active?.pinned ? "Unpin this tab" : "Pin this tab"}</Button><Button variant="ghost" className="settings-link" onClick={() => send("mute")}><VolumeX />{active?.muted ? "Unmute site" : "Mute site"}</Button></div>}
     {displayPane === "shortcuts" && <ScrollArea className="shortcuts-scroll">{shortcuts.map(([label, key]) => <div className="shortcut-row" key={label}><span>{label}</span><kbd>{key}</kbd></div>)}</ScrollArea>}
@@ -985,7 +1005,8 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
     <Button autoFocus={state.dialog?.kind !== "prompt"} onClick={() => answerDialog(true)}>{state.dialog?.kind === "leave page" ? "Leave" : "OK"}</Button>
    </AlertDialogFooter>
   </AlertDialogContent></AlertDialog>
-  <AlertDialog open={!!confirm} onOpenChange={o => { if (!o) setConfirm(null) }}><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>{confirm?.title}</AlertDialogTitle><AlertDialogDescription>{confirm?.body}</AlertDialogDescription></AlertDialogHeader><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction onClick={() => { if (confirm) send(confirm.op); setConfirm(null) }}>Clear</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog>
+  <Confirmer />
+  <WhatsNew state={state} open={whatsNew} setOpen={setWhatsNew} send={send} />
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !draft && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
@@ -1018,7 +1039,7 @@ function BookmarkMenu({b,onEdit,children}:{b:{title:string;url:string};onEdit:(b
    <ContextMenuItem onSelect={()=>send("bookmarkMove",{url:b.url,delta:-1})}><ArrowLeft/>Move left</ContextMenuItem>
    <ContextMenuItem onSelect={()=>send("bookmarkMove",{url:b.url,delta:1})}><ArrowRight/>Move right</ContextMenuItem>
    <ContextMenuSeparator/>
-   <ContextMenuItem variant="destructive" onSelect={()=>send("removeBookmark",{url:b.url})}><Trash2/>Delete bookmark</ContextMenuItem>
+   <ContextMenuItem variant="destructive" onSelect={()=>destroy({key:"bookmark:"+b.url,title:"Delete this bookmark?",body:`${b.title||b.url} leaves your bookmarks.`,action:"Delete bookmark",done:"Bookmark deleted",run:()=>send("removeBookmark",{url:b.url})})}><Trash2/>Delete bookmark</ContextMenuItem>
   </ContextMenuContent>
  </ContextMenu>
 }
@@ -1048,7 +1069,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
    {!chats.length && <p className="chat-rail-empty">Your chats show up here.</p>}
    {chats.map(c => <div key={c.id} className={cn("chat-side-item", c.id === activeChat && "is-on")}>
     <ChatLink id={c.id} send={send} className="chat-side-open" title={c.title}><Face companion={companionOf(ai, c.companion)} size={18} /><span className="chat-side-title">{c.title}</span>{isRunning(ai, c.id) ? <Loader2 className="chat-side-busy spin" aria-label="Working" /> : c.unread && <i className="is-unread" aria-label="Unread" />}</ChatLink>
-    {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => send("aiDeleteChat", { id: c.id })}><X /></button>}
+    {!isRunning(ai, c.id) && <button className="chat-side-delete" aria-label={"Delete " + c.title} title="Delete chat" onClick={() => deleteChat(send, c)}><X /></button>}
    </div>)}
   </ScrollArea>
   <DropdownMenu><DropdownMenuTrigger asChild><button className="chat-side-profile"><span className="chat-side-avatar">{state.incognito ? <LockKeyhole /> : (state.profileName[0] ?? "S").toUpperCase()}</span><span className="chat-side-title">{state.incognito ? "Incognito" : state.profileName}</span><ChevronDown /></button></DropdownMenuTrigger>

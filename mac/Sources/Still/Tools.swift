@@ -549,6 +549,8 @@ var currentVersion: String {
  #endif
  return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 }
+/// The release line, "2.10" for 2.10.3: What's New is per release.
+var releaseLine: String { currentVersion.split(separator: ".").prefix(2).joined(separator: ".") }
 /// "v1.2.3" → [1, 2, 3], padded to three parts.
 func versionParts(_ text: String) -> [Int]? {
  let parts = text.trimmingCharacters(in: CharacterSet(charactersIn: "vV")).split(separator: ".").map { Int($0) }
