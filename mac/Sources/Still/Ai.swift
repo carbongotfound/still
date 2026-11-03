@@ -895,7 +895,7 @@ extension Browser {
    let into: Tab
    if let blank = active, blank.url.isEmpty, blank.chatId == nil, !blank.isPrivate { into = blank } else { into = Tab(); tabs.append(into); select(into) }
    v.error = ""; runAi(nil, ask, into: into)
-  case "aiHarness": if s("harness").isEmpty || aiClis.contains(where: { $0.id == s("harness") }) { useAi(s("harness")) }
+  case "aiHarness": if s("harness").isEmpty || aiClis.contains(where: { $0.id == s("harness") }) { useAi(s("harness"), signIn: !b("waitToSignIn")) } // setup's Connect waits for Sign in
   case "aiNew": v.chat = nil; v.error = ""
   case "aiOpenChat": v.chat = myChats.first { $0.id == s("id") } ?? v.chat; v.error = ""
   case "aiDeleteChat":
@@ -1147,19 +1147,19 @@ extension Browser {
  }
 
  /// Picks the AI for new chats. The open chat moves along; its next message brings the conversation so far.
- func useAi(_ h: String) {
+ func useAi(_ h: String, signIn: Bool = true) {
   prefs["AiHarness"] = h; saveLater(); aiView.error = ""
   if let chat = aiView.chat, runs[chat.id] == nil, chat.harness != h {
    if h.isEmpty { aiView.chat = nil } else { chat.harness = h; chat.session = nil; chat.started = false; saveAiChats(chat) }
   }
   publishOthers()
-  if let picked = aiClis.first(where: { $0.id == h }) { Task { await aiPicked(picked) } }
+  if let picked = aiClis.first(where: { $0.id == h }) { Task { await aiPicked(picked, signIn: signIn) } }
  }
 
  /// After the user picks an AI: sign in if it needs it, then run what they asked before it was set up.
- @MainActor func aiPicked(_ cli: AgentAdapter) async {
+ @MainActor func aiPicked(_ cli: AgentAdapter, signIn: Bool = true) async {
   await checkAi(cli); publishAiEverywhere()
-  if aiStatus[cli.id] == "signedOut" { await aiSignIn(cli) } else if aiStatus[cli.id] != "missing" { runPending() }
+  if aiStatus[cli.id] == "signedOut" { if signIn { await aiSignIn(cli) } } else if aiStatus[cli.id] != "missing" { runPending() }
  }
  func runPending() {
   let v = aiView

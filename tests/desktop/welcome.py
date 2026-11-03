@@ -2,7 +2,8 @@
 
 A fresh profile starts with the intro (skipped with Space) and no companions. Then four steps, walked like a person
 would: Welcome (the headline, Create your companion and Just browse for now); Connect (the AI app you already use: two
-made-up apps show Sign in, and Install and sign in with no installer, then the fake one is ready; How this works);
+made-up apps show Sign in, which waits for a click, and Install and sign in with no installer, then the fake one is
+ready; How this works);
 Create (a name, a starting look, Surprise me, Customize, what to help with and a reply length, then the instructions to
 check before Hire, and the joined card); and a first task, the sample page that ships with Still. The task runs on a
 fake AI app (a manifest in Still's agents folder): it opens the sample page beside the chat and reads it. The run is
@@ -93,6 +94,7 @@ FAKE = textwrap.dedent(r'''
     args = sys.argv[1:]
     if args[:1] == ["status"]: print("signed in"); sys.exit(0)
     if args[:1] == ["whoami"]: print("signed out"); sys.exit(0)  # the made-up app that isn't signed in
+    if args[:1] == ["login"]: open(os.path.join(here, "logins.txt"), "a").write("login\n"); sys.exit(0)  # its sign-in, which never finishes it
     prompt = sys.stdin.read()
     with open(os.path.join(here, "prompts.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"prompt": prompt}) + "\n")
     site = open(os.path.join(here, "site.txt")).read().strip()
@@ -444,7 +446,8 @@ def manifests(profile):
     (profile / "agents").mkdir(parents=True, exist_ok=True)
     common = {"enabled": True, "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}
     (profile / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "command": str(BIN / "fakeagent"), "detect": ["status"], "expect": "signed in", **common}))
-    (profile / "agents" / "out.json").write_text(json.dumps({"id": "out", "name": "Signed-out agent", "command": str(BIN / "fakeagent"), "detect": ["whoami"], "expect": "signed in", **common}))
+    (profile / "agents" / "out.json").write_text(json.dumps({"id": "out", "name": "Signed-out agent", "command": str(BIN / "fakeagent"), "detect": ["whoami"], "expect": "signed in",
+        "signin": ["login"], **common}))
     (profile / "agents" / "gone.json").write_text(json.dumps({"id": "gone", "name": "Offline agent", "command": str(BIN / "no-such-agent"), "detect": ["status"], "expect": "signed in",
         "site": "https://offline-agent.example/get", "install": "pipx install offline-agent", **common}))
 
@@ -581,7 +584,13 @@ def connect(process, copy):
     pick_ai(process, "Signed-out agent")
     check(until(lambda: card(process).startswith("Sign in"), 8) and "Signed-out agent is installed. Sign in once with your plan." in card(process) and buttons() == ["Sign in"],
           f"Installed but signed out: Sign in ({card(process)!r})")
+    time.sleep(3)
+    check(card(process).startswith("Sign in") and not (BIN / "logins.txt").exists(), f"Picking it doesn't start its sign-in ({card(process)!r})")
     check(foot(process)[-1] == "Continue (off)", "Continue still waits")
+    click_text(process, ".ob-connect button", "Sign in")
+    check(until(lambda: (BIN / "logins.txt").exists(), 8), "Sign in starts it")
+    check(until(lambda: "didn't finish" in card(process), 10) and buttons() == ["Sign in", "Retry"],
+          f"A sign-in that doesn't finish stays here, with Retry ({card(process)!r}, {buttons()})")
     pick_ai(process, "Fake agent")
     check(until(lambda: "Fake agent is ready, signed in with your plan." in card(process), 10) and foot(process)[-1] == "Continue", "Ready: a check, and Continue")
     check(not js(process, "document.querySelector('.ob-how')?.open"), "How this works starts closed")

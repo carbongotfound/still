@@ -41,7 +41,7 @@ SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 URL = "http://127.0.0.1:" + str(SERVER.server_port)
 
-from qa import rpc  # noqa: E402  (the Windows pipe, or the Mac's socket)
+from qa import MAC, rpc, until_started  # noqa: E402  (the Windows pipe, or the Mac's socket)
 
 def send(process, op, **args):
     rpc(process, "shellEval", script="window.chrome.webview.postMessage(" + json.dumps({"op": op, **args}) + ")")
@@ -95,7 +95,7 @@ try:
     (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": URL + "/home"}], "ActiveId": "home"}))
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile)])
-    until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None, 30)
+    until_started(process)
     until(lambda: any(t["ready"] for t in rpc(process)["tabs"]), 30)
 
     # A new caller is asked about; Allow lets it in.
@@ -135,6 +135,15 @@ try:
     ok, text = second.call("list_tabs", seconds=20)
     check(not ok and "blocked this agent" in text and time.monotonic() - started < 5 and "Probe Two" not in shell_text(process),
           "Block persists for the session without asking again")
+
+    # Settings' prompt for other agent apps names this system's shell and how to run Still from it.
+    send(process, "openPanel", name="settings", value="models")
+    read = "(() => { const d = document.querySelector('#set-dev details'); if (!d) return ''; d.open = true; return d.querySelectorAll('pre')[1]?.innerText ?? '' })()"
+    prompt = until(lambda: rpc(process, "shellEval", script=read), 10) or ""
+    shell, other, run = ("Terminal", "PowerShell", '"') if MAC else ("PowerShell", "Terminal", '& "')
+    lines = prompt.splitlines()
+    check(f"from the terminal ({shell})" in prompt and other not in prompt and len(lines) > 1 and lines[1].startswith(run) and '" --cli <tool> as=' in lines[1],
+          f"The terminal prompt in Settings is for {shell} ({lines[:2]})")
 
     # The per-profile switch refuses everyone with the existing message.
     send(process, "preference", key="agents", value="false")

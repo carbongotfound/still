@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, alive, launcher, rpc  # noqa: E402
+from qa import CREW, alive, launcher, rpc, until_started  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("providers-" + uuid.uuid4().hex)
 EXE = Path(sys.argv[1]).resolve()
@@ -85,8 +85,7 @@ try:
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     env = {**os.environ, "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(PROFILE), "--profiles-root", str(PROFILE)], env=env)
-    until(lambda: (PROFILE / "qa-pipe.txt").exists() or process.poll() is not None, 30)
-    until(lambda: rpc(process).get("tabs"), 30)
+    until_started(process)
 
     # Onboarding: the three headline rows, then "More agents" with each state.
     send(process, "aiToggle")

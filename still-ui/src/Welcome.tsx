@@ -72,7 +72,7 @@ function useWindowSize() {
  return size
 }
 
-/// Connect: the AI app picked in the list, and what it needs next. Nothing installs until the user asks, and a cancelled
+/// Connect: the AI app picked in the list, and what it needs next. Nothing installs or signs in until the user asks, and a cancelled
 /// or failed install or sign-in stays here with Retry.
 function Connect({ ai, send }: { ai: AiState; send: Send }) {
  const h = ai.harnesses.find(x => x.id === ai.harness), s = statusOf(h), maker = h?.maker || h?.app // apps added by hand have no maker
@@ -81,7 +81,7 @@ function Connect({ ai, send }: { ai: AiState; send: Send }) {
  const card = useRef<HTMLDivElement>(null), seen = useRef(`${ai.harness}:${s}`)
  useEffect(() => { if (seen.current !== `${ai.harness}:${s}`) { seen.current = `${ai.harness}:${s}`; reveal(card.current) } }, [ai.harness, s])
  return <>
-  <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id })} />
+  <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id, waitToSignIn: true })} />
   <div className="ob-connect" aria-live="polite" ref={card}>
    {!h ? <p className="ob-note">Pick the AI app you use.</p>
     : s === "installing" ? <div className="ob-status" role="status"><Spinner /><span><b>Installing {h.app}…</b><small>{ai.setup.line || "This usually takes about a minute. Then it opens the sign-in."}</small></span>{cancel}</div>

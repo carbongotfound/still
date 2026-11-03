@@ -518,7 +518,7 @@ public partial class MainWindow
     var into = active is { Url.Length: 0, ChatId: null, Private: false } blank ? blank : await NewTab("", false, false);
     aiError = ""; await RunAi(null, ask, into: into);
     break;
-   case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h); break;
+   case "aiHarness" when S("harness") is var h && (h == "" || AiClis.Any(c => c.Id == h)): UseAi(h, !B("waitToSignIn")); break; // setup's Connect waits for Sign in
    case "aiNew": aiChat = null; aiError = ""; break;
    case "aiOpenChat": aiChat = MyChats.FirstOrDefault(c => c.Id == S("id")) ?? aiChat; aiError = ""; break;
    case "aiDeleteChat" when !runs.ContainsKey(S("id")): {
@@ -738,7 +738,7 @@ public partial class MainWindow
   foreach (var c in AiClis) _ = LoadAiModels(c);
  }
  /// Picks the AI for new chats. The open chat moves along; its next message brings the conversation so far.
- void UseAi(string h)
+ void UseAi(string h, bool signIn = true)
  {
   Prefs.AiHarness = h; SaveLater(); aiError = "";
   if (!Busy(aiChat) && aiChat != null && aiChat.Harness != h) {
@@ -746,7 +746,7 @@ public partial class MainWindow
    else { aiChat.Harness = h; aiChat.Session = null; aiChat.Started = false; SaveAiChats(); }
   }
   foreach (var w in Windows) if (w != this) w.PublishAi();
-  if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked);
+  if (AiClis.FirstOrDefault(c => c.Id == h) is { } picked) _ = AiPicked(picked, signIn);
  }
 
  static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : WhoYouAre(who) + "\n") + $"""
@@ -1261,10 +1261,10 @@ public partial class MainWindow
  }
 
  /// After the user picks an AI: sign in if it needs it, then run what they asked before it was set up.
- async Task AiPicked(AgentAdapter cli)
+ async Task AiPicked(AgentAdapter cli, bool signIn = true)
  {
   await CheckAi(cli); PublishAiEverywhere();
-  if (aiStatus.GetValueOrDefault(cli.Id) == "signedOut") await AiSignIn(cli);
+  if (aiStatus.GetValueOrDefault(cli.Id) == "signedOut") { if (signIn) await AiSignIn(cli); }
   else if (aiStatus.GetValueOrDefault(cli.Id) != "missing") await RunPending();
  }
 

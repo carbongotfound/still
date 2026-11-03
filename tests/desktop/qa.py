@@ -110,14 +110,34 @@ def alive(pid):
     return code.value == 259  # STILL_ACTIVE
 
 
-def launch(exe, profile, env=None):
-    """Starts Still on a test profile and waits until its first tab exists."""
-    import subprocess
-    process = subprocess.Popen([str(Path(exe).resolve()), "--qa", "--profile", str(profile), "--profiles-root", str(profile)], env=env)
-    until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None, 30)
-    until(lambda: rpc(process).get("tabs"), 30)
-    until(lambda: rpc(process, "shellEval", script="document.body.innerText.length"), 30)  # the interface has rendered
+START = 120  # seconds a QA build gets to come up: a first start on Windows waits on WebView2, 18 to 25 s here and more on a busy PC
+
+
+def until_started(process, seconds=START):
+    """Waits until a Still that was just started answers on its test pipe, has a tab and has drawn its interface.
+    A slow start is waited out. One that exits or never comes up fails with the reason, and one that hangs is closed."""
+    end = time.monotonic() + seconds
+    for what, probe in (("its first tab", lambda: rpc(process).get("tabs")),
+                        ("its interface", lambda: rpc(process, "shellEval", script="document.body.innerText.length > 0") is True)):
+        while True:
+            if process.poll() is not None:
+                raise RuntimeError(f"Still exited (code {process.returncode}) while starting, waiting for {what}")
+            try:
+                if probe():
+                    break
+            except (OSError, RuntimeError, ValueError):
+                pass  # no pipe yet, or it closed mid-start: try again
+            if time.monotonic() > end:
+                process.kill()
+                raise RuntimeError(f"Still didn't start within {seconds} s, waiting for {what}")
+            time.sleep(.2)
     return process
+
+
+def launch(exe, profile, env=None):
+    """Starts Still on a test profile and waits until it's ready."""
+    import subprocess
+    return until_started(subprocess.Popen([str(Path(exe).resolve()), "--qa", "--profile", str(profile), "--profiles-root", str(profile)], env=env))
 
 
 # The companions Still used to start with. Tests that talk to them bring them along (setup makes your own now).
