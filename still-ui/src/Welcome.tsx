@@ -29,7 +29,7 @@ const POP: Record<"from" | "to" | "rest", TargetAndTransition> & { timing: Trans
  rest: { scaleX: 1, scaleY: 1, y: 0, opacity: 1 }, timing: { duration: .85, times: [0, .38, .62, .82, 1], ease: "easeOut" } }
 
 // The welcome shows one neutral companion, a plain oat bean, until the user picks a look.
-const NEUTRAL = v2({ form: "bean", color: "#ddd4c6", second: "#8a6a50", marking: "none", eye: "round", mouth: "smile", top: "none", finish: "matte" })
+const NEUTRAL = v2({ form: "bean", color: "#ddd4c6", second: "#ddd4c6", marking: "none", eye: "round", mouth: "smile", top: "none", finish: "matte" })
 const THEMES = [["Light", Sun], ["Dark", Moon], ["System", Monitor]] as const
 const LENGTHS: [ReplyLength, string, string][] = [["short", "Short", "A few lines, answer first"], ["balanced", "Balanced", "As long as the task needs"], ["detailed", "Detailed", "Full answers with the reasoning"]]
 export const SAMPLE = "https://sample.still.internal/compare.html"

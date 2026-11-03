@@ -114,8 +114,9 @@ def main():
         click_text(process, ".profile-stage-actions button", "Edit look")  # the look editor (a new look is v2): Periwinkle and lemon
         until(lambda: js(process, "!!document.querySelector('.look-dialog .look-tabs')"), 8)
         click_text(process, ".look-tabs [role=tab]", "Colors")
-        until(lambda: js(process, "!!document.querySelector('.look-dialog .look-pairs')"), 3)
-        click(process, ".look-pairs [aria-label='Periwinkle and lemon']")
+        until(lambda: js(process, "!!document.querySelector(\".look-dialog .look-colors[aria-label='Accent']\")"), 3)
+        click(process, ".look-colors[aria-label='Body color'] [aria-label='Periwinkle']")  # a solid body, then an accent
+        click(process, ".look-colors[aria-label='Accent'] [aria-label='Lemon']")
         click(process, ".look-save")
         until(lambda: not js(process, "!!document.querySelector('.look-dialog')"), 3)
         js(process, "document.querySelector(\".profile-tablist [role=tab][id$='-trigger-model']\")?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))")
@@ -200,7 +201,7 @@ def main():
         type_into(process, ".home-compose [aria-label=Message]", "/trip-plan Three days in Lisbon in May")
         key(process, ".home-compose [aria-label=Message]", "Enter")
         prompts = BIN / "prompts.jsonl"
-        sent = until(lambda: prompts.exists() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
+        sent = until(lambda: prompts.exists() and prompts.read_text().strip() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
         check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "Maya" not in sent, "Ines's memory that fits the message goes into the first prompt, and not Maya's")
         check("peer-reviewed" not in sent, "and one that doesn't fit stays out (recall finds it)")

@@ -198,6 +198,11 @@ public partial class MainWindow
    InstallCommand = "npm install -g @google/gemini-cli", Site = "https://github.com/google-gemini/gemini-cli", TerminalSignIn = "gemini" },
   new OpenCodeAdapter { Id = "opencode", Name = "OpenCode", App = "OpenCode", Command = "opencode", Maker = "OpenCode",
    InstallCommand = "npm install -g opencode-ai", Site = "https://opencode.ai", Secondary = true },
+  // Compatible: built from their docs and packages, tested with fake apps only. Signed in from a terminal.
+  new QwenAdapter { Id = "qwen", Name = "Qwen Code", App = "Qwen Code", Command = "qwen", Maker = "Qwen",
+   InstallCommand = "npm install -g @qwen-code/qwen-code", Site = "https://github.com/QwenLM/qwen-code", TerminalSignIn = "qwen", Secondary = true, Compatible = true },
+  new CopilotAdapter { Id = "copilot", Name = "GitHub Copilot", App = "Copilot CLI", Command = "copilot", Maker = "GitHub",
+   InstallCommand = "npm install -g @github/copilot", Site = "https://github.com/github/copilot-cli", TerminalSignIn = "copilot login", Secondary = true, Compatible = true },
  ];
  static AgentAdapter[]? aiClis;
  /// The built-in agents, the user's API providers, then the manifests in Still's agents folder (read again when the user rechecks).
@@ -472,7 +477,7 @@ public partial class MainWindow
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
-  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter }),
+  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),

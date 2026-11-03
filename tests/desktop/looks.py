@@ -255,9 +255,25 @@ def edit(process):
     tab(process, "Extras")
     took.append(timed(process, ".look-dialog [data-option=tuft]"))  # Kit (Sky column) already has antennae
     tab(process, "Colors")
-    took.append(timed(process, ".look-pairs [aria-label='Mint and teal']"))
+    took.append(timed(process, ".look-colors[aria-label='Body color'] [aria-label='Mint']"))
     ok = [t for t in took if t is not None and t >= 0]
     check(len(ok) == len(took) and max(ok) < 100, f"Each change shows on the preview within 100ms ({', '.join(f'{t:.0f}ms' for t in ok)}; {len(took) - len(ok)} never)")
+    # Colors: one solid color, an accent and a marking only if picked, each part its own color (or any color)
+    marks = lambda: js(process, "!!document.querySelector(\".look-colors[aria-label='Marking color']\")")
+    click(process, ".look-colors[aria-label='Accent'] .is-none")
+    time.sleep(.3)
+    solid = js(process, "document.querySelector(\".look-colors[aria-label='Accent'] .is-none\").getAttribute('aria-checked')") == "true" and not marks()
+    click(process, ".look-dialog [data-option=belly]")
+    time.sleep(.3)
+    shown = marks()
+    click(process, ".look-colors[aria-label='Marking color'] [aria-label='Charcoal']")
+    click(process, ".look-colors[aria-label='Accent'] [aria-label='Snow']")
+    time.sleep(.3)
+    picks = js(process, "[...document.querySelectorAll('.look-colors')].map(g => g.getAttribute('aria-label') + '=' + (g.querySelector('[aria-checked=true]')?.getAttribute('aria-label') ?? 'own')).join()")
+    anyc = js(process, "document.querySelectorAll('.look-colors .look-custom input[type=color]').length")
+    rpc(process, "capture", name="colors-picked.png")
+    check(solid and shown and picks == "Body color=Mint,Accent=Snow,Marking color=Charcoal" and anyc == 3,
+          f"Colors: one solid color with No accent and no marking; the marking's color shows once a marking is picked; body, accent and marking each pick their own, or any color ({solid}, {shown}, {picks}, {anyc} pickers)")
     click_text(process, ".look-locks button", "Body")
     forms = set()
     for _ in range(6):

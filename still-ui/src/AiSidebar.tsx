@@ -1,5 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group"
@@ -25,7 +26,7 @@ import { useMascotVersion } from "./Mascot"
 import type { ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
@@ -111,8 +112,8 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    : h.installed ? "Installed" : "Checking…"
   return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
    <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
-    <span className="byo-tile" aria-hidden><AiLogo id={h.id} size={22} /></span>
-    <span className="byo-name"><strong>{h.name}</strong><small>{state}</small></span>
+    <span className="byo-tile" aria-hidden><AiLogo id={h.api ? h.name : h.id} size={22} /></span>
+    <span className="byo-name"><strong>{h.name}{h.compatible && <> <Badge variant="outline" className="byo-tag" title="Built from its docs, not yet tested with the real app">Compatible</Badge></>}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
    {s === "signedOut" && send && !h.terminalSignIn && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}

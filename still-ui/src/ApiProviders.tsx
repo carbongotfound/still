@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
+import { AiLogo } from "./AiLogo"
 import { destroy } from "./Undo"
 
 type Use = { in: number; out: number; cost: number; calls: number }
@@ -19,6 +20,8 @@ export type ApiState = { busy: string; error: string; providers: ApiProvider[] }
 type Send = (op: string, payload?: Record<string, unknown>) => void
 
 const KINDS = { openai: "OpenAI-compatible", anthropic: "Claude-compatible" }
+// Known providers: their address and models filled in, the key still optional. Compatible like any other provider.
+const PRESETS = [{ name: "DeepSeek", kind: "openai" as const, url: "https://api.deepseek.com", models: ["deepseek-flash", "deepseek-v4-pro"], context: 1000000 }]
 const JOBS: Record<string, string> = { chats: "chats", titles: "chat titles", setup: "setup", test: "tests" }
 const tokens = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1000 ? Math.round(n / 1000) + "k" : String(n)
 const money = (n: number) => "$" + (n < 1 ? n.toFixed(4).replace(/0+$/, "").replace(/\.$/, ".00") : n.toFixed(2))
@@ -41,6 +44,9 @@ function Form({ p, send, done }: { p?: ApiProvider; send: Send; done: () => void
   setKey(""); done()
  }
  return <form className="api-form" onSubmit={e => { e.preventDefault(); save() }}>
+  {!p && <div className="api-presets" role="group" aria-label="Start from"><span>Start from</span>{PRESETS.map(x =>
+   <Button key={x.name} size="sm" variant="outline" type="button" onClick={() => { setKind(x.kind); setName(x.name); setUrl(x.url); setModels(x.models.join(", ")); setContext(String(x.context)) }}>
+    <AiLogo id={x.name} size={16} />{x.name}</Button>)}</div>}
   <label><span>Kind</span><Select value={kind} onValueChange={v => setKind(v as "openai" | "anthropic")}><SelectTrigger aria-label="Kind"><SelectValue /></SelectTrigger>
    <SelectContent><SelectItem value="openai">{KINDS.openai} (Chat Completions)</SelectItem><SelectItem value="anthropic">{KINDS.anthropic} (Anthropic Messages)</SelectItem></SelectContent></Select></label>
   <label><span>Name</span><Input value={name} maxLength={40} placeholder="My provider" onChange={e => setName(e.target.value)} /></label>
@@ -81,7 +87,7 @@ function Provider({ p, busy, send }: { p: ApiProvider; busy: string; send: Send 
  const testing = busy === p.id
  return <div className="api-card">
   <div className="api-head">
-   <strong>{p.name}</strong><Badge variant="outline">Compatible</Badge>
+   <AiLogo id={p.name} size={18} /><strong>{p.name}</strong><Badge variant="outline">Compatible</Badge>
    <span className="api-kind">{KINDS[p.kind]} · {host(p.url)}</span>
   </div>
   <div className="api-key"><KeyRound aria-hidden />
@@ -124,7 +130,7 @@ export function QuickApi({ api, send }: { api?: ApiState; send: Send }) {
  const p = before ? api?.providers.find(x => !before.includes(x.id)) : undefined
  // Still saves and rechecks the AI apps before it tests, so the old result goes the moment you press it.
  const testing = (asked !== null && !api?.error && (!p?.test || p.test.at === asked)) || (!!p && api?.busy === p.id)
- const name = p?.name || (() => { try { return new URL(url.trim()).hostname.replace(/^api\./, "").slice(0, 40) } catch { return "" } })()
+ const name = p?.name || PRESETS.find(x => x.url === url.trim())?.name || (() => { try { return new URL(url.trim()).hostname.replace(/^api\./, "").slice(0, 40) } catch { return "" } })()
  const test = () => {
   if (!before) setBefore(api?.providers.map(x => x.id) ?? [])
   setAsked(p?.test?.at ?? "")
@@ -133,6 +139,8 @@ export function QuickApi({ api, send }: { api?: ApiState; send: Send }) {
  }
  return <form className="api-form ob-api-form" onSubmit={e => { e.preventDefault(); test() }}>
   <p className="plug-note">For an API that speaks the OpenAI or Claude format, like a local model server. Your provider bills you per use, if it charges. Test connection sends one tiny request.</p>
+  <div className="api-presets" role="group" aria-label="Start from"><span>Start from</span>{PRESETS.map(x =>
+   <Button key={x.name} size="sm" variant="outline" type="button" onClick={() => { setKind(x.kind); setUrl(x.url); setModel(x.models[0]) }}><AiLogo id={x.name} size={16} />{x.name}</Button>)}</div>
   <label><span>Kind</span><Select value={kind} onValueChange={v => setKind(v as "openai" | "anthropic")}><SelectTrigger aria-label="Kind"><SelectValue /></SelectTrigger>
    <SelectContent><SelectItem value="openai">{KINDS.openai}</SelectItem><SelectItem value="anthropic">{KINDS.anthropic}</SelectItem></SelectContent></Select></label>
   <label><span>Base URL</span><Input value={url} spellCheck={false} placeholder="https://api.example.com/v1" onChange={e => setUrl(e.target.value)} /></label>

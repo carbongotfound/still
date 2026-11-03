@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js"
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js"
 import { clone } from "three/addons/utils/SkeletonUtils.js"
-import { EYE_REST, MOUTH_REST, RIGS, isV2, lookKey, type Look } from "./look"
+import { EYE_REST, MOUTH_REST, RIGS, isV2, lookKey, markColor, type Look } from "./look"
 import { clock, type MascotState } from "./Mascot"
 
 // The eight companions as Blender made them (crew/): a skeleton, face shapes and every clip, one glb each. Nothing
@@ -105,17 +105,18 @@ export function bounds(m: Model) {
 // ---------------------------------------------------------------- look v2's colors
 
 // By zone (rig/zdef.py zones, in the glb as COLOR_1 and COLOR_2: feet, belly, mask, tips; hands, freckles): the main
-// color, a light tint of it on the hands, the second color on the feet and the marking. The painted face (the blush, the
+// color, a light tint of it on the hands, the accent on the feet (the main color without one) and the marking in its own
+// color. The painted face (the blush, the
 // mouth) still multiplies over it. glow: a flat copy's own light (companion3d flatten).
 const MARKS: Record<string, number[]> = { none: [0, 0, 0, 0], belly: [1, 0, 0, 0], mask: [0, 1, 0, 0], tips: [0, 0, 1, 0], freckles: [0, 0, 0, 1] }
-export type Zones = { uMain: { value: THREE.Color }; uHand: { value: THREE.Color }; uSecond: { value: THREE.Color }; uMarks: { value: THREE.Vector4 }; uGlow: { value: number } }
+export type Zones = { uMain: { value: THREE.Color }; uHand: { value: THREE.Color }; uSecond: { value: THREE.Color }; uMark: { value: THREE.Color }; uMarks: { value: THREE.Vector4 }; uGlow: { value: number } }
 export function zoned(m: THREE.Material, u: Zones) {
  m.onBeforeCompile = s => {
   Object.assign(s.uniforms, u)
   s.vertexShader = "attribute vec4 color_1;\nattribute vec4 color_2;\nvarying vec4 vZ1;\nvarying vec4 vZ2;\n" + s.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvZ1 = color_1; vZ2 = color_2;")
-  s.fragmentShader = "uniform vec3 uMain;\nuniform vec3 uHand;\nuniform vec3 uSecond;\nuniform vec4 uMarks;\nuniform float uGlow;\nvarying vec4 vZ1;\nvarying vec4 vZ2;\n" + s.fragmentShader.replace("#include <color_fragment>", `{
+  s.fragmentShader = "uniform vec3 uMain;\nuniform vec3 uHand;\nuniform vec3 uSecond;\nuniform vec3 uMark;\nuniform vec4 uMarks;\nuniform float uGlow;\nvarying vec4 vZ1;\nvarying vec4 vZ2;\n" + s.fragmentShader.replace("#include <color_fragment>", `{
  float mark = dot(vec4(vZ1.y, vZ1.z, vZ1.w, vZ2.y), uMarks);
- vec3 z = mix(mix(uMain, uHand, vZ2.x), uSecond, clamp(max(vZ1.x, mark), 0., 1.));
+ vec3 z = mix(mix(mix(uMain, uHand, vZ2.x), uSecond, clamp(vZ1.x, 0., 1.)), uMark, clamp(mark, 0., 1.));
  diffuseColor.rgb = z; totalEmissiveRadiance += z * uGlow;
 }
 #include <color_fragment>`)
@@ -188,21 +189,21 @@ export class Rigged {
   })
  }
 
- /// A v2 look on its foundation: the zones' colors, the lids in the main color (the second with a mask), the brows a
+ /// A v2 look on its foundation: the zones' colors, the lids in the main color (the marking's with a mask), the brows a
  /// darker main, the finish, the face's rest, and the top feature and accessory on the head.
  dress(look: Look) {
-  const main = new THREE.Color(look.color), second = new THREE.Color(look.second), gloss = look.finish === "gloss"
+  const main = new THREE.Color(look.color), second = new THREE.Color(look.second ?? look.color), mark = new THREE.Color(markColor(look)), gloss = look.finish === "gloss"
   this.root.traverse(o => {
    const mesh = o as THREE.Mesh, mat = mesh.material as THREE.MeshStandardMaterial
    if (!mesh.isMesh || !["vinyl", "lid", "brow"].includes(mat?.name)) return
    let t = this.tints.get(mat.name)
    if (!t) {
     t = mat.clone(); t.userData.base = mat.color.clone(); this.tints.set(mat.name, t)
-    if (mat.name === "vinyl") zoned(t, { uMain: { value: new THREE.Color() }, uHand: { value: new THREE.Color() }, uSecond: { value: new THREE.Color() }, uMarks: { value: new THREE.Vector4() }, uGlow: { value: 0 } })
+    if (mat.name === "vinyl") zoned(t, { uMain: { value: new THREE.Color() }, uHand: { value: new THREE.Color() }, uSecond: { value: new THREE.Color() }, uMark: { value: new THREE.Color() }, uMarks: { value: new THREE.Vector4() }, uGlow: { value: 0 } })
    }
    const u = t.userData.zones as Zones | undefined
-   if (u) { u.uMain.value.copy(main); u.uHand.value.copy(main).lerp(WHITE, .3); u.uSecond.value.copy(second); u.uMarks.value.fromArray(MARKS[look.marking!] ?? MARKS.none) }
-   else t.color.copy(t.userData.base).multiply(mat.name === "lid" && look.marking === "mask" ? second : main)
+   if (u) { u.uMain.value.copy(main); u.uHand.value.copy(main).lerp(WHITE, .3); u.uSecond.value.copy(second); u.uMark.value.copy(mark); u.uMarks.value.fromArray(MARKS[look.marking!] ?? MARKS.none) }
+   else t.color.copy(t.userData.base).multiply(mat.name === "lid" && look.marking === "mask" ? mark : main)
    Object.assign(t, { roughness: gloss ? .38 : .86, envMapIntensity: gloss ? .3 : .18 })
    mesh.material = t
   })

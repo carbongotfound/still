@@ -1,7 +1,7 @@
 import * as THREE from "three"
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
-import { HOLD, isV2, lookKey, type Look } from "./look"
+import { HOLD, hasAccent, isV2, lookKey, type Look } from "./look"
 import { STATES, clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
 import { Rigged, bounds, model, rigFor, zoned, type Zones } from "./rig"
 export { onRigReady, model as preload } from "./rig"
@@ -237,8 +237,8 @@ function trim(id: string, g: THREE.Group) {
 // they read at 18px.
 const UP = new THREE.Vector3(0, 1, 0), ASIDE = (a: number) => new THREE.Vector3(Math.sin(a), Math.cos(a), .12)
 Rigged.decor = (look: Look) => {
- const out: [THREE.Object3D, THREE.Vector3][] = [], main = soft(look.color), second = soft(look.second ?? look.color)
- const deep = soft(`#${new THREE.Color(look.color).multiplyScalar(.8).getHexString()}`)
+ const out: [THREE.Object3D, THREE.Vector3][] = [], main = soft(look.color)
+ const deep = soft(`#${new THREE.Color(look.color).multiplyScalar(.8).getHexString()}`), second = hasAccent(look) ? soft(look.second!) : deep // no accent: a deeper body color
  const g = new THREE.Group()
  if (look.top === "antennae") for (const k of [-1, 1]) { put(g, tube([[k * .03, -.01, 0], [k * .045, .08, 0], [k * .085, .15, 0]], .011), main); blob(g, second, .032, .032, .032, k * .088, .165, 0) }
  else if (look.top === "tuft") for (const [x, h, r] of [[-.035, .07, .35], [0, .095, 0], [.035, .065, -.4]]) { const m = blob(g, deep, .024, h, .024, x, h * .65, 0); m.rotation.z = r }
@@ -856,13 +856,14 @@ export const stop = () => cancelAnimationFrame(raf)
 // Where each state's picture is taken, in seconds into its loop.
 const STILL_AT: Partial<Record<MascotState, number>> = { idle: .3, working: .3, needs: .55, done: .3, error: .5, thinking: .5, talking: .2, pointing: .3 }
 /// A still picture of a look, for small places and for reduced motion.
-export function picture(look: Look, state: MascotState, px: number, frame: Frame, flat = false) {
+export function picture(look: Look, state: MascotState, px: number, frame: Frame, flat = false, turn = 0) { // turn: radians about the up axis, for reviews
  if (frame === "icon" || frame === "portrait") return head(look, px, frame)
  start()
  const c = make(look)
  if (!c) return null // its model is loading (onRigReady)
  c.state = state; c.live = false
  c.update(0, STILL_AT[state] ?? .3, null)
+ c.group.rotation.y += turn
  const made = flat ? flatten(c, TONES, isV2(look)) : []
  instances.set("__picture", c)
  draw(c, px, frame)
