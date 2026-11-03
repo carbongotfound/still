@@ -123,7 +123,7 @@ FAKE = textwrap.dedent(r'''
         reply(json.dumps({"say": "Got it, you're all set.", "done": True, "settings": {"name": "Sammy", "interests": ["Baking", "Wholesale"], "layout": "", "theme": "Dark",
             "search": "", "pinned": [{"title": "Weeknight Kitchen", "url": site + "/recipes/pasta"}], "sites": [], "newTab": "", "agent": "careful",
             "tone": "Keep it short and cheerful.", "memories": ["Runs a small bakery that sells to cafes.", "uses Gmail and Shopify all day. Has  two cats"],
-            "hire": ["growth", "research", "nobody"],
+            "hire": ["growth", "research", "assistant", "nobody"],  # assistant: Ruth isn't in setup's library, so she's never hired
             "companions": [{"id": talk["lead"], "instructions": "Keep my wholesale orders on track and tell me when a cafe is late to pay.", "memories": ["Bakes sourdough for six cafes."]},
                            {"id": "growth", "instructions": "Find me a second baker who can start at 5am.", "memories": ["Hiring a second baker for early shifts."]},
                            {"id": "nobody", "instructions": "Not on the team, so this goes nowhere."}],
@@ -660,8 +660,8 @@ def interview(process):
         send(process, "welcomeAgain", talk=True)
         check(until(lambda: "What do you work on these days?" in talk_text(process), 20), "Set me up again opens straight into Miso's questions")
         first = sent()[talked]
-        check("- growth: Talia, Growth, Signups and retention" in first and "- research:" not in first and "Maya, Research" in first,
-              "It knows Still's companions, and which ones are already on the team")
+        check("- growth: Talia, Growth, Signups and retention" in first and "- research:" not in first and "Maya, Research" in first and "- assistant:" not in first and "Ruth" not in first,
+              "It knows Still's companions, and which ones are already on the team; Assistant Ruth isn't offered")
         options = js(process, "[...document.querySelectorAll('.ob-interview .ob-chips button')].map(b => b.innerText.trim())") or []
         check(options == ["I run a small bakery", "Research", "Sales"], f"Its question comes with answers to tap ({options})")
         time.sleep(1.2)
@@ -693,7 +693,7 @@ def interview(process):
         prefs = until(lambda: (p := state().get("Preferences", {})).get("Interests") == ["Baking", "Wholesale"] and "Talia" in companions(p) and p, 5) or {}  # saved a moment later
         check(rpc(process).get("theme") == "Dark" and prefs, "The theme and interests it picked apply")
         check(any(t["Pinned"] and t["Url"].endswith("/recipes/pasta") for t in rpc(process)["tabs"]), "Its pinned site is pinned")
-        check(sorted(companions(prefs)) == ["Maya", "Miso", "Talia"], f"It hired Talia from the library, and not Maya twice ({companions(prefs)})")
+        check(sorted(companions(prefs)) == ["Maya", "Miso", "Talia"], f"It hired Talia from the library, not Maya twice and not Assistant Ruth ({companions(prefs)})")
         mate = next((c for c in prefs.get("Companions", []) if c["Name"] == "Miso"), {})
         talia = next((c for c in prefs.get("Companions", []) if c["Name"] == "Talia"), {})
         check(mate.get("Job", "").endswith("For me: Keep my wholesale orders on track and tell me when a cafe is late to pay.") and talia.get("Job", "").endswith("For me: Find me a second baker who can start at 5am."),

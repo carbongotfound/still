@@ -60,7 +60,7 @@ def chats():
 def main():
     WORK.mkdir(parents=True)
     PROFILE.mkdir()
-    crew = premades()
+    crew = [c for c in premades() if c["Id"] != "assistant"]  # Ruth has her own live run (assistant_live.py)
     assert [c["Id"] for c in crew] == list(TASKS), [c["Id"] for c in crew]
     crew = [c for c in crew if not ONLY or c["Id"] in ONLY]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": AGENT,

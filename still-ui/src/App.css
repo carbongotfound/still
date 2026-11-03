@@ -1367,7 +1367,8 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .joined-badge svg { width:16px; height:16px; stroke-width:3; }
 @keyframes joined-pop { from { transform:scale(0); } to { transform:scale(1); } }
 @media (prefers-reduced-motion: reduce) { .joined-badge { animation:none; } }
-.joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button] { border-radius:99px; }
+.joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button], .joined-main [data-slot=button] { border-radius:99px; }
+.joined-main { display:flex; justify-content:center; } .joined-main [data-slot=button]:disabled { opacity:1; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
 /* Plugins (Plugins.tsx): name chips, setup's belt and grid, Skills & plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }

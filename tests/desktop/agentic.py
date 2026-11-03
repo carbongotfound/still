@@ -70,7 +70,10 @@ REVIEWS = [("Best laptops under $800, tested", "/reviews/best", "We used twelve 
 def results(query):
     q = query.get("q", [""])[0]
     rows = "".join(f'<div class="result"><h2><a class="result__a" href="{path}">{title}</a></h2><a class="result__snippet">{snip}</a></div>' for title, path, snip in REVIEWS)
-    return f"<!doctype html><meta charset=utf-8><title>{q} at Search</title><nav>Search menu</nav><main>{rows}</main>"
+    # Like Google on a first visit, the page sends itself on to a slow address answered with no content, so it stays
+    # put: a lookup must wait that out, and the next lookup must not take that cut-off reload for its own.
+    again = "<script>addEventListener('load', () => setTimeout(() => location.replace(location.href + '&sei=1'), 50))</script>"
+    return f"<!doctype html><meta charset=utf-8><title>{q} at Search</title><nav>Search menu</nav><main>{rows}</main>{again}"
 
 
 def review(path):
@@ -81,6 +84,11 @@ def review(path):
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
+        if "sei=" in url.query:
+            time.sleep(1.5)
+            self.send_response(204)
+            self.end_headers()
+            return
         body = (store(urllib.parse.parse_qs(url.query)) if url.path == "/laptops"
                 else results(urllib.parse.parse_qs(url.query)) if url.path == "/search"
                 else review(url.path) if url.path.startswith("/reviews/")

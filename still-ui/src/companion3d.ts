@@ -28,6 +28,7 @@ const SHAPE: Record<string, ShapeDef> = {
  squat: { h: .76, w: .51, d: .82, top: 2.7, bot: 3.3, taper: .05, n: 2.3, mid: .45, lean: 0, bump: 0, eye: .6 },
  bump: { h: .92, w: .41, d: .84, top: 2.6, bot: 3, taper: .06, n: 2, mid: .46, lean: 0, bump: .095, eye: .62 },
  lean: { h: 1.12, w: .355, d: .8, top: 2.1, bot: 2.9, taper: .05, n: 2, mid: .42, lean: .1, bump: 0, eye: .66 },
+ crest: { h: .98, w: .43, d: .82, top: 2.3, bot: 3, taper: -.18, n: 2, mid: .62, lean: 0, bump: 0, eye: .68 },
 }
 const pw = (v: number, e: number) => Math.sign(v) * Math.abs(v) ** e
 

@@ -1,6 +1,6 @@
 import { useEffect, useState, type CSSProperties, type ReactNode } from "react"
-import { BadgeCheck, Braces, Bug, CalendarCheck, CalendarClock, Check, ChevronDown, ClipboardList, ClipboardPaste, FileText, FlaskConical, Funnel, Inbox, LayoutGrid, ListChecks, ListTodo, Mail,
- MousePointerClick, Newspaper, PenLine, Phone, Plus, Radar, Rocket, Scale, Sparkles, Target, TrendingUp, Users, X, type LucideIcon } from "lucide-react"
+import { Activity, BadgeCheck, Braces, Bug, CalendarCheck, CalendarClock, Check, ChevronDown, ClipboardList, ClipboardPaste, FileText, FlaskConical, Funnel, GitMerge, HandHelping, Inbox, LayoutGrid, ListChecks, ListTodo, Mail,
+ MousePointerClick, Newspaper, PenLine, Phone, Plus, Radar, Rocket, Scale, Signpost, Sparkles, Sunrise, Target, TrendingUp, Users, X, type LucideIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Dialog, DialogClose, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Button } from "@/components/ui/button"
@@ -34,7 +34,8 @@ export const KIT_KNOWLEDGE = kit(import.meta.glob<string>("../../still/Assets/ro
 const SKILL_ICONS: Record<string, LucideIcon> = { "call-brief": Phone, "lead-list": Target, "follow-up": Mail, "pipeline-check": ListChecks, "funnel-audit": Funnel, "experiment-plan": FlaskConical,
  "lifecycle-emails": Mail, "weekly-numbers": TrendingUp, "plan-tomorrow": CalendarCheck, "meeting-brief": Users, "reply-queue": Inbox, "project-checklist": ListTodo, "voice-match": PenLine,
  "post-set": LayoutGrid, "launch-post": Rocket, "newsletter": Newspaper, "smoke-test": MousePointerClick, "bug-report": Bug, "feedback-spec": ClipboardList, "api-explainer": Braces,
- "research-brief": FileText, "option-compare": Scale, "claim-check": BadgeCheck, "market-watch": Radar }
+ "research-brief": FileText, "option-compare": Scale, "claim-check": BadgeCheck, "market-watch": Radar,
+ "handle-it": HandHelping, "route-request": Signpost, "split-and-merge": GitMerge, "status-update": Activity, "daily-brief": Sunrise }
 const TILES = ["oklch(.62 .16 255)", "oklch(.64 .15 155)", "oklch(.72 .15 70)", "oklch(.64 .19 350)"] // the skill tiles' colors, in turn
 
 // Still's own companions, ready to hire: each one owns a part of your work, and its card says what it does. How each
@@ -53,6 +54,8 @@ export type Premade = {
  job: string; tone: string
  asks: [string, string][] // "What I'm good at": [label, a prompt that works in Still today]
  look: Look
+ libraryOnly?: boolean // hired only from the library: never in setup's crew or its interview, never on a team by default
+ joined?: string // the card that greets it after hiring, after its name, when "is here for <area>" doesn't read well
 }
 
 export const PREMADES: Premade[] = [
@@ -158,7 +161,27 @@ export const PREMADES: Premade[] = [
    ["Check a claim", "Ask me for a claim I've seen, then check it against solid sources and tell me whether it holds up, with links."],
    ["What changed in my market?", "Ask me about my market and competitors, then find what changed in the last month: launches, pricing and news, each with a link. Remember the competitors for next time."],
   ], look: ROLE_LOOKS.research },
+ { id: "assistant", name: "Ruth", role: "Assistant", area: "Here for anything you need", libraryOnly: true,
+  joined: "is here for anything you need, and will open with a first task picked for your work.",
+  line: "Your personal assistant. Ask her anything, and she'll handle it or bring in the right companion.",
+  summary: "Your personal assistant for questions, plans, writing, quick research and browsing. She handles most things herself and brings in the right companion when that helps.",
+  about: "Hi, I'm Ruth, your personal assistant. Ask me anything: a question, a plan for your day, something to write, quick research or a page to look into. I handle most things myself. When one of the companions you've hired would do a part better, I bring them in and come back with one answer. I never hire anyone for you, and I won't send, post, buy or change anything without your OK.",
+  tips: ["Ask me anything, big or small. I'll handle it or tell you who should.", "Hire the companions you want me to work with. I only bring in your team.", "Turn on my morning brief to start each day knowing what's on."],
+  bubble: "Ask me anything. I'll take it from there.",
+  expect: ["Questions, plans and writing, done herself", "Quick research and browsing for you", "The right companion brought in when it helps"],
+  uses: ["gmail", "googlecalendar", "slack"],
+  routine: ["Brief me for today: what's on, what's waiting on me and the one thing to do first. Don't send anything.", "08:30", [1, 2, 3, 4, 5], "daily-brief"],
+  job: "A personal assistant for the user, and often their first stop. Answers questions, plans the day, drafts writing, does quick research with sources and finds things on the web. Handles most requests herself and brings in a companion the user has hired when one would do a part better, then gives one answer that says who did what. Never hires a companion, never asks one the user hasn't hired, and never approves anything for the user.",
+  tone: "Warm and capable. Clear answers, short updates and one next step.",
+  asks: [
+   ["Help me with something", "Ask me what I need, then handle it: answer, plan, draft or look it up. Bring in one of my companions only if they'd do a part better."],
+   ["Plan my day", "Ask me what's on today, then give me a short plan with the important things first and the one thing to do right now."],
+   ["Look this up", "Ask me what to find, then search the web and give me a short answer with a source link for each point."],
+   ["Get my team on this", "Ask me about a bigger job, then do the quick parts yourself, hand the rest to my companions and give me one answer that says who did what."],
+  ], look: ROLE_LOOKS.assistant },
 ]
+/// The six setup offers and its interview can hire (not Assistant Ruth, who's hired from the library only).
+export const SETUP_CREW = PREMADES.filter(p => !p.libraryOnly)
 /// The role a companion was hired for, if any (its `crew`). Renaming or changing it keeps the link.
 export const premadeOf = (c?: { crew?: string }) => c?.crew ? PREMADES.find(p => p.id === c.crew) : undefined
 /// How a companion is introduced: its role in front of its name ("Research Maya"). Chat headers and the switcher use the name.
@@ -223,14 +246,17 @@ export const fromPremade = (p: Premade, id = ""): Companion => ({ id, name: p.na
 const JOINED_GESTURE = "yes"
 /// A companion just joined: it celebrates, then the user starts its first chat (it opens with a task and one question)
 /// or carries on.
-export function JoinedCard({ companion, onStart, onLater }: { companion: Companion; onStart: () => void; onLater: () => void }) {
+export function JoinedCard({ companion, main, onStart, onLater, onMain }: { companion: Companion; main?: boolean; onStart: () => void; onLater: () => void; onMain?: () => void }) {
  const look = lookOf(companion), role = premadeOf(companion)
+ const [made, setMade] = useState(false) // the assistant offers to be the main companion: one click, never by itself
  return <Dialog open onOpenChange={o => { if (!o) onLater() }}>
   <DialogContent className="app-dialog crew-dialog joined-card" style={{ "--hue": look.color } as CSSProperties}>
    <div className="crew-dialog-hero"><Mascot look={look} size={212} follow gesture={JOINED_GESTURE} gestureAt={1} /><span className="joined-badge" aria-hidden><Check /></span></div>
    <DialogHeader><DialogTitle>{introName(companion)} joined your team</DialogTitle>
-    <DialogDescription>{role ? `${companion.name} is here for ${role.area.toLowerCase()}, and will open with a first task picked for your work.`
+    <DialogDescription>{role ? `${companion.name} ${role.joined ?? `is here for ${role.area.toLowerCase()}, and will open with a first task picked for your work.`}`
      : `${companion.name} will open with a first task and one question about how you like things done.`}</DialogDescription></DialogHeader>
+   {role?.id === "assistant" && onMain && (!main || made) && <div className="joined-main"><Button variant="outline" disabled={made} onClick={() => { onMain(); setMade(true) }}>
+    {made ? <><Check />{companion.name} is your main companion</> : `Make ${companion.name} your main companion`}</Button></div>}
    <div className="joined-actions"><Button variant="ghost" onClick={onLater}>Not now</Button><Button autoFocus onClick={onStart}>Start chatting</Button></div>
   </DialogContent>
  </Dialog>
@@ -286,7 +312,7 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
  const act = (p: Premade) => { const c = mine(p); setMore(null); if (c) onChat!(c.id); else onPick(p) }
  const on = (key: string) => !!picked?.includes(key)
  // Once someone's hired, the rest keep pitching now and then, one at a time.
- const waiting = picked?.length ? PREMADES.filter(p => !picked.includes(p.id)).map(p => p.id).join() : ""
+ const waiting = picked?.length ? SETUP_CREW.filter(p => !picked.includes(p.id)).map(p => p.id).join() : ""
  useEffect(() => {
   if (!waiting || matchMedia("(prefers-reduced-motion: reduce)").matches) return
   const ids = waiting.split(","), t = setInterval(() => setNudge([ids[Math.floor(Math.random() * ids.length)], Date.now()]), 6500)
@@ -294,7 +320,7 @@ export function CrewCards({ have = [], picked, made = [], onPick, onMade, onOwn,
  }, [waiting])
  const hire = (key: string, name: string, toggle: () => void) => <button className="role-btn crew-pick" aria-pressed={picked ? on(key) : undefined} aria-label={picked ? `${on(key) ? "Hired" : "Hire"} ${name}` : undefined} onClick={toggle}>{on(key) ? <><Check />Hired</> : <><Plus />Hire</>}</button>
  return <div className="role-grid crew-grid">
-  {PREMADES.map(p => <RoleCard key={p.id} className={cn("crew-card", (on(p.id) || !!mine(p)) && "is-picked")} hue={p.look.color} look={p.look} name={titled(p)} expect={p.expect} bubble={p.bubble}
+  {SETUP_CREW.map(p => <RoleCard key={p.id} className={cn("crew-card", (on(p.id) || !!mine(p)) && "is-picked")} hue={p.look.color} look={p.look} name={titled(p)} expect={p.expect} bubble={p.bubble}
    on={on(p.id) || !!mine(p)} nudge={nudge[0] === p.id ? nudge[1] : 0} open={() => setMore(p)} label={`${titled(p)}'s profile`}>
    {mine(p) ? <><span className="role-done crew-hired"><Check />Hired</span><button className="role-btn crew-pick" onClick={() => act(p)}>Say hi</button></> : hire(p.id, titled(p), () => act(p))}
   </RoleCard>)}
