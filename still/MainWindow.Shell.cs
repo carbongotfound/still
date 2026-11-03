@@ -207,7 +207,7 @@ public partial class MainWindow
      case "startup":StartupRegistration.Set(data.GetProperty("enabled").GetBoolean());break;
      case "welcomeDone":state.Welcome=false;SaveLater();PublishAll();break;
      case "welcomeAgain":state.Welcome=true;welcomeTalk=data.TryGetProperty("talk",out var tk)&&tk.ValueKind==JsonValueKind.True;PublishAll();break;
-     case "setupStart" or "setupAnswer" or "setupUndo" or "setupEdit" or "setupEnd":await HandleSetup(op,data);break;
+     case "setupStart" or "setupAnswer" or "setupUndo" or "setupEdit" or "setupHire" or "setupEnd":await HandleSetup(op,data);break;
      case "interests":Prefs.Interests=data.TryGetProperty("list",out var picks)&&picks.ValueKind==JsonValueKind.Array?[..picks.EnumerateArray().Where(x=>x.ValueKind==JsonValueKind.String).Select(x=>x.GetString()!.Trim()).Where(x=>x.Length is > 0 and <= 40).Distinct().Take(12)]:[];SaveLater();PublishAll();break;
      case "defaultBrowser":BrowserRegistration.Register();BrowserRegistration.OpenDefaultAppsSettings();break;
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;

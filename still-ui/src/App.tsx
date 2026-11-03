@@ -38,7 +38,7 @@ import "./app.css"
 import { homeIdeas, rankSuggestions, type AddressPick, type HomeIdea } from "./suggestions"
 import { BrowserTools } from "./BrowserTools"
 import { SaveLoginBar } from "./Passwords"
-import { Welcome } from "./Welcome"
+import { GetStarted, Welcome, startCreating } from "./Welcome"
 import { Tour } from "./Tour"
 import type { ToolData } from "./BrowserTools"
 
@@ -754,7 +754,7 @@ export default function App() {
       {ghost?.side && <div className="split-zones" aria-hidden><div className={cn("split-zone", ghost.side === "left" && "is-on")}><span><Columns2 />Open on the left</span></div><div className={cn("split-zone", ghost.side === "right" && "is-on")}><span><Columns2 />Open on the right</span></div></div>}
       {driven && working && <PageControl key={driven.id} tab={driven} agent={working} who={driverOf(ai, driven)} chat={!split} ai={ai} />}
       {pair && snapshot && pairShot && <img className={cn("page-snapshot", pair.right !== active?.id && "is-right")} src={pairShot} alt="" style={{ width: `calc((100% - 6px) * ${pair.right === active?.id ? pair.ratio : 1 - pair.ratio})` }} />}
-      {active?.url || active?.chatId || active?.id === "empty" /* the placeholder before the host's tabs: nothing, not a new tab with a live companion */ ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : (!active?.isPrivate || state.incognito && view !== "home") && !state.noAi && ai && companion && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
+      {active?.url || active?.chatId || active?.id === "empty" /* the placeholder before the host's tabs: nothing, not a new tab with a live companion */ ? (snapshot && <img className={cn("page-snapshot", pair?.right === active?.id && "is-right")} src={snapshot} alt="" style={pair ? { width: `calc((100% - 6px) * ${pair.right === active?.id ? 1 - pair.ratio : pair.ratio})` } : undefined} />) : (!active?.isPrivate || state.incognito && view !== "home") && !state.noAi && ai && companion && (!!ai.companions?.length || view !== "home") && (state.preferences.newTab !== "sites" || view !== "home") ? <motion.div key={active?.id} className="new-tab-page is-home" style={{ "--hue": hueOf(companion) } as CSSProperties} initial={{ opacity: 0, y: reduced ? 0 : 12 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: reduced ? .01 : .38, ease: [.22, 1, .36, 1] }}>
        <HomeRail view={view} setView={setView} profile={state.profileName} onSettings={() => open("settings")} />
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={mine!} send={send} onNew={() => setView("home")} />
@@ -778,6 +778,7 @@ export default function App() {
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
             <PluginStack plugins={ai?.plugins} send={send} onOpen={() => setView("skills")} />
            </div>
+           {!state.welcome && !state.secondary && <GetStarted isDefault={state.preferences.isDefaultBrowser} layout={state.preferences.tabLayout} send={send} onImport={() => open("import")} />}
            {ideas.length > 0 && <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(({ kind, label, why, prompt }) => { const [Icon, color] = IDEA_LOOKS[kind]
             return <button key={label} className="home-idea" data-kind={kind} onClick={() => send("aiSend", { text: prompt, home: true, companion: companion.id })}><Icon data-color={color} aria-hidden /><b>{label}</b><small>{why}</small></button> })}</div></div>}
            {state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
@@ -790,6 +791,8 @@ export default function App() {
        <p>{active?.isPrivate ? "A little privacy." : "Where to?"}</p>
        <Button variant="outline" className="start-search" onClick={e => openAddress(e.currentTarget)}><Search /><span>Search or enter an address</span><kbd>{keys("Ctrl L")}</kbd></Button>
        {!active?.isPrivate && state.bookmarks.length > 0 && <div className="speed-dial">{state.bookmarks.slice(0, 8).map(b => <BookmarkMenu key={b.url} b={b} onEdit={editBookmark}><button className="speed-dial-tile" title={b.url} onClick={() => send("navigate", { url: b.url })}><span className="speed-dial-letter">{b.favicon ? <img src={b.favicon} alt="" /> : (host(b.url)[0] ?? "•").toUpperCase()}</span><span className="speed-dial-name">{b.title || host(b.url)}</span></button></BookmarkMenu>)}</div>}
+       {!active?.isPrivate && ai && !state.noAi && !ai.companions?.length && <Button className="new-tab-create" onClick={() => { startCreating(); send("welcomeAgain") }}><Sparkles />Create your companion</Button>}
+       {!active?.isPrivate && !state.welcome && !state.secondary && <GetStarted isDefault={state.preferences.isDefaultBrowser} layout={state.preferences.tabLayout} send={send} onImport={() => open("import")} />}
        {active?.isPrivate && <span className="private-caption"><LockKeyhole />This tab and its history won't be saved.</span>}
       </motion.div>}
      </div>
@@ -829,7 +832,7 @@ export default function App() {
    <span className="tab-ghost-icon">{ghost.favicon ? <img src={ghost.favicon} alt="" /> : <Globe2 />}</span><span className="tab-ghost-title">{ghost.title}</span>
    {ghost.tearing && <span className="tab-ghost-hint"><Copy />New window</span>}
   </div>}
-  {state.welcome && <Welcome isDefault={state.preferences.isDefaultBrowser} agents={!!state.preferences.agents} layout={state.preferences.tabLayout} theme={state.preferences.theme} talk={state.welcomeTalk} ai={ai} noAi={state.noAi} hidden={pane === "import"} sounds={state.preferences.sounds !== false} soundsBlocked={soundsBlocked} send={send} onImport={() => open("import")} />}
+  {state.welcome && <Welcome theme={state.preferences.theme} talk={state.welcomeTalk} ai={ai} noAi={state.noAi} sounds={state.preferences.sounds !== false} soundsBlocked={soundsBlocked} send={send} />}
   {!state.welcome && !state.secondary && <Tour name={companion?.name ?? "Your companion"} ready={!modal && !!active && active.id !== "empty" && !active.url && !active.chatId && !active.isPrivate && !!ai && !state.noAi} />}
   <Dialog open={commandOpen} onOpenChange={o => { if (!o) close() }}>
    <DialogContent className={"command-dialog"} showCloseButton={false}>
@@ -862,8 +865,8 @@ export default function App() {
       <h2 className="set-title">{pageName(settingsPage)}</h2>
       {settingsPage === "general" && <>
        <SetCard title="Start">
-        <SetRow id="setup" title="Setup" help="Go through the first steps again: your companions, your AI and how Still looks."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
-        {hasAi && ai.companions?.[0] && <SetRow id="talk" title={`Set me up with ${ai.companions[0].name}`} help={`${ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more. You check every change.`}><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></SetRow>}
+        <SetRow id="setup" title="Setup" help="Go through the first steps again: your AI, a new companion and a first task."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
+        {hasAi && ai.companions?.[0] && <SetRow id="talk" title={`Set me up with ${ai.companions[0].name}`} help={`${ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more, and suggests companions you can hire. You check every change.`}><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></SetRow>}
        </SetCard>
        <SetCard title="Browsing">
         <SetRow id="search" title="Search engine" help="Search only when you press Enter."><Select value={state.preferences.search} onValueChange={v => preference("search", v)}><SelectTrigger className="w-36" aria-label="Search engine"><SelectValue /></SelectTrigger><SelectContent>{["DuckDuckGo", "Google", "Bing"].map(v => <SelectItem key={v} value={v}>{v}</SelectItem>)}</SelectContent></Select></SetRow>

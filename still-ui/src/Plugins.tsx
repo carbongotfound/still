@@ -82,23 +82,6 @@ export function PluginStack({ plugins, send, onOpen }: { plugins?: PluginsState;
  return <button className="home-plugins" onClick={onOpen} aria-label={on.length ? `Plugins: ${andList(on.map(c => c.name))} connected` : "Plugins: none connected yet"}><Stack on={on} />Plugins</button>
 }
 
-/// Setup's belt: two rows of apps gliding opposite ways, paused under the pointer. Reduced motion gets a still grid (App.css).
-export function PluginBelt() {
- return <div className="plug-belt" aria-label="Apps you can connect">{[POPULAR.slice(0, 12), POPULAR.slice(12)].map((row, i) =>
-  <div key={i} className={cn("plug-row", i === 1 && "is-reverse")}><div className="plug-track">
-   {[...row, ...row].map(([slug, name], j) => <PluginChip key={j} slug={slug} name={name} hidden={j >= row.length} />)}
-  </div></div>)}</div>
-}
-
-/// With a key: the same apps as a grid to pick from. A tap connects it; connected ones have a check.
-export function PluginGrid({ plugins, send }: { plugins: PluginsState; send: Send }) {
- return <div className="plug-grid" role="group" aria-label="Connect an app">{POPULAR.map(([slug, name]) => {
-  const on = plugins.connected.some(c => c.slug === slug), busy = plugins.connecting === slug
-  return <button key={slug} className={cn("plug-pick", on && "is-on")} aria-pressed={on} aria-label={on ? `${name} is connected` : `Connect ${name}`} disabled={on || !!plugins.connecting}
-   onClick={() => send("pluginConnect", { slug })}><PluginChip slug={slug} name={name} />{busy ? <Loader2 className="animate-spin" /> : on ? <Check /> : null}</button>
- })}</div>
-}
-
 /// Where the key comes from, then paste it once. Composio checks it before it's kept (a bad one never replaces a good
 /// one), it's kept like saved passwords, and the field empties right away. Composio's For You page shows a Connect key
 /// (ck_…) that its API refuses: the steps point past it.

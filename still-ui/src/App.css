@@ -80,7 +80,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .new-tab-page>p { font-size:13px;color:var(--muted-foreground);margin:14px 0 34px; }
 .start-search[data-slot="button"] { width:414px;height:49px;font-size:13px;font-weight:400;color:var(--muted-foreground);justify-content:flex-start;gap:13px;padding:0 17px;background:color-mix(in srgb,var(--muted) 32%,var(--background));border:1px solid var(--input);border-radius:13px;box-shadow:inset 0 1px 0 #ffffff04,0 6px 20px #0001; }
 .start-search[data-slot="button"]:hover { border-color:color-mix(in oklab,var(--foreground) 28%,transparent); }
-.start-search svg { width:14px;height:14px;opacity:.65; }.start-search kbd { margin-left:auto;opacity:.6; }
+.start-search[data-slot="button"]:focus-visible { border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent),0 6px 20px #0001; }
+.start-search svg { width:14px;height:14px;opacity:.65; }.start-search kbd { margin-left:auto; }
 .private-caption { display:flex;gap:8px;align-items:center;position:absolute;bottom:35px;font-size:11px;color:var(--muted-foreground); }.private-caption svg { width:12px;height:12px; }
 .top-tab-strip { height:43px;flex:none;background:var(--chrome);padding:2px 10px 5px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none; }
 .top-tab-list { position:relative;display:flex;gap:5px;align-items:center; }
@@ -1406,22 +1407,9 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button], .joined-main [data-slot=button] { border-radius:99px; }
 .joined-main { display:flex; justify-content:center; } .joined-main [data-slot=button]:disabled { opacity:1; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
-/* Plugins (Plugins.tsx): name chips, setup's belt and grid, Skills & plugins */
+/* Plugins (Plugins.tsx): name chips, Skills & plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }
 .plug-chip i { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); font-style:normal; font-weight:700; font-size:12px; }
-.plug-belt { display:grid; gap:10px; margin:6px 0 16px; }
-.plug-row { overflow:hidden; mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
-.plug-track { display:flex; gap:10px; width:max-content; animation:plug-slide 60s linear infinite; }
-.plug-row.is-reverse .plug-track { animation-direction:reverse; animation-duration:72s; }
-.plug-belt:hover .plug-track { animation-play-state:paused; }
-@keyframes plug-slide { to { transform:translateX(calc(-50% - 5px)); } }
-@media (prefers-reduced-motion: reduce) { .plug-belt { display:flex; flex-wrap:wrap; gap:8px; } .plug-row, .plug-track { display:contents; } .plug-track { animation:none; } .plug-track > [aria-hidden=true] { display:none; } }
-.plug-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:8px; margin:6px 0 16px; }
-.plug-pick { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:2px 12px 2px 2px; border-radius:99px; border:1px solid var(--border); background:var(--card); color:inherit; transition:background .15s,border-color .15s,transform .15s; }
-.plug-pick .plug-chip { border:0; background:none; }
-.plug-pick:hover:not(:disabled) { background:var(--accent); } .plug-pick:active:not(:disabled) { transform:scale(.97); }
-.plug-pick.is-on { border-color:color-mix(in oklab,var(--primary) 55%,var(--border)); } .plug-pick:disabled:not(.is-on) { opacity:.55; }
-.plug-pick svg { flex:none; width:15px; height:15px; } .plug-pick.is-on svg { color:var(--primary); }
 .plug-key { display:grid; gap:8px; } .plug-key-row { display:flex; gap:8px; } .plug-key-row input { flex:1; min-width:0; }
 .plug-error { margin:0; font-size:12px; color:var(--destructive); }
 .plug-note { margin:0; font-size:12px; line-height:1.55; color:var(--muted-foreground); } .plug-note a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
@@ -1476,11 +1464,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .setting-row.is-stacked { display:grid; gap:12px; } .plug-keyline { display:flex; align-items:center; gap:24px; } .plug-keyline > div:first-child { flex:1; min-width:0; }
 .plug-keyacts { display:flex; gap:8px; flex:none; } .plug-cancel { justify-self:start; }
 .plug-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; border-radius:12px; background:var(--secondary); } .plug-confirm p { flex:1 1 260px; margin:0; font-size:12px; line-height:1.5; }
-.ob-team { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 14px; padding-top:30px; }
-.ob-team-mate { position:relative; display:grid; justify-items:center; }
-.ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }
-@keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
-.ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
 .mate-acts { display:flex; align-items:center; gap:6px; }
 .mate-fire { height:30px; padding:0 12px; border-radius:99px; color:var(--muted-foreground); font-size:12.5px; font-weight:580; transition:color .15s,background-color .15s; } .mate-fire:hover { color:var(--destructive); background:color-mix(in oklab,var(--destructive) 12%,transparent); }
@@ -1781,3 +1764,36 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 @media (max-width: 520px) { .hire-profile-skills { grid-template-columns:minmax(0,1fr); } }
 /* Setup speaks in the same typeface as the rest of Still's UI. */
 .welcome.ob { --font-display:var(--font-ui); }
+/* 2.10 welcome: headline, Connect, the review before Hire, the first task's preview, and Get started on the new tab page */
+.ob-headline { margin:0 0 4px; font-family:var(--font-display); font-size:clamp(26px,3.2vw,38px); font-weight:460; line-height:1.12; letter-spacing:-.02em; text-wrap:balance; color:var(--ob-ink); }
+.ob-connect { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+.ob-status { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; border:1px solid var(--ob-line); background:var(--ob-card); }
+.ob-status > span { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; } .ob-status b { font-size:14px; font-weight:600; } .ob-status small { font-size:12.5px; color:var(--ob-soft); line-height:1.45; overflow-wrap:anywhere; }
+.ob-status code { font-size:12px; padding:1px 5px; border-radius:6px; background:var(--ob-hover); color:var(--ob-ink); }
+.ob-status.is-error small { color:var(--destructive); } .ob-status button { flex:none; color:var(--ob-ink); }
+.ob-ready { display:flex; align-items:center; gap:8px; margin:0; font-size:13.5px; font-weight:560; } .ob-ready svg { width:16px; height:16px; color:#3f8a52; }
+.ob-how { font-size:12.5px; color:var(--ob-soft); } .ob-how summary { cursor:pointer; width:max-content; padding:4px 0; color:var(--ob-ink); font-weight:560; }
+.ob-how p { margin:6px 0 0; line-height:1.5; }
+.ob-row.is-top { align-items:start; } .ob-row.is-top > span { padding-top:10px; }
+.ob-row .ob-build-actions { margin-top:8px; }
+.ob-chips small.ob-note { align-self:center; margin-left:4px; }
+.ob-review b { display:block; font-size:12.5px; font-weight:600; color:var(--ob-soft); margin-bottom:6px; }
+.ob-review textarea { font-size:13.5px !important; line-height:1.5; }
+.ob-plain { display:flex; flex-direction:column; gap:8px; margin:0; padding:0; list-style:none; font-size:15px; line-height:1.4; }
+.ob-plain li { display:flex; gap:9px; align-items:flex-start; } .ob-plain svg { flex:none; width:16px; height:16px; margin-top:2px; color:var(--ob-soft); }
+.ob-more summary { width:fit-content; cursor:pointer; font-size:12.5px; color:var(--ob-soft); } .ob-more summary:hover { color:inherit; } .ob-more[open] summary { margin-bottom:8px; }
+.ob-chips.is-static span { padding:5px 11px; border-radius:99px; border:1px solid var(--ob-line); background:var(--ob-hover); font-size:13px; }
+.ob-tasks button > span { display:flex; flex-direction:column; gap:2px; } .ob-tasks button > span b { font-weight:560; }
+.ob-tasks button small { display:inline-flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ob-soft); } .ob-tasks button small svg { width:13px; height:13px; }
+.ob-preview { display:flex; flex-direction:column; gap:8px; padding:12px 14px; border-radius:14px; border:1px dashed var(--ob-dot-done); background:var(--ob-card); }
+.ob-preview > b { width:max-content; padding:1px 8px; border-radius:99px; background:var(--ob-hover); font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+.ob-preview p { margin:0; font-size:13px; color:var(--ob-soft); line-height:1.45; } .ob-preview div { display:flex; gap:6px; } .ob-preview button[data-variant=ghost] { color:var(--ob-ink); }
+.ob-foot .ob-browse { font-size:13px; color:var(--ob-soft); padding:6px 10px; border-radius:8px; } .ob-foot .ob-browse:hover { color:var(--ob-ink); background:var(--ob-hover); }
+.ob-summary li button.is-hire { background:var(--ob-accent); border-color:var(--ob-accent); color:var(--ob-accent-ink); }
+.new-tab-create[data-slot="button"] { margin-top:18px; gap:8px; }
+.get-started { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px; margin-top:26px; max-width:min(640px,92%); font-size:12.5px; }
+.get-started > b { font-weight:560; color:var(--muted-foreground); margin-right:4px; }
+.get-started button { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:99px; border:1px solid var(--border); color:var(--foreground); background:color-mix(in oklab,var(--background) 80%,transparent); }
+.get-started button:hover:not(:disabled) { background:var(--accent); } .get-started button:disabled { opacity:.7; cursor:default; }
+.get-started button svg { width:14px; height:14px; opacity:.75; }
+.get-started .get-started-x { width:30px; padding:0; justify-content:center; border-color:transparent; background:none; }

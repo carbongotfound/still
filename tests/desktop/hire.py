@@ -1,6 +1,6 @@
 """Hiring a companion: a "<name> joined your team" card (it celebrates, with a check badge, Start chatting and Not now),
-then its first chat, which it starts itself exactly once: from Start chatting, from "Say hi" the first time, or at the
-end of setup. A hidden note starts it (never in the chat) with its Setup skill, whose "Used skill Setup" step comes first;
+then its first chat, which it starts itself exactly once: from Start chatting or from "Say hi" the first time (also
+after setup). A hidden note starts it (never in the chat) with its Setup skill, whose "Used skill Setup" step comes first;
 then the companion's own message, with its face, and its other tools wait for that hello. Then it may ask one question (choices, or the user's own words, Send
 or Skip), and the answer goes to its memory. The title model names the chat from the hello. Talking to it first means
 it never kicks off; reopening never starts it again. No test stub ships: "Fake agent" lives only in test profiles.
@@ -222,45 +222,44 @@ def hiring():
 
 
 def after_setup():
-    """A first setup that ends without a first task: the main companion has already started its first chat."""
+    """Setup in four steps, hiring your own companion, then Not now, just browse: its first chat waits until you open it,
+    then it starts it itself, once."""
     profile = RUN / "setup"
     fake_agent(profile)
-    X.plan({"Maya": [ask("What are you researching this month?", ["Suppliers", "Competitors", "A trip"]), {"text": "On it."}]})
+    X.plan({"Pip": [ask("What are you researching this month?", ["Suppliers", "Competitors", "A trip"]), {"text": "On it."}],
+            "nobody": W.made_lines("Research suppliers and competitors for my shop.")})  # Create's chat, before Pip has a name on file
     p = launch(EXE, profile)
     try:
-        until(lambda: shown(p, ".welcome.ob .ob-next"), 20)
+        until(lambda: shown(p, ".welcome.ob .ob-dots"), 20)
         if until(lambda: shown(p, ".intro"), 3):
             time.sleep(1)
             W.key(p, " ")
             until(lambda: not shown(p, ".intro"), 3)
+        time.sleep(2.5)
+        W.to_create(p)
+        W.make(p, "Pip", "Research suppliers and competitors for my shop.")
         time.sleep(1)
-        W.to_crew(p)
-        js(p, "document.querySelector(\".crew-pick[aria-label='Hire Research Maya']\")?.click()")
-        time.sleep(.6)
-        W.next_step(p, .8)  # -> tools
-        W.not_now(p, .8)  # -> how
-        until(lambda: W.click_text(p, ".ob-option", "Quick setup"), 6)
-        time.sleep(1.2)
-        while W.step_now(p) < 11 and not shown(p, ".ob-tasks"):
-            at = W.step_now(p)
-            W.click_text(p, ".ob-foot button", "Not now") or W.click(p, ".ob-next")
-            if not until(lambda: W.step_now(p) == at + 1, 4):
-                break
-            time.sleep(.6)
-        check(shown(p, ".ob-tasks") and not kickoffs("Maya"), "Setup reaches its last step, nothing started yet")
-        W.click(p, ".ob-not-now")
-        check(until(lambda: not shown(p, ".welcome.ob:not(.is-hidden)"), 6), "Not now finishes setup")
-        check(until(lambda: len(kickoffs("Maya")) == 1, 20) and until(lambda: (asked(p) or {}).get("text") == "What are you researching this month?", 20),
-              "and Maya has already started its first chat, with its question")
+        W.click(p, ".ob-next")  # Hire Pip
+        check(until(lambda: (card(p) or {}).get("title") == "Pip joined your team", 6), "Hire Pip shows the joined card")
+        click(p, ".joined-actions button", "Start chatting")
+        check(until(lambda: W.step_now(p) == 4, 5) and not kickoffs("Pip"), "Then setup's first task, nothing started yet")
+        time.sleep(1.5)
+        W.click(p, ".ob-browse")
+        check(until(lambda: not shown(p, ".welcome.ob:not(.is-hidden)"), 6), "Not now, just browse finishes setup")
+        time.sleep(4)
+        check(not kickoffs("Pip") and not first_chat(profile, "Pip"), "and Pip waits: no chat starts by itself")
+        say_hi(p, "Pip")
+        check(until(lambda: len(kickoffs("Pip")) == 1, 20) and until(lambda: (asked(p) or {}).get("text") == "What are you researching this month?", 20),
+              "Opening Pip's chat starts it, with its question")
         time.sleep(.8)
         rpc(p, "capture", name="hire-after-setup.png")
         click(p, ".ask-option", "Suppliers")
-        check(until(lambda: any(m["Role"] == "user" and "Suppliers" in m["Text"] for m in (first_chat(profile, "Maya") or {}).get("Messages", [])), 10), "The answer goes to Maya")
+        check(until(lambda: any(m["Role"] == "user" and "Suppliers" in m["Text"] for m in (first_chat(profile, "Pip") or {}).get("Messages", [])), 10), "The answer goes to Pip")
         js(p, "location.reload()")
         time.sleep(2)
-        say_hi(p, "Maya")
+        say_hi(p, "Pip")
         time.sleep(4)
-        check(len(kickoffs("Maya")) == 1, "Reloading or saying hi doesn't start it again")
+        check(len(kickoffs("Pip")) == 1, "Reloading or saying hi doesn't start it again")
     finally:
         rpc(p, "quit")
         until(lambda: p.poll() is not None, 15)

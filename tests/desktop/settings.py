@@ -17,7 +17,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 import exchange as X  # noqa: E402  its fake agent: what it says comes from plan.json; it logs prompts and arguments
 import welcome as W  # noqa: E402  type_into
 
@@ -163,7 +163,7 @@ def main():
         check(until(lambda: page(p) == "Models", 3) and lit(p, "titles"), "Clicking a result jumps to it")
         found = search(p, "logins")
         check("Passwords · Privacy & permissions" in (found or []), f"Searching logins finds Passwords ({found})")
-        found = search(p, "private tab")
+        found = search(p, "private window" if MAC else "private tab")  # the Mac names it Private window
         check(any(f.endswith("· Shortcuts") for f in found or []), f"and shortcuts are found too ({found})")
         js(p, "document.querySelector('.set-result')?.click()")
         check(until(lambda: page(p) == "Shortcuts", 3) and until(lambda: js(p, "!!document.querySelector('.shortcut-row.set-flash')"), 3), "a shortcut jumps to its key")
