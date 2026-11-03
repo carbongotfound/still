@@ -234,7 +234,7 @@ try:
     (profile/'state.json').write_text(json.dumps({'UiVersion':6,'Welcome':False,'ActiveId':fixture[-1]['Id'],
         'Preferences':{'TabLayout':'Modern'},'Tabs':fixture}))
     process = subprocess.Popen([str(Path(sys.argv[1]).resolve()),'--qa','--profile',str(profile)])
-    wait(lambda: (profile/'qa-pipe.txt').exists(),40)
+    qa.until_started(process)
     wait(lambda: evaluate(CONTROL)['visible'])
     # Small windows reproduce the user's roughly ten-tab threshold.
     evaluate("document.querySelector('.browser-shell').style.height='500px'")

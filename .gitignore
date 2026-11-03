@@ -6,6 +6,7 @@ tools/*
 !tools/mascot/
 !tools/sound/
 !tools/heads/
+!tools/rig/
 tools/mascot/out/
 *.user
 .vs/

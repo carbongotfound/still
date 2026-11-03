@@ -15,6 +15,8 @@ import threading
 import time
 import uuid
 
+from qa import until_started
+
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("performance-" + uuid.uuid4().hex)
 RUN.mkdir(parents=True)
@@ -139,12 +141,7 @@ try:
         "Preferences": {"MemorySaver": True}, "Tabs": [{"Id": "restored", "Title": "Restored", "Url": URL + "/restored"}], "ActiveId": "restored"}))
     started = time.monotonic()
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), URL + "/launch"])
-    for _ in range(300):
-        if (profile / "qa-pipe.txt").exists():
-            break
-        if process.poll() is not None:
-            raise RuntimeError("App exited: " + str(process.returncode))
-        time.sleep(.05)
+    until_started(process)
     state = wait(process, active_ready)
     RESULT["startup_stages"] = state.get("startup")
     RESULT["startup_seconds"] = round(time.monotonic() - started, 3)
