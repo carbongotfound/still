@@ -252,7 +252,8 @@ def main():
         got = lambda path: until(lambda: js(p, "window.__media?.[%s] || null" % json.dumps(path)), 20) or {}
         check((got(here + "/lamp.png").get("src") or "").startswith("data:image/png;base64,"), "Still fetches a picture and hands it over as data")
         check(got(here + "/page.png").get("error") == "The image didn't load.", "but not a page that says it's a picture")
-        check(got(here + "/big.png").get("error") == "The image is too big to show here.", "nor one over 5 MB")
+        big = got(here + "/big.png")
+        check(big.get("error") == "The image is too big to show here.", "nor one over 5 MB: " + str(big.get("error") or big.get("src", "")[:30] or "no answer"))
         check(got("http://example.com/a.png").get("error") == "Only https images show here.", "nor one over http")
 
         # The end of the chat keeps its gap above the message box (tab 32px, split and panel 24px), also with a tall box.
