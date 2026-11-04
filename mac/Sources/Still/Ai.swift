@@ -928,6 +928,7 @@ extension Browser {
   case "aiSetupCancel": aiSetupCancelled = true; aiSetupProcess?.kill()
   case "aiCheck": aiClisCache = nil; Task { await checkAis(true) }
   case "aiToggle": v.open.toggle(); if v.open { Task { await checkAis() } }
+  case "aiStatus": Task { await checkAis() } // Model settings or a Model tab opened: what's installed and logged in, at most every 30 s
   case "aiAsk": // typed in the address bar: a new chat, in its own tab
    let ask = tidy(s("text"))
    guard (1...20000).contains(ask.count) else { break }
@@ -1539,10 +1540,11 @@ extension Browser {
   if let problem = CompanionMemory.takeProblem() { toast(problem) } // a memory file that couldn't be read
  }
 
- /// The menu's AI commands: "chat" (Cmd+Shift+A), "stop" (Cmd+.), "tasks" (Cmd+Shift+K).
+ /// The menu's AI commands: "chat" (Cmd+Shift+A), "stop" (Cmd+.), "tasks" (Cmd+Shift+K), "add" (Add a Model…: Model settings).
  func aiShortcut(_ name: String) {
   switch name {
   case "chat": _ = handleAi("aiToggle", [:]); schedulePublish()
+  case "add": if !aiView.open { _ = handleAi("aiToggle", [:]) }; send(["kind": "addModel"]); schedulePublish()
   case "stop":
    if let chat = shownChat, let run = runs[chat.id] { run.queue.removeAll(); stopRun(run); publishAiEverywhere() } else { toast("Nothing is running in this chat.") }
   case "tasks": send(["kind": "tasks"])

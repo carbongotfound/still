@@ -8,6 +8,7 @@ The fakes print the event shapes recorded from the real apps (tests/fixtures/age
 import json
 import os
 from pathlib import Path
+import re
 import sys
 import time
 import uuid
@@ -152,15 +153,14 @@ def main():
            "GEMINI_API_KEY": "gm-test-not-real", "GOOGLE_API_KEY": "gg-test-not-real", "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     p = launch(EXE, PROFILE, env)
     try:
-        # The rows: Gemini up front, OpenCode under More agents, both ready, each with its gaps.
+        # The rows: every app in one list (no More agents), Gemini and OpenCode both logged in, each with its gaps.
         send(p, "aiToggle")
         send(p, "aiCheck")
-        shown = until(lambda: (t := text(p)) and "More agents" in t and "Gemini" in t and t, 30) or ""
-        check(f"More agents ({4 if MAC else 3})" in shown and "OpenCode" not in shown, "Gemini is a headline AI, OpenCode is under More agents (with Qwen Code, GitHub Copilot, and Amp on the Mac)")
-        js(p, "document.querySelector('.byo-more')?.click()")
-        rows = until(lambda: (t := text(p)) and "OpenCode\nSigned in" in t and "Gemini\nSigned in" in t and t, 30) or text(p)
-        check("Gemini\nSigned in" in rows, "Gemini signed in with Google is ready (its settings file may have comments)")
-        check("OpenCode\nSigned in" in rows, "OpenCode is ready once it lists a model")
+        rows = until(lambda: (t := text(p)) and "OpenCode\nLogged in" in t and "Gemini\nLogged in" in t and t, 30) or text(p)
+        check("More agents" not in rows and all(n in rows for n in ("Gemini", "OpenCode", "Qwen Code", "GitHub Copilot")) and bool(re.search(r"\bAmp\b", rows)) == MAC,
+              "Every app is in one list with no More agents: Gemini, OpenCode, Qwen Code, GitHub Copilot (and Amp on the Mac)")
+        check("Gemini\nLogged in" in rows, "Gemini signed in with Google is ready (its settings file may have comments)")
+        check("OpenCode\nLogged in" in rows, "OpenCode is ready once it lists a model")
         check("run gemini in a terminal" in rows and "Gemini keeps its own record of incognito chats" in rows, "Gemini's card says how to sign in and what it can't do")
         check("set up in OpenCode" in rows and "OpenCode keeps its own record of incognito chats" in rows, "OpenCode's card says it runs on the provider set up in OpenCode")
 

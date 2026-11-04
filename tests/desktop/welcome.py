@@ -324,10 +324,8 @@ def setup_open(process):
 
 
 def pick_ai(process, name):
-    """Picks an AI app in Connect's list; apps added by hand sit under More agents."""
-    if not until(lambda: click_text(process, ".byo-main", name), 4):
-        click(process, ".byo-more")
-        until(lambda: click_text(process, ".byo-main", name), 6)
+    """Picks an AI app in Connect's list, where every app is listed."""
+    until(lambda: click_text(process, ".byo-main", name), 6)
     time.sleep(.6)
 
 
@@ -565,7 +563,7 @@ def setup(process):
 
 def connect(process, copy):
     """Step 2: three made-up AI apps, one in each state, then the one that's ready."""
-    check(until(lambda: "which AI should your companion think with" in talk_text(process), 4), "Step 2 asks which AI app to use")
+    check(until(lambda: "which model should your companion think with" in talk_text(process), 4), "Step 2 asks which model to use")
     until(lambda: js(process, "!!document.querySelector('.ob-connect')"), 4)
     shell = "Terminal" if MAC else "PowerShell"
     buttons = lambda: js(process, "[...document.querySelectorAll('.ob-connect button')].map(b => b.innerText.trim())") or []

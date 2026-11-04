@@ -72,10 +72,10 @@ def ask(p, words, seconds=30, until_text=None):
 
 
 def picker(p):
-    """The AI picker in the chat panel's AI settings, after a recheck."""
+    """The model list in the chat panel's Model settings, after a recheck."""
     send(p, "aiCheck")
     time.sleep(1.5)
-    js(p, "document.querySelector('[aria-label=\"AI settings\"]')?.click()")
+    js(p, "document.querySelector('[aria-label=\"Model settings\"]')?.click()")
     shown = until(lambda: js(p, "document.querySelector('.ai-picker')?.innerText"), 10) or ""
     until(lambda: js(p, "document.querySelector('.ai-head [aria-label=Back]')?.click(), !document.querySelector('.ai-head [aria-label=Back]')"), 10)
     return shown
@@ -110,7 +110,7 @@ def main():
         # People on a plan never see a key prompt.
         send(p, "aiToggle")
         send(p, "aiCheck")
-        shown = until(lambda: (t := text(p)) and "More agents" in t and t, 30) or ""
+        shown = until(lambda: (t := text(p)) and "OpenCode" in t and t, 30) or ""
         check("Gemini" in shown and "API provider" not in shown and "Needs a key" not in shown and "No API key needed" in shown, "The AI picker lists Gemini and asks nobody for a key")
         send(p, "openPanel", name="settings", value="models")
         page = until(lambda: (t := text(p)) and "Add an API provider" in t and t, 15) or ""

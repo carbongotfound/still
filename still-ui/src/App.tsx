@@ -142,7 +142,7 @@ const SETTINGS_FIND: Finding[] = [
  ["profiles", "general", "Profiles", "spaces accounts separate"], ["extensions", "general", "Extensions", "chrome web store add-ons"],
  ["theme", "appearance", "Theme", "dark light black system mode colors"], ["layout", "appearance", "Tab layout", "classic modern side vertical tabs"], ["tearoff", "appearance", "Drag tabs into their own window", "tear off new window"],
  ["team", "companions", "Companions", "team add edit hire look"], ["memory", "companions", "What companions remember", "memory forget facts"],
- ["ai", "models", "AI and model", "claude chatgpt grok sign in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"], ["apis", "models", "API providers", "api key openai anthropic compatible base url provider price cost spending limit"],
+ ["ai", "models", "Model settings", "ai add a model claude chatgpt grok gemini sign in log in effort thinking"], ["titles", "models", "Chat titles", "name rename model first message"], ["apis", "models", "API providers", "api key openai anthropic compatible base url provider price cost spending limit"],
  ["aiAdvanced", "models", "Advanced", "model effort pick by hand override"], ["tiers", "models", "Quick, Everyday and Thorough", "model effort tier mode haiku opus default reset plan"],
  ["mcp", "models", "Let other AI apps use Still", "mcp claude desktop code cursor agents"], ["askInChat", "models", "Ask me in the AI's chat when I'm away", "agents away"],
  ["dev", "models", "Connect an AI app by hand", "mcp config cli developer command line prompt"],
@@ -167,15 +167,19 @@ function FlowTabs({ tabs, top = false }: { tabs: Tab[]; top?: boolean }) {
   <TabView tab={tab} top={top} />
  </motion.div>)}</AnimatePresence>
 }
-// Tabs in strip order, with each group's tabs gathered under its chip.
+// Tabs in strip order, with each group's tabs gathered under its chip. A group can show in two places (a chat's
+// page opened inside it, or chat and pinned tabs left out of this list), so each place has its own key: two with the
+// group's id made React lose one, and it stayed on screen as copies of tabs that every close added to.
 function TabStrip({ tabs, top }: { tabs: Tab[]; top: boolean }) {
  const { state } = useContext(UICtx)!
- const groups = state.groups ?? [], out: ReactNode[] = []
+ const groups = state.groups ?? [], out: ReactNode[] = [], seen = new Map<string, number>()
  for (let i = 0; i < tabs.length;) {
   const group = groups.find(g => g.id === tabs[i].group)
   let j = i + 1
   while (j < tabs.length && (group ? tabs[j].group === group.id : !groups.some(g => g.id === tabs[j].group))) j++
-  out.push(group ? <TabGroupView key={group.id} group={group} tabs={tabs.slice(i, j)} top={top} /> : <FlowTabs key={"f" + tabs[i].id} tabs={tabs.slice(i, j)} top={top} />)
+  const n = group ? (seen.get(group.id) ?? 0) + 1 : 0
+  if (group) seen.set(group.id, n)
+  out.push(group ? <TabGroupView key={n > 1 ? group.id + "-" + n : group.id} group={group} tabs={tabs.slice(i, j)} top={top} /> : <FlowTabs key={"f" + tabs[i].id} tabs={tabs.slice(i, j)} top={top} />)
   i = j
  }
  return <>{out}</>
@@ -342,7 +346,7 @@ export default function App() {
  const [draft, setDraft] = useState<Companion | null>(null) // "Make your own": the profile panel on a companion not hired yet
  const [joined, setJoined] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
- const [profileTab, setProfileTab] = useState("general") // the tab it opens on: "model" from an AI settings… link
+ const [profileTab, setProfileTab] = useState("general") // the tab it opens on: "model" from a Model settings… link
  const closeProfile = () => { setProfile(""); setProfileTab("general") }
  const [library, setLibrary] = useState(false) // "Hire a companion" opens Still's companion library first
  const [meeting, setMeeting] = useState<Premade | null>(null) // a library companion, previewed before it's hired
@@ -521,6 +525,7 @@ export default function App() {
    if (data.kind === "upload") setUpload(data.data)
    if (data.kind === "recent") setRecent({ ids: data.ids, index: data.index })
    if (data.kind === "groupRename") setRenaming(data.id)
+   if (data.kind === "addModel") setAiView("settings") // the Mac's AI menu, Add a Model…: the side chat is open by then
    if (data.kind === "tasks") { if (document.querySelector(".tasks-button")) window.dispatchEvent(new Event("still-tasks")); else toast("Nothing is running right now.") }
    if (data.kind === "tabArrived") { setArriving(data.id); setTimeout(() => setArriving(""), 700) }
    if (data.kind === "pointerAway") { const root = document.documentElement; root.classList.add("pointer-away"); addEventListener("pointermove", () => root.classList.remove("pointer-away"), { once: true }) }
@@ -592,7 +597,7 @@ export default function App() {
   (hasAi || !AI_PAGES.includes(page)) && !(id === "talk" && !hasAi) && !(["askInChat", "dev"].includes(id) && !state.preferences.agents) && !(id === "dev" && !state.mcpCommand) && !(["ai", "titles"].includes(id) && !hasAi) &&
   settingsFind.toLowerCase().split(/\s+/).filter(Boolean).every(w => `${label} ${more} ${pageName(page)}`.toLowerCase().includes(w))).slice(0, 12) : []
  const jumpTo = (f: Finding) => { setSettingsFind(""); setSettingsPage(f[1]); setFlash(f[0]) }
- const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT, Grok, Gemini, OpenCode, Qwen Code{MAC ? ", GitHub Copilot or Amp" : " or GitHub Copilot"} through their own apps, or an OpenAI- or Claude-compatible API like DeepSeek. Switch AI anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button>{notesFor(state.version) && <Button variant="ghost" className="about-replay" onClick={() => { close(); setWhatsNew(true) }}><Gift />What's new in {releaseOf(state.version)}</Button>}<p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : state.preferences.autoUpdate === false ? "Automatic updates are off. Still tells you when a new version is out, and you update with one click." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
+ const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser that runs on the AI you already pay for. Claude, ChatGPT, Grok, Gemini, OpenCode, Qwen Code{MAC ? ", GitHub Copilot or Amp" : " or GitHub Copilot"} through their own apps, or an OpenAI- or Claude-compatible API like DeepSeek. Switch models anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords in your Keychain.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : <Button variant="outline" onClick={() => send("checkUpdate")}><RotateCw />Check for updates</Button>}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button>{notesFor(state.version) && <Button variant="ghost" className="about-replay" onClick={() => { close(); setWhatsNew(true) }}><Gift />What's new in {releaseOf(state.version)}</Button>}<p className="text-xs text-muted-foreground">{MAC ? "Still checks for new versions and shows you where to download them." : state.preferences.autoUpdate === false ? "Automatic updates are off. Still tells you when a new version is out, and you update with one click." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
    {modern && split && <div className="top-tab-strip modern-strip" onDoubleClick={e => { if (e.target === e.currentTarget) send("maximize") }} onPointerDown={e => { if (e.button === 0 && e.target === e.currentTarget) send("drag") }}>{windowControls}</div>}
@@ -663,6 +668,7 @@ export default function App() {
        <DropdownMenuItem onSelect={() => send("new")}><Plus />New tab<DropdownMenuShortcut>{keys("Ctrl T")}</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("incognitoWindow")}><LockKeyhole />New incognito window<DropdownMenuShortcut>Ctrl Shift N</DropdownMenuShortcut></DropdownMenuItem>
        <DropdownMenuItem onSelect={() => send("reopen")}><RotateCw />Reopen closed tab</DropdownMenuItem>
+       {hasAi && <DropdownMenuItem onSelect={openAiSettings}><Bot />Add a model</DropdownMenuItem>}
        <DropdownMenuSeparator />
        <MenuPanelItem name="profiles" label="Profiles" icon={<UsersRound />} />
        <MenuPanelItem name="import" label="Import browsing data" icon={<Import />} />
@@ -888,7 +894,7 @@ export default function App() {
       <h2 className="set-title">{pageName(settingsPage)}</h2>
       {settingsPage === "general" && <>
        <SetCard title="Start">
-        <SetRow id="setup" title="Setup" help="Go through the first steps again: your AI, a new companion and a first task."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
+        <SetRow id="setup" title="Setup" help="Go through the first steps again: your model, a new companion and a first task."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
         {hasAi && ai.companions?.[0] && <SetRow id="talk" title={`Set me up with ${ai.companions[0].name}`} help={`${ai.companions[0].name} asks a few questions, then sets up your layout, theme, sites and more, and suggests companions you can hire. You check every change.`}><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain", { talk: true }) }}>Set me up again</Button></SetRow>}
        </SetCard>
        <SetCard title="Browsing">
@@ -932,8 +938,8 @@ export default function App() {
         <SetRow id="aiAdvanced" title="Advanced" help={ai.advanced ? "On: every chat uses the model and effort picked in the message box, whatever its mode." : "Off: each chat uses its mode's model and effort below."}><Switch checked={!!ai.advanced} aria-label="Advanced" onCheckedChange={on => send("aiAdvanced", { on })} /></SetRow>
         <div className="set-pad" id="set-tiers"><TierSettings ai={ai} send={send} /></div>
        </SetCard>}
-       {hasAi && <SetCard title="Your AI">
-        <SetRow id="ai" title="AI and model" help={`${ai.harnesses?.find(h => h.id === ai.harness)?.name ?? "No AI picked yet"}. Pick your AI, sign in, and choose its model and how hard it thinks.`}><Button variant="outline" size="sm" onClick={() => { close(); openAiSettings() }}><Bot />Open</Button></SetRow>
+       {hasAi && <SetCard title="Your models">
+        <SetRow id="ai" title="Model settings" help={`${ai.harnesses?.find(h => h.id === ai.harness)?.name ?? "No model picked yet"}. Add a model, sign in, and choose how hard it thinks.`}><Button variant="outline" size="sm" onClick={() => { close(); openAiSettings() }}><Bot />Open</Button></SetRow>
         <SetRow id="titles" title="Chat titles" help="A new chat gets a short name from its first message, written by the model you pick here."><Select value={state.preferences.chatTitles || "quick"} onValueChange={v => preference("chatTitles", v === "quick" ? "" : v)}><SelectTrigger className="w-48" aria-label="Chat titles"><SelectValue /></SelectTrigger><SelectContent className="titles-list">
          <SelectItem value="quick">Quickest model</SelectItem>
          {(ai.harnesses ?? []).filter(h => h.installed && h.status !== "signedOut").map(h => { const list = (ai.models ?? []).filter(m => m.harness === h.id && m.id); return list.length > 0 && <SelectGroup key={h.id}><SelectSeparator /><SelectLabel className="titles-label"><AiLogo id={h.id} size={14} />{h.name}</SelectLabel>{list.map(m => <SelectItem key={m.id} value={h.id + "/" + m.id}><AiLogo id={h.id} size={16} /><span className="titles-ai">{h.name} · </span>{m.name}</SelectItem>)}</SelectGroup> })}
@@ -1095,7 +1101,7 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
     {ai.companions?.map(c => <DropdownMenuItem key={c.id} onSelect={() => onEdit(c)}><Face companion={c} size={18} />{c.name}<Pencil className="ml-auto size-3.5 opacity-60" /></DropdownMenuItem>)}
     <DropdownMenuItem onSelect={() => onEdit(randomCompanion())}><Plus />Hire a companion</DropdownMenuItem>
     <DropdownMenuSeparator />
-    <DropdownMenuItem onSelect={onSettings}><Bot />AI settings</DropdownMenuItem>
+    <DropdownMenuItem onSelect={onSettings}><Bot />Model settings</DropdownMenuItem>
     <DropdownMenuItem onSelect={() => openPanel("settings")}><Settings2 />Settings</DropdownMenuItem>
    </DropdownMenuContent></DropdownMenu>
  </nav>
@@ -1202,7 +1208,7 @@ function ChatInfo({ ai, pages, onEdit, onSettings, onFile }: { ai: AiState; page
  return <aside className="chat-info" aria-label="Chat details">
   <h4>In this chat</h4>
   {[companion].map(c => c && <button key={c.id} className="chat-info-row" title={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={18} /><b>{c.name}</b><Settings /></button>)}
-  <button className="chat-info-row" title="AI settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, harness.maker && "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
+  <button className="chat-info-row" title="Model settings" onClick={onSettings}><AiLogo id={harness?.id} size={16} /><b>{harness ? <>{harness.name}<small>{[ai.models?.find(m => m.harness === harness.id && m.id === ai.model && m.id)?.name, harness.maker && "Your " + harness.name + " plan"].filter(Boolean).join(" · ")}</small></> : "Pick your AI"}</b><ChevronRight /></button>
   {pages.length > 0 && <><Separator /><h4>Pages</h4>{pages.map(p => <button key={p.id} className="chat-info-row" title={p.url} onClick={() => send("chatPage", { on: true, id: p.id })}>{p.favicon ? <img src={p.favicon} alt="" /> : <Globe2 />}<b>{p.title || host(p.url)}</b><small>{p.agent ? "Working" : p.loading ? "Loading" : "Open"}</small></button>)}</>}
   {files.length > 0 && <><Separator /><h4>Files</h4>{files.map(f => <button key={f.path} className="chat-info-row" title={"Open " + f.name} onClick={() => onFile(f.path)}><FileIcon path={f.path} /><b>{f.name}</b></button>)}</>}
   {!!ai.audit?.length && <><Separator /><h4>Permissions</h4><AuditList list={ai.audit} /></>}

@@ -362,7 +362,7 @@ export function Welcome({ theme, talk, ai, noAi, sounds = true, soundsBlocked = 
        : ["Still is an open-source browser. AI apps on this computer can work in it, right next to your tabs."]} />
      </>}
      {at === "connect" && ai && <>
-      <Bubbles lines={["First, which AI should your companion think with?", "Pick the AI app you already use. Still runs it on this computer, signed in with your own plan."]} />
+      <Bubbles lines={["First, which model should your companion think with?", "Pick the AI app you already use. Still runs it on this computer, signed in with your own plan."]} />
       <Reveal after={2}><Connect ai={ai} send={send} /></Reveal>
      </>}
      {at === "create" && chatting && <Interview making who={{ ...companion, name: nameOf }} send={send} onClose={() => { setChatted(true); setChatting(false) }} onMade={made} />}
@@ -396,7 +396,7 @@ export function Welcome({ theme, talk, ai, noAi, sounds = true, soundsBlocked = 
       <Bubbles lines={[`${nameOf} is ready. What should we start with?`, "Pick one, try the sample page, or say it in your own words. You'll see the work happen, and you can jump in any time."]} />
       <Reveal after={2}>
        {!aiReady && <div className="ob-preview" role="note"><b>Preview</b>
-        <p>{harness ? `${harness.name} isn't connected yet` : "No AI is connected yet"}, so {nameOf} can't start. Once it is, {nameOf} opens the page in a tab, reads it and answers in the chat.</p>
+        <p>{harness ? `${harness.name} isn't connected yet` : "No model is connected yet"}, so {nameOf} can't start. Once it is, {nameOf} opens the page in a tab, reads it and answers in the chat.</p>
         <div><Button size="sm" onClick={() => go(FLOW.indexOf("connect"))}>Connect</Button><Button size="sm" variant="ghost" onClick={() => send("aiCheck")}><RotateCw />Retry</Button></div></div>}
        <div className="ob-tasks" role="radiogroup" aria-label="First task">
         <button role="radio" aria-checked={task === SAMPLE_TASK} onClick={() => { setTask(task === SAMPLE_TASK ? "" : SAMPLE_TASK); setTyped("") }}><i /><span><b>Compare three backpacks</b><small><FileSearch />Sample page from Still. The products are made up.</small></span></button>

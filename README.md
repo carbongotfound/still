@@ -28,7 +28,7 @@ The first time 2.10 opens, a short tour shows these. You can open it again from 
 <img src="docs/screenshots/whatsnew.webp" alt="The What's new in Still 2.10 popup: a screenshot card, its title and line, dots and arrows, See everything and Close" width="360" align="right">
 
 - **Gemini, OpenCode and your own API.** Gemini and OpenCode join Claude, ChatGPT and Grok, and any OpenAI- or Claude-compatible API works too.
-- **Setup in four steps.** Connect your AI, make a companion and give it a first task, all in one go.
+- **Setup in four steps.** Connect your model, make a companion and give it a first task, all in one go.
 - **Make them look your way.** Pick a body, colors, a face and extras in the new look editor.
 - **See what they remember.** Every fact a companion keeps, with where it came from. Change or forget any of it.
 - **Undo when you delete.** Deleting a chat, a companion or your data asks first, then gives you a few seconds to undo.
@@ -94,11 +94,13 @@ Still runs the AI's own app in the background, signed in to your plan. It never 
 | **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
 | **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
 | **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
-| **OpenCode** | [OpenCode](https://opencode.ai) | Under **More agents**. It runs on the provider you set up inside OpenCode (`opencode providers login`). |
+| **OpenCode** | [OpenCode](https://opencode.ai) | It runs on the provider you set up inside OpenCode (`opencode providers login`). |
 | **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models > API providers**. Labelled **Compatible**. |
 | **Claude-compatible API** | Still's own agent | Same as above, for services that speak the Anthropic Messages format. Labelled **Compatible**. |
 
-If an app is already installed and signed in, Still finds it.
+Qwen Code, GitHub Copilot CLI and Amp (Mac only) are there too, labelled **Compatible**.
+
+To add one, pick **Add a model** in Still's menu. **Model settings** lists every app with its state on your computer (**Logged in**, **Installed** or **Not installed**) and an **Add** or **Set up** button, and the API presets below them. If an app is already installed and signed in, Still finds it.
 
 **About Compatible APIs:** you pay your provider per use. The key goes in Windows DPAPI or the macOS Keychain, only its last four characters ever show, and it's sent only over https (plain http only to `localhost` and `127.0.0.1`). **Test connection** checks the address, key, model, streaming and tool calls with one tiny request, which your provider may bill. They're labelled **Compatible** because Still tests them against its own test server, not against every real provider.
 
@@ -121,7 +123,7 @@ claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" 
 
 1. Download [**Still-Setup-x64.exe**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) and run it. No admin rights needed.
 2. Still isn't code-signed yet, so SmartScreen may warn the first time. Choose **More info > Run anyway**.
-3. Setup walks you through connecting your AI, making your first companion and giving it a task.
+3. Setup walks you through connecting your model, making your first companion and giving it a task.
 
 Still updates itself after that.
 

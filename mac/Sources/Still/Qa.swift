@@ -171,6 +171,9 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   let point = NSPoint(x: x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - y)
   let found = NSApp.orderedWindows.first { w in w.frame.contains(point) && browsers.contains { $0.window === w } }
   done(["found": n(browsers.first { $0.window === found }?.windowId)])
+ case "menu": // a click on a menu bar item, by its menu's title and its own (one with no shortcut, like AI > Add a Model…)
+  let menu = NSApp.mainMenu?.items.first { ($0.submenu?.title ?? $0.title) == text("menu") }?.submenu // the title is the submenu's
+  if let menu, let i = menu.items.firstIndex(where: { $0.title == text("item") }) { menu.performActionForItem(at: i); done(["ok": true]) } else { done(["ok": false]) }
  case "quit":
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) } // after the reply is on its way

@@ -21,30 +21,32 @@ type Send = (op: string, payload?: Record<string, unknown>) => void
 
 const KINDS = { openai: "OpenAI-compatible", anthropic: "Claude-compatible" }
 // Known providers: their address and models filled in, the key still optional. Compatible like any other provider.
-const PRESETS = [{ name: "DeepSeek", kind: "openai" as const, url: "https://api.deepseek.com", models: ["deepseek-flash", "deepseek-v4-pro"], context: 1000000 }]
+export const PRESETS = [{ name: "DeepSeek", kind: "openai" as const, url: "https://api.deepseek.com", models: ["deepseek-flash", "deepseek-v4-pro"], context: 1000000 }]
 const JOBS: Record<string, string> = { chats: "chats", titles: "chat titles", setup: "setup", test: "tests" }
 const tokens = (n: number) => n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1000 ? Math.round(n / 1000) + "k" : String(n)
 const money = (n: number) => "$" + (n < 1 ? n.toFixed(4).replace(/0+$/, "").replace(/\.$/, ".00") : n.toFixed(2))
 const host = (url: string) => { try { return new URL(url).host } catch { return url } }
 
 // The add and edit form. The key field starts empty: a saved key is never sent back here, only its last four characters.
-function Form({ p, send, done }: { p?: ApiProvider; send: Send; done: () => void }) {
- const [kind, setKind] = useState<"openai" | "anthropic">(p?.kind ?? "openai")
- const [name, setName] = useState(p?.name ?? "")
- const [url, setUrl] = useState(p?.url ?? "")
+// start: from the model list's Add, a preset's name to fill in, or "" for any other API; without it the presets are offered.
+export function ApiForm({ p, start, send, done }: { p?: ApiProvider; start?: string; send: Send; done: () => void }) {
+ const x = p ? undefined : PRESETS.find(x => x.name === start)
+ const [kind, setKind] = useState<"openai" | "anthropic">(p?.kind ?? x?.kind ?? "openai")
+ const [name, setName] = useState(p?.name ?? x?.name ?? "")
+ const [url, setUrl] = useState(p?.url ?? x?.url ?? "")
  const [key, setKey] = useState("")
- const [models, setModels] = useState(p?.models.map(m => m.id).join(", ") ?? "")
+ const [models, setModels] = useState(p?.models.map(m => m.id).join(", ") ?? x?.models.join(", ") ?? "")
  const [priceIn, setPriceIn] = useState(p?.priceIn ? String(p.priceIn) : "")
  const [priceOut, setPriceOut] = useState(p?.priceOut ? String(p.priceOut) : "")
  const [limit, setLimit] = useState(p?.limit ? String(p.limit) : "")
- const [context, setContext] = useState(p?.context ? String(p.context) : "")
+ const [context, setContext] = useState(p?.context ? String(p.context) : x ? String(x.context) : "")
  const num = (s: string) => { const n = Number(s.trim()); return Number.isFinite(n) && n > 0 ? n : 0 }
  const save = () => {
   send("apiSave", { id: p?.id ?? "", kind, name, url, key, models: models.split(/[\s,]+/).filter(Boolean), priceIn: num(priceIn), priceOut: num(priceOut), limit: num(limit), context: num(context) })
   setKey(""); done()
  }
  return <form className="api-form" onSubmit={e => { e.preventDefault(); save() }}>
-  {!p && <div className="api-presets" role="group" aria-label="Start from"><span>Start from</span>{PRESETS.map(x =>
+  {!p && start === undefined && <div className="api-presets" role="group" aria-label="Start from"><span>Start from</span>{PRESETS.map(x =>
    <Button key={x.name} size="sm" variant="outline" type="button" onClick={() => { setKind(x.kind); setName(x.name); setUrl(x.url); setModels(x.models.join(", ")); setContext(String(x.context)) }}>
     <AiLogo id={x.name} size={16} />{x.name}</Button>)}</div>}
   <label><span>Kind</span><Select value={kind} onValueChange={v => setKind(v as "openai" | "anthropic")}><SelectTrigger aria-label="Kind"><SelectValue /></SelectTrigger>
@@ -83,7 +85,7 @@ function Spending({ p }: { p: ApiProvider }) {
 function Provider({ p, busy, send }: { p: ApiProvider; busy: string; send: Send }) {
  const [editing, setEditing] = useState(false)
  const [model, setModel] = useState(p.test?.model || p.models[0]?.id || "")
- if (editing) return <div className="api-card"><Form p={p} send={send} done={() => setEditing(false)} /></div>
+ if (editing) return <div className="api-card"><ApiForm p={p} send={send} done={() => setEditing(false)} /></div>
  const testing = busy === p.id
  return <div className="api-card">
   <div className="api-head">
@@ -164,7 +166,7 @@ export function ApiProviders({ api, send }: { api?: ApiState; send: Send }) {
   <p className="plug-note">Use your own API key with a provider that speaks the OpenAI or Anthropic format. It uses your API key and your provider bills you per use. Signing in with a plan doesn't need this. Test connection sends one tiny request, which your provider may bill.</p>
   {api?.error && <p className="api-warn" role="alert">{api.error}</p>}
   {list.map(p => <Provider key={p.id} p={p} busy={api?.busy ?? ""} send={send} />)}
-  {adding ? <div className="api-card"><Form send={send} done={() => setAdding(false)} /></div>
+  {adding ? <div className="api-card"><ApiForm send={send} done={() => setAdding(false)} /></div>
    : <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus />Add an API provider</Button>}
  </div>
 }
