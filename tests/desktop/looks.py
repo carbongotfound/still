@@ -4,7 +4,7 @@
   (tests/fixtures/looks/<win|mac>/): a look nobody edited looks the same after the update.
   v2: the eyes show at 18px on every start, team look, 40 Surprise me draws and kept props
   (tests/fixtures/looks-v2.json); the five bodies' silhouettes stay apart; and the editor: a classic look shown as it
-  is until Try the new style, Keep prop, picks, undo, redo, Reset, Surprise me with a lock, Cancel, a team look that
+  is with every tab open, Try the new style, Keep prop, picks, undo, redo, Reset, Surprise me with a lock, Cancel, a team look that
   needs one change, each change on the preview within 100ms, and six companions shot at 280px and in the editor (360,
   and 40, 24 and 18px in light and dark).
 
@@ -28,7 +28,7 @@ OUT.mkdir(parents=True)
 FIXTURES = json.loads((ROOT / "tests" / "fixtures" / "looks.json").read_text())
 V2 = json.loads((ROOT / "tests" / "fixtures" / "looks-v2.json").read_text())  # tests/ui/look.test.ts keeps it current
 FORM_SHAPE = {"pebble": "round", "column": "tall", "block": "block", "gumdrop": "gumdrop", "bean": "lean"}
-PLAIN = {"v": 2, "color": "#ddd4c6", "prop": "", "accessory": "", "second": "#8a6a50", "marking": "none", "eye": "round", "mouth": "smile", "top": "none", "finish": "matte"}
+PLAIN = {"v": 2, "color": "#ddd4c6", "prop": "", "accessory": "", "second": "#8a6a50", "eye": "round", "mouth": "smile", "top": "none", "finish": "matte"}
 PIP = '{"color":"#f39079","shape":"bean","prop":"laptop","accessory":"bow"}'  # made before the new style, holding a laptop
 PROFILE = OUT / "profile"
 RESULT = []
@@ -216,11 +216,11 @@ def edit(process):
     send(process, "new")  # the home page, for its Companions chip
     js(process, "document.documentElement.dataset.mascotFreeze = '0'")
 
-    # An old look with a prop: shown as it is; nothing changes until Try the new style
+    # An old look with a prop: shown as it is, every tab open (Stage 17); nothing changes until a change or Try the new style
     check(editor(process, "Pip"), "Pip's look editor opens")
     tabs = js(process, "[...document.querySelectorAll('.look-tabs [role=tab]')].filter(t => !t.disabled).map(t => t.innerText).join()")
     classic = js(process, "document.querySelector('.look-classic')?.innerText") or ""
-    check(tabs == "Start" and "classic look" in classic and "Try the new style" in classic, f"A classic look opens as it is, with Try the new style ({tabs})")
+    check(tabs == "Start,Body,Colors,Face,Extras" and "classic look" in classic and "Try the new style" in classic, f"A classic look opens as it is, every tab open, with Try the new style as a shortcut ({tabs})")
     rpc(process, "capture", name="pip-classic.png")
     close(process)
     time.sleep(.8)
@@ -258,22 +258,19 @@ def edit(process):
     took.append(timed(process, ".look-colors[aria-label='Body color'] [aria-label='Mint']"))
     ok = [t for t in took if t is not None and t >= 0]
     check(len(ok) == len(took) and max(ok) < 100, f"Each change shows on the preview within 100ms ({', '.join(f'{t:.0f}ms' for t in ok)}; {len(took) - len(ok)} never)")
-    # Colors: one solid color, an accent and a marking only if picked, each part its own color (or any color)
-    marks = lambda: js(process, "!!document.querySelector(\".look-colors[aria-label='Marking color']\")")
+    # Colors: one solid color and an accent only if picked, each its own color (or any color); no markings (Stage 17)
+    marks = lambda: js(process, "!!document.querySelector(\".look-dialog [aria-label='Marking'], .look-dialog [aria-label='Marking color'], .look-dialog [data-option=belly], .look-dialog [data-option=freckles]\") || [...document.querySelectorAll('.look-dialog .look-heading')].some(h => /marking/i.test(h.innerText))")
     click(process, ".look-colors[aria-label='Accent'] .is-none")
     time.sleep(.3)
-    solid = js(process, "document.querySelector(\".look-colors[aria-label='Accent'] .is-none\").getAttribute('aria-checked')") == "true" and not marks()
-    click(process, ".look-dialog [data-option=belly]")
-    time.sleep(.3)
-    shown = marks()
-    click(process, ".look-colors[aria-label='Marking color'] [aria-label='Charcoal']")
+    solid = js(process, "document.querySelector(\".look-colors[aria-label='Accent'] .is-none\").getAttribute('aria-checked')") == "true"
+    shown = not marks()
     click(process, ".look-colors[aria-label='Accent'] [aria-label='Snow']")
     time.sleep(.3)
     picks = js(process, "[...document.querySelectorAll('.look-colors')].map(g => g.getAttribute('aria-label') + '=' + (g.querySelector('[aria-checked=true]')?.getAttribute('aria-label') ?? 'own')).join()")
     anyc = js(process, "document.querySelectorAll('.look-colors .look-custom input[type=color]').length")
     rpc(process, "capture", name="colors-picked.png")
-    check(solid and shown and picks == "Body color=Mint,Accent=Snow,Marking color=Charcoal" and anyc == 3,
-          f"Colors: one solid color with No accent and no marking; the marking's color shows once a marking is picked; body, accent and marking each pick their own, or any color ({solid}, {shown}, {picks}, {anyc} pickers)")
+    check(solid and shown and picks == "Body color=Mint,Accent=Snow" and anyc == 2,
+          f"Colors: one solid color with No accent, no Marking section or marking color; body and accent each pick their own, or any color ({solid}, {shown}, {picks}, {anyc} pickers)")
     click_text(process, ".look-locks button", "Body")
     forms = set()
     for _ in range(6):

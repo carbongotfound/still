@@ -1175,6 +1175,15 @@ public partial class MainWindow
   return c;
  }
 
+ /// A look saved with a marking (2.10 before Stage 17 took them out) without its "marking" and "mark", the rest as it
+ /// was, in the same order; any other look as it is.
+ internal static string Unmarked(string look)
+ {
+  if (!look.Contains("\"mark", StringComparison.Ordinal)) return look;
+  try { if (System.Text.Json.Nodes.JsonNode.Parse(look) is System.Text.Json.Nodes.JsonObject o && (o.Remove("marking") | o.Remove("mark"))) return o.ToJsonString(); }
+  catch (System.Text.Json.JsonException) { }
+  return look;
+ }
  /// A companion hired from the crew comes with its role's kit (Assets/roles/<role>/), once: its skills, added to the
  /// user's skills unless there's one by that id already, and turned on for it; and its knowledge files, empty to start.
  static void Equip(Companion c)

@@ -340,13 +340,15 @@ export default function App() {
  const [draft, setDraft] = useState<Companion | null>(null) // "Make your own": the profile panel on a companion not hired yet
  const [joined, setJoined] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
+ const [profileTab, setProfileTab] = useState("general") // the tab it opens on: "model" from an AI settings… link
+ const closeProfile = () => { setProfile(""); setProfileTab("general") }
  const [library, setLibrary] = useState(false) // "Hire a companion" opens Still's companion library first
  const [meeting, setMeeting] = useState<Premade | null>(null) // a library companion, previewed before it's hired
  const edit = (c: Companion) => c.id ? setProfile(c.id) : setLibrary(true)
  // Adding a companion: it gets its own id here, so the joined card can start its first chat.
  const hire = (c: Companion) => { const added = { ...c, id: crypto.randomUUID().replace(/-/g, "").slice(0, 10) }; send("companionSave", added); setJoined(added) }
  const chatWith = (id: string) => { setBuddy(id); send("aiKickoff", { companion: id }) } // a new companion's first chat starts itself
- useEffect(() => { const show = (e: Event) => setProfile((e as CustomEvent<string>).detail); addEventListener("still-profile", show); return () => removeEventListener("still-profile", show) }, [])
+ useEffect(() => { const show = (e: Event) => { const d = (e as CustomEvent<{ id: string; tab: string }>).detail; setProfileTab(d.tab); setProfile(d.id) }; addEventListener("still-profile", show); return () => removeEventListener("still-profile", show) }, [])
  const [railOpen, setRailOpenState] = useState(() => { try { return localStorage.getItem("still.chatRail") !== "closed" } catch { return true } })
  const setRailOpen = (v: boolean) => { setRailOpenState(v); try { localStorage.setItem("still.chatRail", v ? "open" : "closed") } catch { /* storage unavailable */ } }
  const extButton = useRef<HTMLButtonElement>(null)
@@ -1010,7 +1012,8 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !draft && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
-  {profile && ai && <ProfilePanel ai={ai} id={profile} send={send} onPick={setProfile} onClose={() => setProfile("")} onOpenFile={path => { setProfile(""); openFile(path) }} onSkills={() => { setProfile(""); goHome("skills") }} />}
+  {profile && ai && <ProfilePanel ai={ai} id={profile} tab={profileTab} send={send} onPick={setProfile} onClose={closeProfile} onOpenFile={path => { closeProfile(); openFile(path) }} onSkills={() => { closeProfile(); goHome("skills") }}
+   onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} />}
   {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onProfile={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
    onOwn={() => { setLibrary(false); setDraft(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}

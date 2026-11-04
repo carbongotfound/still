@@ -1,5 +1,5 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, Trash2, X, type LucideIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -150,23 +150,29 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
  </div>
 }
 
+// The companion's AI settings (their profile's AI tab), from the bottom of the message box's menus: the app, the model
+// and effort for each mode, the key. With no companion, Settings, Models.
+const SETTINGS = "settings"
+const openAiSettings = (send: Send, companion?: Companion) => companion?.id ? showProfile(companion, "model") : send("openPanel", { name: "settings", value: "models" })
+const settingsItem = <div className="ai-pick-foot"><SelectSeparator /><SelectItem value={SETTINGS} className="ai-pick-settings"><SlidersHorizontal />AI settings…</SelectItem></div>
+
 // Every AI in one list: its models when it's ready, or a way to set it up. Picking another AI's model moves the chat to it.
-function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled?: boolean }) {
+function ModelPicker({ ai, send, disabled, companion }: { ai: AiState; send: Send; disabled?: boolean; companion?: Companion }) {
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const modelsOf = (h: Harness) => { const ms = ai.models?.filter(m => m.harness === h.id); return ms?.length ? ms : [{ harness: h.id, id: "", name: "Default", efforts: [] }] }
  const model = ai.models?.find(m => m.harness === current?.id && m.id === ai.model)
  const picked = current ? `${current.id}|${modelsOf(current).some(m => m.id === ai.model) ? ai.model : ""}` : ""
  return <>
-  <Select value={picked} disabled={disabled} onValueChange={v => { const [harness, id] = v.split("|"); if (id === "setup" || !current) send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
+  <Select value={picked} disabled={disabled} onValueChange={v => { if (v === SETTINGS) return openAiSettings(send, companion); const [harness, id] = v.split("|"); if (id === "setup" || !current) send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
    <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue placeholder="Pick your AI" /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start">{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
+   <SelectContent position="popper" side="top" align="start" footer={settingsItem}>{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
     {i > 0 && <SelectSeparator />}
     {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} /><span className="truncate">{m.id ? m.name : h.name}</span></SelectItem>)
      : <SelectItem value={`${h.id}|setup`}><AiLogo id={h.id} size={16} />{h.name}<span className="ai-pick-setup">Set up</span></SelectItem>}
    </SelectGroup>)}</SelectContent></Select>
-  {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
+  {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => v === SETTINGS ? openAiSettings(send, companion) : send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
    <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start"><SelectItem value="default"><span className="truncate">Default effort</span></SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}><span className="truncate">{effortName(e)} effort</span></SelectItem>)}</SelectContent></Select>}
+   <SelectContent position="popper" side="top" align="start" footer={settingsItem}><SelectItem value="default"><span className="truncate">Default effort</span></SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}><span className="truncate">{effortName(e)} effort</span></SelectItem>)}</SelectContent></Select>}
  </>
 }
 
@@ -205,6 +211,8 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
    {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion || ai.advanced} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
+   <DropdownMenuSeparator />
+   <DropdownMenuItem className="mode-settings" onSelect={() => openAiSettings(send, companion)}><SlidersHorizontal />AI settings…</DropdownMenuItem>
   </DropdownMenuContent>
  </DropdownMenu>
 }
@@ -212,8 +220,8 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
 const effortName = (e: string) => e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)
 // Settings → Models: per set-up AI, the model and effort Quick, Everyday and Thorough use, picked only from its own
 // catalog. With Advanced on they're kept but not used, and the table says so.
-export function TierSettings({ ai, send }: { ai: AiState; send: Send }) {
- const list = ai.harnesses.filter(h => ai.tiers?.[h.id])
+export function TierSettings({ ai, send, only }: { ai: AiState; send: Send; only?: string }) {
+ const list = ai.harnesses.filter(h => ai.tiers?.[h.id] && (!only || h.id === only))
  if (!list.length) return <p className="tiers-note">Set up an AI to pick its models here.</p>
  return <div className="tiers" data-off={ai.advanced || undefined}>
   {ai.advanced && <p className="tiers-note">Advanced is on, so these tiers are not used.</p>}
@@ -484,7 +492,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     </DropdownMenuContent></DropdownMenu>
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
-   {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
+   {ai.advanced && <ModelPicker ai={ai} send={send} companion={companion} disabled={!!onStop || disabled} />}
    {onStop && !message ? <Tip label="Stop · Ctrl+."><InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton></Tip>
     : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!message || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>

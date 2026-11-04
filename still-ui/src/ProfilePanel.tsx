@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, FileText, FolderOpen, Hand, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, Sparkles, Trash2, Undo2, UserX, X } from "lucide-react"
+import { CalendarClock, Check, ChevronDown, ChevronRight, Copy, Dices, Eraser, FileText, FolderOpen, Hand, KeyRound, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, RotateCcw, Share2, SlidersHorizontal, Sparkles, SquareArrowOutUpRight, Trash2, Undo2, UserX, X } from "lucide-react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Face, hueOf, type Companion, type Mode, type Personality, type ReplyLength, type Routine } from "./Buddy"
 import { AiLogo } from "./AiLogo"
 import { LookEditor } from "./LookEditor"
@@ -14,17 +14,17 @@ import { PluginChip } from "./Plugins"
 import { FileCard } from "./Files"
 import { LIBRARY, ROLE_TEXT, SHARE_KIND, fromPremade, premadeOf } from "./crew"
 import { SkillEditor, resetSkill } from "./Home"
-import { destroy, fire } from "./Undo"
+import { deleteChat, destroy, fire } from "./Undo"
 import { generate } from "./generate"
 import { lookKey, surprise } from "./look"
 import { andList } from "./Plugins"
 import { cn } from "@/lib/utils"
-import type { AiState, Skill } from "./AiSidebar"
+import { TierSettings, isRunning, type AiState, type Skill } from "./AiSidebar"
 
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A companion's profile, opened from its mascot: everything about it on tabs, saved as you change it. "Make your own"
 // opens the same panel on a draft: nothing is saved until Hire, and the tabs that need a hired companion stay hidden.
-const TABS = [["general", "General"], ["skills", "Skills & plugins"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["model", "Model"]] as const
+const TABS = [["general", "General"], ["skills", "Skills & plugins"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["model", "AI"]] as const
 const DRAFT_TABS = ["general", "skills", "files", "model"]
 const MODES: [Mode, string, string][] = [["efficient", "Quick", "Short and fast. Good for lookups and small jobs."], ["default", "Everyday", "The right depth for most things."], ["expert", "Thorough", "Takes longer and checks more. For research and big tasks."]]
 const PERSONALITIES: [Personality, string, string][] = [["direct", "Direct", "Gets to the point"], ["warm", "Warm", "Friendly and encouraging"], ["playful", "Playful", "Light, with a little humor"], ["formal", "Formal", "Polished and courteous"]]
@@ -38,13 +38,15 @@ const when = (r: Routine) => (r.days.length === 7 ? "Every day" : r.days.join() 
 const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name: c.name, look: c.look ?? "", job: c.job, tone: c.tone ?? "", mode: c.mode ?? "default", crew: c.crew ?? "",
  role: c.role ?? "", personality: c.personality ?? "", length: c.length ?? "balanced" })
 
-export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile, onSkills, onHire }: {
+export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile, onSkills, onHire, onChat, tab: opening = "general" }: {
  ai: AiState; id: string; send: Send; onPick: (id: string) => void; onClose: () => void; onOpenFile: (path: string) => void; onSkills: () => void
+ onChat?: (id: string) => void // a new chat with them, when they have none to open
+ tab?: string // the tab it opens on ("model": their AI settings)
  draft?: Companion; onHire?: (c: Companion) => void // "Make your own": a companion not hired yet
 }) {
  const saved: (Companion & { instructions?: string }) | undefined = draft ?? ai.companions?.find(c => c.id === id)
  const [c, setC] = useState(saved)
- const [tab, setTab] = useState("general")
+ const [tab, setTab] = useState(opening)
  const [styling, setStyling] = useState(false)
  const [made, setMade] = useState<string[] | null>(null) // the skills the generator just picked, to say so
  const [skill, setSkill] = useState<Skill | null>(null) // a skill open in the editor
@@ -73,6 +75,12 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  const harness = ai.harnesses.find(h => h.id === (c.ai || ai.harness))
  const state = (hid: string) => { const h = ai.harnesses.find(x => x.id === hid); return !h ? "" : !h.installed || h.status === "missing" ? "Not installed" : h.status === "signedOut" ? "Sign in first" : "" }
  const chatsOf = new Set(ai.chats.filter(x => x.companion === c.id).map(x => x.id))
+ // Their chat: the one open in the side chat when it's theirs, or their latest. Clear chat deletes it (with Undo).
+ const chat = ai.chats.find(x => x.id === ai.chatId && x.companion === c.id) ?? ai.chats.filter(x => x.companion === c.id && !x.from).sort((a, b) => b.updated.localeCompare(a.updated))[0]
+ const tier = harness && ai.tiers?.[harness.id]?.[c.mode ?? "default"], model = ai.models?.find(m => m.harness === harness?.id && m.id === (ai.advanced ? ai.model : tier?.model))
+ const runsOn = harness ? [harness.name, model?.id ? model.name : "", ai.advanced ? "" : MODES.find(m => m[0] === (c.mode ?? "default"))?.[1]].filter(Boolean).join(" · ") : "No AI picked yet"
+ const api = harness?.api ? ai.apis?.providers.find(p => p.id === harness.id) : undefined
+ const aiSettings = () => setTab("model")
  const files = (ai.files ?? []).filter(f => chatsOf.has(f.chat))
  const plugins = ai.plugins, pluginsReady = !!plugins?.key && plugins.status === "ok"
  const routines = c.routines ?? []
@@ -92,16 +100,27 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
    {draft ? <header className="profile-head"><Face companion={c} size={28} /><b className="profile-draft-title">{c.name.trim() ? `Make ${c.name.trim()}` : "Make your own"}</b>
     <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Close" onClick={close}><X /></Button></header> :
    <header className="profile-head">
-    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label="Switch companion"><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
-     <DropdownMenuContent align="start" className="w-56">{ai.companions?.map(x => <DropdownMenuItem key={x.id} onSelect={() => onPick(x.id)}><Face companion={x} size={20} />{x.name}{x.id === c.id && <Check className="ml-auto" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label={`${c.name}: AI settings and companions`}><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
+     <DropdownMenuContent align="start" className="w-64 profile-menu">
+      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal /><span className="profile-menu-two">AI settings<small>{runsOn}</small></span></DropdownMenuItem>
+      <DropdownMenuSeparator />
+      <DropdownMenuLabel>Switch to</DropdownMenuLabel>
+      {ai.companions?.map(x => <DropdownMenuItem key={x.id} onSelect={() => onPick(x.id)}><Face companion={x} size={20} />{x.name}{x.id === c.id && <Check className="ml-auto" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
-     <DropdownMenuContent align="end" className="w-56">
+     <DropdownMenuContent align="end" className="w-60 profile-menu">
+      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal />AI settings</DropdownMenuItem>
+      <DropdownMenuItem onSelect={() => setStyling(true)}><Palette />Edit look</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => { setTab("general"); setTimeout(() => { name.current?.focus(); name.current?.select() }, 50) }}><Pencil />Rename</DropdownMenuItem>
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
       {saved?.setup !== "pending" && <DropdownMenuItem onSelect={() => send("companionSetupAgain", { companion: c.id })}><Hand />Introduce yourself again</DropdownMenuItem>}
       {premade && <DropdownMenuItem onSelect={() => { const before = c; destroy({ key: "reset:" + c.id, title: `Reset ${c.name}?`, action: "Reset", done: `${c.name} reset`,
        body: `Their name, look, instructions, way of talking and thinking go back to how ${premade.name} started. What they remember about you, their skills and routines stay.`,
        onConfirm: () => save({ ...c, ...fromPremade(premade, c.id), skills: c.skills, routines: c.routines, folder: c.folder, ai: c.ai, instructions: "" }), run: () => {}, undo: () => save(before) }) }}><RotateCcw />Reset to how {premade.name} started</DropdownMenuItem>}
+      <DropdownMenuSeparator />
+      {chat ? <DropdownMenuItem onSelect={() => { send("chatOpen", { id: chat.id, newTab: true }); close() }}><SquareArrowOutUpRight />Open chat in a tab</DropdownMenuItem>
+       : onChat && <DropdownMenuItem onSelect={() => { onChat(c.id); close() }}><MessageSquare />Chat with {c.name}</DropdownMenuItem>}
+      {chat && <DropdownMenuItem disabled={isRunning(ai, chat.id)} onSelect={() => deleteChat(send, chat)}><Eraser />Clear chat</DropdownMenuItem>}
+      <DropdownMenuItem onSelect={close}><X />Close panel</DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={() => fire(send, c, only, close)}><Trash2 />Fire {c.name}</DropdownMenuItem>
      </DropdownMenuContent></DropdownMenu>
@@ -204,9 +223,14 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
        {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
       </select></span></label>
       {c.ai && state(c.ai) && <p className="profile-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {label} can start.</p>}
-      <div className="profile-field"><span>Default tier <small>How hard {label} thinks in a new chat.</small></span>
-       <div className="profile-modes" role="radiogroup" aria-label="Default tier">{MODES.map(([m, t, d]) => <button key={m} role="radio" aria-checked={(c.mode ?? "default") === m} onClick={() => save({ ...c, mode: m })}><b>{t}</b><small>{d}</small></button>)}</div>
+      {api && <div className="profile-field"><span>API key</span>
+       <div className="profile-key"><KeyRound aria-hidden /><span>{api.hasKey ? <>Key ending in <code>{api.keyEnd}</code>{api.refused && " · Not accepted"}</> : api.noKey ? "No key needed" : "No key yet"}</span>
+        {!api.noKey && <Button size="sm" variant="outline" onClick={() => { close(); send("openPanel", { name: "settings", value: "models" }) }}>{api.hasKey ? "Change key" : "Add key"}</Button>}</div></div>}
+      <div className="profile-field"><span>Default mode <small>How hard {label} thinks in a new chat.</small></span>
+       <div className="profile-modes" role="radiogroup" aria-label="Default mode">{MODES.map(([m, t, d]) => <button key={m} role="radio" aria-checked={(c.mode ?? "default") === m} onClick={() => save({ ...c, mode: m })}><b>{t}</b><small>{d}</small></button>)}</div>
       </div>
+      {harness && ai.tiers?.[harness.id] && <div className="profile-field"><span>Model and effort for each mode <small>{harness.name}'s picks, the same for every companion on it.</small></span>
+       <TierSettings ai={ai} send={send} only={harness.id} /></div>}
      </TabsContent>
     </div>
    </Tabs>

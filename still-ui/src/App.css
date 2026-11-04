@@ -1625,8 +1625,8 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-mains-face { display:grid; place-items:center; width:72px; height:72px; margin-bottom:4px; border-radius:50%; background:color-mix(in oklab,var(--hue) 26%,var(--ob-card)); }
 .ob-note.is-warn, .companion-note.is-warn { color:var(--destructive); }
 /* A companion's profile (ProfilePanel.tsx): a sheet from the right, on an 8px grid */
-.profile-scrim { position:fixed; inset:0; z-index:60; background:rgb(0 0 0 / .28); animation:profile-fade .2s ease-out; }
-.profile-panel { position:fixed; top:8px; right:8px; bottom:8px; z-index:61; width:min(520px, calc(100vw - 16px)); display:flex; flex-direction:column; background:var(--background); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 64px rgb(0 0 0 / .2); overflow:hidden; animation:profile-in .24s cubic-bezier(.2,.8,.2,1); }
+.profile-scrim { position:fixed; inset:0; z-index:45; background:rgb(0 0 0 / .28); animation:profile-fade .2s ease-out; }
+.profile-panel { position:fixed; top:8px; right:8px; bottom:8px; z-index:46; width:min(520px, calc(100vw - 16px)); display:flex; flex-direction:column; background:var(--background); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 64px rgb(0 0 0 / .2); overflow:hidden; animation:profile-in .24s cubic-bezier(.2,.8,.2,1); }
 .profile-panel.is-closing { animation:profile-out .16s ease-in forwards; } .profile-scrim.is-closing { animation:profile-fade .16s ease-in reverse forwards; }
 @keyframes profile-in { from { opacity:0; transform:translateX(32px); } }
 @keyframes profile-out { to { opacity:0; transform:translateX(32px); } }
@@ -1670,6 +1670,14 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 /* Personality and reply length: side by side, wrapping on a narrow panel. */
 .profile-modes.is-row { grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); } .profile-modes.is-row button { padding:10px 12px; }
 .profile-field > span small { margin-left:4px; font-weight:400; color:var(--muted-foreground); }
+/* Stage 17: the name menu's AI settings row (what they run on below it), the key on the AI tab, AI settings… in the message box's menus */
+.profile-menu-two { display:flex; flex-direction:column; gap:1px; min-width:0; } .profile-menu-two small { font-size:11.5px; color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.profile-key { display:flex; align-items:center; gap:8px; font-size:13px; } .profile-key > svg { width:16px; height:16px; color:var(--muted-foreground); } .profile-key > span { flex:1; min-width:0; } .profile-key code { font-size:12px; }
+.profile-field .tiers { margin:0; }
+.ai-pick-foot { flex:none; padding:0 4px 4px; } .ai-pick-foot [data-slot=select-separator] { margin:0 -4px 4px; }
+/* The mode menu fits above the box: its list of companions gives up room first, so Advanced and AI settings… stay in view */
+.mode-menu[data-slot=dropdown-menu-content] { display:flex; flex-direction:column; } .mode-mates { min-height:80px; }
+.ai-pick-settings, .mode-settings { color:var(--muted-foreground); } .ai-pick-settings svg, .mode-settings svg { width:15px; height:15px; }
 /* Make your own: the generator under Instructions, and Hire at the bottom of the panel. */
 .profile-suggest { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:-8px; }
 .profile-draft-title { font-size:15px; font-weight:600; }

@@ -3,6 +3,14 @@
 // drives this profile only, through Still's MCP server. Chats are saved per profile.
 import AppKit
 
+/// A look saved with a marking (2.10 before Stage 17 took them out) without its "marking" and "mark", the rest as it was;
+/// any other look as it is.
+func unmarked(_ look: String) -> String {
+ guard look.contains("\"mark"), let re = try? NSRegularExpression(pattern: #",?\s*"mark(ing)?"\s*:\s*"[^"]*""#) else { return look }
+ let out = re.stringByReplacingMatches(in: look, range: NSRange(look.startIndex..., in: look), withTemplate: "")
+ return out.hasPrefix("{,") ? "{" + out.dropFirst(2) : out
+}
+
 /// A companion: the persona the user works with. Its look is the shell's JSON (look.ts), its job goes into the AI's
 /// instructions. Kept in prefs["Companions"] with the Windows app's field names.
 final class Companion {
@@ -816,6 +824,7 @@ extension Browser {
   if !teams.isEmpty { saveAiChats() }
   loadTasks(aiChats)
   companions = pref("Companions", [[String: Any]]()).map(Companion.init)
+  for c in companions { let u = unmarked(c.look); if u != c.look { c.look = u; storeCompanions() } } // Stage 17 took the markings out
   // Hired from an old role: move to the role that took over, with its new name unless the user renamed it, and the job and
   // personality Still gave it (with what the user added after "For me:"). The fixer is gone: its chats and memory go to
   // the planner, or it becomes the planner when there isn't one. The fixer goes last, once the planner has moved.

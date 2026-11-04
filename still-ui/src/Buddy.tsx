@@ -77,4 +77,5 @@ export function Space({ companion, team = [], mood, onOpen, onPick }: { companio
  </div>
 }
 /// Opens a companion's profile (App listens), from any of its mascots.
-export const showProfile = (c?: Companion) => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: c.id })) }
+/// A companion's profile, from anywhere: on its General tab, or "model" for their AI settings.
+export const showProfile = (c?: Companion, tab = "general") => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: { id: c.id, tab } })) }

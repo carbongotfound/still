@@ -118,7 +118,7 @@ def escape(p):
 
 
 def profile(p, cid):
-    js(p, f"dispatchEvent(new CustomEvent('still-profile', {{ detail: {json.dumps(cid)} }}))")
+    js(p, f"dispatchEvent(new CustomEvent('still-profile', {{ detail: {json.dumps({'id': cid, 'tab': 'general'})} }}))")
     return until(lambda: shown(p, ".profile-panel .profile-field input"), 5)
 
 
@@ -191,7 +191,7 @@ def main():
         check(js(p, "!!document.querySelector('.profile-panel [aria-label=\"Reset Claim check to Still\\'s version\"]')") and not js(p, "!!document.querySelector('.profile-panel [aria-label=\"Reset Research brief to Still\\'s version\"]')"),
               "Reset shows for a Still skill the user changed, and only then")
         tab(p, "model")
-        check("Default tier" in (js(p, "document.querySelector('.profile-panel')?.innerText") or ""), "Model: Runs on and Default tier")
+        check("Default mode" in (js(p, "document.querySelector('.profile-panel')?.innerText") or ""), "AI: Runs on and Default mode")
         rpc(p, "capture", name="personalize-skills.png")
         escape(p)
         until(lambda: not shown(p, ".profile-panel"), 3)
@@ -304,7 +304,7 @@ def main():
         click(p, ".library-more .role-head", "Make your own")
         check(until(lambda: shown(p, ".profile-panel .profile-foot") and not shown(p, ".companion-library"), 5), "Make your own opens the companion editor")
         tabs = js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()")
-        check(tabs == "General Skills & plugins Files Model", f"A draft shows the tabs it can use ({tabs})")
+        check(tabs == "General Skills & plugins Files AI", f"A draft shows the tabs it can use ({tabs})")
         check(not js(p, "document.querySelector('.profile-foot button:last-child')?.disabled === false"), "Hire waits for a name")
         type_into(p, ".profile-panel .profile-field input", "Wren")
         type_into(p, ".profile-panel .profile-field input", "Writer", 1)
