@@ -304,7 +304,7 @@ def main():
         click(p, ".library-more .role-head", "Make your own")
         check(until(lambda: shown(p, ".profile-panel .profile-foot") and not shown(p, ".companion-library"), 5), "Make your own opens the companion editor")
         tabs = js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()")
-        check(tabs == "General Skills & plugins Files AI", f"A draft shows the tabs it can use ({tabs})")
+        check(tabs == "General Skills & plugins Files Model", f"A draft shows the tabs it can use ({tabs})")
         check(not js(p, "document.querySelector('.profile-foot button:last-child')?.disabled === false"), "Hire waits for a name")
         type_into(p, ".profile-panel .profile-field input", "Wren")
         type_into(p, ".profile-panel .profile-field input", "Writer", 1)

@@ -1236,6 +1236,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "aiChat": aiShortcut("chat")
   case "aiStop": aiShortcut("stop")
   case "aiTasks": aiShortcut("tasks")
+  case "aiAdd": aiShortcut("add")
   default:
    let strip = tabs.filter { $0.inChat == nil }
    if name.hasPrefix("tab"), let number = Int(name.dropFirst(3)), !strip.isEmpty { select(number == 9 ? strip[strip.count - 1] : strip[min(number - 1, strip.count - 1)]) }
@@ -1402,7 +1403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   add("AI", [
    command("Chat with Your AI", "aiChat", "a", [.command, .shift]),
    command("Running Tasks", "aiTasks", "k", [.command, .shift]),
-   command("Stop the AI", "aiStop", ".")
+   command("Stop the AI", "aiStop", "."),
+   .separator(),
+   command("Add a Model…", "aiAdd", "")
   ])
   var tabItems = [
    command("Show Next Tab", "nextTab", right, [.command, .option]),

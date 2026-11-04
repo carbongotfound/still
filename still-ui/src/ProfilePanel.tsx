@@ -25,7 +25,7 @@ import { TierSettings, isRunning, type AiState, type Skill } from "./AiSidebar"
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A companion's profile, opened from its mascot: everything about it on tabs, saved as you change it. "Make your own"
 // opens the same panel on a draft: nothing is saved until Hire, and the tabs that need a hired companion stay hidden.
-const TABS = [["general", "General"], ["skills", "Skills & plugins"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["model", "AI"]] as const
+const TABS = [["general", "General"], ["skills", "Skills & plugins"], ["routines", "Routines"], ["files", "Files"], ["memory", "Memory"], ["model", "Model"]] as const
 const DRAFT_TABS = ["general", "skills", "files", "model"]
 const MODES: [Mode, string, string][] = [["efficient", "Quick", "Short and fast. Good for lookups and small jobs."], ["default", "Everyday", "The right depth for most things."], ["expert", "Thorough", "Takes longer and checks more. For research and big tasks."]]
 const PERSONALITIES: [Personality, string, string][] = [["direct", "Direct", "Gets to the point"], ["warm", "Warm", "Friendly and encouraging"], ["playful", "Playful", "Light, with a little humor"], ["formal", "Formal", "Polished and courteous"]]
@@ -42,7 +42,7 @@ const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name:
 export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile, onSkills, onHire, onChat, tab: opening = "general" }: {
  ai: AiState; id: string; send: Send; onPick: (id: string) => void; onClose: () => void; onOpenFile: (path: string) => void; onSkills: () => void
  onChat?: (id: string) => void // a new chat with them, when they have none to open
- tab?: string // the tab it opens on ("model": their AI settings)
+ tab?: string // the tab it opens on ("model": their Model settings)
  draft?: Companion; onHire?: (c: Companion) => void // "Make your own": a companion not hired yet
 }) {
  const saved: (Companion & { instructions?: string }) | undefined = draft ?? ai.companions?.find(c => c.id === id)
@@ -54,6 +54,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  const [closing, setClosing] = useState(false)
  const name = useRef<HTMLInputElement>(null), typing = useRef(0)
  useEffect(() => { setC(saved) }, [id, !!saved]) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => { if (tab === "model") send("aiStatus") }, [tab]) // eslint-disable-line react-hooks/exhaustive-deps -- Runs on: what's logged in now
  const close = () => { setClosing(true); setTimeout(onClose, 160) }
  const latest = useRef(c); latest.current = c
  useEffect(() => { // the folder picked in the system's own dialog
@@ -79,7 +80,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  // Their chat: the one open in the side chat when it's theirs, or their latest. Clear chat deletes it (with Undo).
  const chat = ai.chats.find(x => x.id === ai.chatId && x.companion === c.id) ?? ai.chats.filter(x => x.companion === c.id && !x.from).sort((a, b) => b.updated.localeCompare(a.updated))[0]
  const tier = harness && ai.tiers?.[harness.id]?.[c.mode ?? "default"], model = ai.models?.find(m => m.harness === harness?.id && m.id === (ai.advanced ? ai.model : tier?.model))
- const runsOn = harness ? [harness.name, model?.id ? model.name : "", ai.advanced ? "" : MODES.find(m => m[0] === (c.mode ?? "default"))?.[1]].filter(Boolean).join(" · ") : "No AI picked yet"
+ const runsOn = harness ? [harness.name, model?.id ? model.name : "", ai.advanced ? "" : MODES.find(m => m[0] === (c.mode ?? "default"))?.[1]].filter(Boolean).join(" · ") : "No model picked yet"
  const api = harness?.api ? ai.apis?.providers.find(p => p.id === harness.id) : undefined
  const aiSettings = () => setTab("model")
  const files = (ai.files ?? []).filter(f => chatsOf.has(f.chat))
@@ -101,15 +102,15 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
    {draft ? <header className="profile-head"><Face companion={c} size={28} /><b className="profile-draft-title">{c.name.trim() ? `Make ${c.name.trim()}` : "Make your own"}</b>
     <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Close" onClick={close}><X /></Button></header> :
    <header className="profile-head">
-    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label={`${c.name}: AI settings and companions`}><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label={`${c.name}: Model settings and companions`}><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
      <DropdownMenuContent align="start" className="w-64 profile-menu">
-      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal /><span className="profile-menu-two">AI settings<small>{runsOn}</small></span></DropdownMenuItem>
+      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal /><span className="profile-menu-two">Model settings<small>{runsOn}</small></span></DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuLabel>Switch to</DropdownMenuLabel>
       {ai.companions?.map(x => <DropdownMenuItem key={x.id} onSelect={() => onPick(x.id)}><Face companion={x} size={20} />{x.name}{x.id === c.id && <Check className="ml-auto" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
      <DropdownMenuContent align="end" className="w-60 profile-menu">
-      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal />AI settings</DropdownMenuItem>
+      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal />Model settings</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => setStyling(true)}><Palette />Edit look</DropdownMenuItem>
       <DropdownMenuItem onSelect={() => { setTab("general"); setTimeout(() => { name.current?.focus(); name.current?.select() }, 50) }}><Pencil />Rename</DropdownMenuItem>
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
@@ -220,10 +221,10 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
      </TabsContent>
      <TabsContent value="model">
       <label className="profile-field"><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
-       <option value="">Your AI{harness && !c.ai ? ` (${harness.name})` : ""}</option>
-       {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
+       <option value="">Your model{harness && !c.ai ? ` (${harness.name})` : ""}</option>
+       {ai.harnesses.filter(h => !h.secondary || h.id === c.ai || h.status === "ready").map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
       </select></span></label>
-      {c.ai && state(c.ai) && <p className="profile-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {label} can start.</p>}
+      {c.ai && state(c.ai) && <p className="profile-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up in Model settings, and {label} can start.</p>}
       {api && <div className="profile-field"><span>API key</span>
        <div className="profile-key"><KeyRound aria-hidden /><span>{api.hasKey ? <>Key ending in <code>{api.keyEnd}</code>{api.refused && " · Not accepted"}</> : api.noKey ? "No key needed" : "No key yet"}</span>
         {!api.noKey && <Button size="sm" variant="outline" onClick={() => { close(); send("openPanel", { name: "settings", value: "models" }) }}>{api.hasKey ? "Change key" : "Add key"}</Button>}</div></div>}

@@ -1,7 +1,7 @@
 {
  "2.10": [
   { "title": "Gemini, OpenCode and your own API", "text": "Gemini and OpenCode join Claude, ChatGPT and Grok, and any OpenAI- or Claude-compatible API works too.", "image": "2.10/ai-apps.webp" },
-  { "title": "Setup in four steps", "text": "Connect your AI, make a companion and give it a first task, all in one go.", "image": "2.10/setup.webp" },
+  { "title": "Setup in four steps", "text": "Connect your model, make a companion and give it a first task, all in one go.", "image": "2.10/setup.webp" },
   { "title": "Make them look your way", "text": "Pick a body, colors, a face and extras in the new look editor.", "image": "2.10/look.webp" },
   { "title": "See what they remember", "text": "Every fact a companion keeps, with where it came from. Change or forget any of it.", "image": "2.10/memory.webp" },
   { "title": "Undo when you delete", "text": "Deleting a chat, a companion or your data asks first, then gives you a few seconds to undo.", "image": "2.10/undo.webp" }

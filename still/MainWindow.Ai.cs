@@ -548,6 +548,7 @@ public partial class MainWindow
    case "aiSetupCancel": aiSetupCancelled = true; try { aiSetupProcess?.Kill(true); } catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception) { } break;
    case "aiCheck": aiClis = null; _ = CheckAis(true); break;
    case "aiToggle": aiOpen = !aiOpen; if (aiOpen) _ = CheckAis(); break;
+   case "aiStatus": _ = CheckAis(); break; // Model settings or a Model tab opened: what's installed and logged in, at most every 30 s
    case "aiAsk" when S("text").Trim() is { Length: > 0 and <= 20000 } ask: // typed in the address bar: a new chat, in its own tab
     var into = active is { Url.Length: 0, ChatId: null, Private: false } blank ? blank : await NewTab("", false, false);
     aiError = ""; await RunAi(null, ask, into: into);

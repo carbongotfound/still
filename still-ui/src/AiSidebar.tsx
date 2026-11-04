@@ -23,7 +23,7 @@ import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
-import type { ApiState } from "./ApiProviders"
+import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
@@ -97,40 +97,48 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
  return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
-// "Bring your own AI": each agent app on this PC, signed in with the user's own plan. Picking one makes it the AI for
-// new chats; a row that isn't ready offers the next step. Nothing is installed unless the user asks.
+// "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
+// and never by signing in. Add shows how to install one, Set up how to sign in or add a key. With send, the Compatible API
+// presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
 export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
  const [howTo, setHowTo] = useState("")
- const [more, setMore] = useState(false)
+ const [adding, setAdding] = useState<string | null>(null) // the API preset whose form is open ("": any other)
+ useEffect(() => { send?.("aiStatus") }, [send]) // a fresh look at what's installed and logged in (at most every 30 s)
+ const toggle = (id: string) => setHowTo(howTo === id ? "" : id)
  const row = (h: Harness) => {
-  const s = statusOf(h), chosen = ai.harness === h.id
+  const s = statusOf(h), chosen = ai.harness === h.id, open = howTo === h.id
+  // Signed out, or installed with no way to tell (GitHub Copilot) and signed in from a terminal.
+  const setUp = s === "signedOut" || (s === "" && !!h.terminalSignIn)
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Signed in with your plan"}</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Logged in"}</span><Check aria-hidden /></>
    : s === "needsKey" ? "API provider · Needs a key"
    : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
-   : s === "signedOut" ? (send ? "Installed" : "Installed · Sign in with your plan")
-   : h.installed ? "Installed" : "Checking…"
+   : s === "signedOut" && !send ? "Installed · Sign in with your plan" : "Installed"
   return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
    <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
     <span className="byo-tile" aria-hidden><AiLogo id={h.api ? h.name : h.id} size={22} /></span>
     <span className="byo-name"><strong>{h.name}{h.compatible && <> <Badge variant="outline" className="byo-tag" title="Built from its docs, not yet tested with the real app">Compatible</Badge></>}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
-   {s === "signedOut" && send && !h.terminalSignIn && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}
-   {s === "signedOut" && h.terminalSignIn && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to sign in<ChevronDown /></Button>}
+   {setUp && (send || h.terminalSignIn) && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
    {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => send("openPanel", { name: "settings", value: "models" })}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
-   {howTo === h.id && s === "signedOut" && h.terminalSignIn && <div className="byo-how">
-    <p>{h.app} signs in from a terminal. Run this in {SHELL}, sign in with your plan in the browser it opens, then come back:</p>
-    <code className="byo-cmd">{h.terminalSignIn}</code>
-    <div className="ai-row">
-     <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
-     {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
-    </div>
+   {s === "missing" && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Add<ChevronDown /></Button>}
+   {open && setUp && <div className="byo-how">
+    {h.terminalSignIn ? <>
+     <p>{h.app} signs in from a terminal. Run this in {SHELL}, sign in with your plan in the browser it opens, then come back:</p>
+     <code className="byo-cmd">{h.terminalSignIn}</code>
+     <div className="ai-row">
+      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
+      {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
+     </div>
+    </> : send && <>
+     <p>{h.app} is installed. Sign in with your {h.maker} plan in the browser it opens, then come back.</p>
+     <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button></div>
+    </>}
    </div>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
-   {s === "missing" && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to install<ChevronDown /></Button>}
-   {howTo === h.id && s === "missing" && <div className="byo-how">
+   {open && s === "missing" && <div className="byo-how">
     <p>Run this in {SHELL}, then come back:</p>
     <code className="byo-cmd">{h.installCommand}</code>
     <div className="ai-row">
@@ -141,21 +149,27 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    </div>}
   </div>
  }
- const main = ai.harnesses.filter(h => !h.secondary), others = ai.harnesses.filter(h => h.secondary)
+ // A preset already added is a row above, under its own name.
+ const presets = !send ? [] : [...API_PRESETS.filter(x => !ai.apis?.providers.some(p => p.url === x.url)).map(x => x.name), ""]
+ const apiRow = (name: string) => <div key={"api-add:" + name} className="byo-row" data-status="add">
+  <div className="byo-main">
+   <span className="byo-tile" aria-hidden>{name ? <AiLogo id={name} size={22} /> : <Plus className="size-5" />}</span>
+   <span className="byo-name"><strong>{name || "Other compatible API"} <Badge variant="outline" className="byo-tag">Compatible</Badge></strong><small>{name ? "API · Not added" : "Any OpenAI- or Claude-compatible API"}</small></span>
+  </div>
+  <Button size="sm" variant="outline" className="byo-act" aria-expanded={adding === name} onClick={() => setAdding(adding === name ? null : name)}>Add<ChevronDown /></Button>
+  {adding === name && send && <div className="byo-how byo-api"><ApiForm start={name} send={send} done={() => setAdding(null)} /></div>}
+ </div>
  return <div className="ai-picker byo">
-  {main.map(row)}
-  {others.length > 0 && <>
-   <button className="byo-more" aria-expanded={more} onClick={() => setMore(!more)}>More agents ({others.length})<ChevronDown /></button>
-   {more && others.map(row)}
-  </>}
+  {ai.harnesses.map(row)}
+  {presets.map(apiRow)}
  </div>
 }
 
-// The companion's AI settings (their profile's AI tab), from the bottom of the message box's menus: the app, the model
+// The companion's Model settings (their profile's Model tab), from the bottom of the message box's menus: the app, the model
 // and effort for each mode, the key. With no companion, Settings, Models.
 const SETTINGS = "settings"
 const openAiSettings = (send: Send, companion?: Companion) => companion?.id ? showProfile(companion, "model") : send("openPanel", { name: "settings", value: "models" })
-const settingsItem = <div className="ai-pick-foot"><SelectSeparator /><SelectItem value={SETTINGS} className="ai-pick-settings"><SlidersHorizontal />AI settings…</SelectItem></div>
+const settingsItem = <div className="ai-pick-foot"><SelectSeparator /><SelectItem value={SETTINGS} className="ai-pick-settings"><SlidersHorizontal />Model settings…</SelectItem></div>
 
 // Every AI in one list: its models when it's ready, or a way to set it up. Picking another AI's model moves the chat to it.
 function ModelPicker({ ai, send, disabled, companion }: { ai: AiState; send: Send; disabled?: boolean; companion?: Companion }) {
@@ -165,7 +179,7 @@ function ModelPicker({ ai, send, disabled, companion }: { ai: AiState; send: Sen
  const picked = current ? `${current.id}|${modelsOf(current).some(m => m.id === ai.model) ? ai.model : ""}` : ""
  return <>
   <Select value={picked} disabled={disabled} onValueChange={v => { if (v === SETTINGS) return openAiSettings(send, companion); const [harness, id] = v.split("|"); if (id === "setup" || !current) send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
-   <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue placeholder="Pick your AI" /></SelectTrigger>
+   <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue placeholder="Pick your model" /></SelectTrigger>
    <SelectContent position="popper" side="top" align="start" footer={settingsItem}>{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
     {i > 0 && <SelectSeparator />}
     {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} /><span className="truncate">{m.id ? m.name : h.name}</span></SelectItem>)
@@ -213,7 +227,7 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
    <DropdownMenuSeparator />
-   <DropdownMenuItem className="mode-settings" onSelect={() => openAiSettings(send, companion)}><SlidersHorizontal />AI settings…</DropdownMenuItem>
+   <DropdownMenuItem className="mode-settings" onSelect={() => openAiSettings(send, companion)}><SlidersHorizontal />Model settings…</DropdownMenuItem>
   </DropdownMenuContent>
  </DropdownMenu>
 }
@@ -520,10 +534,10 @@ function QuestionCard({ q, companion, send, draft }: { q: { text: string; option
 function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: () => void }) {
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const status = statusOf(current)
- const pending = ai.pending && <p className="ai-fine">Your message runs as soon as {current?.name ?? "your AI"} is ready.</p>
+ const pending = ai.pending && <p className="ai-fine">Your message runs as soon as {current?.name ?? "your model"} is ready.</p>
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
-  <h3>Bring your own AI</h3>
+  <h3>Pick your model</h3>
   <p>Still runs on the AI you already pay for, through its own app on this computer. No API key needed, no credits, no extra plan. Your chats go only to your AI provider.</p>
   <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
@@ -652,7 +666,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    </div> : <div className="ai-hello">
     <Face companion={companion} size={64} />
     <h3>What should we do?</h3>
-    <p>I can read this page, search the web, compare and click around in my own background tabs. Switch AI any time, even mid-task.</p>
+    <p>I can read this page, search the web, compare and click around in my own background tabs. Switch models any time, even mid-task.</p>
     <div className="ai-ideas">{IDEAS.map(([Icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span><Icon aria-hidden /></span>{label}</button>)}</div>
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
@@ -699,7 +713,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your AI"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
     {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && !provider.api && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
@@ -750,10 +764,10 @@ function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState;
  </div>
 }
 
-// AI apps, what the AI can see, and the saved chats.
+// Model settings: every model Still can run, each added or set up right here, what it can see, and the saved chats.
 function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => void }) {
  return <div className="ai-pane">
-  <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for, or with your own API key (Settings → Models → API providers). Switch between them in the model list under the message box.</p>
+  <section className="ai-models"><h4>Your models</h4><p>Each runs on this computer with the plan you already pay for, or with your own API key. Add or set one up here, then switch between them in the model list under the message box.</p>
    <AiPicker ai={ai} send={send} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
   <Separator />
   <section><h4>What it can see</h4><p>{ai.incognito ? "Only the private tabs it opens in this window. Never your other tabs, saved passwords or cookies." : <>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</>}</p></section>
@@ -763,7 +777,7 @@ function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => v
  </div>
 }
 
-// The chat panel beside an ordinary page (the Chat button), or the AI settings.
+// The chat panel beside an ordinary page (the Chat button), or Model settings.
 export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
  const companion = companionOf(ai, ai.chatCompanion)
  const mood = useRunMood(ai)
@@ -771,11 +785,11 @@ export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { 
  return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
   <div className="ai-head">
    {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>}
-   <div className="ai-title"><strong>{view === "settings" ? "AI settings" : chatOf(ai, ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
+   <div className="ai-title"><strong>{view === "settings" ? "Model settings" : chatOf(ai, ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    {view === "chat" && <>
     <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
     <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
-    <IconButton label="AI settings" onClick={() => setView("settings")}><Settings2 /></IconButton>
+    <IconButton label="Model settings" onClick={() => setView("settings")}><Settings2 /></IconButton>
    </>}
    <IconButton label="Close chat" onClick={() => { setView("chat"); send("aiToggle") }}><X /></IconButton>
   </div>

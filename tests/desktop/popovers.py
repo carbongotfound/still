@@ -165,7 +165,7 @@ def popovers(process, layout, theme):
     until(lambda: not js(process, "!!document.querySelector('.ai-sidebar .ai-model')"), 5)
     tip(process, "Page chip", ".ai-sidebar span.chat-chip")
     tip(process, "Remember this chat", ".ai-sidebar .chat-memory [role=switch]")
-    for label in ("AI settings", "Close chat"):
+    for label in ("Model settings", "Close chat"):
         tip(process, label, f".ai-sidebar .ai-head button[aria-label='{label}']")
 
     submit(process, "hello")
@@ -174,7 +174,7 @@ def popovers(process, layout, theme):
     else:
         check(False, "The fake reply arrives")
     mode_menu(process, False)
-    for label in ("Open as a tab", "New chat", "AI settings", "Close chat"):
+    for label in ("Open as a tab", "New chat", "Model settings", "Close chat"):
         tip(process, label, f".ai-sidebar .ai-head button[aria-label='{label}']")
 
     submit(process, "WAIT a moment")

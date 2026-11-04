@@ -148,23 +148,21 @@ def main():
            "GEMINI_API_KEY": "gm-test-not-real", "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     p = launch(EXE, PROFILE, env)
     try:
-        # The rows: under More agents, each labelled Compatible, with its own mark.
+        # The rows: in the one list with the others, each labelled Compatible, with its own mark.
         send(p, "aiToggle")
         send(p, "aiCheck")
-        until(lambda: "More agents" in (text(p) or ""), 30)
-        js(p, "document.querySelector('.byo-more')?.click()")
-        until(lambda: "Qwen Code" in (text(p) or ""), 10)
+        until(lambda: "Qwen Code" in (text(p) or ""), 30)
         rows = {cli: until(lambda: (r := row(p, name)) and r[0] and r, 20) or ["", False] for cli, name in
                 (("qwen", "Qwen Code"), ("copilot", "GitHub Copilot"), ("amp", "Amp"))[:len(APPS)]}
         for cli, (shown, mark) in rows.items():
-            check("Compatible" in shown and mark, f"{cli}: under More agents, labelled Compatible, with its mark ({shown!r})")
+            check("Compatible" in shown and mark, f"{cli}: in the list, labelled Compatible, with its mark ({shown!r})")
         if not MAC:
             check(not row(p, "Amp")[0], "Windows: no Amp row (its docs run it through WSL)")
-        qrow = until(lambda: (r := row(p, "Qwen Code")) and "Signed in" in r[0] and r, 20) or ["", False]
-        js(p, "document.querySelector('.byo-more')?.scrollIntoView({block: 'start'})")
+        qrow = until(lambda: (r := row(p, "Qwen Code")) and "Logged in" in r[0] and r, 20) or ["", False]
+        js(p, "[...document.querySelectorAll('.byo-row')].find(r => r.innerText.startsWith('Qwen Code'))?.scrollIntoView({block: 'start'})")
         time.sleep(.4)
         rpc(p, "capture", name="apps-picker.png")  # in the profile folder
-        check("Signed in" in qrow[0], "Qwen Code signed in with Qwen OAuth is ready (its settings file may have comments)")
+        check("Logged in" in qrow[0], "Qwen Code signed in with Qwen OAuth is ready (its settings file may have comments)")
 
         # Qwen Code: a chat, a resume.
         send(p, "aiHarness", harness="qwen")

@@ -104,7 +104,8 @@ public partial class MainWindow
        if (op == "systemTheme") { qaSystemTheme = doc.RootElement.GetProperty("value").GetString() == "Light" ? "Light" : "Dark"; foreach (var w in Windows) if (Prefs.Theme == "System") w.ApplyTheme(); return "{\"ok\":true}"; }
        // Answers the Windows Hello prompt for tests (allow, deny or none: not set up), and where an export is written.
        if (op == "osAuth") { if (doc.RootElement.TryGetProperty("answer", out var a)) { qaAuthAnswer = a.GetString() ?? "deny"; verifiedUntil = default; } if (doc.RootElement.TryGetProperty("exportPath", out var x)) qaExportPath = x.GetString() ?? ""; return JsonSerializer.Serialize(new { asks = qaAuthAsks, answer = qaAuthAnswer }); }
-       if (op == "quit") { Close(); return "{\"ok\":true}"; }
+       // Quit ends Still, as on the Mac: every window closes, this one first, so an incognito or second window opened by a test doesn't keep it running.
+       if (op == "quit") { foreach (var w in Windows.ToList()) w.Close(); return "{\"ok\":true}"; }
        if (op == "closeWindow") { Windows.FirstOrDefault(w => w.WindowId == doc.RootElement.GetProperty("id").GetString())?.Close(); return "{\"ok\":true}"; }
        if (op == "closeAll") { foreach (var w in Windows.ToList()) w.Close(); return "{\"ok\":true}"; } // like the taskbar's Close all windows: this one first
        if (op == "memoryPressure") { qaPressure = true; try { await ReduceBackgroundMemory(); } finally { qaPressure = false; } return "{\"ok\":true}"; }

@@ -88,10 +88,9 @@ def main():
                   f"At {w}px the model and effort move to their own line: Default effort reads in full, the model name ends in an ellipsis ({labels})")
         js(p, "[...document.querySelectorAll('.composer')].forEach(c => { c.style.width = ''; c.style.maxWidth = ''; c.style.minWidth = '' })")
 
-        # Logos: the AI list in the side chat's settings, with More agents open. Only read: nothing here is clicked but More agents.
-        js(p, "document.querySelector('[aria-label=\"AI settings\"]')?.click()")
+        # Logos: the model list in the side chat's Model settings, every app in it. Only read: nothing here is clicked.
+        js(p, "document.querySelector('[aria-label=\"Model settings\"]')?.click()")
         until(lambda: js(p, "!!document.querySelector('.byo-row')"), 10)
-        js(p, "document.querySelector('.byo-more')?.click()")
         time.sleep(.4)
         logos = js(p, "Object.fromEntries([...document.querySelectorAll('.byo-row')].map(r => [r.querySelector('strong')?.innerText ?? '', r.querySelector('.ai-logo.is-letter') ? 'letter' : (r.querySelector('.ai-logo path')?.getAttribute('d') || '').slice(0, 9)]))") or {}
         gem = next((v for k, v in logos.items() if k.startswith("Gemini")), None)
