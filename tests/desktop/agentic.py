@@ -325,8 +325,10 @@ def laptops(process):
     capture(process, "split-v01")
     done = until(lambda: js(process, "!!document.querySelector('.chat-pane .file-card')"), 30)
     check(done, "The saved file shows as a card in the chat")
-    saved = next(PROFILE.glob("library/*/laptops-under-800.csv"), None)
-    raw = saved.read_bytes() if saved else b""
+    def csv_bytes():  # the card can show before the file is written out
+        saved = next(PROFILE.glob("library/*/laptops-under-800.csv"), None)
+        return saved.read_bytes() if saved else b""
+    raw = until(lambda: (r := csv_bytes()).decode("utf-8-sig", "replace").count("\n") == 11 and r, 5) or csv_bytes()
     check(raw.startswith(b"\xef\xbb\xbf") and raw.decode("utf-8-sig").count("\n") == 11, "save_file writes the CSV to the Library, with a BOM for Excel")
     check(len(list(PROFILE.glob("library/*/*"))) == 1 and js(process, "document.querySelectorAll('.file-card').length") == 1,
           "Saving the same name again replaces the file and keeps one card")
@@ -340,7 +342,7 @@ def laptops(process):
     send(process, "chatPage", on=False)
     until(lambda: not js(process, "!!document.querySelector('.page-column.is-split')"), 5)
     check("laptops-under-800.csv" in (js(process, "document.querySelector('.chat-info')?.innerText ?? ''") or ""), "The chat's details list its files")
-    check("Took " in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat opened later still says how long it worked")
+    check("Took " not in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat shows no Took line")
     time.sleep(.6)
     capture(process, "done-v01")
     click(process, ".chat-pane .file-card-open")
@@ -432,7 +434,7 @@ def lookup(process):
     click(process, ".chat-pane details.ai-look summary")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-look[open] li').length") == 3, 3), "Opening the search row lists its results")
     check(js(process, "!!document.querySelector('.chat-pane .md-table table') && !!document.querySelector('.chat-pane .md-draft button')"), "The answer has a clean table and a draft with its own Copy button")
-    check(js(process, "document.querySelectorAll('.chat-pane .ai-next-step').length") == 3, "It ends with three next steps to pick from")
+    check(js(process, "document.querySelectorAll('.chat-pane .choice-card .ask-option').length") == 3, "It ends with a choice card of three next steps")
     time.sleep(.5)
     capture(process, "lookup-v01")
 

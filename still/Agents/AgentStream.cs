@@ -114,6 +114,21 @@ public static class AgentStream
   }
  }
 
+ /// DeepSeek Harness (`--profile headless --json`, built from its docs and source, not run live): session first, then text
+ /// and thinking once each step commits, tool_call and tool_result, a final event repeating the answer (skipped), and
+ /// error for a failure outside a turn. Still's tools come as mcp__still__<tool>.
+ public static IEnumerable<AgentEvent> Dsh(JsonNode e)
+ {
+  switch (Str(e["type"])) {
+   case "session" when Str(e["sessionId"]) is { Length: > 0 } session: yield return new AgentEvent.Session(session); break;
+   case "text" when Str(e["text"]) is { Length: > 0 } text: yield return new AgentEvent.Message(text); break;
+   case "thinking": yield return new AgentEvent.Thinking(); break;
+   case "tool_call": yield return new AgentEvent.ToolCall(Str(e["callId"]) ?? "", Bare(Str(e["tool"]), "mcp__still__"), e["input"]?.DeepClone()); break;
+   case "tool_result": yield return new AgentEvent.ToolResult(Str(e["callId"]) ?? "", Str(e["status"]) == "completed"); break;
+   case "error": yield return new AgentEvent.Error(Str(e["message"]) ?? "failed"); break;
+  }
+ }
+
  static string Bare(string? tool, string prefix) => tool?.StartsWith(prefix, StringComparison.Ordinal) == true ? tool[prefix.Length..] : tool ?? "";
 
  /// A manifest agent's JSON lines, read through its field map. Each map entry is "path" or "path when key=value[,key=value]".

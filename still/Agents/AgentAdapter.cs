@@ -355,6 +355,38 @@ sealed class CopilotAdapter : AgentAdapter
  public override IEnumerable<AgentEvent> Plain(string line) => line.Trim().Length > 0 ? [new AgentEvent.Message(line, "\n")] : [];
 }
 
+/// DeepSeek Harness (`dsh`, DeepSeek's own agent), built from its docs and source (github.com/deepseek-ai/deepseek-harness),
+/// not run live: the headless profile with its JSON event stream, the prompt on stdin, and a --patch overlay in the run
+/// folder that adds Still's MCP server, turns its own tools off, turns its session-log upload off and lets it use the
+/// sign-in or key saved in its own app. Still never reads that sign-in.
+sealed class DshAdapter : AgentAdapter
+{
+ // Its own tools: shell, files, jobs, skills, sub-agents, workflows, web and MCP resources.
+ static readonly string[] Tools = ["tool-bash", "tool-pwsh", "tool-jobs", "tool-fs", "tool-fs-search", "tool-working-directory", "tool-skill",
+  "tool-agent-team", "tool-subagent-control", "tool-subagent", "tool-subagent-fork", "tool-workflow", "tool-web", "mcp-resources"];
+ public override string[] Gaps => ["To sign in or add your DeepSeek key, run dsh web in a terminal.", "It is a developer preview, so it may change or break.",
+  "No model or effort settings in Still yet, so every mode uses the model you set in DeepSeek Harness.", "DeepSeek Harness keeps its own record of incognito chats on this computer."];
+ public override IReadOnlyDictionary<string, string> Env { get; } = new Dictionary<string, string> { ["DSH_TELEMETRY_MODE"] = "DISABLED" };
+ public override Task<bool?> Detect(string exe) => Task.FromResult<bool?>(null); // no status command
+ public override Task<List<string>> Args(string exe, RunRequest r)
+ {
+  // A patch replaces a row's whole config, so the session-log row gets one of its own. JSON is YAML, so no escaping to get wrong.
+  string patch = Path.Combine(r.Folder, "still-dsh.yml");
+  object[] rows = [
+   new { insert = new object[] { new { id = "still-mcp", name = "@deepseek-ai/dsh-mcp-client", config = new { serverName = "still", transport = "stdio",
+    command = Environment.ProcessPath, args = r.Mcp, cwd = r.Folder, toolCallTimeoutMs = 660000 } } } }, // ask_user waits for the user
+   new { id = "session-log-deepseek", config = new { enabled = false } },
+   .. new[] { "credentials", "authorization", "deepseek-account" }.Select(id => (object)new { id, disabled = false }),
+   .. Tools.Select(id => (object)new { id, disabled = true })];
+  File.WriteAllText(patch, JsonSerializer.Serialize(rows));
+  List<string> args = ["--profile", "headless", "--patch", patch, "--json"];
+  if (r.Resume && r.Session != null) args.AddRange(["--session-id", r.Session]);
+  args.Add("-");
+  return Task.FromResult(args);
+ }
+ public override IEnumerable<AgentEvent> Parse(JsonNode e) => AgentStream.Dsh(e);
+}
+
 /// Any other agent CLI, described by a JSON file in Still's agents folder (see docs/agentic/agents.md). Placeholders in
 /// its args: {prompt} (only for .exe commands; .cmd ones go through cmd.exe), {promptFile}, {model}, {effort}, {cwd},
 /// {mcpConfig} (a standard mcp.json for Still) and {session}. Without {prompt} or {promptFile} the prompt goes to stdin.
@@ -412,7 +444,7 @@ sealed class ManifestAdapter : AgentAdapter
    foreach (var file in Directory.EnumerateFiles(Folder, "*.json").Order()) {
     try {
      var s = JsonSerializer.Deserialize<Spec>(File.ReadAllText(file), new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
-     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" or "qwen" or "copilot" || s.Command.Length == 0 || s.Run.Length == 0) continue;
+     if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" or "qwen" or "copilot" or "dsh" || s.Command.Length == 0 || s.Run.Length == 0) continue;
      found.Add(new ManifestAdapter { spec = s, Id = s.Id, Name = s.Name.Length > 0 ? s.Name : s.Id, App = s.Name.Length > 0 ? s.Name : s.Command, Command = s.Command,
       Site = s.Site, InstallCommand = s.Install, SignIn = s.Signin, Domains = s.Domains, Secondary = true });
     } catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { Still.App.Log(ex); }

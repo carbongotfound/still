@@ -1,6 +1,6 @@
 import { test } from 'node:test'
 import assert from 'node:assert/strict'
-import { nextSteps } from '../src/nextSteps.ts'
+import { choicesOf, nextSteps } from '../src/nextSteps.ts'
 import { readFileSync } from 'node:fs'
 
 const noRawMarker = (body: string) => assert.ok(!/^\s*(?:[-*+]\s+|\d+[.)]\s+|>\s*)?(?:\*\*|\*|_)?(?:>>|»|&gt;&gt;)/m.test(body.split(/```[\s\S]*?```/).join('')), body)
@@ -74,3 +74,24 @@ test('a quote that is not a step stays a quote', () => assert.deepEqual(nextStep
 // Real replies, recorded from live runs (Claude only so far: ChatGPT and Grok weren't run for Stage 6).
 const recorded = JSON.parse(readFileSync(new URL('./recorded-replies.json', import.meta.url), 'utf8')) as { from: string; text: string; next: string[] }[]
 for (const r of recorded) test('recorded: ' + r.from, () => assert.deepEqual(steps(r.text).next, r.next))
+
+// Choice cards: a ```choices block (Stage 20), or the old ">> " lines as a single choice.
+test('a choices block becomes a card and leaves the body', () => {
+  const r = choicesOf('Here are three.\n\n```choices\n{"question": "Which one?", "type": "multiple", "options": ["A", "B", "A", " "], "other": true}\n```\n')
+  assert.deepEqual(r, { body: 'Here are three.', choice: { question: 'Which one?', type: 'multiple', options: ['A', 'B'], other: true } })
+})
+test('an unknown type is a single choice, and other is off unless true', () =>
+  assert.deepEqual(choicesOf('Pick.\n```choices\n{"type": "radio", "options": ["Yes", "No"], "other": "yes"}\n```').choice, { question: '', type: 'single', options: ['Yes', 'No'], other: false }))
+test('a dropdown keeps up to 20 options', () => {
+  const options = Array.from({ length: 25 }, (_, i) => 'City ' + i)
+  const c = choicesOf('```choices\n' + JSON.stringify({ type: 'dropdown', options }) + '\n```').choice!
+  assert.equal(c.type, 'dropdown'); assert.equal(c.options.length, 20)
+})
+test('a broken block stays in the reply as text', () => {
+  const text = 'Pick one.\n```choices\n{"options": ["A", "B"\n```'
+  assert.deepEqual(choicesOf(text), { body: text })
+  assert.deepEqual(choicesOf('Hi.\n```choices\n{"options": []}\n```'), { body: 'Hi.\n```choices\n{"options": []}\n```' })
+})
+test('old next steps still show as a single choice', () =>
+  assert.deepEqual(choicesOf('Done.\n\n>> Compare prices\n>> Show reviews'), { body: 'Done.', choice: { question: '', type: 'single', options: ['Compare prices', 'Show reviews'], other: false } }))
+test('a plain reply has no card', () => assert.deepEqual(choicesOf('Just text.\n\n```js\nx()\n```'), { body: 'Just text.\n\n```js\nx()\n```' }))

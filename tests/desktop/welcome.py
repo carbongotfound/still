@@ -323,8 +323,18 @@ def setup_open(process):
     return js(process, "!!document.querySelector('.welcome.ob:not(.is-hidden)')")
 
 
+SPLIT = []
+
+
 def pick_ai(process, name):
-    """Picks an AI app in Connect's list, where every app is listed."""
+    """Picks an AI app in Connect's list: the main four show, the rest (fake apps too) wait under More agents."""
+    until(lambda: js(process, "!!document.querySelector('.welcome .byo-main')"), 6)
+    if not SPLIT:
+        SPLIT.append(js(process, "[...document.querySelectorAll('.welcome .byo-main strong')].map(e => e.childNodes[0]?.textContent.trim())") or [])
+        main = SPLIT[0]
+        check(all(n in main for n in ("Claude", "ChatGPT", "Grok", "Gemini")) and not any(n in main for n in ("OpenCode", "Qwen Code", "Fake agent"))
+              and js(process, "!!document.querySelector('.welcome .byo-more')"), f"Connect shows Claude, ChatGPT, Grok and Gemini, the rest under More agents ({main})")
+    js(process, "document.querySelector('.welcome .byo-more[aria-expanded=false]')?.click()")
     until(lambda: click_text(process, ".byo-main", name), 6)
     time.sleep(.6)
 
@@ -548,7 +558,7 @@ def setup(process):
     check(seen.get("opened") and all(p in text for p in ("Pinecrest Weekender 28", "Tallow Daypack 22", "Marlin Trek 32", "$129")) and "nothing here is for sale" in text,
           f"Miso reads the sample page: three made-up packs, labeled as a sample ({seen.get('opened')}, {text[:80]!r})")
     rows = js(process, "[...document.querySelectorAll('.chat-pane .ai-look')].map(r => r.innerText)") or []
-    check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-next-step').length") == 3, 30), f"It finishes with three next steps ({rows})")
+    check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .choice-card .ask-option').length") == 3, 30), f"It finishes with a choice card of three next steps ({rows})")
     miso = mate("Miso")
     theirs = [c for c in chats() if c.get("Companion") == miso.get("Id")]
     asked = [m["Text"] for c in theirs for m in c.get("Messages", []) if m["Role"] == "user"]

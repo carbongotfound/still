@@ -1,11 +1,14 @@
 """Stage 17: the companion panel and the look editor.
 - No markings: a look saved with one (2.10 before Stage 17) draws the same as without it on all five bodies, opens and
   saves without it, and leaves the saved file without it; the editor has no Marking section or marking color.
-- Model settings: the panel's name menu (what they run on, then the others), its ... menu and the message box's mode menu,
-  model picker and effort picker (Advanced) each open that companion's Model tab: the app, the default mode, the model and
-  effort for each mode, and the key. In view without scrolling, from the new tab page and the side chat.
-- The ... menu: every item works (Model settings, Edit look, Rename, Duplicate, Introduce yourself again, Open chat in a tab
-  or Chat with, Clear chat, Close panel, Fire, and Reset for a built-in one), the panel's menus and confirms open above it, and Clear chat and Fire ask
+- The Model tab: Runs on is a styled picker with logos that lists only what can run now (an app that needs a key or
+  isn't installed isn't there), picks for the companion, and ends with Model settings…, which opens Settings, Models with
+  Your models. The tab also has the default mode, the model and effort for each mode, and the key.
+- Model settings… at the bottom of the message box's mode menu, model picker and effort picker (Advanced) opens Settings,
+  Models with Your models, in view without scrolling, from the new tab page and the side chat.
+- The name menu only switches companions. The ... menu has only what isn't on screen already (Duplicate, Introduce
+  yourself again, Open chat in a tab or Chat with, Clear chat, Fire, and Reset for a built-in one): no Model settings, Edit
+  look, Rename or Close panel. Every item works, the panel's menus and confirms open above it, and Clear chat and Fire ask
   first and can be undone, and so does Reset. Every other button in the panel does something.
 - Classic looks: every built-in companion (Jonah, Talia, Nora, Leo, Ivan, Maya, Ruth) and a hired one open with every
   tab working; a change in any tab, a start look or a team look moves them to the new style and Save keeps it; Cancel
@@ -210,65 +213,102 @@ def marked(p):
     done_editor(p, "Cancel")
 
 
+def settings_models(p):
+    """Settings is open on Models with Your models (every app, and adding one) right there, and the panel has closed."""
+    return ("Model" in (js(p, "document.querySelector('.set-nav-item[aria-current=page]')?.innerText") or "") and js(p, "!!document.querySelector('#set-ai .byo')")
+            and not js(p, "!!document.querySelector('.profile-panel')"))
+
+
+def close_settings(p):
+    escape(p)
+    until(lambda: not js(p, "!!document.querySelector('.settings-dialog')"), 3)
+
+
+def model_tab(p, name):
+    open_panel(p, name)
+    js(p, "document.querySelector(\".profile-panel [role=tab][id$='-trigger-model']\")?.dispatchEvent(new MouseEvent('mousedown', { bubbles: true }))")  # Radix tabs switch on mousedown
+    return until(lambda: ai_tab_ok(p, name), 3)
+
+
 def name_menu(p):
     open_panel(p, "Nikola")
     press(p, ".profile-switch")
     until(lambda: js(p, "!!document.querySelector('[role=menu]')"), 3)
     items = js(p, "[...document.querySelectorAll('[role=menu] [role=menuitem]')].map(e => e.innerText.trim().split('\\n')[0])") or []
-    line = js(p, "document.querySelector('[role=menu] .profile-menu-two small')?.innerText") or ""
     check(popup_on_top(p, "[role=menu]") == "ok", f"The name menu opens above the panel, in view ({popup_on_top(p, '[role=menu]')})")
-    check(items[:1] == ["Model settings"] and "Jonah" in items and "Local box" in line, f"The name menu: Model settings first, with what they run on ({line}), then the other companions ({items})")
-    menu_item(p, "Model settings")
-    check(until(lambda: ai_tab_ok(p, "Nikola"), 3), "Model settings in the name menu opens Nikola's Model tab")
+    check("Model settings" not in items and "Jonah" in items and "Nikola" in items, f"The name menu only switches companions: no Model settings, the Model tab has it ({items})")
+    menu_item(p, "Jonah")
+    check(until(lambda: js(p, "document.querySelector('.profile-switch b')?.innerText") == "Jonah", 3), "Picking Jonah in the name menu opens Jonah")
+    check(model_tab(p, "Nikola"), "The Model tab opens on Nikola")
     text = js(p, "document.querySelector('.profile-panel [role=tabpanel][data-state=active]')?.innerText") or ""
     check("Model and effort for each mode" in text and "No key needed" in text and js(p, "document.querySelectorAll('.profile-panel .tier-row').length") == 3,
           "The Model tab: the app, the default mode, the model and effort for Quick, Everyday and Thorough, and the key (none needed for this box)")
+    # Runs on: the same styled picker as the message box's, only what can run now, Model settings… at the bottom
+    check(js(p, "!document.querySelector('.profile-panel select') && document.querySelector('.profile-panel .runs-on')?.innerText.trim() === 'Local box' && !!document.querySelector('.profile-panel .runs-on .ai-logo')"),
+          "Runs on is a styled button with the app's logo and name, not a native list")
+    press(p, ".profile-panel .runs-on")
+    until(lambda: js(p, "!!document.querySelector('.runs-on-menu[data-state=open]')"), 3)
+    got = js(p, "[...document.querySelectorAll('.runs-on-menu [role=menuitem]')].map(e => e.innerText.trim())") or []
+    logos = js(p, "[...document.querySelectorAll('.runs-on-menu [role=menuitem]:not(.ai-pick-settings)')].every(e => e.querySelector('.ai-logo'))")
+    on = js(p, "[...document.querySelectorAll('.runs-on-menu [role=menuitem]')].filter(e => e.querySelector('.ai-pick-on')).map(e => e.innerText.trim())")
+    check(popup_on_top(p, ".runs-on-menu") == "ok", f"Runs on opens above the panel, in view ({popup_on_top(p, '.runs-on-menu')})")
+    check("Local box" in got and "Fake agent" in got and "Keyed box" not in got and not any("Your model" in g for g in got) and logos and on == ["Local box"] and got[-1:] == ["Model settings…"],
+          f"Runs on lists only what can run now, each with its logo, the one in use checked, and Model settings… last; a box that needs a key isn't there ({got}, checked {on})")
+    menu_item(p, "Fake agent")
+    check(until(lambda: mates()["Nikola"].get("Ai") == "fake", 3) and until(lambda: js(p, "document.querySelector('.profile-panel .runs-on')?.innerText.trim()") == "Fake agent", 3),
+          "Picking Fake agent in Runs on saves it for Nikola")
+    press(p, ".profile-panel .runs-on")
+    until(lambda: js(p, "!!document.querySelector('.runs-on-menu[data-state=open]')"), 3)
+    menu_item(p, "Local box")
+    until(lambda: mates()["Nikola"].get("Ai") == LOCAL, 3)
     press(p, ".profile-panel .tier-row [role=combobox]")
     until(lambda: js(p, "!!document.querySelector('[role=listbox]')"), 3)
     check(popup_on_top(p, "[role=listbox]") == "ok", f"A mode's model list opens above the panel ({popup_on_top(p, '[role=listbox]')})")
     escape(p)
-    # a provider that needs a key: Add key goes to Settings, Models
-    open_panel(p, "Zia")
-    press(p, ".profile-switch")
-    until(lambda: js(p, "!!document.querySelector('[role=menu]')"), 3)
+    press(p, ".profile-panel .runs-on")
+    until(lambda: js(p, "!!document.querySelector('.runs-on-menu[data-state=open]')"), 3)
+    seen = in_view(p, ".runs-on-menu [role=menuitem]", "Model settings")
     menu_item(p, "Model settings")
-    until(lambda: ai_tab_ok(p, "Zia"), 3)
+    check(seen == "ok" and until(lambda: settings_models(p), 5), f"Model settings… in Runs on, in view ({seen}), opens Settings, Models with Your models")
+    close_settings(p)
+    # a provider that needs a key: not offered, said so, and Add key goes to Settings, Models
+    model_tab(p, "Zia")
     row = js(p, "document.querySelector('.profile-key')?.innerText") or ""
+    shown = js(p, "document.querySelector('.profile-panel .runs-on')?.innerText.trim()") or ""
+    note = js(p, "document.querySelector('.profile-panel [role=tabpanel][data-state=active] .profile-note')?.innerText") or ""
     click_text(p, ".profile-key button", "Add key")
-    went = until(lambda: "Model" in (js(p, "document.querySelector('.set-nav-item[aria-current=page]')?.innerText") or "") and not js(p, "!!document.querySelector('.profile-panel')"), 5)
-    check("No key yet" in row and went, f"A provider that needs a key: the Model tab says No key yet, and Add key opens Settings, Models ({row!r}, {went}, tab {panel_tab(p)})")
-    escape(p)
-    until(lambda: not js(p, "!!document.querySelector('.settings-dialog')"), 3)
+    went = until(lambda: settings_models(p), 5)
+    check("No key yet" in row and shown == "Pick a model" and "Keyed box isn't ready yet" in note and went,
+          f"A provider that needs a key: Runs on doesn't show it, the tab says it isn't ready and No key yet, and Add key opens Settings, Models ({shown!r}, {note!r}, {row!r}, {went})")
+    close_settings(p)
 
 
 def composer(p):
-    """Model settings… at the bottom of the message box's menus: the companion picked there, on its Model tab."""
-    def from_menu(where, label, sel, item_sel, role, name):
+    """Model settings… at the bottom of the message box's menus, clicked for real: Settings, Models with Your models."""
+    def from_menu(where, label, sel):
         escape(p)
         press(p, sel)
-        until(lambda: js(p, f"!!document.querySelector('[role={'menu' if role == 'menuitem' else 'listbox'}]')"), 3)
-        seen = in_view(p, item_sel, "Model settings")
-        menu_item(p, "Model settings", role)
-        ok = until(lambda: ai_tab_ok(p, name), 4)
-        check(seen == "ok" and ok, f"{where}: Model settings… at the bottom of the {label}, in view ({seen}), opens {name}'s Model tab")
-        click(p, ".profile-head [aria-label=Close]")
-        until(lambda: not js(p, "!!document.querySelector('.profile-panel')"), 3)
+        until(lambda: js(p, "!!document.querySelector('[role=menu][data-state=open]')"), 3)
+        seen = in_view(p, "[role=menu] [role=menuitem]", "Model settings")
+        menu_item(p, "Model settings")
+        ok = until(lambda: settings_models(p), 5)
+        check(seen == "ok" and ok, f"{where}: Model settings… at the bottom of the {label}, in view ({seen}), opens Settings, Models with Your models")
+        close_settings(p)
 
     escape(p)
     send(p, "new")
     until(lambda: js(p, "!!document.querySelector('.home-compose .composer')"), 10)
     time.sleep(.5)
-    from_menu("New tab", "mode menu", ".home-compose [aria-label='Companion and mode']", "[role=menu] [role=menuitem]", "menuitem", "Nikola")
+    from_menu("New tab", "mode menu", ".home-compose [aria-label='Companion and mode']")
     send(p, "aiAdvanced", on=True)
     until(lambda: js(p, "!!document.querySelector(\".home-compose [aria-label='Effort']\")"), 8)
-    from_menu("New tab", "model picker", ".home-compose [aria-label='Model']", "[role=listbox] [role=option]", "option", "Nikola")
-    from_menu("New tab", "effort picker", ".home-compose [aria-label='Effort']", "[role=listbox] [role=option]", "option", "Nikola")
+    from_menu("New tab", "model picker", ".home-compose [aria-label='Model']")
+    from_menu("New tab", "effort picker", ".home-compose [aria-label='Effort']")
     send(p, "aiAdvanced", on=False)
     until(lambda: not js(p, "!!document.querySelector(\".home-compose [aria-label='Model']\")"), 5)
     send(p, "aiToggle")
     until(lambda: js(p, "!!document.querySelector(\".ai-sidebar [aria-label='Companion and mode']\")"), 10)
-    who = (js(p, "document.querySelector('.ai-head-buddy')?.getAttribute('aria-label')") or "").replace("'s profile", "")
-    from_menu("Side chat", "mode menu", ".ai-sidebar [aria-label='Companion and mode']", "[role=menu] [role=menuitem]", "menuitem", who)
+    from_menu("Side chat", "mode menu", ".ai-sidebar [aria-label='Companion and mode']")
     send(p, "aiToggle")
 
 
@@ -285,17 +325,14 @@ def more_menu(p):
     more()
     got = items()
     check(popup_on_top(p, "[role=menu]") == "ok", f"The ... menu opens above the panel, in view ({popup_on_top(p, '[role=menu]')})")
-    check(got == ["Model settings", "Edit look", "Rename", "Duplicate", "Introduce yourself again", "Open chat in a tab", "Clear chat", "Close panel", "Fire Nikola"], f"The ... menu's items ({got})")
-    menu_item(p, "Model settings")
-    check(until(lambda: ai_tab_ok(p, "Nikola"), 3), "... Model settings opens the Model tab")
-    more()
-    menu_item(p, "Edit look")
-    check(until(lambda: js(p, "!!document.querySelector('.look-dialog')"), 5), "... Edit look opens the look editor")
-    done_editor(p, "Cancel")
-    more()
-    menu_item(p, "Rename")
-    check(until(lambda: js(p, "document.activeElement?.matches('.profile-panel input') && document.activeElement.value === 'Nikola' && document.activeElement.selectionEnd - document.activeElement.selectionStart === 6"), 3)
-          and panel_tab(p) == "General", "... Rename goes to General with the name selected")
+    check(got == ["Duplicate", "Introduce yourself again", "Open chat in a tab", "Clear chat", "Fire Nikola"],
+          f"The ... menu has only what isn't on screen already: no Model settings, Edit look, Rename or Close panel ({got})")
+    escape(p)
+    # what those were for is right there: the Model tab, Edit look on the preview, the Name field, the X
+    on_screen = js(p, """[!![...document.querySelectorAll('.profile-tablist [role=tab]')].find(t => t.innerText.trim() === 'Model'),
+     !![...document.querySelectorAll('.profile-stage-actions button')].find(b => b.innerText.includes('Edit look')),
+     !![...document.querySelectorAll('.profile-panel input')].find(i => i.value === 'Nikola'), !!document.querySelector('.profile-head [aria-label=Close]')]""")
+    check(on_screen == [True, True, True, True], f"The Model tab, Edit look, the Name field and Close are on the panel ({on_screen})")
     more()
     menu_item(p, "Duplicate")
     check(until(lambda: "Nikola 2" in mates(), 5) and until(lambda: js(p, "document.querySelector('.profile-switch b')?.innerText") == "Nikola 2", 3), "... Duplicate makes Nikola 2 and opens them")
@@ -351,7 +388,7 @@ def more_menu(p):
     until(lambda: js(p, "!!document.querySelector('[role=alertdialog][data-state=open]')"), 3)
     click_text(p, "[role=alertdialog][data-state=open] button", "Delete chat")
     check(until(lambda: not any(c["Id"] == "c-nik" for c in chats()), 14), "Clear chat, left alone: the chat goes")
-    # No chat yet: Chat with, and Close panel
+    # No chat yet: Chat with, and the X closes the panel
     open_panel(p, "Zia")
     more()
     got = items()
@@ -360,9 +397,8 @@ def more_menu(p):
     check(until(lambda: not js(p, "!!document.querySelector('.profile-panel')") and "Ask Zia" in (js(p, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") or ""), 6),
           "... Chat with Zia closes the panel and picks Zia on the new tab page")
     open_panel(p, "Zia")
-    more()
-    menu_item(p, "Close panel")
-    check(until(lambda: not js(p, "!!document.querySelector('.profile-panel')"), 3), "... Close panel closes it")
+    click(p, ".profile-head [aria-label=Close]")
+    check(until(lambda: not js(p, "!!document.querySelector('.profile-panel')"), 3), "The X closes the panel")
 
 
 def reset(p):

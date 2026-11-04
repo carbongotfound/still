@@ -156,8 +156,8 @@ def popovers(process, layout, theme):
     type_into(process, ".ai-sidebar [aria-label=Message]", "")
     send(process, "aiAdvanced", on=True)
     if until(lambda: js(process, "!!document.querySelector('.ai-sidebar .ai-model')"), 5):
-        menu(process, "Model picker", ".ai-sidebar .ai-model", "[data-slot=select-content]")
-        menu(process, "Effort picker", ".ai-sidebar .ai-pick:not(.ai-model)", "[data-slot=select-content]")
+        menu(process, "Model picker", ".ai-sidebar .ai-model")
+        menu(process, "Effort picker", ".ai-sidebar .ai-pick:not(.ai-model)")
     else:
         check(False, "Advanced shows the model and effort pickers")
     escape(process)

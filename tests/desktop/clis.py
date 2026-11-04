@@ -153,12 +153,15 @@ def main():
            "GEMINI_API_KEY": "gm-test-not-real", "GOOGLE_API_KEY": "gg-test-not-real", "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     p = launch(EXE, PROFILE, env)
     try:
-        # The rows: every app in one list (no More agents), Gemini and OpenCode both logged in, each with its gaps.
+        # The rows: Gemini with the main apps, OpenCode and the rest under More agents, both logged in, each with its gaps.
         send(p, "aiToggle")
         send(p, "aiCheck")
+        until(lambda: js(p, "!!document.querySelector('.byo-more')"), 30)
+        js(p, "document.querySelector('.byo-more')?.click()")
         rows = until(lambda: (t := text(p)) and "OpenCode\nLogged in" in t and "Gemini\nLogged in" in t and t, 30) or text(p)
-        check("More agents" not in rows and all(n in rows for n in ("Gemini", "OpenCode", "Qwen Code", "GitHub Copilot")) and bool(re.search(r"\bAmp\b", rows)) == MAC,
-              "Every app is in one list with no More agents: Gemini, OpenCode, Qwen Code, GitHub Copilot (and Amp on the Mac)")
+        check(rows.index("Gemini") < rows.index("More agents") < rows.index("OpenCode") and all(n in rows for n in ("Qwen Code", "GitHub Copilot", "DeepSeek Harness"))
+              and bool(re.search(r"\bAmp\b", rows)) == MAC,
+              "Gemini with the main apps; OpenCode, Qwen Code, GitHub Copilot, DeepSeek Harness (and Amp on the Mac) under More agents")
         check("Gemini\nLogged in" in rows, "Gemini signed in with Google is ready (its settings file may have comments)")
         check("OpenCode\nLogged in" in rows, "OpenCode is ready once it lists a model")
         check("run gemini in a terminal" in rows and "Gemini keeps its own record of incognito chats" in rows, "Gemini's card says how to sign in and what it can't do")

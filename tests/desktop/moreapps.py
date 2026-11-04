@@ -1,11 +1,13 @@
-"""The Compatible AI apps (Qwen Code, GitHub Copilot CLI, and Amp on the Mac) end to end with fake apps (no AI usage, no
-real app installed or signed in): their rows and logos, signed-in detection, the arguments and run-folder config Still
-gives each (Still's MCP server, every other tool off, model, effort or mode, resume), API keys kept out, a tool call
-through Still's own MCP server, and the DeepSeek preset in Settings, saved with no key.
+"""The Compatible AI apps (Qwen Code, GitHub Copilot CLI, DeepSeek Harness, and Amp on the Mac) end to end with fake
+apps (no AI usage, no real app installed or signed in): their rows and logos under More agents, signed-in detection, the
+arguments and run-folder config Still gives each (Still's MCP server, every other tool off, model, effort or mode,
+resume), API keys kept out, a tool call through Still's own MCP server, and the DeepSeek preset in Your models, saved
+with no key.
 
 Run: python tests/desktop/moreapps.py artifacts/Still-QA/Still.exe
 The fakes print the event shapes from each app's docs: Claude-style stream-json for Qwen Code and Amp, plain text for
-Copilot with -s.
+Copilot with -s, and DeepSeek Harness's --json events (session, status, tool_call, tool_result, text, final) from its
+headless README and json-stream.ts.
 """
 import json
 import os
@@ -22,7 +24,8 @@ EXE = Path(sys.argv[1]).resolve()
 PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 RESULT = {"exe": str(EXE), "checks": []}
-APPS = ("qwen", "copilot", "amp") if MAC else ("qwen", "copilot")
+APPS = ("qwen", "copilot", "dsh", "amp") if MAC else ("qwen", "copilot", "dsh")
+NAMES = {"qwen": "Qwen Code", "copilot": "GitHub Copilot", "dsh": "DeepSeek Harness", "amp": "Amp"}
 
 FAKE = r'''
 import json, os, queue, subprocess, sys, threading
@@ -75,6 +78,21 @@ elif CLI == "copilot":
     log({"cli": CLI, "args": args, "cwd": os.getcwd(), "config": config, "keys": KEYS, "prompt": len(prompt)})
     print("Copilot saw" if seen else "Copilot saw no tabs.", flush=True)
     print("the Home tab." if seen else "", flush=True)
+elif CLI == "dsh":
+    rows = json.load(open(after("--patch")))
+    server = next(r["insert"][0]["config"] for r in rows if "insert" in r)
+    seen = home_tab([server["command"]] + server["args"])
+    session = after("--session-id") or "session-fake-1"
+    log({"cli": CLI, "args": args, "cwd": os.getcwd(), "patch": rows, "keys": KEYS, "prompt": len(prompt), "telemetry": os.environ.get("DSH_TELEMETRY_MODE")})
+    words = "DeepSeek Harness saw the Home tab." if seen else "DeepSeek Harness saw no tabs."
+    say({"type": "session", "sessionId": session, "cwd": os.getcwd()})
+    say({"type": "status", "phase": "turn_start", "turn": 1})
+    say({"type": "thinking", "text": "Checking the tabs."})
+    say({"type": "tool_call", "callId": "c1", "tool": "mcp__still__list_tabs", "input": {}})
+    say({"type": "tool_result", "callId": "c1", "status": "completed" if seen else "error", "result": ""})
+    say({"type": "text", "text": words})
+    say({"type": "status", "phase": "turn_end", "turn": 1, "reason": {"kind": "completed"}})
+    say({"type": "final", "sessionId": session, "reason": {"kind": "completed"}, "text": words})
 else:
     settings = json.load(open(after("--settings-file")))
     server = settings["amp.mcpServers"]["still"]
@@ -151,9 +169,11 @@ def main():
         # The rows: in the one list with the others, each labelled Compatible, with its own mark.
         send(p, "aiToggle")
         send(p, "aiCheck")
+        until(lambda: js(p, "!!document.querySelector('.byo-more')"), 30)
+        check(not row(p, "Qwen Code")[0], "They wait under More agents")
+        js(p, "document.querySelector('.byo-more')?.click()")
         until(lambda: "Qwen Code" in (text(p) or ""), 30)
-        rows = {cli: until(lambda: (r := row(p, name)) and r[0] and r, 20) or ["", False] for cli, name in
-                (("qwen", "Qwen Code"), ("copilot", "GitHub Copilot"), ("amp", "Amp"))[:len(APPS)]}
+        rows = {cli: until(lambda: (r := row(p, NAMES[cli])) and r[0] and r, 20) or ["", False] for cli in APPS}
         for cli, (shown, mark) in rows.items():
             check("Compatible" in shown and mark, f"{cli}: in the list, labelled Compatible, with its mark ({shown!r})")
         if not MAC:
@@ -217,6 +237,31 @@ def main():
         fourth = ask(p, "copilot", "think hard", 4)["args"]
         check(after(fourth, "--effort") == "high" and "--model" not in fourth, "Copilot: the effort goes as --effort")
 
+        # DeepSeek Harness: headless with JSON events; Still's MCP server and every other tool through its patch.
+        send(p, "aiHarness", harness="dsh")
+        send(p, "aiNew")
+        first = ask(p, "dsh", "hello", 1)
+        a = first["args"]
+        check(until(lambda: "DeepSeek Harness saw the Home tab." in text(p), 10), "DeepSeek Harness's reply, after a tool call through Still's MCP server")
+        patch = after(a, "--patch") or ""
+        check(a[:2] == ["--profile", "headless"] and "--json" in a and a[-1:] == ["-"] and "--session-id" not in a and Path(patch).parent == Path(first.get("cwd", "")),
+              f"DeepSeek Harness: headless, a patch in the run folder, JSON events, the prompt on stdin, a new session ({a})")
+        rows = first.get("patch", [])
+        add = next((r["insert"][0] for r in rows if "insert" in r), {})
+        cfg = add.get("config", {})
+        check(add.get("id") == "still-mcp" and add.get("name") == "@deepseek-ai/dsh-mcp-client" and cfg.get("serverName") == "still" and cfg.get("transport") == "stdio"
+              and same(cfg.get("command", ""), EXE) and "--mcp" in cfg.get("args", []) and cfg.get("toolCallTimeoutMs") == 660000,
+              "DeepSeek Harness: Still's MCP server as an MCP client row, with a long timeout for ask_user")
+        by = {r["id"]: r for r in rows if "id" in r}
+        check(by.get("session-log-deepseek", {}).get("config") == {"enabled": False}, "DeepSeek Harness: its session-log upload is off")
+        check(all(by.get(t, {}).get("disabled") is True for t in ("tool-bash", "tool-pwsh", "tool-fs", "tool-fs-search", "tool-web", "tool-subagent", "tool-workflow", "mcp-resources")),
+              "DeepSeek Harness: its own shell, file, web, sub-agent and workflow tools off")
+        check(all(by.get(t, {}).get("disabled") is False for t in ("credentials", "authorization", "deepseek-account")), "DeepSeek Harness: the sign-in it set up itself still works")
+        check(first.get("telemetry") == "DISABLED" and first.get("keys") == [] and first.get("prompt", 0) > 0, "DeepSeek Harness: telemetry off, no other app's API key, the prompt on stdin")
+        check(until(lambda: js(p, "[...document.querySelectorAll('.ai-step-text')].some(e => e.innerText.toLowerCase().includes('tab'))"), 5), "DeepSeek Harness: its tool call shows as a step")
+        second = ask(p, "dsh", "again", 2)["args"]
+        check(after(second, "--session-id") == "session-fake-1", "DeepSeek Harness: the next message resumes its session")
+
         if MAC:
             # Amp: a chat, its mode as the effort, no thread kept (each message brings the chat so far).
             send(p, "aiHarness", harness="amp")
@@ -235,12 +280,13 @@ def main():
                   "Amp: its modes are the effort levels")
             check(after(ask(p, "amp", "think hard", 3)["args"], "--mode") == "ultra", "Amp: the effort goes as --mode")
 
-        # DeepSeek: a preset in Settings → API providers, the address and models filled in, saved with no key.
+        # DeepSeek: a preset in Your models (Settings → Models, More agents), the address and models filled in, saved with no key.
         send(p, "openPanel", name="settings", value="models")
-        until(lambda: "Add an API provider" in (text(p) or ""), 15)
-        js(p, "[...document.querySelectorAll('button')].find(b => b.innerText.trim() === 'Add an API provider')?.click()")
-        until(lambda: js(p, "!!document.querySelector('.api-presets button')"), 10)
-        js(p, "[...document.querySelectorAll('.api-presets button')].find(b => b.innerText.trim() === 'DeepSeek')?.click()")
+        until(lambda: js(p, "!!document.querySelector('#set-ai .byo-more')"), 15)
+        js(p, "document.querySelector('#set-ai .byo-more')?.click()")
+        until(lambda: js(p, "[...document.querySelectorAll('#set-ai .byo-row')].some(r => r.querySelector('strong')?.childNodes[0]?.textContent.trim() === 'DeepSeek')"), 10)
+        js(p, "[...document.querySelectorAll('#set-ai .byo-row')].find(r => r.querySelector('strong')?.childNodes[0]?.textContent.trim() === 'DeepSeek')?.querySelector(':scope > .byo-act')?.click()")
+        until(lambda: js(p, "!!document.querySelector('#set-ai .api-form')"), 10)
         time.sleep(.5)
         values = js(p, "[...document.querySelectorAll('.api-form input')].map(i => i.value)") or []
         check(values[:4] == ["DeepSeek", "https://api.deepseek.com", "", "deepseek-flash, deepseek-v4-pro"] and "1000000" in values,

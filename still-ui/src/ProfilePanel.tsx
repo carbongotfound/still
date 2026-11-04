@@ -20,7 +20,7 @@ import { generate } from "./generate"
 import { lookKey, surprise } from "./look"
 import { andList } from "./Plugins"
 import { cn } from "@/lib/utils"
-import { TierSettings, isRunning, type AiState, type Skill } from "./AiSidebar"
+import { TierSettings, isRunning, logoOf, openModelSettings, type AiState, type Skill } from "./AiSidebar"
 
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A companion's profile, opened from its mascot: everything about it on tabs, saved as you change it. "Make your own"
@@ -63,7 +63,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  }, [send, draft])
  useEffect(() => {
   // Esc closes, unless a menu or a dialog over the panel takes it first
-  const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(":is([role=menu],[role=alertdialog],[data-slot=dialog-content])[data-state=open]")) close() }
+  const key = (e: KeyboardEvent) => { if (e.key === "Escape" && !document.querySelector(":is([role=menu],[role=listbox],[role=alertdialog],[data-slot=dialog-content])[data-state=open]")) close() }
   addEventListener("keydown", key); return () => removeEventListener("keydown", key)
  }) // eslint-disable-line react-hooks/exhaustive-deps
  if (!saved || !c) return null
@@ -75,14 +75,12 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  }
  const premade = premadeOf(c), only = (ai.companions?.length ?? 0) <= 1, label = c.name.trim() || "they"
  const harness = ai.harnesses.find(h => h.id === (c.ai || ai.harness))
- const state = (hid: string) => { const h = ai.harnesses.find(x => x.id === hid); return !h ? "" : !h.installed || h.status === "missing" ? "Not installed" : h.status === "signedOut" ? "Sign in first" : "" }
+ // Runs on lists only what can run now: apps that are logged in (or can't say, like GitHub Copilot) and API providers that are ready.
+ const usable = ai.harnesses.filter(h => h.installed && (h.status === "ready" || (!h.status && !h.api && ai.checked))), current = usable.find(h => h.id === harness?.id)
  const chatsOf = new Set(ai.chats.filter(x => x.companion === c.id).map(x => x.id))
  // Their chat: the one open in the side chat when it's theirs, or their latest. Clear chat deletes it (with Undo).
  const chat = ai.chats.find(x => x.id === ai.chatId && x.companion === c.id) ?? ai.chats.filter(x => x.companion === c.id && !x.from).sort((a, b) => b.updated.localeCompare(a.updated))[0]
- const tier = harness && ai.tiers?.[harness.id]?.[c.mode ?? "default"], model = ai.models?.find(m => m.harness === harness?.id && m.id === (ai.advanced ? ai.model : tier?.model))
- const runsOn = harness ? [harness.name, model?.id ? model.name : "", ai.advanced ? "" : MODES.find(m => m[0] === (c.mode ?? "default"))?.[1]].filter(Boolean).join(" · ") : "No model picked yet"
  const api = harness?.api ? ai.apis?.providers.find(p => p.id === harness.id) : undefined
- const aiSettings = () => setTab("model")
  const files = (ai.files ?? []).filter(f => chatsOf.has(f.chat))
  const plugins = ai.plugins, pluginsReady = !!plugins?.key && plugins.status === "ok"
  const routines = c.routines ?? []
@@ -102,17 +100,12 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
    {draft ? <header className="profile-head"><Face companion={c} size={28} /><b className="profile-draft-title">{c.name.trim() ? `Make ${c.name.trim()}` : "Make your own"}</b>
     <Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="Close" onClick={close}><X /></Button></header> :
    <header className="profile-head">
-    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label={`${c.name}: Model settings and companions`}><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
+    <DropdownMenu><DropdownMenuTrigger asChild><button className="profile-switch" aria-label={`${c.name}: switch companion`}><Face companion={c} size={28} /><b>{c.name}</b><ChevronDown /></button></DropdownMenuTrigger>
      <DropdownMenuContent align="start" className="w-64 profile-menu">
-      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal /><span className="profile-menu-two">Model settings<small>{runsOn}</small></span></DropdownMenuItem>
-      <DropdownMenuSeparator />
       <DropdownMenuLabel>Switch to</DropdownMenuLabel>
       {ai.companions?.map(x => <DropdownMenuItem key={x.id} onSelect={() => onPick(x.id)}><Face companion={x} size={20} />{x.name}{x.id === c.id && <Check className="ml-auto" />}</DropdownMenuItem>)}</DropdownMenuContent></DropdownMenu>
     <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
      <DropdownMenuContent align="end" className="w-60 profile-menu">
-      <DropdownMenuItem onSelect={aiSettings}><SlidersHorizontal />Model settings</DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => setStyling(true)}><Palette />Edit look</DropdownMenuItem>
-      <DropdownMenuItem onSelect={() => { setTab("general"); setTimeout(() => { name.current?.focus(); name.current?.select() }, 50) }}><Pencil />Rename</DropdownMenuItem>
       <DropdownMenuItem onSelect={duplicate}><Copy />Duplicate</DropdownMenuItem>
       {saved?.setup !== "pending" && <DropdownMenuItem onSelect={() => send("companionSetupAgain", { companion: c.id })}><Hand />Introduce yourself again</DropdownMenuItem>}
       {premade && <DropdownMenuItem onSelect={() => { const before = c; destroy({ key: "reset:" + c.id, title: `Reset ${c.name}?`, action: "Reset", done: `${c.name} reset`,
@@ -122,7 +115,6 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
       {chat ? <DropdownMenuItem onSelect={() => { send("chatOpen", { id: chat.id, newTab: true }); close() }}><SquareArrowOutUpRight />Open chat in a tab</DropdownMenuItem>
        : onChat && <DropdownMenuItem onSelect={() => { onChat(c.id); close() }}><MessageSquare />Chat with {c.name}</DropdownMenuItem>}
       {chat && <DropdownMenuItem disabled={isRunning(ai, chat.id)} onSelect={() => deleteChat(send, chat)}><Eraser />Clear chat</DropdownMenuItem>}
-      <DropdownMenuItem onSelect={close}><X />Close panel</DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem variant="destructive" onSelect={() => fire(send, c, only, close)}><Trash2 />Fire {c.name}</DropdownMenuItem>
      </DropdownMenuContent></DropdownMenu>
@@ -220,11 +212,14 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
         {!!n.revisions && <Button size="xs" variant="ghost" onClick={() => send("knowledgeUndo", { companion: saved.id, file: n.id })}><Undo2 />Undo last change</Button>}</div></li>)}</ul></section>}
      </TabsContent>
      <TabsContent value="model">
-      <label className="profile-field"><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai ?? ""} onChange={e => save({ ...c, ai: e.target.value })}>
-       <option value="">Your model{harness && !c.ai ? ` (${harness.name})` : ""}</option>
-       {ai.harnesses.filter(h => !h.secondary || h.id === c.ai || h.status === "ready").map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
-      </select></span></label>
-      {c.ai && state(c.ai) && <p className="profile-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up in Model settings, and {label} can start.</p>}
+      <div className="profile-field"><span>Runs on</span>
+       <DropdownMenu><DropdownMenuTrigger asChild><button type="button" className="runs-on" aria-label="Runs on">{current && <AiLogo id={logoOf(current)} size={18} />}<span className="truncate">{current?.name ?? "Pick a model"}</span><ChevronDown /></button></DropdownMenuTrigger>
+        <DropdownMenuContent align="start" className="ai-model-menu runs-on-menu">
+         {usable.map(h => <DropdownMenuItem key={h.id} onSelect={() => save({ ...c, ai: h.id })}><AiLogo id={logoOf(h)} size={16} /><span className="truncate">{h.name}</span>{h.id === current?.id && <Check className="ai-pick-on" aria-label="In use" />}</DropdownMenuItem>)}
+         {!usable.length && <p className="mode-none">No model is ready yet. Add one in Model settings.</p>}
+         <div className="ai-pick-foot"><DropdownMenuSeparator /><DropdownMenuItem className="ai-pick-settings" onSelect={() => { close(); openModelSettings(send) }}><SlidersHorizontal />Model settings…</DropdownMenuItem></div>
+        </DropdownMenuContent></DropdownMenu></div>
+      {harness && !current && <p className="profile-note">{harness.name} isn't ready yet. Set it up in Model settings, and {label} can start.</p>}
       {api && <div className="profile-field"><span>API key</span>
        <div className="profile-key"><KeyRound aria-hidden /><span>{api.hasKey ? <>Key ending in <code>{api.keyEnd}</code>{api.refused && " · Not accepted"}</> : api.noKey ? "No key needed" : "No key yet"}</span>
         {!api.noKey && <Button size="sm" variant="outline" onClick={() => { close(); send("openPanel", { name: "settings", value: "models" }) }}>{api.hasKey ? "Change key" : "Add key"}</Button>}</div></div>}

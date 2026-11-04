@@ -26,6 +26,37 @@ export function stepOf(line: string): string {
   return s.replace(/\*\*|__/g, "").replace(/\s+/g, " ").trim()
 }
 
+/** Choices for the user to pick from, shown as a card under the reply. */
+export type Choice = { question: string; type: "single" | "multiple" | "dropdown"; options: string[]; other: boolean }
+const CHOICES = /^[ \t]*(?:```|~~~)[ \t]*choices[ \t]*\r?\n([\s\S]*?)\r?\n[ \t]*(?:```|~~~)[ \t]*$/gim
+const MAX_OPTIONS = 20, MAX_OPTION = 120
+
+function choiceOf(json: string): Choice | undefined {
+  let v: { question?: unknown; type?: unknown; options?: unknown; other?: unknown }
+  try { v = JSON.parse(json) } catch { return undefined }
+  if (!v || typeof v !== "object" || !Array.isArray(v.options)) return undefined
+  const options = [...new Set(v.options.filter(o => typeof o === "string" || typeof o === "number").map(o => String(o).replace(/\s+/g, " ").trim().slice(0, MAX_OPTION)).filter(Boolean))].slice(0, MAX_OPTIONS)
+  if (!options.length) return undefined
+  const type = v.type === "multiple" || v.type === "dropdown" ? v.type : "single"
+  return { question: typeof v.question === "string" ? v.question.replace(/\s+/g, " ").trim().slice(0, 300) : "", type, options, other: v.other === true }
+}
+
+/**
+ * The reply's body and the choices it offers: its last ```choices block (JSON: question, type single, multiple or
+ * dropdown, options, other), or else its trailing ">> " next steps as a single choice. A block that isn't valid JSON
+ * with options stays in the body as it came, so nothing the model wrote is lost.
+ */
+export function choicesOf(text: string): { body: string; choice?: Choice } {
+  const blocks = [...text.matchAll(CHOICES)], last = blocks.at(-1)
+  if (last) {
+    const choice = choiceOf(last[1])
+    if (choice) return { body: (text.slice(0, last.index) + text.slice(last.index + last[0].length)).trim(), choice }
+    return { body: text.trim() }
+  }
+  const { body, next } = nextSteps(text)
+  return next.length ? { body, choice: { question: "", type: "single", options: next, other: false } } : { body }
+}
+
 /** Splits a reply into its body and its next steps (at most 3). A step past the limits stays in the body as plain text. */
 export function nextSteps(text: string): { body: string; next: string[] } {
   const lines = text.split(/\r?\n/)

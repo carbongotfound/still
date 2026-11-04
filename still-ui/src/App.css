@@ -478,17 +478,17 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-steps-group[open] .ai-steps-chevron { rotate:180deg; } .ai-steps-group summary:hover .ai-steps-chevron { color:var(--foreground); }
 .ai-steps-group ol { margin:0; padding:12px; border-top:1px solid var(--border); list-style:none; display:flex; flex-direction:column; gap:8px; font-size:.88em; }
 .ai-timer { margin:0; padding-top:8px; font-size:.9em; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.ai-next { display:flex; flex-direction:column; gap:2px; margin-top:2px; }
-.ai-next-step { display:flex; align-items:center; gap:12px; padding:7px 8px; border-radius:10px; text-align:left; transition:background .15s; }
-.ai-next-step:hover:not(:disabled) { background:var(--muted); } .ai-next-step:disabled { opacity:.6; }
-.ai-next-step svg { width:24px; height:24px; flex:none; padding:5px; border-radius:50%; border:1px solid var(--input); color:var(--muted-foreground); }
 .tiers { display:flex; flex-direction:column; gap:16px; } .tiers[data-off] .tier-ai { opacity:.5; }
 .tiers-note { margin:0; font-size:.9em; color:var(--muted-foreground); }
 .tier-head { display:flex; align-items:center; gap:8px; font-weight:500; margin-bottom:2px; } .tier-head [data-slot=button] { margin-left:auto; }
 .tier-row { display:grid; grid-template-columns:minmax(96px,auto) 1fr 1fr; gap:8px; align-items:center; padding:3px 0; } .tier-row [data-slot=select-trigger] { width:100%; }
 .tier-name { display:flex; align-items:center; gap:6px; } .tier-name svg { width:15px; height:15px; color:var(--muted-foreground); }
 .tier-failed { grid-column:2 / -1; color:var(--destructive); font-size:.85em; }
-.ai-actions { display:flex; gap:2px; margin:0 0 0 -6px; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
+/* A reply's actions (Copy) show while the pointer is on the reply or a key is on them, lined up with its text. Their
+   row keeps its place, so nothing moves when they appear. */
+.ai-actions { display:flex; gap:2px; margin:-8px 0 0 -6px; opacity:0; transition:opacity .15s; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
+.ai-turn:hover > .ai-actions, .ai-actions:focus-within { opacity:1; }
+@media (hover:none) { .ai-actions { opacity:1; } }
 .ai-compose { padding:0 14px 14px; } /* the gap above it is the log's --chat-end */
 .ai-compose [data-slot=input-group] { border-radius:18px; background:var(--card); border-color:var(--input); box-shadow:0 1px 2px #2a20140a,0 10px 28px -16px #2a201440; }
 .dark .ai-compose [data-slot=input-group] { box-shadow:0 10px 28px -14px #000c; }
@@ -841,7 +841,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-rail-item svg { width:18px; height:18px; }
 .home-rail-gap { flex:1; }
 .home-rail .chat-side-avatar { margin-top:6px; }
-.home-main { position:relative; flex:1; min-width:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:14px 24px 48px; }
+.home-main { position:relative; flex:1; min-width:0; overflow-y:auto; scrollbar-width:none; display:flex; flex-direction:column; align-items:center; padding:14px 24px 48px; }
 .home-main::before { content:""; position:absolute; inset:0 0 auto; height:260px; pointer-events:none; background:radial-gradient(color-mix(in oklab,var(--foreground) 6%,transparent) 1.2px,transparent 1.4px) 0 0/14px 14px; -webkit-mask-image:radial-gradient(120% 100% at 50% 0,#000 20%,transparent 80%); mask-image:radial-gradient(120% 100% at 50% 0,#000 20%,transparent 80%); }
 .home-main > * { position:relative; }
 .home-top { width:100%; display:flex; justify-content:center; align-items:center; min-height:44px; }
@@ -1862,3 +1862,62 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 .get-started button:hover:not(:disabled) { background:var(--accent); } .get-started button:disabled { opacity:.7; cursor:default; }
 .get-started button svg { width:14px; height:14px; opacity:.75; }
 .get-started .get-started-x { width:30px; padding:0; justify-content:center; border-color:transparent; background:none; }
+
+/* Still's own pages (the new tab page and its views: Chat History, Companions, Library) scroll by wheel, trackpad and
+   keys with no scrollbar showing, like the chats. */
+.home-main::-webkit-scrollbar { display:none; }
+
+/* Chat text: replies and your messages can be selected and copied (mouse, Ctrl+C or Cmd+C). The rest of Still stays
+   unselectable, so buttons and drags work as before. */
+.ai-msg, .ai-msg *, .delegation-body, .delegation-body *, .choice-q { -webkit-user-select:text; user-select:text; }
+.ai-msg { cursor:text; } .ai-msg :is(a, button) { cursor:pointer; }
+
+/* Replies read cleanly at every size: a paragraph gap of about half a line, list items close together with muted
+   markers lined up under the text, a lead-in line kept with its list, and bold at Still's 600. */
+.ai-msg.is-assistant { text-rendering:optimizeLegibility; font-kerning:normal; }
+.ai-msg .md { gap:.75em; }
+.ai-msg .md :is(p, li, h3, h4, h5) { margin:0; }
+.ai-msg .md :is(ul, ol) { gap:.3em; padding-left:1.35em; }
+.ai-msg .md li { padding-left:.2em; line-height:1.55; }
+.ai-msg .md li::marker { color:color-mix(in oklab,var(--foreground) 45%,transparent); }
+.ai-msg .md ol { font-variant-numeric:tabular-nums; }
+.ai-msg .md p:has(+ :is(ul, ol)) { margin-bottom:-.3em; }
+.ai-msg .md :is(strong, b, h3, h4, h5) { font-weight:600; }
+.ai-msg .md h3 { font-size:1.08em; line-height:1.4; margin-top:.3em; } .ai-msg .md h4 { font-size:1em; line-height:1.4; margin-top:.2em; }
+.ai-msg .md code { font-size:.88em; }
+
+/* Choice cards: what a companion offers you to pick, under its reply. Your pick goes back as your reply. */
+.choice-card { margin:0; padding:12px; box-shadow:none; animation:none; }
+.choice-q { margin:0 0 2px; font-weight:550; line-height:1.5; }
+.choice-card .ask-options { margin-top:8px; }
+.choice-card .ask-option:disabled { cursor:default; opacity:.55; }
+.choice-card .ask-option:disabled:hover { border-color:var(--border); background:var(--background); }
+.choice-card .ask-option:is([aria-pressed=true], [aria-checked=true]) { opacity:1; border-color:color-mix(in oklab,var(--hue,#7c66f5) 60%,transparent); background:color-mix(in oklab,var(--hue,#7c66f5) 10%,var(--background)); }
+.choice-box { display:grid; place-items:center; width:16px; height:16px; flex:none; border-radius:5px; border:1.5px solid var(--input); }
+.ask-option[aria-checked=true] .choice-box { border-color:var(--hue,#7c66f5); background:var(--hue,#7c66f5); color:#fff; }
+.choice-box svg { width:12px; height:12px; stroke-width:3; }
+.choice-picked { width:15px; height:15px; flex:none; margin-left:auto; color:var(--hue,#7c66f5); }
+.choice-submit { display:flex; justify-content:flex-end; margin-top:8px; }
+.choice-card .ask-own { margin-top:8px; } .choice-card .ask-own input:disabled { opacity:.6; }
+.choice-select[data-slot] { flex:1; min-width:0; }
+
+/* The model pickers: a pill with the app's logo under the message box, a field in a companion's Model tab, and one menu
+   look for both: logos, the one in use checked, More agents opening in place, Model settings… kept at the bottom. */
+button.ai-pick { display:inline-flex; align-items:center; white-space:nowrap; outline:none; }
+button.ai-pick:focus-visible { box-shadow:0 0 0 2px var(--ring); } button.ai-pick:disabled { opacity:.5; pointer-events:none; }
+.ai-pick > svg:last-child { width:14px; height:14px; flex:none; opacity:.6; }
+.ai-model-menu[data-slot=dropdown-menu-content] { width:auto; min-width:220px; max-width:min(320px,var(--radix-dropdown-menu-content-available-width)); }
+.ai-model-menu [data-slot=dropdown-menu-item] { gap:8px; }
+.ai-pick-on { width:15px; height:15px; flex:none; margin-left:auto; }
+.ai-more { color:var(--muted-foreground); } .ai-more > svg { margin-left:auto; transition:rotate .2s; } .ai-more[aria-expanded=true] > svg { rotate:180deg; }
+.ai-model-menu .ai-pick-foot { position:sticky; bottom:-4px; z-index:1; margin:0 -4px -4px; padding:0 4px 4px; background:var(--popover); }
+.ai-model-menu .ai-pick-foot [data-slot=dropdown-menu-separator] { margin:0 -4px 4px; }
+.runs-on { display:flex; align-items:center; gap:9px; width:100%; height:36px; padding:0 10px; border-radius:9px; border:1px solid var(--input); background:var(--background); font-size:13.5px; color:var(--foreground); text-align:left; outline:none; transition:background .15s; }
+.runs-on:hover { background:var(--muted); } .runs-on:focus-visible { box-shadow:0 0 0 2px var(--ring); }
+.runs-on > svg:last-child { width:15px; height:15px; flex:none; margin-left:auto; opacity:.6; }
+.runs-on-menu[data-slot=dropdown-menu-content] { width:var(--radix-dropdown-menu-trigger-width); max-width:none; }
+.byo-more { display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border-radius:12px; color:var(--muted-foreground); font-size:13px; font-weight:500; text-align:left; transition:background .15s,color .15s; }
+.byo-more:hover { background:var(--muted); color:var(--foreground); }
+.byo-more small { padding:0 7px; border-radius:99px; background:var(--muted); font-size:11px; line-height:18px; }
+.byo-more > svg { width:15px; height:15px; margin-left:auto; transition:rotate .2s; } .byo-more[aria-expanded=true] > svg { rotate:180deg; }
+.set-models > .plug-note { margin:0 0 12px; }
