@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, alive, launcher, rpc  # noqa: E402
+from qa import CREW, alive, launcher, rpc, until_started  # noqa: E402
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("providers-" + uuid.uuid4().hex)
 EXE = Path(sys.argv[1]).resolve()
@@ -85,23 +85,23 @@ try:
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     env = {**os.environ, "ANTHROPIC_API_KEY": "sk-test-not-real", "OPENAI_API_KEY": "sk-test-not-real"}
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(PROFILE), "--profiles-root", str(PROFILE)], env=env)
-    until(lambda: (PROFILE / "qa-pipe.txt").exists() or process.poll() is not None, 30)
-    until(lambda: rpc(process).get("tabs"), 30)
+    until_started(process)
 
-    # Onboarding: the three headline rows, then "More agents" with each state.
+    # Onboarding: every app in one list, each with its state.
     send(process, "aiToggle")
     send(process, "aiCheck")
-    shown = until(lambda: (t := text(process)) and "More agents" in t and t, 30)
-    check(shown and all(n in shown for n in ("ChatGPT", "Grok", "Claude")), "Bring your own AI lists ChatGPT, Grok and Claude")
+    shown = until(lambda: (t := text(process)) and "Fake missing" in t and "Fake agent\nLogged in" in t and t, 30)
+    check(shown and all(n in shown for n in ("ChatGPT", "Grok", "Claude")), "Pick your model lists ChatGPT, Grok and Claude")
     check(shown and "Codex" not in shown, "The screen never says Codex")
-    check(shown and "More agents (3)" in shown, "More agents lists the three manifests and skips the broken one")
-    rpc(process, "shellEval", script="document.querySelector('.byo-more').click()")
-    rows = until(lambda: (t := text(process)) and "Fake missing" in t and "Signed in with your plan" in t and t, 30)
-    check(rows and "Fake agent\nSigned in with your plan" in rows, "Signed-in row")
-    check(rows and "Fake signed out\nInstalled\nSign in with your plan" in rows, "Installed but signed out row")
-    check(rows and "Fake missing\nNot installed" in rows, "Not installed row")
+    names = rpc(process, "shellEval", script="[...document.querySelectorAll('.byo-row strong')].map(s => s.innerText)") or []
+    check("More agents" not in (shown or "") and all(n in names for n in ("OpenCode", "Fake agent", "Fake signed out", "Fake missing")) and len(names) == len(set(names)),
+          f"One list: OpenCode and the three manifests, the broken one skipped ({names})")
+    rows = shown
+    check(rows and "Fake agent\nLogged in" in rows, "Signed-in row")
+    check(rows and "Fake signed out\nInstalled\nSet up" in rows, "Installed but signed out row, with Set up")
+    check(rows and "Fake missing\nNot installed\nAdd" in rows, "Not installed row, with Add")
     rpc(process, "shellEval", script="[...document.querySelectorAll('.byo-row')].find(r => r.innerText.includes('Fake missing')).querySelector('.byo-act').click()")
-    check(until(lambda: "pip install not-a-real-agent" in text(process), 5), "How to install shows the command")
+    check(until(lambda: "pip install not-a-real-agent" in text(process), 5), "Add shows the install command")
     rpc(process, "capture", name="onboarding.png")  # saved in the profile folder
 
     # A run, with API keys set in Still's environment.

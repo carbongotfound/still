@@ -1,6 +1,7 @@
 """Takeover on the real browser: an AI works in an ordinary tab of the main window, its controls float over that page,
 and Take over, Hand back and Stop work there. No AI plan is used: a test MCP client plays the agent.
-With --live it also runs one small real task through Claude (Haiku) from the sidebar chat and takes over mid-run.
+With --live it also runs one small real task through Claude (Haiku at low effort) from the sidebar chat and takes over mid-run,
+recording each step line the pill shows (result.json live_steps).
 
 Run: python tests/desktop/takeover.py artifacts/Still-QA/Still.exe [--live]
 Screenshots: docs/agentic/compare/takeover-*.png
@@ -101,6 +102,11 @@ def control(process):
     return js(process, "document.querySelector('.page-control')?.innerText ?? ''")
 
 
+def working(process):
+    """The pill is up with the agent at work (its step line, then its name and time)."""
+    return js(process, "document.querySelector('.page-control')?.dataset.state === 'working'")
+
+
 (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}], "ApprovedAgents": ["Claude"], "AiHarness": "claude"},
     "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
 process = launch(EXE, PROFILE)
@@ -113,7 +119,7 @@ try:
     shown = js(process, f"[...document.querySelectorAll('.tab-row')].some(r => r.dataset.tabId === {json.dumps(tab)})")
     check(ok and shown, "The agent's tab is an ordinary tab in the main strip")
     send(process, "select", id=tab)
-    check(until(lambda: "is working" in control(process), 10), "The pill shows over the agent's page")
+    check(until(lambda: working(process), 10), "The pill shows over the agent's page")
     check(js(process, "!!document.querySelector('.tab-row.is-driven .tab-agent .mascot')"), "The tab shows the companion's mascot")
 
     pill, slot = rect(process, ".page-control"), rect(process, ".page-slot")
@@ -133,6 +139,58 @@ try:
     user32.SetForegroundWindow(main_window(process.pid))
     time.sleep(.5)
     ImageGrab.grab((box.left, box.top, box.right, box.bottom), all_screens=True).save(OUT / "takeover-1-agent-screen.png")
+
+    # The pill (Stage 11): the step line follows the agent within a second, then its name and time underneath.
+    line = lambda: js(process, "document.querySelector('.page-control-text b')?.innerText ?? ''") or ""
+    waiting = call_async(agent, "wait_for", text="never on this page", timeoutMs=4000)
+    started = time.monotonic()
+    check(until(lambda: line().startswith("Waiting for"), 1.5, .05) and time.monotonic() - started < 1.5, f"The step line shows the running step within a second: {line()}")
+    waiting.get(timeout=15)
+    started = time.monotonic()
+    check(until(lambda: line() == "Thinking about the next step", 1.5, .05) and time.monotonic() - started < 1.5, "and between steps, that it's thinking")
+    who = js(process, "document.querySelector('.page-control-text small')?.innerText ?? ''") or ""
+    check(who.startswith("Claude, ") and who.split(", ")[1].rstrip("s").split("m")[0].strip().isdigit(), f"Under it, the name and the time it's been working: {who}")
+    # One button system: 32px tall, 14px icons, 6px from icon to label, one radius; Stop names who it stops; Tab goes Take over, (Open chat,) Stop.
+    look = json.loads(js(process, """JSON.stringify([...document.querySelectorAll('.page-control button:not(.page-more)')].map(b => { const s = getComputedStyle(b), i = b.querySelector('svg')?.getBoundingClientRect()
+      return { h: Math.round(b.getBoundingClientRect().height), icon: i ? Math.round(i.width) : 0, gap: s.columnGap, radius: s.borderTopLeftRadius, label: b.getAttribute('aria-label') || b.innerText.trim(), title: b.title, tab: b.tabIndex } }))"""))
+    check(look and all(b["h"] == 32 and b["icon"] == 14 and b["radius"] == look[0]["radius"] for b in look) and all(b["gap"] == "6px" for b in look if b["label"] in ("Take over", "Open chat")),
+          "The pill's buttons share height, icon size, spacing and radius: " + json.dumps([(b["label"], b["h"], b["icon"], b["gap"]) for b in look]))
+    check(look[-1]["label"] == "Stop Claude" and look[-1]["title"] == "Stop Claude", "Stop has a tooltip and a name: Stop Claude")
+    order = [b["label"] for b in look if b["tab"] >= 0]
+    check(order in (["Take over", "Stop Claude"], ["Take over", "Open chat", "Stop Claude"]), "The keyboard goes Take over, Open chat, Stop: " + " | ".join(order))
+    # Contrast: both lines at 4.5:1 or more on the pill's own card, light and dark (the card is solid, so the page behind doesn't matter).
+    CONTRAST = """(() => { const rgb = c => { const k = document.createElement('canvas').getContext('2d'); k.fillStyle = c; k.fillRect(0, 0, 1, 1); return [...k.getImageData(0, 0, 1, 1).data].slice(0, 3) }
+      const lum = c => { const [r, g, b] = rgb(c).map(v => { v /= 255; return v <= .03928 ? v / 12.92 : ((v + .055) / 1.055) ** 2.4 }); return .2126 * r + .7152 * g + .0722 * b }
+      const ratio = (a, b) => { const [x, y] = [lum(a), lum(b)].sort((p, q) => q - p); return +((x + .05) / (y + .05)).toFixed(2) }
+      const pill = document.querySelector('.page-control'), bg = getComputedStyle(pill).backgroundColor
+      return [ratio(getComputedStyle(pill.querySelector('.page-control-text b')).color, bg), ratio(getComputedStyle(pill.querySelector('.page-control-text small')).color, bg), getComputedStyle(pill).opacity] })()"""
+    was_dark = js(process, "document.documentElement.classList.contains('dark')")
+    for dark in (False, True):
+        js(process, f"document.documentElement.classList.toggle('dark', {'true' if dark else 'false'})")
+        time.sleep(.3)
+        a, b, _ = json.loads(js(process, "JSON.stringify(" + CONTRAST + ")"))
+        check(a >= 4.5 and b >= 4.5, f"{'Dark' if dark else 'Light'}: the step line is {a}:1 and the name line {b}:1 on the pill")
+        shot(process, "pill-" + ("dark" if dark else "light"))
+    js(process, f"document.documentElement.classList.toggle('dark', {'true' if was_dark else 'false'})")
+    # Expanded: Enter on the pill opens the last steps above it, with the same buttons, and its spot on the page takes clicks; Esc closes it.
+    js(process, "(p => { p.focus(); p.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })(document.querySelector('.page-control'))")
+    steps = until(lambda: json.loads(js(process, "JSON.stringify([...document.querySelectorAll('.page-panel li')].map(l => l.innerText))") or "[]"), 3)
+    check(steps and steps[-1] == "Thinking about the next step" and any(s.startswith("Typed into") or s.startswith("Clicked") for s in steps), "Enter opens the last steps: " + " / ".join(steps or []))
+    check(js(process, "document.querySelectorAll('.page-panel-buttons button').length") >= 2, "with the same buttons")
+    time.sleep(.4)
+    panel = rect(process, ".page-panel")
+    check(panel and host_at(process, panel[0] + panel[2] * .5, panel[1] + panel[3] * .5) != page_host, "The open panel shows through the page and takes the clicks")
+    shot(process, "pill-open")
+    js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+    check(until(lambda: not js(process, "!!document.querySelector('.page-panel')"), 2), "Esc closes it")
+    # A narrow window (under 520px): Take over and Open chat keep only their icons, with tooltips.
+    rpc(process, "shellCdp", method="Emulation.setDeviceMetricsOverride", parameters={"width": 500, "height": 700, "deviceScaleFactor": 0, "mobile": False})
+    time.sleep(.6)
+    narrow = json.loads(js(process, "JSON.stringify([...document.querySelectorAll('.page-take, .page-chat')].map(b => [Math.round(b.getBoundingClientRect().width), getComputedStyle(b.querySelector('span')).display, b.title]))") or "[]")
+    check(narrow and all(w == 32 and d == "none" and t for w, d, t in narrow), f"In a narrow window the buttons are icons with tooltips: {narrow}")
+    shot(process, "pill-narrow")
+    rpc(process, "shellCdp", method="Emulation.clearDeviceMetricsOverride", parameters={})
+    time.sleep(.6)
 
     # Take over in the middle of a call: the call returns at once and the agent waits.
     waiting = call_async(agent, "wait_for", text="never on this page", timeoutMs=10000)
@@ -164,7 +222,7 @@ try:
     check(not control(process) and js(process, "!!document.querySelector('.tab-row.is-driven .mascot')"), "A background agent tab keeps its mascot marker")
     shot(process, "4-background")
     send(process, "select", id=tab)
-    check(until(lambda: "is working" in control(process), 5), "Switching to the agent's tab shows the pill again")
+    check(until(lambda: working(process), 5), "Switching to the agent's tab shows the pill again")
 
     js(process, "document.querySelector('.page-stop').click()")
     check(until(lambda: not control(process) and not js(process, "!!document.querySelector('.tab-row.is-driven')"), 5), "Stop removes the pill and the marker")
@@ -179,14 +237,19 @@ try:
         send(process, "aiCheck")
         time.sleep(3)
         send(process, "aiAdvanced", on=True)  # without Advanced, the companion's mode picks the model
-        send(process, "aiModel", harness="claude", model="haiku")
+        send(process, "aiModel", harness="claude", model="haiku", effort="low")
         send(process, "aiToggle")
         send(process, "aiSend", text=f"Open {URL} in a new tab. Type Ada in the Name box and press Add. Then type Linus and press Add. Then type Grace and press Add. Then tell me how many names are listed.")
         live_tab = until(lambda: next((t for t in rpc(process)["tabs"] if "sheet" in t.get("Url", "") and t["Id"] != tab), None), 120, 1)
-        seen = until(lambda: "is working" in control(process), 60)
+        seen = until(lambda: working(process), 60)
         check(bool(live_tab and seen), "Live: the chat's page opens in front with the pill")
         shot(process, "5-live-agent")
-        until(lambda: "Ada" in (rpc(process, "eval", script="names.innerText") or ""), 90, .5)
+        steps = RESULT.setdefault("live_steps", [])
+        def step():  # every step line the pill shows, in order
+            line = js(process, "document.querySelector('.page-control-text b, .page-control-text span')?.innerText ?? ''") or ""
+            if line and (not steps or steps[-1] != line):
+                steps.append(line)
+        until(lambda: step() or "Ada" in (rpc(process, "eval", script="names.innerText") or ""), 90, .5)
         js(process, "document.querySelector('.page-take').click()")
         until(lambda: "You're in control" in control(process), 5)
         rpc(process, "eval", script="who.focus()")
@@ -199,7 +262,7 @@ try:
         until(lambda: not js(process, "!!document.querySelector('.ai-sidebar')"), 5)
         js(process, "document.querySelector('.page-chat')?.click()")
         check(until(lambda: js(process, "!!document.querySelector('.ai-sidebar')"), 5), "Live: Open chat opens the run's chat in the sidebar")
-        done = until(lambda: not js(process, "!!document.querySelector('[aria-label=Stop]')") and "Grace" in (rpc(process, "eval", script="names.innerText") or ""), 180, 1)
+        done = until(lambda: step() or not js(process, "!!document.querySelector('[aria-label=Stop]')") and "Grace" in (rpc(process, "eval", script="names.innerText") or ""), 180, .5)
         names = rpc(process, "eval", script="names.innerText") or ""
         RESULT["live_names"] = names
         check(bool(done) and "Typed by you" in names and "Grace" in names, "Live: the task finishes after the user hands it back")

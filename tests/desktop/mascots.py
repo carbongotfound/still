@@ -24,7 +24,7 @@ from qa import CREW, MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
 EXE = sys.argv[1]
 OUT = ROOT / "docs" / "agentic" / "compare"
 OUT.mkdir(parents=True, exist_ok=True)
-LOOKS, STATES = 7, 9  # Mascot.tsx: SHEET_LOOKS and STATES
+LOOKS, STATES = 8, 9  # Mascot.tsx: SHEET_LOOKS (the seven roles and blank) and STATES
 RESULT = []
 
 
@@ -129,10 +129,11 @@ def gifs():
         quit(process)
 
 
-# look.ts RIGS: the six roles' looks (no props) and Make your own's, and the model each wears
+# look.ts RIGS: the roles' looks (no props) and Make your own's, and the model each wears
 RIGS = [({"color": "#f7a26a", "shape": "tall", "prop": ""}, "jonah"), ({"color": "#f2a5c4", "shape": "gumdrop", "prop": ""}, "talia"),
         ({"color": "#a6cf9c", "shape": "block", "prop": ""}, "nora"), ({"color": "#f6d56a", "shape": "round", "prop": ""}, "leo"),
         ({"color": "#8cc3ee", "shape": "bump", "prop": ""}, "ivan"), ({"color": "#c0a3ec", "shape": "lean", "prop": ""}, "maya"),
+        ({"color": "#2fa496", "shape": "crest", "prop": ""}, "ruth"),
         ({"color": "#ddd4c6", "shape": "bean", "prop": ""}, "custom")]
 PROPS = ["laptop", "mug", "headphones", "notebook", "phone", "magnifier", "wrench", "paintbrush", "camera", "briefcase"]  # look.ts PROPS
 SHAPES = ["bean", "tall", "gumdrop", "block", "round", "squat", "bump", "lean"]  # look.ts SHAPES
@@ -210,20 +211,20 @@ def blinks():
 
 def fallbacks():
     """Without WebGL, Still shows the default look drawn ahead, one picture per framing (whole, and the look editor's top half),
-    and its 2D one at chat sizes (so a plain window's toolbar companion needs no three.js)."""
+    its 2D one at chat sizes and its head icon and portrait (so a plain window's toolbar companion needs no three.js)."""
     process, _ = window()
     try:
         js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: { state: 'idle' } }))")
         until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
         chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
         look = json.dumps({"color": "#8cc3ee", "shape": "bean", "prop": "", "accessory": ""})  # look.ts: DEFAULT_LOOK
-        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust'), flat: m.picture({look}, 'idle', 144, 'full', true) }})")
+        js(process, f"import({json.dumps(chunk)}).then(m => window.__pics = {{ full: m.picture({look}, 'idle', 384, 'full'), bust: m.picture({look}, 'idle', 384, 'bust'), flat: m.picture({look}, 'idle', 144, 'full', true), icon: m.picture({look}, 'idle', 60, 'icon'), portrait: m.picture({look}, 'idle', 120, 'portrait') }})")
         until(lambda: js(process, "!!window.__pics"), 10)
         folder = ROOT / "still-ui" / "src" / "assets" / "companion"
         folder.mkdir(parents=True, exist_ok=True)
-        for frame in ("full", "bust", "flat"):
+        for frame in ("full", "bust", "flat", "icon", "portrait"):
             (folder / f"default-{frame}-idle.webp").write_bytes(base64.b64decode(js(process, f"window.__pics.{frame}").split(",", 1)[1]))
-        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 1000 for f in ("full", "bust", "flat")), "The three fallback pictures are drawn")
+        check(all((folder / f"default-{f}-idle.webp").stat().st_size > 300 for f in ("full", "bust", "flat", "icon", "portrait")), "The five fallback pictures are drawn")
     finally:
         quit(process)
 

@@ -7,10 +7,12 @@ import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 import { Face, type Companion } from "./Buddy"
 import type { AiState } from "./AiSidebar"
+import { destroy } from "./Undo"
 
 type Send = (op: string, payload?: Record<string, unknown>) => void
 // A step waiting for your OK. With until, a sensitive step you allowed without asking, counting down to go ahead.
-export type Approval = { id: string; what: string; site: string; action: string; why: string; until?: string | null }
+// run and who: the task asking, a teammate's child task when it isn't this chat's own.
+export type Approval = { id: string; run?: string; who?: string; what: string; site: string; action: string; why: string; until?: string | null }
 export type Rule = { site: string; action: string; companion: string; mode: string }
 export type AuditEntry = { at: string; what: string; site: string; result: string }
 
@@ -18,16 +20,18 @@ const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pa
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
 
 // The cards above the message box: steps waiting for your OK (Approve all when there are several), and countdowns.
-export function Approvals({ list, companion, send }: { list: Approval[]; companion?: Companion; send: Send }) {
- const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null, name = companion?.name ?? "Your AI"
- const answer = (id: string, a: string) => send("permAnswer", { id, answer: a })
+export function Approvals({ list, companion, companions, send, incognito }: { list: Approval[]; companion?: Companion; companions?: Companion[]; send: Send; incognito?: boolean }) {
+ const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null
+ const mate = (a?: Approval | null) => companions?.find(c => c.id === a?.who) ?? companion, name = mate(one)?.name ?? "Your AI"
+ const byId = (id: string) => list.find(a => a.id === id)
+ const answer = (id: string, a: string) => send("permAnswer", { id, run: byId(id)?.run, answer: a })
  return <>
   {list.filter(a => a.until).map(a => <Countdown key={a.id} card={a} send={send} />)}
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
-   <div className="ask-q"><Face companion={companion} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
+   <div className="ask-q"><Face companion={mate(one)} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
    <ul className="approve-steps">{asks.map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin") && "is-sensitive")}>
     {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" ? <ShieldAlert /> : <ShieldCheck />}
-    <span><b>{a.what}</b><small>{[a.site, a.why].filter(Boolean).join(" · ")}</small></span>
+    <span><b>{a.what}</b><small>{[a.who && a.who !== companion?.id && mate(a)?.name, a.site, a.why].filter(Boolean).join(" · ")}</small></span>
     {!one && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
    </li>)}</ul>
    <div className="approve-actions">{one?.action === "connect"
@@ -36,11 +40,11 @@ export function Approvals({ list, companion, send }: { list: Approval[]; compani
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
     : one
     ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button>
-     <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>
+     {!incognito && <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>}
      {one.action === "sensitive"
       ? <><Button size="sm" variant="outline" title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
       : <><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button><Button size="sm" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button></>}</>
-    : <><Button size="sm" variant="ghost" onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => send("permAnswer", { answer: "once" })}>Approve all ({asks.length})</Button></>}
+    : <><Button size="sm" variant="ghost" onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => asks.forEach(a => answer(a.id, "once"))}>Approve all ({asks.length})</Button></>}
    </div>
   </div>}
  </>
@@ -56,7 +60,7 @@ function Countdown({ card, send }: { card: Approval; send: Send }) {
   <div className="ask-q"><ShieldAlert /><p>Going ahead in {left}s</p></div>
   <ul className="approve-steps"><li className="is-sensitive"><span><b>{card.what}</b><small>{[card.site, card.why].filter(Boolean).join(" · ")}</small></span></li></ul>
   <div className="countdown-bar" aria-hidden><i style={{ animationDuration: duration + "ms" }} /></div>
-  <div className="approve-actions"><Button size="sm" variant="outline" onClick={() => send("permAnswer", { id: card.id, answer: "cancel" })}>Cancel</Button><Button size="sm" onClick={() => send("permAnswer", { id: card.id, answer: "now" })}>Do it now</Button></div>
+  <div className="approve-actions"><Button size="sm" variant="outline" onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "cancel" })}>Cancel</Button><Button size="sm" onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "now" })}>Do it now</Button></div>
  </div>
 }
 
@@ -74,7 +78,7 @@ function ModeSelect({ value, onChange, label }: { value: string; onChange: (mode
 export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
- const [marked, setMarked] = useState(""), [sure, setSure] = useState(false)
+ const [marked, setMarked] = useState("")
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
@@ -102,6 +106,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
    </form></div>
   <Separator />
   <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, and sensitive steps ask every time.</p></div>
-   <Button variant={sure ? "destructive" : "outline"} size="sm" onBlur={() => setSure(false)} onClick={() => { if (!sure) return setSure(true); send("permReset"); setSure(false) }}>{sure ? "Reset now" : "Reset all"}</Button></div>
+   <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
+    body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>
 }

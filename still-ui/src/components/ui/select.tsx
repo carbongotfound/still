@@ -63,8 +63,9 @@ function SelectContent({
   position = "item-aligned",
   align = "center",
   sideOffset = 4,
+  footer,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Content>) {
+}: React.ComponentProps<typeof SelectPrimitive.Content> & { footer?: React.ReactNode /* stays in view below the list (Still) */ }) {
   return (
     <SelectPrimitive.Portal>
       <SelectPrimitive.Content
@@ -88,6 +89,7 @@ function SelectContent({
           {children}
         </SelectPrimitive.Viewport>
         <SelectScrollDownButton />
+        {footer}
       </SelectPrimitive.Content>
     </SelectPrimitive.Portal>
   )

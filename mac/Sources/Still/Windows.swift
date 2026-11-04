@@ -14,6 +14,7 @@ final class Store {
  var history: [[String: Any]] = []
  var bookmarks: [[String: Any]] = []
  var welcome = true
+ var seenVersion = "" // the release (2.10) whose What's New was shown
  var groups: [TabGroup] = []
  var picks: [[String: Any]] = [] // what you typed and the site you picked (never private tabs): Typed, Url, Count, At
  var hidden: [String: [String]] = [:] // elements hidden on a site, by host
@@ -26,6 +27,9 @@ weak var lastActiveBrowser: Browser?
 /// The website data (cookies, storage, cache) of this profile: the system's store for Default, and one of its own for every
 /// other profile and for test profiles (macOS 14 and later; before that every profile shares the system's store).
 let pageStore: WKWebsiteDataStore = isTemp ? .nonPersistent() : Profiles.dataStore(support)
+/// The companion profile's website data (Where companions browse): its own sign-ins and cookies, apart from the user's.
+/// macOS 14+ keeps it with the profile; before that it's a session that signs out when Still quits.
+let companionStore: WKWebsiteDataStore = isTemp ? .nonPersistent() : Profiles.companionStore(support)
 /// A throwaway profile an MCP agent opened (--temp): it never sees the real cookies or logins, and keeps nothing.
 let isTemp = CommandLine.arguments.contains("--temp")
 
@@ -37,6 +41,8 @@ func loadStore() {
  store.history = savedState["History"] as? [[String: Any]] ?? []
  store.bookmarks = savedState["Bookmarks"] as? [[String: Any]] ?? []
  store.welcome = savedState["Welcome"] as? Bool ?? true
+ store.seenVersion = savedState["SeenVersion"] as? String ?? (savedState.isEmpty ? releaseLine : "") // a new install: the welcome setup, not What's New
+ if isQa && qaEnv("STILL_QA_WHATSNEW") == nil { store.seenVersion = releaseLine } // tests see What's New only when they ask
  store.picks = savedState["AddressPicks"] as? [[String: Any]] ?? []
  store.hidden = savedState["Hidden"] as? [String: [String]] ?? [:]
  store.groups = (savedState["Groups"] as? [[String: Any]] ?? []).map { item in
@@ -107,7 +113,7 @@ func saveAll() {
  let rows = savedState["Tabs"] as? [[String: Any]] ?? [], open = browsers.filter { !$0.closing }.flatMap(\.tabs)
  store.groups.removeAll { group in !open.contains { $0.group == group.id } && !rows.contains { $0["Group"] as? String == group.id } }
  let state: [String: Any] = [
-  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "ActiveId": savedState["ActiveId"] ?? "",
+  "Preferences": store.prefs, "History": store.history, "Bookmarks": store.bookmarks, "Welcome": store.welcome, "SeenVersion": store.seenVersion, "ActiveId": savedState["ActiveId"] ?? "",
   "Tabs": rows,
   "Groups": store.groups.map { ["Id": $0.id, "Name": $0.name, "Color": $0.color, "Collapsed": $0.collapsed] },
   "AddressPicks": store.picks, "Hidden": store.hidden
@@ -129,12 +135,12 @@ extension Browser {
 
  /// The other Still window under a screen point (drop target for a dragged tab). When windows overlap, the frontmost wins.
  func windowAt(_ point: NSPoint) -> Browser? {
-  let candidates = browsers.filter { $0 !== self && !$0.closing && $0.window.isVisible && !$0.window.isMiniaturized && $0.window.frame.contains(point) }
+  let candidates = browsers.filter { $0 !== self && !$0.closing && $0.incognito == incognito && $0.window.isVisible && !$0.window.isMiniaturized && $0.window.frame.contains(point) }
   return NSApp.orderedWindows.lazy.compactMap { window in candidates.first { $0.window === window } }.first ?? candidates.first
  }
 
  var windowsData: [[String: Any]] {
-  browsers.enumerated().filter { $0.element !== self && !$0.element.closing }.map { ["id": $0.element.windowId, "name": "Window \($0.offset + 1)", "title": $0.element.active?.title ?? ""] }
+  browsers.enumerated().filter { $0.element !== self && !$0.element.closing && $0.element.incognito == incognito }.map { ["id": $0.element.windowId, "name": "Window \($0.offset + 1)", "title": $0.element.active?.title ?? ""] }
  }
 
  /// The interface reports screen points from the top of the main screen; AppKit counts from its bottom.
@@ -143,6 +149,9 @@ extension Browser {
  /// Moves a tab with its live page to another window, or to a new one (target nil) at point.
  func moveTab(_ tab: Tab, to target: Browser?, at point: NSPoint?) {
   guard let index = tabs.firstIndex(where: { $0 === tab }), target !== self else { return }
+  // Tabs stay with windows of their kind, and an incognito chat and its pages stay in the window that holds the chat.
+  if let target, target.incognito != incognito { return }
+  if incognito && (tab.chatId ?? tab.inChat ?? tab.runChat) != nil { return }
   // Leave this window (not a real close: nothing goes to "reopen closed tab").
   if tab === splitLeft || tab === splitRight { splitLeft = nil; splitRight = nil }
   dropPermissions(tab)
@@ -208,6 +217,20 @@ enum Profiles {
   guard folder.standardizedFileURL != defaultSupport.standardizedFileURL, #available(macOS 14.0, *) else { return .default() }
   return WKWebsiteDataStore(forIdentifier: storeId(folder))
  }
+ /// The interface's own storage (drafts, small settings) for a profile, kept apart from its website data so clearing that
+ /// keeps them, and from other profiles' (Windows: each profile's own WebView2 folder). Default keeps the system's store,
+ /// as before, so its settings carry over. Before macOS 14 every profile shares that one.
+ static func shellStore(_ folder: URL) -> WKWebsiteDataStore {
+  guard folder.standardizedFileURL != defaultSupport.standardizedFileURL, #available(macOS 14.0, *) else { return .default() }
+  return WKWebsiteDataStore(forIdentifier: shellId(folder))
+ }
+ static func companionStore(_ folder: URL) -> WKWebsiteDataStore {
+  guard #available(macOS 14.0, *) else { return .nonPersistent() }
+  return WKWebsiteDataStore(forIdentifier: companionId(folder))
+ }
+ static func companionId(_ folder: URL) -> UUID { var id = storeId(folder).uuid; id.1 ^= 0xC3; return UUID(uuid: id) }
+ static var companionSession: Bool { if #available(macOS 14.0, *) { return isTemp } else { return true } } // signs out when Still quits
+ static func shellId(_ folder: URL) -> UUID { var id = storeId(folder).uuid; id.0 ^= 0x5A; return UUID(uuid: id) }
  /// A profile folder's id (its 32-hex name), or one saved in the folder for test profiles.
  static func storeId(_ folder: URL) -> UUID {
   var name = folder.lastPathComponent
@@ -224,9 +247,10 @@ enum Profiles {
 
  /// Held while this profile is open, so other Still processes can tell (Windows: the instance mutex).
  private static var runningLock: Int32 = -1
- static func holdRunningLock() {
+ /// true: this copy is the only one on the profile.
+ @discardableResult static func holdRunningLock() -> Bool {
   runningLock = open(support.appendingPathComponent("running.lock").path, O_CREAT | O_RDWR, 0o600)
-  if runningLock >= 0 { _ = flock(runningLock, LOCK_EX | LOCK_NB) }
+  return runningLock >= 0 && flock(runningLock, LOCK_EX | LOCK_NB) == 0
  }
  /// Locks a closed profile so it can't open while it's deleted. nil: it's open somewhere.
  static func lockClosed(_ id: String) -> Int32? {
@@ -285,8 +309,8 @@ enum Profiles {
   defer { if lock >= 0 { close(lock) } }
   let folder = folder(id)
   if FileManager.default.fileExists(atPath: folder.path) { try checkTree(folder); try FileManager.default.removeItem(at: folder) }
-  Vault.erase(folder)
-  if #available(macOS 14.0, *) { WKWebsiteDataStore.remove(forIdentifier: storeId(folder)) { _ in } }
+  Vault.erase(folder); ApiKeys.erase(folder)
+  if #available(macOS 14.0, *) { for store in [storeId(folder), shellId(folder), companionId(folder)] { WKWebsiteDataStore.remove(forIdentifier: store) { _ in } } }
   if launchId == id { try? setLaunch("default") }
   list.removeAll { $0.id == id }
   try write(list)
@@ -295,10 +319,10 @@ enum Profiles {
  static func resetDefault() throws {
   guard let lock = lockClosed("default") else { throw stillError("Open another profile, then close Default before resetting it.") }
   defer { if lock >= 0 { close(lock) } }
-  let paths = ["state.json", "Clipboard"].map { profileHome.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
+  let paths = ["state.json", "Clipboard", "api-keys"].map { profileHome.appendingPathComponent($0) }.filter { FileManager.default.fileExists(atPath: $0.path) }
   for path in paths { try checkTree(path) }
   for path in paths { try FileManager.default.removeItem(at: path) }
-  Vault.erase(profileHome)
+  Vault.erase(profileHome); ApiKeys.erase(profileHome)
   if #available(macOS 14.0, *) { dataStore(profileHome).removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) {} }
  }
 }

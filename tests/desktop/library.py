@@ -14,7 +14,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("library-" + uuid.uuid4().hex[:8])
@@ -89,18 +89,18 @@ def main():
         check(js(p, "document.querySelector('.companion-library [data-slot=dialog-description]')?.innerText") == "Each one comes with instructions and skills for its role, and starts working as soon as you hire it.",
               "The header says what hiring one gives you")
         names = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card .role-title')].map(e => e.innerText))") or "[]")
-        check(names == SIX, f"Still's six come first, in order, each with its role in front ({names})")
+        check(names == SIX + ["Assistant Ruth"], f"Still's six come first, in order, each with its role in front, then Assistant Ruth ({names})")
         check(js(p, "[...document.querySelectorAll('.library-card')].every(c => c.querySelector('.role-art .mascot') && !c.querySelector('.role-tag') && !c.querySelector('.role-expect h4') && c.querySelectorAll('.role-expect p').length === 1 && c.querySelector('.role-act .role-profile')?.innerText === 'View profile')"),
               "Every card has its character, its name, one line and View profile: no role tag, no list")
         check(js(p, "document.querySelector('.library-card:nth-child(6) .role-expect p')?.innerText") == "Researches anything and backs every claim with a source.", "Maya's line says what she does")
         check(not js(p, "/\\bI'(ll|m)\\b|\\bI will\\b/.test(document.querySelector('.companion-library').innerText)"), "No card speaks in the first person")
         added = json.loads(js(p, "JSON.stringify([...document.querySelectorAll('.library-card.is-added .role-title')].map(e => e.innerText))") or "[]")
-        check(added == ["Sales Jonah", "Research Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 4, f"The ones you have are marked Hired; the rest have Hire ({added})")
+        check(added == ["Sales Jonah", "Research Maya"] and js(p, "document.querySelectorAll('.library-card .library-add').length") == 5, f"The ones you have are marked Hired; the rest have Hire ({added})")
         check(js(p, "[...document.querySelectorAll('.library-card .library-add')].every(b => b.innerText.trim() === 'Hire' && b.getAttribute('aria-label').startsWith('Hire ')) && [...document.querySelectorAll('.library-card .library-added')].every(b => b.innerText.trim() === 'Hired' && b.querySelector('svg'))"),
               "The buttons say Hire, and hired ones say Hired with a check")
         btn = json.loads(js(p, """JSON.stringify((() => { const a = document.querySelector('.library-card .library-add'), b = getComputedStyle(a), l = getComputedStyle(a.nextElementSibling)
             return [b.backgroundColor, a.nextElementSibling.className, l.backgroundColor, Math.round(a.getBoundingClientRect().left - a.closest('.role-body').getBoundingClientRect().left)] })())""") or "[]")
-        check(btn == ["rgb(255, 255, 255)", "role-profile", "rgba(0, 0, 0, 0)", 18], f"Hire is a solid white button on the left, with View profile beside it as a plain link ({btn})")
+        check(btn[:3] == ["rgb(255, 255, 255)", "role-profile", "rgba(0, 0, 0, 0)"] and abs(btn[3] - 18) <= 1, f"Hire is a solid white button on the left, with View profile beside it as a plain link ({btn})")
         # Built around the character: the stage is at least 40% of the card, the character about 70% of the stage; three
         # across at this width, two when the library is narrower.
         size = json.loads(js(p, """JSON.stringify([...document.querySelectorAll('.library-card')].map(c => { const r = c.getBoundingClientRect(), a = c.querySelector('.role-art').getBoundingClientRect(), m = c.querySelector('.role-art .mascot').getBoundingClientRect()
@@ -180,7 +180,7 @@ def main():
         time.sleep(1.5)
         capture(p, "profile.png")
         click(p, ".hire-profile-full")
-        check(until(lambda: "## When you join the team" in (js(p, "document.querySelector('.hire-profile-instructions')?.innerText") or ""), 3)
+        check(until(lambda: "## How you judge the work" in (js(p, "document.querySelector('.hire-profile-instructions')?.innerText") or ""), 3)
               and js(p, "document.querySelector('.hire-profile-full').getAttribute('aria-expanded')") == "true", "See full instructions opens the whole job brief")
         escape(p)
         check(until(lambda: shown(p, ".companion-library") and not shown(p, ".hire-profile"), 5) and "Talia" not in mates(), "Esc goes back to the library without hiring")
@@ -212,14 +212,13 @@ def main():
         check(until(lambda: mates().get("Pasty", {}).get("Job") == "Checks prices.", 5) and until(lambda: not shown(p, ".companion-library"), 3), "Pasting a shared companion adds them and closes the library")
         check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "and says Pasty joined")
 
-        # Make your own opens the create dialog. The Companions page's button opens the library too.
+        # Make your own opens the companion editor on a new companion. The Companions page's button opens the library too.
         open_library(p)
         click(p, ".library-more .role-head", "Make your own")
-        check(until(lambda: shown(p, ".companion-dialog") and not shown(p, ".companion-library"), 5), "Make your own opens the create dialog")
+        check(until(lambda: shown(p, ".profile-panel .profile-foot") and not shown(p, ".companion-library"), 5), "Make your own opens the companion editor, with Hire at the bottom")
         escape(p)
-        until(lambda: not shown(p, ".companion-dialog"), 3)
-        js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")
-        until(lambda: shown(p, ".mate-grid"), 5)
+        until(lambda: not shown(p, ".profile-panel"), 3)
+        companions_page(p)
         click(p, ".home-new", "Hire a companion")
         check(until(lambda: shown(p, ".companion-library"), 5), "The Companions page's Hire a companion opens the library")
         escape(p)

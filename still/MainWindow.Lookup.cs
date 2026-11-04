@@ -7,44 +7,55 @@ namespace Still;
 
 // web_search and read_url: the AI looks things up without a tab. Each lookup loads in one hidden page (the same
 // profile, never a tab, no pop-ups or sound), one at a time. It closes after a minute unused, so it costs nothing at rest.
+// An incognito chat's lookups use a second one in the private engine profile, so they never touch the regular one.
 public partial class MainWindow
 {
  static readonly SemaphoreSlim lookupGate = new(1, 1);
- WebView2? lookupView;
+ WebView2? lookupView, privateLookupView, companionLookupView;
  DispatcherTimer? lookupIdle;
 
  string SearchUrl(string q) => (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_SEARCH") is { Length: > 0 } qa ? qa : Prefs.SearchEngine switch { // tests search a local page
   "Google" => "https://www.google.com/search?q=", "Bing" => "https://www.bing.com/search?q=", _ => "https://html.duckduckgo.com/html/?q=" }) + Uri.EscapeDataString(q);
 
- async Task<JsonElement> LookUp(string url, string script, object args)
+ async Task<JsonElement> LookUp(string url, string script, object args, bool priv = false, bool companion = false)
  {
   await lookupGate.WaitAsync();
   try {
    lookupIdle?.Stop();
-   if (lookupView?.CoreWebView2 == null) {
-    lookupView = new WebView2 { Visibility = Visibility.Hidden }; WebHost.Children.Add(lookupView);
-    var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions(); options.ProfileName = "Default";
-    await lookupView.EnsureCoreWebView2Async(env, options);
-    var c = lookupView.CoreWebView2; ApplyProtection(c);
+   var view = priv ? privateLookupView : companion ? companionLookupView : lookupView;
+   if (view?.CoreWebView2 == null) {
+    view = new WebView2 { Visibility = Visibility.Hidden }; WebHost.Children.Add(view);
+    if (priv) privateLookupView = view; else if (companion) companionLookupView = view; else lookupView = view;
+    var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions();
+    options.ProfileName = priv ? privateProfile : companion ? CompanionEngine : "Default"; options.IsInPrivateModeEnabled = priv;
+    await view.EnsureCoreWebView2Async(env, options);
+    var c = view.CoreWebView2; ApplyProtection(c);
     c.IsMuted = true; c.Settings.AreDefaultScriptDialogsEnabled = false;
     c.NewWindowRequested += (_, e) => e.Handled = true;
     c.ScriptDialogOpening += (_, e) => e.Accept();
     c.DownloadStarting += (_, e) => e.Cancel = true;
    }
-   var core = lookupView.CoreWebView2;
-   var loaded = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
-   void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) => loaded.TrySetResult(e.IsSuccess);
-   core.NavigationCompleted += Done;
+   var core = view.CoreWebView2;
+   // Only the latest navigation counts: an earlier one cut off by this one, or this one replaced by the page's own
+   // reload (Google reloads itself on a first visit), finishes as aborted and isn't this page's result. A reload that
+   // fails after the page loaded (one answered with no content) leaves the loaded page showing.
+   ulong latest = 0; bool? ok = null; bool shown = false;
+   void Started(object? s, CoreWebView2NavigationStartingEventArgs e) { latest = e.NavigationId; ok = null; }
+   void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) { if (e.NavigationId != latest) return; shown |= e.IsSuccess; ok = shown; }
+   core.NavigationStarting += Started; core.NavigationCompleted += Done;
    try {
     core.Navigate(url);
-    if (await Task.WhenAny(loaded.Task, Task.Delay(20000)) != loaded.Task) throw new InvalidOperationException("The page took too long to load.");
-    if (!await loaded.Task) throw new InvalidOperationException("The page didn't load.");
-   } finally { core.NavigationCompleted -= Done; }
-   await Task.Delay(350); // pages that draw their text with script
+    var until = DateTime.UtcNow.AddSeconds(20);
+    for (ulong seen = ~0UL; seen != latest && DateTime.UtcNow < until;) { // done once nothing new started during the pause
+     while (ok == null) { if (DateTime.UtcNow > until) throw new InvalidOperationException("The page took too long to load."); await Task.Delay(50); }
+     seen = latest; await Task.Delay(350); // pages that draw their text with script
+    }
+    if (ok != true) throw new InvalidOperationException("The page didn't load.");
+   } finally { core.NavigationStarting -= Started; core.NavigationCompleted -= Done; }
    return await Js(core, script, args);
   } finally {
    lookupGate.Release();
-   lookupIdle ??= new DispatcherTimer(TimeSpan.FromSeconds(60), DispatcherPriority.Background, (_, _) => { lookupIdle!.Stop(); if (lookupView is { } v) { WebHost.Children.Remove(v); v.Dispose(); lookupView = null; } }, Dispatcher);
+   lookupIdle ??= new DispatcherTimer(TimeSpan.FromSeconds(60), DispatcherPriority.Background, (_, _) => { lookupIdle!.Stop(); foreach (var v in new[] { lookupView, privateLookupView, companionLookupView }.OfType<WebView2>()) { WebHost.Children.Remove(v); v.Dispose(); } lookupView = privateLookupView = companionLookupView = null; }, Dispatcher);
    lookupIdle.Start();
   }
  }
@@ -54,8 +65,8 @@ public partial class MainWindow
   string q = S(args, "query").Trim();
   if (q.Length == 0) return Fail("Pass what to search for.");
   int count = (int)Math.Clamp(N(args, "count", 8), 1, 10);
-  var found = await LookUp(SearchUrl(q), ResultsJs, new { count });
-  if (found.GetArrayLength() == 0 && Prefs.SearchEngine != "DuckDuckGo") found = await LookUp("https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ResultsJs, new { count }); // a consent page or a challenge
+  var found = await LookUp(SearchUrl(q), ResultsJs, new { count }, Incognito(who), OnCompanion(who));
+  if (found.GetArrayLength() == 0 && Prefs.SearchEngine != "DuckDuckGo") found = await LookUp("https://html.duckduckgo.com/html/?q=" + Uri.EscapeDataString(q), ResultsJs, new { count }, Incognito(who), OnCompanion(who)); // a consent page or a challenge
   Did(who, "Searched “" + Clip(q, 60) + "”");
   if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "search", Text = JsonSerializer.Serialize(new { q, results = found }) }); PublishAiEverywhere(); }
   return found.GetArrayLength() == 0 ? Fail("No results. Try other words, or open_tab the search to see the page.") : Reply(new { results = found });
@@ -64,7 +75,7 @@ public partial class MainWindow
  async Task<string> ReadUrl(string who, JsonElement args)
  {
   string url = WebUrl(S(args, "url"), Prefs.SearchEngine);
-  var page = await LookUp(url, ReadableJs, new { offset = (int)Math.Max(0, N(args, "offset", 0)) });
+  var page = await LookUp(url, ReadableJs, new { offset = (int)Math.Max(0, N(args, "offset", 0)) }, Incognito(who), OnCompanion(who));
   string at = Str(page, "url") is { Length: > 0 } u ? u : url;
   Did(who, "Read " + Host(at));
   if (runs.GetValueOrDefault(who) is { } run) { run.Chat.Messages.Add(new() { Role = "read", Text = JsonSerializer.Serialize(new { url = at, title = Str(page, "title") }) }); PublishAiEverywhere(); }

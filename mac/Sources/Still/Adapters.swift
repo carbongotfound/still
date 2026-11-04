@@ -12,6 +12,8 @@ struct AgentModel { let id: String, name: String, efforts: [String] }
 struct RunRequest {
  var prompt: String, model: String, effort: String, folder: String, mcp: [String], session: String?, resume: Bool
  var workFolder = "" // the user's working folder: the app's own file tools, for that folder only
+ var forget = false // an incognito chat: the app saves no session (only where it has a documented option)
+ var job = "chats" // what the run is for (chats, titles, setup or test): an API provider's spending is split by it
  var promptFile: String { (folder as NSString).appendingPathComponent("prompt-" + (session ?? "run") + ".txt") }
 }
 
@@ -26,6 +28,10 @@ enum AgentEvent {
  case session(String)
  case usage(String)
  case error(String)
+ /// A line in the chat from Still about the run (a rate limit pause, a model swapped for the default, the step cap).
+ case note(String)
+ /// One API call's tokens and estimated cost (0 without prices), for the provider's monthly total.
+ case spent(input: Int64, output: Int64, cost: Double, job: String)
 }
 
 let agentEfforts = ["low", "medium", "high"]
@@ -35,9 +41,9 @@ let maxFiles = 10, maxFile: Int64 = 10 << 20, maxImage: Int64 = 5 << 20
 var attachmentsFolder: String { aiFolder + "/attachments" }
 func imageMime(_ name: String) -> String? { ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"][(name as NSString).pathExtension.lowercased()] }
 func sizeText(_ b: Int64) -> String { b < 1024 ? "\(b) B" : b < 1 << 20 ? String(format: "%.1f KB", Double(b) / 1024) : String(format: "%.1f MB", Double(b) / 1048576) }
-func attachment(_ id: String) -> AiFile? {
- guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: attachmentsFolder + "/" + id).first else { return nil }
- let size = (try? FileManager.default.attributesOfItem(atPath: attachmentsFolder + "/" + id + "/" + name)[.size] as? Int) ?? 0
+func attachment(_ id: String, in folder: String = attachmentsFolder) -> AiFile? {
+ guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: folder + "/" + id).first else { return nil }
+ let size = (try? FileManager.default.attributesOfItem(atPath: folder + "/" + id + "/" + name)[.size] as? Int) ?? 0
  return AiFile(id: id, name: name, size: size)
 }
 func filesNote(_ files: [AiFile]) -> String {
@@ -45,8 +51,9 @@ func filesNote(_ files: [AiFile]) -> String {
 }
 /// read_attachment: text and code as text, a PDF's text, an image as itself.
 func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
- guard let file = attachment(id) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
- let url = URL(fileURLWithPath: attachmentsFolder + "/" + id + "/" + file.name)
+ let folder = runs[who].map { $0.chat.ephemeral ? ownerOf($0.chat)?.attachmentsHere ?? "" : attachmentsFolder } ?? attachmentsFolder // an incognito chat's are in its window's folder
+ guard let file = attachment(id, in: folder) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
+ let url = URL(fileURLWithPath: folder + "/" + id + "/" + file.name)
  did(who, "Read " + file.name)
  if let mime = imageMime(file.name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
  var text: String
@@ -77,6 +84,8 @@ class AgentAdapter {
  var signIn: [String] = []
  var domains: [String] = [] // the only sites a sign-in page may be on
  var secondary = false      // a manifest agent: listed under "More agents"
+ var terminalSignIn = ""    // no sign-in command: the user runs this in a terminal to sign in
+ var compatible = false     // built from the app's docs and package, not yet run live: labelled Compatible
 
  init(id: String, name: String, app: String, command: String) { self.id = id; self.name = name; self.app = app; self.command = command }
  func with(_ setup: (AgentAdapter) -> Void) -> Self { setup(self); return self }
@@ -84,6 +93,12 @@ class AgentAdapter {
  var promptOnStdin: Bool { true }
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
  var namesSession: Bool { false }
+ /// It can run without saving the session on this computer (incognito chats): each turn is then a new session that carries the chat so far.
+ var forgets: Bool { false }
+ /// Extra environment for its runs (never a key).
+ var env: [String: String] { [:] }
+ /// What it can't do that the others can, said plainly in AI settings.
+ var gaps: [String] { [] }
 
  /// Signed in? nil when the app can't say. Uses none of the user's AI usage.
  func detect(_ exe: String) async -> Bool? { nil }
@@ -94,11 +109,11 @@ class AgentAdapter {
  /// A line that isn't JSON. Agents with plain output speak in lines.
  func plain(_ line: String) -> [AgentEvent] { [] }
 
- func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { try await AgentRun.start(self, exe, r) }
+ func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { try await CliRun.start(self, exe, r) }
 
  // Keys that would bill an API account instead of the user's plan. The app's own sign-in is used instead.
  static let apiKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
-  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"]
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"]
 
  /// What Still's helpers run with: the user's own PATH (a GUI app starts with a bare one) and no API keys.
  static var environment: [String: String] {
@@ -155,11 +170,237 @@ class AgentAdapter {
   GrokAdapter(id: "grok", name: "Grok", app: "Grok Build", command: "grok").with {
    $0.maker = "xAI"; $0.installer = "https://x.ai/cli/install.sh"; $0.installCommand = "curl -fsSL https://x.ai/cli/install.sh | bash"
    $0.site = "https://x.ai/cli"; $0.signIn = ["login", "--device-auth"]; $0.domains = ["x.ai"]
-  }
+  },
+  // Signed in from a terminal: Gemini CLI has no sign-in command of its own.
+  GeminiAdapter(id: "gemini", name: "Gemini", app: "Gemini CLI", command: "gemini").with {
+   $0.maker = "Google"; $0.installCommand = "npm install -g @google/gemini-cli"; $0.site = "https://github.com/google-gemini/gemini-cli"; $0.terminalSignIn = "gemini"
+  },
+  OpenCodeAdapter(id: "opencode", name: "OpenCode", app: "OpenCode", command: "opencode").with {
+   $0.maker = "OpenCode"; $0.installCommand = "npm install -g opencode-ai"; $0.site = "https://opencode.ai"; $0.secondary = true
+  },
+  // Compatible: built from their docs and packages, tested with fake apps only. Signed in from a terminal.
+  QwenAdapter(id: "qwen", name: "Qwen Code", app: "Qwen Code", command: "qwen").with {
+   $0.maker = "Qwen"; $0.installCommand = "npm install -g @qwen-code/qwen-code"; $0.site = "https://github.com/QwenLM/qwen-code"; $0.terminalSignIn = "qwen"; $0.secondary = true; $0.compatible = true
+  },
+  CopilotAdapter(id: "copilot", name: "GitHub Copilot", app: "Copilot CLI", command: "copilot").with {
+   $0.maker = "GitHub"; $0.installCommand = "npm install -g @github/copilot"; $0.site = "https://github.com/github/copilot-cli"; $0.terminalSignIn = "copilot login"; $0.secondary = true; $0.compatible = true
+  },
+  DshAdapter(id: "dsh", name: "DeepSeek Harness", app: "DeepSeek Harness", command: "dsh").with {
+   $0.maker = "DeepSeek"; $0.installCommand = "npm install -g @deepseek-ai/dsh"; $0.site = "https://github.com/deepseek-ai/deepseek-harness"; $0.terminalSignIn = "dsh web"; $0.secondary = true; $0.compatible = true
+  },
+  // Mac only: Amp's docs run it on Windows through WSL, which Still doesn't drive.
+  AmpAdapter(id: "amp", name: "Amp", app: "Amp", command: "amp").with {
+   $0.maker = "Amp"; $0.installCommand = "curl -fsSL https://ampcode.com/install.sh | bash"; $0.site = "https://ampcode.com"; $0.terminalSignIn = "amp login"; $0.secondary = true; $0.compatible = true
+  },
  ]
 }
 
+/// Gemini CLI, signed in with Google. Still's MCP server in the run folder's settings and a policy that denies every tool
+/// but Still's, so no shell, file, web, skill or sub-agent tool runs and nothing waits on a terminal prompt.
+final class GeminiAdapter: AgentAdapter {
+ override var namesSession: Bool { true }
+ // It reads the run folder's settings (Still's MCP server) only in a folder it trusts: this one, for the run.
+ override var env: [String: String] { ["GEMINI_CLI_TRUST_WORKSPACE": "true"] }
+ override var gaps: [String] { ["To sign in, run gemini in a terminal and pick Sign in with Google.", "No effort setting, so modes pick a model only.",
+  "Gemini keeps its own record of incognito chats on this computer. It has no option to turn that off."] }
+ static var home: String { (ProcessInfo.processInfo.environment["GEMINI_CLI_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory()) + "/.gemini" }
+ /// Signed in with Google: its settings pick that sign-in and it has saved one. Still reads which sign-in, never the login.
+ override func detect(_ exe: String) async -> Bool? {
+  let settings = (try? Data(contentsOf: URL(fileURLWithPath: Self.home + "/settings.json"))).flatMap { try? JSONSerialization.jsonObject(with: $0, options: [.json5Allowed]) } as? [String: Any]
+  let auth = ((settings?["security"] as? [String: Any])?["auth"] as? [String: Any])?["selectedType"] as? String ?? settings?["selectedAuthType"] as? String
+  return auth == "oauth-personal" && FileManager.default.fileExists(atPath: Self.home + "/oauth_creds.json")
+ }
+ // Its own model names (checked with 0.66.0); auto lets Gemini pick.
+ override func models(_ exe: String) async -> [AgentModel] {
+  [("", "Default"), ("auto", "Auto"), ("pro", "Pro"), ("flash", "Flash"), ("flash-lite", "Flash Lite")].map { AgentModel(id: $0.0, name: $0.1, efforts: []) }
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let dir = r.folder + "/.gemini", policy = dir + "/still-policy.toml"
+  try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+  let settings: [String: Any] = ["mcpServers": ["still": ["command": stillExecutable, "args": r.mcp, "trust": true, "timeout": 660000]]] // ask_user waits for the user
+  try JSONSerialization.data(withJSONObject: settings, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: dir + "/settings.json"))
+  try "[[rule]]\ntoolName = \"*\"\ndecision = \"deny\"\npriority = 100\n\n[[rule]]\ntoolName = \"mcp_still_*\"\ndecision = \"allow\"\npriority = 900\n".write(toFile: policy, atomically: true, encoding: .utf8)
+  var args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--policy", policy, r.resume ? "--resume" : "--session-id", r.session ?? ""]
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.gemini(e) }
+}
+
+/// Qwen Code (`qwen`), built from its docs and its 0.26.6 package, not run live: the prompt on stdin (it reads a piped
+/// prompt), Claude-style stream-json, Still's MCP server in the run folder's settings, and every built-in tool off.
+final class QwenAdapter: AgentAdapter {
+ // Its built-in tools in 0.26.6, all hidden from the model. tools.core (an allowlist of none) also turns off file, shell and
+ // search tools a later version adds.
+ static let builtInTools = ["exec", "edit", "write_file", "read_file", "zoom_image", "grep_search", "glob", "run_shell_command", "todo_write",
+  "save_memory", "manage_memory", "search_memory", "agent", "skill", "exit_plan_mode", "enter_plan_mode", "web_fetch", "web_search", "image_gen",
+  "list_directory", "lsp", "ask_user_question", "cron_create", "cron_list", "cron_delete", "autofix_pr", "loop_wakeup", "create_sub_session", "list_agents",
+  "task_stop", "task_create", "task_update", "task_list", "team_create", "team_delete", "team_plan_approval", "request_shutdown", "send_message",
+  "structured_output", "monitor", "notebook_edit", "tool_call", "tool_search", "read_mcp_resource", "advisor", "enter_worktree", "exit_worktree", "workflow",
+  "artifact", "record_artifact", "record_source", "report_findings", "get_goal", "update_goal", "propose_goal", "display_image",
+  "omni_downsample_image", "omni_downscale_video", "omni_downsample_audio", "omni_extract_keyframes", "omni_extract_audio", "omni_clip_video",
+  "omni_convert_image", "omni_transcribe_audio", "omni_clip_image", "omni_clip_audio", "omni_caption_image", "omni_caption_audio", "omni_ocr_image",
+  "omni_understand_video_segments", "omni_recall_media_memory"]
+ override var forgets: Bool { true } // general.chatRecording off: an incognito chat saves nothing
+ override var gaps: [String] { ["To sign in, run qwen in a terminal and pick a sign-in.", "No model or effort settings in Still yet, so every mode uses the model you set in Qwen Code."] }
+ static var home: String { ProcessInfo.processInfo.environment["QWEN_HOME"].flatMap { $0.isEmpty ? nil : $0 } ?? NSHomeDirectory() + "/.qwen" }
+ // Folder trust (off unless the user turned it on): Still's own list, trusting its AI folder (incognito runs are in it
+ // too), so the run folder's settings load.
+ override var env: [String: String] {
+  let trust = aiFolder + "/qwen-trusted-folders.json"
+  try? FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
+  try? JSONSerialization.data(withJSONObject: [aiFolder: "TRUST_FOLDER"], options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: trust))
+  return ["QWEN_CODE_TRUSTED_FOLDERS_PATH": trust]
+ }
+ /// Signed in with Qwen OAuth: its settings pick that sign-in and it has saved one. Another sign-in (an API key): it can't say.
+ override func detect(_ exe: String) async -> Bool? {
+  let settings = (try? Data(contentsOf: URL(fileURLWithPath: Self.home + "/settings.json"))).flatMap { try? JSONSerialization.jsonObject(with: $0, options: [.json5Allowed]) } as? [String: Any]
+  let type = ((settings?["security"] as? [String: Any])?["auth"] as? [String: Any])?["selectedType"] as? String ?? ""
+  return type.isEmpty ? false : type == "qwen-oauth" ? FileManager.default.fileExists(atPath: Self.home + "/oauth_creds.json") : nil
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let dir = r.folder + "/.qwen"
+  try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+  let settings: [String: Any] = [
+   "mcpServers": ["still": ["command": stillExecutable, "args": r.mcp, "trust": true, "timeout": 660000]], // ask_user waits for the user
+   "permissions": ["allow": ["mcp__still"]],
+   "tools": ["core": ["mcp__still"], "disabled": Self.builtInTools],
+   "general": ["chatRecording": !r.forget]]
+  try JSONSerialization.data(withJSONObject: settings, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: dir + "/settings.json"))
+  var args = ["--output-format", "stream-json", "--allowed-mcp-server-names", "still", "-e", "none", "--approval-mode", "default"]
+  if r.resume, let session = r.session { args += ["--resume", session] }
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.messages(e, tokenUsage: true) }
+}
+
+/// GitHub Copilot CLI (`copilot`), built from its docs, not run live: the prompt on stdin, only its reply printed (-s),
+/// Still's MCP server added for the run, every built-in tool kind denied (deny wins over any allow).
+final class CopilotAdapter: AgentAdapter {
+ // A UUID that names no session yet starts one with that id; the same id resumes it.
+ override var namesSession: Bool { true }
+ override var gaps: [String] { ["To sign in, run copilot login in a terminal.", "Shows its reply once it's done, not each step.",
+  "Copilot keeps its own record of incognito chats on this computer.", "Effort applies on the models Copilot offers it for."] }
+ override func models(_ exe: String) async -> [AgentModel] { [AgentModel(id: "", name: "Default", efforts: agentEfforts), AgentModel(id: "auto", name: "Auto", efforts: [])] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let config = r.folder + "/copilot-mcp.json"
+  let json: [String: Any] = ["mcpServers": ["still": ["type": "local", "command": stillExecutable, "args": r.mcp, "tools": ["*"], "timeout": 660000]]]
+  try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: config))
+  var args = ["-s", "--additional-mcp-config", "@" + config, "--allow-tool", "still", "--deny-tool", "shell,write,read,url,memory",
+   "--disable-builtin-mcps", "--no-ask-user", "--no-custom-instructions", "--session-id", r.session ?? ""]
+  if !r.model.isEmpty { args += ["--model", r.model] }
+  if !r.effort.isEmpty { args += ["--effort", r.effort] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { plain(jsonText(e)) }
+ override func plain(_ line: String) -> [AgentEvent] { line.trimmingCharacters(in: .whitespaces).isEmpty ? [] : [.message(line, join: "\n")] }
+}
+
+/// DeepSeek Harness (`dsh`, DeepSeek's own agent), built from its docs and source (github.com/deepseek-ai/deepseek-harness),
+/// not run live: the headless profile with its JSON event stream, the prompt on stdin, and a --patch overlay in the run
+/// folder that adds Still's MCP server, turns its own tools off, turns its session-log upload off and lets it use the
+/// sign-in or key saved in its own app. Still never reads that sign-in.
+final class DshAdapter: AgentAdapter {
+ // Its own tools: shell, files, jobs, skills, sub-agents, workflows, web and MCP resources.
+ static let tools = ["tool-bash", "tool-pwsh", "tool-jobs", "tool-fs", "tool-fs-search", "tool-working-directory", "tool-skill",
+  "tool-agent-team", "tool-subagent-control", "tool-subagent", "tool-subagent-fork", "tool-workflow", "tool-web", "mcp-resources"]
+ override var gaps: [String] { ["To sign in or add your DeepSeek key, run dsh web in a terminal.", "It is a developer preview, so it may change or break.",
+  "No model or effort settings in Still yet, so every mode uses the model you set in DeepSeek Harness.", "DeepSeek Harness keeps its own record of incognito chats on this computer."] }
+ override var env: [String: String] { ["DSH_TELEMETRY_MODE": "DISABLED"] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  // A patch replaces a row's whole config, so the session-log row gets one of its own. JSON is YAML, so no escaping to get wrong.
+  let patch = r.folder + "/still-dsh.yml"
+  let rows: [[String: Any]] = [
+   ["insert": [["id": "still-mcp", "name": "@deepseek-ai/dsh-mcp-client", "config": ["serverName": "still", "transport": "stdio",
+    "command": stillExecutable, "args": r.mcp, "cwd": r.folder, "toolCallTimeoutMs": 660000]]]], // ask_user waits for the user
+   ["id": "session-log-deepseek", "config": ["enabled": false]]]
+   + ["credentials", "authorization", "deepseek-account"].map { ["id": $0, "disabled": false] }
+   + Self.tools.map { ["id": $0, "disabled": true] }
+  try JSONSerialization.data(withJSONObject: rows, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: patch))
+  var args = ["--profile", "headless", "--patch", patch, "--json"]
+  if r.resume, let session = r.session { args += ["--session-id", session] }
+  return args + ["-"]
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.dsh(e) }
+}
+
+/// Amp (`amp`), built from its docs, not run live: execute mode with the prompt on stdin, Claude-style stream-json, a
+/// settings file of Still's own for the run (Still's MCP server, every built-in tool off), and its mode as the effort.
+/// Still can't continue an Amp thread by id from its docs, so each message brings the chat so far.
+final class AmpAdapter: AgentAdapter {
+ override var gaps: [String] { ["To sign in, run amp login in a terminal.", "Amp saves each thread to your Amp account, incognito chats too.",
+  "Each message starts a new Amp thread with the chat so far.", "Effort is Amp's mode: low, medium, high or ultra."] }
+ override func models(_ exe: String) async -> [AgentModel] { [AgentModel(id: "", name: "Default", efforts: ["low", "medium", "high", "ultra"])] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  let settings = r.folder + "/amp-settings.json"
+  // builtin:* turns off Amp's own tools only; its documented tool names are listed too, for an Amp that doesn't take the glob.
+  let json: [String: Any] = ["amp.mcpServers": ["still": ["command": stillExecutable, "args": r.mcp]],
+   "amp.tools.disable": ["builtin:*", "builtin:Bash", "builtin:create_file", "builtin:edit_file", "builtin:glob", "builtin:Grep", "builtin:Read",
+    "builtin:read_web_page", "builtin:Task", "builtin:todo_read", "builtin:todo_write", "builtin:undo_edit", "builtin:web_search"]]
+  try JSONSerialization.data(withJSONObject: json, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: settings))
+  var args = ["-x", "--stream-json", "--settings-file", settings]
+  if !r.effort.isEmpty { args += ["--mode", r.effort] }
+  return args
+ }
+ // Its thread id isn't kept: a next message can't continue the thread, so it starts a new one with the chat so far.
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.messages(e, tokenUsage: true).filter { if case .session = $0 { return false } else { return true } } }
+}
+
+/// OpenCode, on whichever provider the user set up inside it: a plan sign-in, that provider's key kept by OpenCode, or
+/// OpenCode's free models. Still never sees which. Its own tools, skills and sub-agents stay off.
+final class OpenCodeAdapter: AgentAdapter {
+ var version = ""
+ override var gaps: [String] { ["Runs on the provider you set up in OpenCode (opencode providers login, in a terminal).",
+  "OpenCode keeps its own record of incognito chats on this computer. It has no option to turn that off."]
+  + (!version.isEmpty && !version.hasPrefix("1.") ? ["Still was checked with OpenCode 1. This is \(version), so it may not work."] : []) }
+ static func modelLine(_ line: String) -> Bool { line.range(of: #"^[A-Za-z0-9][\w.@-]*/\S+$"#, options: .regularExpression) != nil }
+ // Ready once it lists a model: its free ones need no sign-in.
+ override func detect(_ exe: String) async -> Bool? {
+  if let v = await AgentAdapter.printed(exe, aiFolder, ["--version"]) { version = v[0].trimmingCharacters(in: .whitespacesAndNewlines) }
+  guard let p = await AgentAdapter.printed(exe, aiFolder, ["models"]) else { return nil }
+  return p[0].components(separatedBy: "\n").contains { Self.modelLine($0.trimmingCharacters(in: .whitespaces)) }
+ }
+ /// Its catalog: each model's line, then its details, whose variants are its effort levels. Models without tool calls are left out.
+ override func models(_ exe: String) async -> [AgentModel] {
+  var list = [AgentModel(id: "", name: "Default", efforts: [])]
+  guard let p = await AgentAdapter.printed(exe, aiFolder, ["models", "--verbose"]) else { return list }
+  let order = ["none", "minimal", "low", "medium", "high", "xhigh", "max"]
+  var id = "", details = ""
+  func add() {
+   guard !id.isEmpty else { return }
+   guard let m = jsonObject(details) else { list.append(AgentModel(id: id, name: id, efforts: [])); return }
+   if (m["capabilities"] as? [String: Any])?["toolcall"] as? Bool == false { return }
+   let name = (m["name"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? id
+   let variants = ((m["variants"] as? [String: Any])?.keys).map(Array.init) ?? []
+   list.append(AgentModel(id: id, name: name + " · " + (id.split(separator: "/").first.map(String.init) ?? ""),
+    efforts: variants.sorted { (order.firstIndex(of: $0) ?? 99, $0) < (order.firstIndex(of: $1) ?? 99, $1) }))
+  }
+  for raw in p[0].components(separatedBy: "\n") {
+   let line = raw.trimmingCharacters(in: CharacterSet(charactersIn: "\r"))
+   if Self.modelLine(line) { add(); id = line; details = "" } else { details += line + "\n" }
+  }
+  add()
+  return list
+ }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  // Still's MCP server in the run folder's config (v1 shape) and every tool off but Still's. Its MCP calls time out after
+  // 5 seconds unless told otherwise; ask_user waits for the user.
+  let config: [String: Any] = ["$schema": "https://opencode.ai/config.json", "mcp": ["still": ["type": "local", "command": [stillExecutable] + r.mcp, "enabled": true, "timeout": 660000]],
+   "tools": ["*": false, "still_*": true]]
+  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
+  try JSONSerialization.data(withJSONObject: config, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: r.folder + "/opencode.json"))
+  var args = ["run", "--format", "json", "--dir", r.folder, "--title", "Still"] // a title of its own would cost a model call
+  if r.resume, let session = r.session { args += ["--session", session] }
+  if !r.model.isEmpty { args += ["-m", r.model] }
+  if !r.effort.isEmpty { args += ["--variant", r.effort] }
+  return args
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.openCode(e) }
+}
+
 final class ClaudeAdapter: AgentAdapter {
+ override var forgets: Bool { true } // --no-session-persistence
  override var namesSession: Bool { true }
  static let levels = ["low", "medium", "high", "xhigh", "max"]
  override func detect(_ exe: String) async -> Bool? {
@@ -171,7 +412,9 @@ final class ClaudeAdapter: AgentAdapter {
  }
  override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
   let config = try AgentAdapter.writeMcpConfig(r)
-  var args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.resume ? "--resume" : "--session-id", r.session ?? ""]
+  var args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.resume ? "--resume" : "--session-id", r.session ?? "",
+   "--disable-slash-commands", "--setting-sources", "project,local"] // none of the user's own skills, commands, plugins or settings
+  if r.forget { args.append("--no-session-persistence") }
   // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
   if !r.workFolder.isEmpty { args += ["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.workFolder, "--permission-mode", "acceptEdits"] }
   else { args += ["--tools", ""] }
@@ -194,7 +437,7 @@ final class GrokAdapter: AgentAdapter {
   let text = await AgentAdapter.output(exe, aiFolder, ["models"]) ?? ""
   let pattern = try! NSRegularExpression(pattern: #"^\s*[*-]\s+(\S+)"#, options: .anchorsMatchLines)
   for match in pattern.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
-   if let range = Range(match.range(at: 1), in: text) { list.append(AgentModel(id: String(text[range]), name: String(text[range]), efforts: agentEfforts)) }
+   if let range = Range(match.range(at: 1), in: text) { list.append(AgentModel(id: String(text[range]), name: String(text[range]), efforts: [])) } // its effort levels per model aren't listed: default effort only
   }
   return list
  }
@@ -213,6 +456,7 @@ final class GrokAdapter: AgentAdapter {
 
 /// ChatGPT, through OpenAI's agent CLI signed in with the user's ChatGPT plan. The UI only ever calls it ChatGPT.
 final class ChatGptAdapter: AgentAdapter {
+ override var forgets: Bool { true } // exec --ephemeral
  override func detect(_ exe: String) async -> Bool? {
   guard let text = await AgentAdapter.output(exe, aiFolder, ["login", "status"]) else { return nil }
   // An API key login would bill an API account: only a ChatGPT sign-in counts.
@@ -232,7 +476,7 @@ final class ChatGptAdapter: AgentAdapter {
   // TOML literal strings ('...') need no escaping but can't hold an apostrophe.
   if (r.mcp + [stillExecutable]).contains(where: { $0.contains("'") }) { throw AgentError("ChatGPT can't run Still from a folder whose name has an apostrophe.") }
   func quoted(_ value: String) -> String { "'" + value + "'" }
-  var args = ["exec"] + (r.resume ? ["resume"] : []) + ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
+  var args = ["exec"] + (r.resume ? ["resume"] : []) + (r.forget ? ["--ephemeral"] : []) + ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
    "-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + r.mcp.map(quoted).joined(separator: ",") + "]"]
   if !r.model.isEmpty { args += ["-c", "model=" + quoted(r.model)] }
   if !r.effort.isEmpty { args += ["-c", "model_reasoning_effort=" + quoted(r.effort)] }
@@ -331,7 +575,7 @@ final class ManifestAdapter: AgentAdapter {
    guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
          let json = (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) as? [String: Any] else { NSLog("Still: skipped agents/\(name)"); continue }
    let s = Spec(json)
-   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex"].contains(s.id),
+   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode", "qwen", "copilot", "amp", "dsh"].contains(s.id),
          !s.command.isEmpty, !s.run.isEmpty else { continue }
    let adapter = ManifestAdapter(id: s.id, name: s.name.isEmpty ? s.id : s.name, app: s.name.isEmpty ? s.command : s.name, command: s.command)
    adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.signIn = s.signin; adapter.domains = s.domains; adapter.secondary = true
@@ -420,6 +664,7 @@ final class Spawned {
    throw AgentError("couldn't start it: " + String(cString: strerror(result)))
   }
   pid = child
+  Children.started(child)
   input = FileHandle(fileDescriptor: inPipe[1], closeOnDealloc: true)
   output = FileHandle(fileDescriptor: outPipe[0], closeOnDealloc: true)
   errors = FileHandle(fileDescriptor: errPipe[0], closeOnDealloc: true)
@@ -438,7 +683,47 @@ final class Spawned {
   while waitpid(pid, &status, 0) < 0 && errno == EINTR {}
   let code = status & 0x7f == 0 ? (status >> 8) & 0xff : 128 + (status & 0x7f)
   reaped = code
+  Children.ended(pid)
   return code
+ }
+}
+
+/// What Still has running (AI apps, sign-ins), listed under the profile so a start after a crash ends what's left:
+/// on the Mac nothing ends a child when its parent dies (Windows: the Job Object does). A listed pid counts only while
+/// its start time still matches, so a number the system gave to something else since is never touched.
+enum Children {
+ private static let lock = NSLock()
+ private static var running: [pid_t: UInt64] = [:]
+ private static var file: URL { support.appendingPathComponent("running-ai.txt") }
+
+ static func started(_ pid: pid_t) {
+  guard let at = startTime(pid) else { return }
+  lock.lock(); defer { lock.unlock() }
+  running[pid] = at; save()
+ }
+ static func ended(_ pid: pid_t) {
+  lock.lock(); defer { lock.unlock() }
+  if running.removeValue(forKey: pid) != nil { save() }
+ }
+ private static func save() {
+  if running.isEmpty { try? FileManager.default.removeItem(at: file); return }
+  try? running.map { "\($0.key) \($0.value)" }.joined(separator: "\n").write(to: file, atomically: true, encoding: .utf8)
+ }
+ static func startTime(_ pid: pid_t) -> UInt64? {
+  var info = proc_bsdinfo(), size = Int32(MemoryLayout<proc_bsdinfo>.size)
+  guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+  return info.pbi_start_tvsec * 1_000_000 + info.pbi_start_tvusec
+ }
+ /// At start, holding the profile's lock (no other copy runs on it): ends each listed run still going, and its group.
+ static func sweep() {
+  guard let text = try? String(contentsOf: file, encoding: .utf8) else { return }
+  for line in text.split(separator: "\n") {
+   let field = line.split(separator: " ")
+   guard field.count == 2, let pid = pid_t(field[0]), let at = UInt64(field[1]), pid > 1, startTime(pid) == at else { continue }
+   if Darwin.killpg(pid, SIGKILL) != 0 { _ = Darwin.kill(pid, SIGKILL) }
+   NSLog("Still: ended AI app \(pid), left running by a Still that didn't quit")
+  }
+  try? FileManager.default.removeItem(at: file)
  }
 }
 
@@ -459,67 +744,38 @@ func readLines(_ handle: FileHandle, _ each: (String) -> Void) {
  if !buffer.isEmpty { each(String(decoding: buffer, as: UTF8.self)) }
 }
 
-/// A running agent. Its processes share a process group, so cancel ends every child at once; Still quitting ends them too.
-final class AgentRun {
+/// A running agent: an app (CliRun) or Still's own loop for an API provider (ApiRun), with the same events. Still quitting ends every one.
+class AgentRun {
  static let limit: TimeInterval = 3600
  static var launched = 0 // runs started since Still opened: each one uses the user's plan (tests check Quick setup uses none)
  private static var live: [ObjectIdentifier: AgentRun] = [:]
  private static let liveLock = NSLock()
  let adapter: AgentAdapter
  let started = Date()
- private let process: Spawned
  private let lock = NSLock()
  private var errorLines: [String] = []
- private let stderrDone = DispatchGroup()
- private(set) var cancelled = false, timedOut = false
- private(set) var exitCode: Int32 = 0
+ var cancelled = false, timedOut = false
+ var exitCode: Int32 = 0
 
- private init(_ adapter: AgentAdapter, _ process: Spawned) {
-  self.adapter = adapter; self.process = process
-  stderrDone.enter()
-  Thread.detachNewThread { [self] in readLines(process.errors) { self.keep($0) }; stderrDone.leave() }
+ init(_ adapter: AgentAdapter) {
+  self.adapter = adapter
   AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = self; AgentRun.liveLock.unlock()
  }
+ /// It's over: Still quitting no longer needs to end it.
+ func ended() { AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = nil; AgentRun.liveLock.unlock() }
 
- static func start(_ adapter: AgentAdapter, _ exe: String, _ r: RunRequest) async throws -> AgentRun {
-  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
-  let args = try await adapter.args(exe, r)
-  let run = AgentRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment))
-  DispatchQueue.main.async { launched += 1 }
-  // Written from the side, so a big prompt never blocks Still while the app is slow to read it.
-  let prompt = adapter.promptOnStdin ? Data(r.prompt.utf8) : Data(), input = run.process.input
-  DispatchQueue.global().async { try? input.write(contentsOf: prompt); try? input.close() }
-  return run
- }
-
- private func keep(_ line: String) {
+ func keep(_ line: String) {
   lock.lock(); defer { lock.unlock() }
   errorLines.append(line)
   if errorLines.count > 40 { errorLines.removeFirst() }
  }
  var errors: [String] { lock.lock(); defer { lock.unlock() }; return errorLines }
 
- /// The run's events, in order, until the app exits. Lines that aren't JSON go to plain (and are kept for errors).
- func events() -> AsyncStream<AgentEvent> {
-  AsyncStream { continuation in
-   Thread.detachNewThread { [self] in
-    let timer = DispatchWorkItem { [weak self] in self?.timedOut = true; self?.cancel() }
-    DispatchQueue.global().asyncAfter(deadline: .now() + AgentRun.limit, execute: timer)
-    readLines(process.output) { line in
-     if line.hasPrefix("{"), let e = jsonObject(line) { for event in adapter.parse(e) { continuation.yield(event) } }
-     else { keep(line); for event in adapter.plain(line) { continuation.yield(event) } }
-    }
-    stderrDone.wait()
-    exitCode = process.wait()
-    timer.cancel()
-    AgentRun.liveLock.lock(); AgentRun.live[ObjectIdentifier(self)] = nil; AgentRun.liveLock.unlock()
-    continuation.finish()
-   }
-  }
- }
+ /// The run's events, in order, until it ends.
+ func events() -> AsyncStream<AgentEvent> { AsyncStream { $0.finish() } }
 
- /// Ends the app and everything it started right away.
- func cancel() { cancelled = true; process.kill() }
+ /// Ends it right away.
+ func cancel() { cancelled = true }
 
  /// Still is quitting: every run ends with it.
  static func endAll() {
@@ -539,6 +795,52 @@ final class AgentRun {
   let old = ((try? FileManager.default.contentsOfDirectory(atPath: logs.path)) ?? []).filter { $0.hasSuffix(".log") }.sorted(by: >).dropFirst(20)
   for name in old { try? FileManager.default.removeItem(at: logs.appendingPathComponent(name)) }
  }
+}
+
+/// An app's run. Its processes share a process group, so cancel ends every child at once.
+final class CliRun: AgentRun {
+ private let process: Spawned
+ private let stderrDone = DispatchGroup()
+
+ private init(_ adapter: AgentAdapter, _ process: Spawned) {
+  self.process = process
+  super.init(adapter)
+  stderrDone.enter()
+  Thread.detachNewThread { [self] in readLines(process.errors) { self.keep($0) }; stderrDone.leave() }
+ }
+
+ static func start(_ adapter: AgentAdapter, _ exe: String, _ r: RunRequest) async throws -> AgentRun {
+  try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
+  let args = try await adapter.args(exe, r)
+  let run = CliRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment.merging(adapter.env) { $1 }))
+  DispatchQueue.main.async { launched += 1 }
+  // Written from the side, so a big prompt never blocks Still while the app is slow to read it.
+  let prompt = adapter.promptOnStdin ? Data(r.prompt.utf8) : Data(), input = run.process.input
+  DispatchQueue.global().async { try? input.write(contentsOf: prompt); try? input.close() }
+  return run
+ }
+
+ /// The run's events, in order, until the app exits. Lines that aren't JSON go to plain (and are kept for errors).
+ override func events() -> AsyncStream<AgentEvent> {
+  AsyncStream { continuation in
+   Thread.detachNewThread { [self] in
+    let timer = DispatchWorkItem { [weak self] in self?.timedOut = true; self?.cancel() }
+    DispatchQueue.global().asyncAfter(deadline: .now() + AgentRun.limit, execute: timer)
+    readLines(process.output) { line in
+     if line.hasPrefix("{"), let e = jsonObject(line) { for event in adapter.parse(e) { continuation.yield(event) } }
+     else { keep(line); for event in adapter.plain(line) { continuation.yield(event) } }
+    }
+    stderrDone.wait()
+    exitCode = process.wait()
+    timer.cancel()
+    ended()
+    continuation.finish()
+   }
+  }
+ }
+
+ /// Ends the app and everything it started right away.
+ override func cancel() { super.cancel(); process.kill() }
 }
 
 /// Turns each CLI's JSON lines into AgentEvents. Pure functions, so tests can feed them recorded output.
@@ -615,6 +917,69 @@ enum AgentStream {
   return []
  }
 
+ /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
+ /// tool_result, error and a closing result. Still's tools come as mcp_still_<tool>.
+ static func gemini(_ e: [String: Any]) -> [AgentEvent] {
+  switch str(e["type"]) {
+  case "init": if let session = str(e["session_id"]), !session.isEmpty { return [.session(session)] }
+  case "message" where str(e["role"]) == "assistant": if let text = str(e["content"]), !text.isEmpty { return [.message(text, join: isTrue(e["delta"]) ? "" : nil)] }
+  case "tool_use": return [.toolCall(id: str(e["tool_id"]) ?? "", name: bare(str(e["tool_name"]), "mcp_still_"), args: e["parameters"])]
+  case "tool_result": return [.toolResult(id: str(e["tool_id"]) ?? "", ok: str(e["status"]) == "success")]
+  case "error" where str(e["severity"]) == "error": return [.error(str(e["message"]) ?? "failed")]
+  case "result":
+   var events: [AgentEvent] = []
+   if let u = e["stats"] as? [String: Any], long(u["input_tokens"]) + long(u["output_tokens"]) > 0 {
+    events.append(.usage("Last reply: \(tokens(long(u["input_tokens"]))) in (\(tokens(long(u["cached"]))) cached), \(tokens(long(u["output_tokens"]))) out"))
+   }
+   if str(e["status"]) == "error" { events.append(.error(str((e["error"] as? [String: Any])?["message"]) ?? "failed")) }
+   return events
+  default: break
+  }
+  return []
+ }
+
+ /// OpenCode (`run --format json`, checked with 1.19.5): step_start, text (a whole part), tool_use (once it's done),
+ /// step_finish with tokens, and error. Every event has the sessionID. Still's tools come as still_<tool>.
+ static func openCode(_ e: [String: Any]) -> [AgentEvent] {
+  let part = e["part"] as? [String: Any]
+  switch str(e["type"]) {
+  case "step_start": if let session = str(e["sessionID"]), !session.isEmpty { return [.session(session)] }
+  case "text": if let text = str(part?["text"]), !text.isEmpty { return [.message(text, join: nil)] }
+  case "reasoning": return [.thinking]
+  case "tool_use":
+   let id = str(part?["callID"]) ?? "", state = part?["state"] as? [String: Any]
+   var events: [AgentEvent] = [.toolCall(id: id, name: bare(str(part?["tool"]), "still_"), args: state?["input"])]
+   if let status = str(state?["status"]), status == "completed" || status == "error" { events.append(.toolResult(id: id, ok: status == "completed")) }
+   return events
+  case "step_finish":
+   if let t = part?["tokens"] as? [String: Any], long(t["input"]) + long(t["output"]) > 0 {
+    let cached = long((t["cache"] as? [String: Any])?["read"])
+    return [.usage("Last reply: \(tokens(long(t["input"]) + cached)) in (\(tokens(cached)) cached), \(tokens(long(t["output"]))) out")]
+   }
+  case "error":
+   let error = e["error"] as? [String: Any]
+   return [.error(str((error?["data"] as? [String: Any])?["message"]) ?? str(error?["name"]) ?? "failed")]
+  default: break
+  }
+  return []
+ }
+ /// DeepSeek Harness (`--profile headless --json`, built from its docs and source, not run live): session first, then text
+ /// and thinking once each step commits, tool_call and tool_result, a final event repeating the answer (skipped), and
+ /// error for a failure outside a turn. Still's tools come as mcp__still__<tool>.
+ static func dsh(_ e: [String: Any]) -> [AgentEvent] {
+  switch str(e["type"]) {
+  case "session": if let session = str(e["sessionId"]), !session.isEmpty { return [.session(session)] }
+  case "text": if let text = str(e["text"]), !text.isEmpty { return [.message(text, join: nil)] }
+  case "thinking": return [.thinking]
+  case "tool_call": return [.toolCall(id: str(e["callId"]) ?? "", name: bare(str(e["tool"]), "mcp__still__"), args: e["input"])]
+  case "tool_result": return [.toolResult(id: str(e["callId"]) ?? "", ok: str(e["status"]) == "completed")]
+  case "error": return [.error(str(e["message"]) ?? "failed")]
+  default: break
+  }
+  return []
+ }
+ static func bare(_ tool: String?, _ prefix: String) -> String { guard let tool else { return "" }; return tool.hasPrefix(prefix) ? String(tool.dropFirst(prefix.count)) : tool }
+
  /// A manifest agent's JSON lines, read through its field map. Each map entry is "path" or "path when key=value[,key=value]".
  static func fields(_ e: [String: Any], _ map: [String: String]) -> [AgentEvent] {
   func pick(_ key: String) -> String? {
@@ -683,6 +1048,7 @@ func cliDirs() -> [String] {
 
 /// An installed CLI's full path, or nil. A command with a slash is a path already (a manifest may name one).
 func findCli(_ name: String) -> String? {
+ if name.isEmpty { return "" } // an API provider: Still runs it itself
  let files = FileManager.default
  func runnable(_ path: String) -> Bool {
   var folder: ObjCBool = false

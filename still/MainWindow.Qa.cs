@@ -20,17 +20,27 @@ public partial class MainWindow
      using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
      string? line = await reader.ReadLineAsync();
      if (line == null) continue;
-     string reply = await (await Dispatcher.InvokeAsync(async () => {
+     string reply = await (await Dispatcher.InvokeAsync(() => QaReply(line)));
+     await writer.WriteLineAsync(reply);
+    } catch (Exception ex) { if (!closing) App.Log(ex); }
+   }
+  });
+ }
+ /// One test request. With "window" (a window's id) it runs in that window: an incognito window's own interface, say.
+ async Task<string> QaReply(string line)
+ {
       try {
        using var doc = JsonDocument.Parse(line);
+       if (doc.RootElement.TryGetProperty("window", out var target) && Windows.FirstOrDefault(w => w.WindowId == target.GetString()) is { } other && other != this) return await other.QaReply(line);
        string op = doc.RootElement.GetProperty("op").GetString() ?? "";
        if (op == "state") return JsonSerializer.Serialize(new {
-        activeId = active?.Id, panel, dark, theme = Prefs.Theme, aiCalls = AgentRun.Launched, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth, extensionPopup = extensionPopup != null,
+        activeId = active?.Id, panel, overlay, dark, theme = Prefs.Theme, aiCalls = AgentRun.Launched, startup=StartupMetrics.Timings, fullScreen=IsFullScreen,browserFullScreen,contentFullScreen,windowState=WindowState.ToString(),focusMode, shellErrors, sidePanelUrl = sidePanelView?.Source?.ToString(), sidePanelWidth = sidePanelView?.ActualWidth, extensionPopup = extensionPopup != null,
         viewport = new{pageX,pageY,pageWidth,pageHeight,visible=WebHost.Visibility.ToString(),viewWidth=active?.View?.ActualWidth,viewHeight=active?.View?.ActualHeight,hostWidth=WebHost.ActualWidth,hostHeight=WebHost.ActualHeight,zoom=active?.View?.ZoomFactor},
         protection = new{reputation=active?.View?.CoreWebView2?.Settings.IsReputationCheckingRequired,tracking=active?.View?.CoreWebView2?.Profile.PreferredTrackingPreventionLevel.ToString(),blocking=Prefs.Blocking},
         windows = Windows.Select(w => new { id = w.WindowId, tabs = w.tabs.Select(t => t.Url), privateTabs = w.tabs.Count(t => t.Private), w.secondary, w.incognito, w.temporary, left = w.Left, top = w.Top }),
         title = Title, width = ActualWidth, height = ActualHeight, left = Left, top = Top,
-        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, t.InChat, t.RunChat, t.ChatId, t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, muted=t.View?.CoreWebView2?.IsMuted==true, t.InUse, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
+        privateChats = privateChats.Select(c => c.Id), incognitoFolder = PrivateFolder, interrupted = Interrupted.Select(c => c.Id),
+        tabs = tabs.Select(t => new { t.Id, t.Title, t.Url, t.Pinned, t.Private, enginePrivate = t.View?.CoreWebView2?.Profile.IsInPrivateModeEnabled, engineProfile = t.View?.CoreWebView2?.Profile.ProfileName, t.InChat, t.RunChat, t.ChatId, t.Home, back = t.Back.Count, forward = t.Forward.Count, appBack = AppNav == t && t.Back.Any(CanGo), t.Loading, ready = t.View?.CoreWebView2 != null, t.Reader, t.Blocked, muted=t.View?.CoreWebView2?.IsMuted==true, t.InUse, favicon=t.Favicon.Length>0,t.Secure,t.CertificateError,suspended=t.View?.CoreWebView2?.IsSuspended,activeDownloads=t.ActiveDownloads,memory=t.View?.CoreWebView2?.MemoryUsageTargetLevel.ToString(),visible = t.View?.Visibility.ToString() }),
         history = state.History, bookmarks = state.Bookmarks, hidden = state.Hidden,
         downloads = downloads.Select(d => new { d.Path, status = d.Operation.State.ToString(), bytes = d.Operation.BytesReceived }),
         profilePrivate = active?.View?.CoreWebView2?.Profile.IsInPrivateModeEnabled,
@@ -94,17 +104,13 @@ public partial class MainWindow
        if (op == "systemTheme") { qaSystemTheme = doc.RootElement.GetProperty("value").GetString() == "Light" ? "Light" : "Dark"; foreach (var w in Windows) if (Prefs.Theme == "System") w.ApplyTheme(); return "{\"ok\":true}"; }
        // Answers the Windows Hello prompt for tests (allow, deny or none: not set up), and where an export is written.
        if (op == "osAuth") { if (doc.RootElement.TryGetProperty("answer", out var a)) { qaAuthAnswer = a.GetString() ?? "deny"; verifiedUntil = default; } if (doc.RootElement.TryGetProperty("exportPath", out var x)) qaExportPath = x.GetString() ?? ""; return JsonSerializer.Serialize(new { asks = qaAuthAsks, answer = qaAuthAnswer }); }
-       if (op == "quit") { Close(); return "{\"ok\":true}"; }
+       // Quit ends Still, as on the Mac: every window closes, this one first, so an incognito or second window opened by a test doesn't keep it running.
+       if (op == "quit") { foreach (var w in Windows.ToList()) w.Close(); return "{\"ok\":true}"; }
        if (op == "closeWindow") { Windows.FirstOrDefault(w => w.WindowId == doc.RootElement.GetProperty("id").GetString())?.Close(); return "{\"ok\":true}"; }
        if (op == "closeAll") { foreach (var w in Windows.ToList()) w.Close(); return "{\"ok\":true}"; } // like the taskbar's Close all windows: this one first
        if (op == "memoryPressure") { qaPressure = true; try { await ReduceBackgroundMemory(); } finally { qaPressure = false; } return "{\"ok\":true}"; }
        return "{\"error\":\"unknown operation or no page\"}";
       } catch (Exception ex) { return JsonSerializer.Serialize(new { error = ex.Message }); }
-     }));
-     await writer.WriteLineAsync(reply);
-    } catch (Exception ex) { if (!closing) App.Log(ex); }
-   }
-  });
  }
 }
 #endif

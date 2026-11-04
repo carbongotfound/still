@@ -2,7 +2,7 @@ import * as THREE from "three"
 import { GLTFLoader, type GLTF } from "three/addons/loaders/GLTFLoader.js"
 import { DRACOLoader } from "three/addons/loaders/DRACOLoader.js"
 import { clone } from "three/addons/utils/SkeletonUtils.js"
-import { RIGS, lookKey, type Look } from "./look"
+import { EYE_REST, MOUTH_REST, RIGS, isV2, lookKey, type Look } from "./look"
 import { clock, type MascotState } from "./Mascot"
 
 // The eight companions as Blender made them (crew/): a skeleton, face shapes and every clip, one glb each. Nothing
@@ -10,7 +10,8 @@ import { clock, type MascotState } from "./Mascot"
 // body steer toward the pointer through held poses laid on top (pose.look.*, pose.turn*). The idle (idle_a) is one 12 s
 // performance that blinks and moves its eyes itself; over anything else, Blender's blink (blink_once) comes every 2-4 s
 // and the eyes dart. Blinks and talking set the lid and mouth shapes after the clips, so they only ever add to what a
-// clip does. Any other bean look wears Make your own's model in its own color.
+// clip does. Any other bean look wears Make your own's model in its own color. A look v2 wears its foundation (f-<form>,
+// rig/fb.sh), colored by zone, with its face's rest under the clips and its top feature and accessory on the head.
 
 const GLB = import.meta.glob("./assets/rig/*.glb", { query: "?url", import: "default", eager: true }) as Record<string, string>
 const BY_LOOK = new Map(RIGS.map(([l, id]) => [lookKey(l), id]))
@@ -18,7 +19,7 @@ const failed = new Set<string>()
 const url = (id: string) => GLB[`./assets/rig/${id}.glb`]
 /// The model a look wears, or null for the drawn blobs (no model shipped, or it didn't load).
 export function rigFor(look: Look) {
- const id = BY_LOOK.get(lookKey(look)) ?? (look.shape === "bean" && !look.prop && !look.accessory ? "custom" : "")
+ const id = isV2(look) ? "f-" + look.form : BY_LOOK.get(lookKey(look)) ?? (look.shape === "bean" && !look.prop && !look.accessory ? "custom" : "")
  return id && url(id) && !failed.has(id) ? id : null
 }
 
@@ -101,6 +102,29 @@ export function bounds(m: Model) {
  return m.box = box
 }
 
+// ---------------------------------------------------------------- look v2's colors
+
+// By zone (rig/zdef.py zones, in the glb as COLOR_1 and COLOR_2: the feet in the first channel of one, the hands in the
+// first of the other; the other channels are empty since Stage 17 took the markings out): the main color, a light tint of
+// it on the hands and the accent on the feet (the main color without one). The painted face (the blush, the
+// mouth) still multiplies over it. glow: a flat copy's own light (companion3d flatten).
+export type Zones = { uMain: { value: THREE.Color }; uHand: { value: THREE.Color }; uSecond: { value: THREE.Color }; uGlow: { value: number } }
+export function zoned(m: THREE.Material, u: Zones) {
+ m.onBeforeCompile = s => {
+  Object.assign(s.uniforms, u)
+  s.vertexShader = "attribute vec4 color_1;\nattribute vec4 color_2;\nvarying vec4 vZ1;\nvarying vec4 vZ2;\n" + s.vertexShader.replace("#include <begin_vertex>", "#include <begin_vertex>\nvZ1 = color_1; vZ2 = color_2;")
+  s.fragmentShader = "uniform vec3 uMain;\nuniform vec3 uHand;\nuniform vec3 uSecond;\nuniform float uGlow;\nvarying vec4 vZ1;\nvarying vec4 vZ2;\n" + s.fragmentShader.replace("#include <color_fragment>", `{
+ vec3 z = mix(mix(uMain, uHand, vZ2.x), uSecond, clamp(vZ1.x, 0., 1.));
+ diffuseColor.rgb = z; totalEmissiveRadiance += z * uGlow;
+}
+#include <color_fragment>`)
+ }
+ m.customProgramCacheKey = () => "zones"
+ m.userData.zones = u
+}
+const WHITE = new THREE.Color(1, 1, 1)
+const node = (root: THREE.Object3D, name: string) => root.getObjectByName(THREE.PropertyBinding.sanitizeNodeName(name))
+
 type Layer = { clip: string; start: number; loop: boolean }
 const ease = (x: number) => x <= 0 ? 0 : x >= 1 ? 1 : x * x * (3 - 2 * x)
 const rnd = (k: number) => (Math.random() * 2 - 1) * k
@@ -121,6 +145,13 @@ export class Rigged {
  fidgetNext = -1; waveAt = 0 // timers start on the first live frame (the clock is the page's)
  blinkNext = 0; blinkStart = -9; glanceNext = 0; glance = [0, 0]; gaze = [0, 0]; turn = 0
  undo: [number[], number, number][] = [] // the shapes after() set, and what the clips had there
+ scaled: [THREE.Object3D, THREE.Vector3][] = [] // the eyes after() sized, and their size before
+ rest: { lid: number; scale: number; wide: number; mouth: [string, number] } | null = null // a v2 look's face at rest
+ worn: THREE.Object3D[] = [] // a v2 look's top feature and accessory
+ /// A v2 look's top feature and accessory, each made pointing up and sized for a blob 1 tall, with the way from the middle
+ /// of the head to where it sits (companion3d makes them: it has the parts).
+ static decor: ((look: Look) => [THREE.Object3D, THREE.Vector3][]) | null = null
+ static held: ((prop: string) => THREE.Object3D | null) | null = null // companion3d.ts: a kept prop, as held
 
  m: Model; shadow?: THREE.Mesh
  constructor(m: Model, shadow?: THREE.Mesh) {
@@ -144,6 +175,7 @@ export class Rigged {
   const key = lookKey(look)
   if (key === this.key) return
   this.look = look; this.key = key
+  if (isV2(look)) return this.dress(look)
   if (BY_LOOK.get(key) === this.id) return
   // Make your own's model in another color, the lids too (a blink is the body's color)
   this.root.traverse(o => {
@@ -153,6 +185,70 @@ export class Rigged {
    if (!t) { t = mat.clone(); t.userData.base = mat.color.clone(); this.tints.set(mat.name, t) }
    t.color.copy(t.userData.base).multiply(new THREE.Color(look.color)); mesh.material = t
   })
+ }
+
+ /// A v2 look on its foundation: the zones' colors, the lids in the main color, the brows a
+ /// darker main, the finish, the face's rest, and the top feature and accessory on the head.
+ dress(look: Look) {
+  const main = new THREE.Color(look.color), second = new THREE.Color(look.second ?? look.color), gloss = look.finish === "gloss"
+  this.root.traverse(o => {
+   const mesh = o as THREE.Mesh, mat = mesh.material as THREE.MeshStandardMaterial
+   if (!mesh.isMesh || !["vinyl", "lid", "brow"].includes(mat?.name)) return
+   let t = this.tints.get(mat.name)
+   if (!t) {
+    t = mat.clone(); t.userData.base = mat.color.clone(); this.tints.set(mat.name, t)
+    if (mat.name === "vinyl") zoned(t, { uMain: { value: new THREE.Color() }, uHand: { value: new THREE.Color() }, uSecond: { value: new THREE.Color() }, uGlow: { value: 0 } })
+   }
+   const u = t.userData.zones as Zones | undefined
+   if (u) { u.uMain.value.copy(main); u.uHand.value.copy(main).lerp(WHITE, .3); u.uSecond.value.copy(second) }
+   else t.color.copy(t.userData.base).multiply(main)
+   Object.assign(t, { roughness: gloss ? .38 : .86, envMapIntensity: gloss ? .3 : .18 })
+   mesh.material = t
+  })
+  this.rest = { ...(EYE_REST[look.eye!] ?? EYE_REST.round), mouth: MOUTH_REST[look.mouth!] ?? MOUTH_REST.smile }
+  for (const n of this.worn) { n.removeFromParent(); n.traverse(o => (o as THREE.Mesh).geometry?.dispose()) }
+  this.worn = []
+  const head = node(this.root, "head"), body = this.body()
+  if (head && body && Rigged.decor) for (const [part, dir] of Rigged.decor(look)) { this.wear(body, head, part, dir); this.worn.push(part) }
+  const hand = node(this.root, "hand.R"), held = look.prop ? Rigged.held?.(look.prop) : null
+  if (hand && body && held) { this.hold(body, hand, held); this.worn.push(held) }
+ }
+ /// A kept prop in the right mitten, turned as the classic blob held it (to the body, not the hand), sized like wear's
+ /// parts; found in the bind pose, so it rides the hand through every clip. ponytail: two-handed props sit in one hand.
+ hold(body: THREE.SkinnedMesh, hand: THREE.Object3D, part: THREE.Object3D) {
+  const sk = body.skeleton, i = sk.bones.indexOf(hand as THREE.Bone), pos = body.geometry.getAttribute("position"), v = new THREE.Vector3()
+  if (i < 0) return
+  let top = 0, half = 0
+  for (let k = 0; k < pos.count; k++) { v.fromBufferAttribute(pos, k); top = Math.max(top, v.y); half = Math.max(half, Math.abs(v.x)) }
+  const at = new THREE.Vector3().setFromMatrixPosition(sk.boneInverses[i].clone().invert()).applyMatrix4(body.bindMatrix.clone().invert())
+  const local = new THREE.Matrix4().compose(at, part.quaternion, part.scale.clone().multiplyScalar((top + half / .4) / 2))
+  sk.boneInverses[i].clone().multiply(body.bindMatrix).multiply(local).decompose(part.position, part.quaternion, part.scale)
+  hand.add(part)
+ }
+ /// The body (the skinned mesh in vinyl).
+ body() { let b: THREE.SkinnedMesh | undefined; this.root.traverse(o => { if ((o as THREE.SkinnedMesh).isSkinnedMesh && ((o as THREE.Mesh).material as THREE.Material)?.name === "vinyl") b ??= o as THREE.SkinnedMesh }); return b }
+ /// Puts a part on the head where the body's surface is furthest along dir from the middle of the head (between the eyes),
+ /// facing out along the surface there, sized by how big this body is against a blob 1 tall. Found in the bind pose, so it
+ /// rides on the head bone through every clip.
+ wear(body: THREE.SkinnedMesh, head: THREE.Object3D, part: THREE.Object3D, dir: THREE.Vector3) {
+  const sk = body.skeleton, bones = sk.bones, bind = (o: THREE.Object3D) => sk.boneInverses[bones.indexOf(o as THREE.Bone)].clone().invert()
+  const eyes = ["eye.L", "eye.R"].map(n => node(this.root, n)).filter(e => e && bones.includes(e as THREE.Bone)).map(e => new THREE.Vector3().setFromMatrixPosition(bind(e!)))
+  const pos = body.geometry.getAttribute("position"), nor = body.geometry.getAttribute("normal"), v = new THREE.Vector3(), d = dir.clone().normalize()
+  const mid = eyes.length ? eyes.reduce((s, e) => s.add(e), new THREE.Vector3()).divideScalar(eyes.length).setX(0).setZ(0) : new THREE.Vector3(0, .6, 0)
+  let best = -2, bi = 0, top = 0, half = 0
+  for (let i = 0; i < pos.count; i++) {
+   v.fromBufferAttribute(pos, i).applyMatrix4(body.bindMatrix)
+   top = Math.max(top, v.y); half = Math.max(half, Math.abs(v.x))
+   const s = v.sub(mid).normalize().dot(d)
+   if (s > best) { best = s; bi = i }
+  }
+  const toHead = sk.boneInverses[bones.indexOf(head as THREE.Bone)].clone().multiply(body.bindMatrix)
+  const p = new THREE.Vector3().fromBufferAttribute(pos, bi).applyMatrix4(toHead), n = new THREE.Vector3().fromBufferAttribute(nor, bi).applyMatrix3(new THREE.Matrix3().getNormalMatrix(toHead)).normalize()
+  const s = new THREE.Vector3(); bind(head).decompose(new THREE.Vector3(), new THREE.Quaternion(), s)
+  part.position.copy(p).addScaledVector(n, -.004)
+  part.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), n)
+  part.scale.setScalar((top + half / .4) / 2 / s.x)
+  head.add(part)
  }
 
  setState(state: MascotState, name: string, gestureAt: number, t: number) {
@@ -194,6 +290,8 @@ export class Rigged {
   // three.js writes a shape only when its clip value changes, so a lid the clip holds still would keep the last blink
   for (const [inf, i, v] of this.undo) inf[i] = v
   this.undo.length = 0
+  for (const [o, s] of this.scaled) o.scale.copy(s)
+  this.scaled.length = 0
   for (const a of this.acts.values()) a.weight = 0
   let mw = 0
   if (this.move) {
@@ -232,14 +330,25 @@ export class Rigged {
   return a
  }
 
- /// Blinks and talking, over whatever the clips set (they key every lid and mouth shape each frame).
+ /// Blinks and talking, over whatever the clips set (they key every lid and mouth shape each frame). A v2 look's face
+ /// rest goes under them: the lids that much shut (a blink closes the rest of the way), the lid's wide shape, the eyes'
+ /// size and the mouth's shape (less of it while a clip moves the mouth).
  after(t: number) {
-  const b = this.m.blink[Math.round(this.blinking(t) * 60)] ?? 0
-  if (b > 0) for (const lid of this.lids) {
+  const b = this.m.blink[Math.round(this.blinking(t) * 60)] ?? 0, r = this.rest
+  if (b > 0 || r) for (const lid of this.lids) {
    const inf = lid.morphTargetInfluences!, d = lid.morphTargetDictionary!
    let now = 0
    for (let i = 1; i <= 8; i++) now += inf[d[`blink.${i}`]]
-   if (b * 8 > now) for (let i = 1; i <= 8; i++) { const w = Math.max(0, Math.min(1, 8 * b - (i - 1))); this.set(inf, d[`blink.${i}`], w); this.set(inf, d[`blink.${i}.arc`], 4 * w * (1 - w)) }
+   const want = r ? r.lid + (1 - r.lid) * Math.max(b, now / 8) : b
+   if (want * 8 > now + 1e-3) for (let i = 1; i <= 8; i++) { const w = Math.max(0, Math.min(1, 8 * want - (i - 1))); this.set(inf, d[`blink.${i}`], w); this.set(inf, d[`blink.${i}.arc`], 4 * w * (1 - w)) }
+   if (r?.wide && d.wide !== undefined) this.set(inf, d.wide, Math.max(inf[d.wide], r.wide * (1 - want)))
+  }
+  if (r && r.scale !== 1) for (const n of ["eye.L", "eye.R"]) { const e = node(this.root, n); if (e) { this.scaled.push([e, e.scale.clone()]); e.scale.multiplyScalar(r.scale) } }
+  if (r && this.face) {
+   const inf = this.face.morphTargetInfluences!, d = this.face.morphTargetDictionary!, [name, w] = r.mouth, i = d[name]
+   let moving = 0
+   for (const m of ["mouth.smile", "mouth.grin", "mouth.hmm", "mouth.o", "mouth.open"]) if (m !== name && d[m] !== undefined) moving += inf[d[m]]
+   if (i !== undefined) this.set(inf, i, Math.max(inf[i], w * Math.max(0, 1 - 2 * moving)))
   }
   if (this.state === "talking" && this.face) { // syllables: the jaw opens and closes about six times a second, rounder now and then
    const inf = this.face.morphTargetInfluences!, d = this.face.morphTargetDictionary!, s = .5 + .5 * Math.sin(t * 12.6), k = .5 + .5 * Math.sin(t * 5.3 + 1)
@@ -257,6 +366,7 @@ export class Rigged {
 
  dispose() {
   this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.root); this.tints.forEach(t => t.dispose())
+  for (const n of this.worn) n.traverse(o => (o as THREE.Mesh).geometry?.dispose())
   if (this.shadow) { this.shadow.geometry.dispose(); (this.shadow.material as THREE.Material).dispose() }
  }
 }

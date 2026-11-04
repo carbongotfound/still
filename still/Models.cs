@@ -17,9 +17,13 @@ public sealed class BrowserTab
  [JsonIgnore] public object? Wire { get; set; } // which window's page handlers are live (see MainWindow.WireView)
  public string? ChatId { get; set; } // a chat tab: shows this AI chat instead of a page
  [JsonIgnore] public bool PageOpen { get; set; } // a chat tab showing its AI's page beside the conversation
+ [JsonIgnore] public string Home { get; set; } = ""; // an app tab without a chat: the home page it shows ("" home, chats, companions, library, skills)
+ [JsonIgnore] public List<string> Back { get; } = []; // an app tab's own back and forward: "chat:<id>" or "home:<page>" (see MainWindow.Go)
+ [JsonIgnore] public List<string> Forward { get; } = [];
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  [JsonIgnore] public string? AgentKey { get; set; } // which AI run is at work here (see MainWindow.Worker)
  [JsonIgnore] public string? RunChat { get; set; } // an ordinary tab Still's chat AI opened: "Open chat" opens that chat, and it can show beside the chat
+ [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Engine { get; set; } // "Companion": the page is in the companion profile (Where companions browse); null: the user's own
  public string Favicon { get; set; } = "";
  [JsonIgnore] public bool Private { get; set; }
  [JsonIgnore] public WebView2? View { get; set; }
@@ -89,6 +93,7 @@ public sealed class Preferences
  public bool TabTearOff { get; set; }
  public bool AgentsEnabled { get; set; }
  public bool AgentsAskInChat { get; set; } = true; // away from Still: agents may ask the user in their own chat
+ public string AgentProfile { get; set; } = "regular"; // Where companions browse, for new chats: "regular" (the user's own profile) or "companion" (a separate one)
  public Dictionary<string, string> AiModels { get; set; } = []; // per AI: model id, "" = the CLI's default
  public Dictionary<string, string> AiEfforts { get; set; } = []; // per AI: reasoning effort, "" = default
  public string ChatTitles { get; set; } = ""; // what names new chats: "" = the quickest model, "off" = their first message, or "ai/model"
@@ -96,8 +101,13 @@ public sealed class Preferences
  public List<Companion> Companions { get; set; } = []; // empty until setup, which always leaves at least one; the first is the main one
  public bool NamesChecked { get; set; } // companions with an old stock name were flagged to ask about it (FlagOldNames)
  public bool AiAdvanced { get; set; } // pick the model and effort by hand instead of a mode
- public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", a manifest id, or "" until chosen
+ public Dictionary<string, string[]> AiTiers { get; set; } = []; // per "ai:mode": [model, effort] picked in Settings; none = the defaults
+ public string ChatSummaries { get; set; } = ""; // "off": companions don't summarize finished chats into their memory
+ public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", "gemini", "opencode", an API provider's or a manifest's id, or "" until chosen
+ public List<ApiProvider> ApiProviders { get; set; } = []; // API providers the user added: settings and spending only, never the key (ApiKeyStore)
  public bool Autofill { get; set; } = true;
+ public bool SaveDrafts { get; set; } = true; // Settings > Save drafts: message boxes keep what's typed until it's sent
+ public bool AutoUpdate { get; set; } = true; // Settings > About > Update automatically: off, a new version downloads and installs only when you click Update
  public bool Sounds { get; set; } = true; // setup, the intro and the look editor; browsing never makes a sound
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");
@@ -133,6 +143,7 @@ public sealed class SavedState
 {
  public int UiVersion { get; set; }
  public bool Welcome { get; set; }
+ public string SeenVersion { get; set; } = ""; // the release (2.10) whose What's New was shown
  public Preferences Preferences { get; set; } = new();
  public List<BrowserTab> Tabs { get; set; } = [];
  public string? ActiveId { get; set; }
@@ -166,8 +177,10 @@ public sealed class StateStore
  {
   try {
    File.WriteAllText(file + ".tmp", JsonSerializer.Serialize(state, new JsonSerializerOptions { WriteIndented = true }));
-   if (File.Exists(file)) File.Replace(file + ".tmp", file, file + ".bak");
-   else File.Move(file + ".tmp", file);
+   for (int tries = 0; ; tries++) {
+    try { if (File.Exists(file)) File.Replace(file + ".tmp", file, file + ".bak"); else File.Move(file + ".tmp", file); return; }
+    catch (IOException) when (tries < 5) { Thread.Sleep(40); } // another program (a backup, a virus scan) has it open for a moment
+   }
   } catch (Exception ex) { App.Log(ex); }
  }
 }

@@ -1,50 +1,61 @@
-import { useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, Square, Trash2, X, type LucideIcon } from "lucide-react"
+import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group"
-import { Select, SelectContent, SelectGroup, SelectItem, SelectSeparator, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { CollisionBoundary } from "@/components/ui/collision"
-import { fadeTop } from "@/lib/utils"
+import { fadeTop, MAC } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
+import { destroy } from "./Undo"
 import { toast } from "sonner"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { Switch } from "@/components/ui/switch"
 import { FALLBACK, Face, hueOf, showProfile, type Companion, type Mode, type Mood } from "./Buddy"
 import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
+import { choicesOf, type Choice } from "./nextSteps"
 import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
 import { Approvals, type Approval, type AuditEntry, type Rule } from "./Permissions"
 import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
+import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
+import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
+type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
+/// A chat by id: a saved one, or one of this incognito window's own.
+export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
- runs?: Run[]; interrupted?: string[]; queued?: string[]; files?: LibFile[]; worked?: number
+ checked?: boolean // the first status check is done, so an empty status means the app can't say
+ runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: string[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
  question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
- chats: { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean }[]
+ chats: ChatRow[]
+ incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
- approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]
+ tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
+ approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; chatSummaries?: boolean
  plugins?: PluginsState
+ apis?: ApiState
 }
-// who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who messaged whom, how it's going,
-// the reply and the chat it's in.
+// who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
+// how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; files?: Attached[] | null }
-export type Skill = { id: string; name: string; description: string; when: string; body: string }
-// A chat at work. Any number run at once.
-export type Run = { id: string; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null }
+export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean } // stock: one Still ships (Reset puts it back)
+// A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
+export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
 const waits = (r: Run) => !!r.question || !!r.asks?.length
-export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id && waits(r))
+export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => (r.id === id || r.root === id) && waits(r))
 type Send = (op: string, payload?: Record<string, unknown>) => void
 type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean; favicon?: string }
 const TabIcon = ({ tab }: { tab: TabRef }) => tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" /> : <Globe />
@@ -58,14 +69,24 @@ const IDEAS = [
 const host = (url: string) => { try { return new URL(url).hostname.replace(/^www\./, "") } catch { return url } }
 /// What the user likes to be called, from what their companion remembers (setup saves it as the "name" fact).
 export const calledBy = (c?: Companion) => c?.memory?.find(f => f.key === "name")?.text.match(/^Likes to be called (.+?)\.?$/)?.[1]
+const SHELL = MAC ? "Terminal" : "PowerShell" // where install and sign-in commands run
 const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
-const ready = (h: Harness) => h.installed && !["missing", "signedOut"].includes(statusOf(h))
+const ready = (h: Harness) => h.installed && !["missing", "signedOut", "needsKey", "badKey"].includes(statusOf(h))
+// Claude, ChatGPT, Grok and Gemini always show, with the API providers the user added. Every other agent, and adding an
+// API, waits under More agents, except the one in use, which stays in view.
+const MAIN = ["claude", "chatgpt", "grok", "gemini"]
+const isMain = (h: Harness) => MAIN.includes(h.id) || !!h.api
+export const logoOf = (h: Harness) => h.api ? h.name : h.id
+/// Every Model settings link and button opens Settings, Models.
+export const openModelSettings = (send: Send) => send("openPanel", { name: "settings", value: "models" })
+const MoreAgents = ({ open, count, onClick }: { open: boolean; count?: number; onClick?: () => void }) => <button type="button" className="byo-more" aria-expanded={open} onClick={onClick}>
+ <span>More agents</span>{!!count && <small>{count}</small>}<ChevronDown /></button>
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts.
-const STEP_ICONS: [RegExp, LucideIcon][] = [[/^Loaded skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Used|Loaded) skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
  [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // A step reads as its verb in bold and what it acted on, muted. An address shows as its site; the full one is on hover.
@@ -73,8 +94,6 @@ function Step({ step }: { step: string }) {
  const [verb, ...rest] = step.split(" "), what = rest.join(" "), url = what.match(/https?:\/\/\S+/)?.[0]
  return <span className="ai-step-line" title={url}><b>{verb}</b>{what && <span> {url ? what.replace(url, host(url)) : what}</span>}</span>
 }
-// Next steps the AI offers end its answer, one per line starting with ">> ".
-const nextSteps = (text: string) => { const next: string[] = []; const body = text.replace(/^>>\s*(.+)$/gm, (_, s: string) => { next.push(s.trim()); return "" }).trim(); return { body, next } }
 // Before setup makes one there's no companion: Still itself talks, with the default look.
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
@@ -87,28 +106,49 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
  return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
-// "Bring your own AI": each agent app on this PC, signed in with the user's own plan. Picking one makes it the AI for
-// new chats; a row that isn't ready offers the next step. Nothing is installed unless the user asks.
+// "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
+// and never by signing in. Add shows how to install one, Set up how to sign in or add a key. With send, the Compatible API
+// presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
 export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
  const [howTo, setHowTo] = useState("")
- const [more, setMore] = useState(false)
+ const [adding, setAdding] = useState<string | null>(null) // the API preset whose form is open ("": any other)
+ useEffect(() => { send?.("aiStatus") }, [send]) // a fresh look at what's installed and logged in (at most every 30 s)
+ const toggle = (id: string) => setHowTo(howTo === id ? "" : id)
  const row = (h: Harness) => {
-  const s = statusOf(h), chosen = ai.harness === h.id
+  const s = statusOf(h), chosen = ai.harness === h.id, open = howTo === h.id
+  // Signed out, or installed with no way to tell (GitHub Copilot) and signed in from a terminal.
+  const setUp = s === "signedOut" || (s === "" && !!h.terminalSignIn)
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">Signed in with your plan</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Logged in"}</span><Check aria-hidden /></>
+   : s === "needsKey" ? "API provider · Needs a key"
+   : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
-   : s === "signedOut" ? (send ? "Installed" : "Installed · Sign in with your plan")
-   : h.installed ? "Installed" : "Checking…"
+   : s === "signedOut" && !send ? "Installed · Sign in with your plan" : "Installed"
   return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
    <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
-    <span className="byo-tile" aria-hidden><AiLogo id={h.id} size={22} /></span>
-    <span className="byo-name"><strong>{h.name}</strong><small>{state}</small></span>
+    <span className="byo-tile" aria-hidden><AiLogo id={h.api ? h.name : h.id} size={22} /></span>
+    <span className="byo-name"><strong>{h.name}{h.compatible && <> <Badge variant="outline" className="byo-tag" title="Built from its docs, not yet tested with the real app">Compatible</Badge></>}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
-   {s === "signedOut" && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button>}
-   {s === "missing" && <Button size="sm" variant="ghost" className="byo-act" aria-expanded={howTo === h.id} onClick={() => setHowTo(howTo === h.id ? "" : h.id)}>How to install<ChevronDown /></Button>}
-   {howTo === h.id && s === "missing" && <div className="byo-how">
-    <p>Run this in PowerShell, then come back:</p>
+   {setUp && (send || h.terminalSignIn) && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
+   {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { const keys = document.getElementById("set-apis"); if (keys) keys.scrollIntoView({ behavior: "smooth", block: "start" }); else openModelSettings(send) }}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
+   {s === "missing" && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Add<ChevronDown /></Button>}
+   {open && setUp && <div className="byo-how">
+    {h.terminalSignIn ? <>
+     <p>{h.app} signs in from a terminal. Run this in {SHELL}, sign in with your plan in the browser it opens, then come back:</p>
+     <code className="byo-cmd">{h.terminalSignIn}</code>
+     <div className="ai-row">
+      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
+      {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
+     </div>
+    </> : send && <>
+     <p>{h.app} is installed. Sign in with your {h.maker} plan in the browser it opens, then come back.</p>
+     <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button></div>
+    </>}
+   </div>}
+   {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
+   {open && s === "missing" && <div className="byo-how">
+    <p>Run this in {SHELL}, then come back:</p>
     <code className="byo-cmd">{h.installCommand}</code>
     <div className="ai-row">
      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.installCommand)}><Copy />Copy</Button>
@@ -118,33 +158,60 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    </div>}
   </div>
  }
- const main = ai.harnesses.filter(h => !h.secondary), others = ai.harnesses.filter(h => h.secondary)
+ // A preset already added is a row above, under its own name.
+ const presets = !send ? [] : [...API_PRESETS.filter(x => !ai.apis?.providers.some(p => p.url === x.url)).map(x => x.name), ""]
+ const apiRow = (name: string) => <div key={"api-add:" + name} className="byo-row" data-status="add">
+  <div className="byo-main">
+   <span className="byo-tile" aria-hidden>{name ? <AiLogo id={name} size={22} /> : <Plus className="size-5" />}</span>
+   <span className="byo-name"><strong>{name || "Other compatible API"} <Badge variant="outline" className="byo-tag">Compatible</Badge></strong><small>{name ? "API · Not added" : "Any OpenAI- or Claude-compatible API"}</small></span>
+  </div>
+  <Button size="sm" variant="outline" className="byo-act" aria-expanded={adding === name} onClick={() => setAdding(adding === name ? null : name)}>Add<ChevronDown /></Button>
+  {adding === name && send && <div className="byo-how byo-api"><ApiForm start={name} send={send} done={() => setAdding(null)} /></div>}
+ </div>
+ const [more, setMore] = useState(false)
+ const folded = [...ai.harnesses.filter(h => !isMain(h) && h.id !== ai.harness).map(row), ...presets.map(apiRow)]
  return <div className="ai-picker byo">
-  {main.map(row)}
-  {others.length > 0 && <>
-   <button className="byo-more" aria-expanded={more} onClick={() => setMore(!more)}>More agents ({others.length})<ChevronDown /></button>
-   {more && others.map(row)}
-  </>}
+  {ai.harnesses.filter(h => isMain(h) || h.id === ai.harness).map(row)}
+  {folded.length > 0 && <MoreAgents open={more} count={folded.length} onClick={() => setMore(!more)} />}
+  {more && folded}
  </div>
 }
 
+// At the bottom of each model menu, always in view.
+const ModelSettingsItem = ({ send }: { send: Send }) => <div className="ai-pick-foot"><DropdownMenuSeparator />
+ <DropdownMenuItem className="ai-pick-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal />Model settings…</DropdownMenuItem></div>
+
 // Every AI in one list: its models when it's ready, or a way to set it up. Picking another AI's model moves the chat to it.
+// The main agents first; More agents opens the rest in place.
 function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled?: boolean }) {
+ const [more, setMore] = useState(false)
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const modelsOf = (h: Harness) => { const ms = ai.models?.filter(m => m.harness === h.id); return ms?.length ? ms : [{ harness: h.id, id: "", name: "Default", efforts: [] }] }
  const model = ai.models?.find(m => m.harness === current?.id && m.id === ai.model)
- const picked = current ? `${current.id}|${modelsOf(current).some(m => m.id === ai.model) ? ai.model : ""}` : ""
+ const on = current && modelsOf(current).some(m => m.id === ai.model) ? ai.model : ""
+ const pick = (h: Harness, id: string) => !current || !ready(h) ? send("aiHarness", { harness: h.id }) : send("aiModel", { harness: h.id, model: id, effort: h.id === current.id ? ai.effort : "" })
+ const group = (h: Harness, i: number) => <Fragment key={h.id}>{i > 0 && <DropdownMenuSeparator />}
+  {ready(h) ? modelsOf(h).map(m => <DropdownMenuItem key={m.id} onSelect={() => pick(h, m.id)}><AiLogo id={logoOf(h)} size={16} /><span className="truncate">{m.id ? m.name : h.name}</span>{h.id === current?.id && m.id === on && <Check className="ai-pick-on" aria-label="In use" />}</DropdownMenuItem>)
+   : <DropdownMenuItem onSelect={() => pick(h, "")}><AiLogo id={logoOf(h)} size={16} /><span className="truncate">{h.name}</span><span className="ai-pick-setup">Set up</span></DropdownMenuItem>}
+ </Fragment>
+ const shown = ai.harnesses.filter(h => isMain(h) || h.id === current?.id), rest = ai.harnesses.filter(h => !shown.includes(h))
  return <>
-  <Select value={picked} disabled={disabled} onValueChange={v => { const [harness, id] = v.split("|"); if (id === "setup" || !current) send("aiHarness", { harness }); else send("aiModel", { harness, model: id, effort: harness === current.id ? ai.effort : "" }) }}>
-   <SelectTrigger size="sm" className="ai-pick ai-model" aria-label="Model"><SelectValue placeholder="Pick your AI" /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start">{ai.harnesses.map((h, i) => <SelectGroup key={h.id}>
-    {i > 0 && <SelectSeparator />}
-    {ready(h) ? modelsOf(h).map(m => <SelectItem key={m.id} value={`${h.id}|${m.id}`}><AiLogo id={h.id} size={16} />{m.id ? m.name : h.name}</SelectItem>)
-     : <SelectItem value={`${h.id}|setup`}><AiLogo id={h.id} size={16} />{h.name}<span className="ai-pick-setup">Set up</span></SelectItem>}
-   </SelectGroup>)}</SelectContent></Select>
-  {!!model?.efforts.length && <Select value={ai.effort || "default"} disabled={disabled} onValueChange={v => send("aiModel", { model: ai.model, effort: v === "default" ? "" : v })}>
-   <SelectTrigger size="sm" className="ai-pick" aria-label="Effort"><SelectValue /></SelectTrigger>
-   <SelectContent position="popper" side="top" align="start"><SelectItem value="default">Default effort</SelectItem>{model.efforts.map(e => <SelectItem key={e} value={e}>{e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)} effort</SelectItem>)}</SelectContent></Select>}
+  <DropdownMenu onOpenChange={o => { if (!o) setMore(false) }}>
+   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" className="ai-pick ai-model" aria-label="Model">{current && <AiLogo id={logoOf(current)} size={16} />}<span className="truncate">{!current ? "Pick your model" : model?.id ? model.name : current.name}</span><ChevronDown /></button></DropdownMenuTrigger>
+   <DropdownMenuContent side="top" align="start" className="ai-model-menu">
+    {shown.map(group)}
+    {rest.length > 0 && <><DropdownMenuSeparator /><DropdownMenuItem className="ai-more" aria-expanded={more} onSelect={e => { e.preventDefault(); setMore(!more) }}>More agents<ChevronDown /></DropdownMenuItem>
+     {more && rest.map(group)}</>}
+    <ModelSettingsItem send={send} />
+   </DropdownMenuContent>
+  </DropdownMenu>
+  {!!model?.efforts.length && <DropdownMenu>
+   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" className="ai-pick" aria-label="Effort"><span className="truncate">{ai.effort ? effortName(ai.effort) : "Default"} effort</span><ChevronDown /></button></DropdownMenuTrigger>
+   <DropdownMenuContent side="top" align="start" className="ai-model-menu">
+    {["", ...model.efforts].map(e => <DropdownMenuItem key={e || "default"} onSelect={() => send("aiModel", { model: ai.model, effort: e })}><span className="truncate">{e ? effortName(e) : "Default"} effort</span>{(ai.effort || "") === e && <Check className="ai-pick-on" aria-label="In use" />}</DropdownMenuItem>)}
+    <ModelSettingsItem send={send} />
+   </DropdownMenuContent>
+  </DropdownMenu>}
  </>
 }
 
@@ -180,11 +247,45 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
     {!mates.length && <p className="mode-none">No one by that name.</p>}
     <DropdownMenuSeparator />
    </>}
-   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }); if (ai.advanced) send("aiAdvanced", { on: false }) }}>
+   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion || ai.advanced} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
+   <DropdownMenuSeparator />
+   <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal />Model settings…</DropdownMenuItem>
   </DropdownMenuContent>
  </DropdownMenu>
+}
+
+const effortName = (e: string) => e === "xhigh" ? "Extra high" : e[0].toUpperCase() + e.slice(1)
+// Settings → Models: per set-up AI, the model and effort Quick, Everyday and Thorough use, picked only from its own
+// catalog. With Advanced on they're kept but not used, and the table says so.
+export function TierSettings({ ai, send, only }: { ai: AiState; send: Send; only?: string }) {
+ const list = ai.harnesses.filter(h => ai.tiers?.[h.id] && (!only || h.id === only))
+ if (!list.length) return <p className="tiers-note">Set up an AI to pick its models here.</p>
+ return <div className="tiers" data-off={ai.advanced || undefined}>
+  {ai.advanced && <p className="tiers-note">Advanced is on, so these tiers are not used.</p>}
+  {list.map(h => {
+   const models = (ai.models ?? []).filter(m => m.harness === h.id), tiers = ai.tiers![h.id]
+   return <div key={h.id} className="tier-ai" id={"tiers-" + h.id}>
+    <div className="tier-head"><AiLogo id={h.id} size={16} /><span>{h.name}</span>
+     <Button variant="ghost" size="sm" disabled={!MODES.some(([t]) => tiers[t]?.custom)} onClick={() => destroy({ key: "tiers:" + h.id, title: `Reset ${h.name}'s models?`, body: "The models and effort you picked for Efficient, Default and Expert go back to Still's picks.", action: "Reset", done: "Models reset", run: () => send("aiTiersReset", { harness: h.id }) })}>Reset to defaults</Button></div>
+    {MODES.map(([t, label, Icon]) => {
+     const tier = tiers[t], model = models.find(m => m.id === tier.model)
+     const effort = model?.efforts.includes(tier.effort) ? tier.effort : "default"
+     return <div key={t} className="tier-row" data-tier={t}>
+      <span className="tier-name"><Icon />{label}</span>
+      <Select value={tier.missing ? "missing" : tier.model || "default"} onValueChange={v => send("aiTier", { harness: h.id, tier: t, model: v === "default" ? "" : v, effort: tier.effort })}>
+       <SelectTrigger size="sm" aria-label={`${h.name} ${label} model`}><SelectValue /></SelectTrigger>
+       <SelectContent>{tier.missing && <SelectItem value="missing" disabled>Not available</SelectItem>}{models.map(m => <SelectItem key={m.id || "default"} value={m.id || "default"}>{m.name}</SelectItem>)}</SelectContent></Select>
+      <Select value={effort} disabled={!model?.efforts.length} onValueChange={v => send("aiTier", { harness: h.id, tier: t, model: tier.model, effort: v === "default" ? "" : v })}>
+       <SelectTrigger size="sm" aria-label={`${h.name} ${label} effort`}><SelectValue /></SelectTrigger>
+       <SelectContent><SelectItem value="default">Default effort</SelectItem>{model?.efforts.map(e => <SelectItem key={e} value={e}>{effortName(e)} effort</SelectItem>)}</SelectContent></Select>
+      {tier.failed && <small className="tier-failed">Not on your plan, so chats ran on the default model.</small>}
+     </div>
+    })}
+   </div>
+  })}
+ </div>
 }
 
 // The message box: the model on the right, then send, or a red stop while the AI works (Enter then queues a follow-up).
@@ -209,11 +310,6 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
-// What the user was typing: a chat's draft is kept on disk, so it's still there after closing the chat or Still;
-// a new tab page's lasts while Still runs. Sending or emptying the box forgets it.
-const drafts = (key: string) => key.startsWith("chat.") ? localStorage : sessionStorage
-const readDraft = (key?: string) => { try { return key && drafts(key).getItem("still.draft." + key) || "" } catch { return "" } }
-const keepDraft = (key: string | undefined, v: string) => { if (key) try { if (v) drafts(key).setItem("still.draft." + key, v); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
@@ -228,18 +324,37 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 // into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[], draft?: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+ const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
+ const drafted = useRef(draft)
  const [parts, setParts] = useState<Part[]>([])
  const [before, setBefore] = useState("") // the text just before the caret: what the pickers look at
  const [pick, setPick] = useState(0)
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
  const [dropping, setDropping] = useState(false)
+ const [restored, setRestored] = useState(false) // the box came back with a draft: Draft restored, with Discard
  const me = useId()
+ const partsRef = useRef(parts), filesRef = useRef(files)
+ useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
+ const pending = useRef<(() => void) | null>(null), timer = useRef(0)
+ const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
+ const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
+  const key = draft, d = { text: textOf(p), parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined }
+  pending.current = () => keepDraft(key, d); clearTimeout(timer.current); timer.current = window.setTimeout(flush, 500)
+ }
+ const unsent = useRef<Attached[]>([]) // the files of the message being sent, back in the box if Still couldn't send it
+ useEffect(() => { addEventListener("beforeunload", flush); return () => { removeEventListener("beforeunload", flush); flush() } }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { // what Still kept from a pick, drop or paste in this box
-  const got = (e: Event) => { const d = (e as CustomEvent).detail; if (d.to !== me) return; if (d.files?.length) setFiles(had => [...had, ...d.files].slice(0, MAX_FILES)); if (d.error) toast(d.error) }
-  addEventListener("still-attached", got); return () => removeEventListener("still-attached", got)
- }, [me])
+  const got = (e: Event) => { // added now, or (.kept) a draft's that are still there
+   const d = (e as CustomEvent).detail; if (d.to !== me && d.to !== me + ".kept") return
+   if (d.files?.length) { const all = [...filesRef.current, ...d.files].slice(0, MAX_FILES); setFiles(all); if (d.to === me) save(partsRef.current, all) }
+   if (d.error) toast(d.error)
+  }
+  const back = (e: Event) => { if ((e as CustomEvent).detail === draft && unsent.current.length) { setFiles(unsent.current); save(partsRef.current, unsent.current); unsent.current = [] } }
+  addEventListener("still-attached", got); addEventListener("still-unsent", back)
+  return () => { removeEventListener("still-attached", got); removeEventListener("still-unsent", back) }
+ }, [me, draft]) // eslint-disable-line react-hooks/exhaustive-deps
  const take = (list: FileList | File[]) => {
   const all = [...list], room = MAX_FILES - files.length
   if (all.length > room) toast(`You can attach up to ${MAX_FILES} files to a message.`)
@@ -256,14 +371,29 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const knownRef = useRef(known)
  useMascotVersion(); usePluginData(send) // a companion's picture, or an app's logo, can come in after it's mentioned
  useEffect(() => { knownRef.current = known; if (box.current) dress(box.current, known) })
- // The draft: what was typed in this chat or tab before, its mentions too while they're still there.
+ const shown = (p: Part[]) => p.map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "")
+ useEffect(() => { // Undo and redo put a step back with its mentions, the caret where it was
+  const el = box.current; if (el) appliers.set(el, s => { el.innerHTML = markup(typeof s.v === "string" ? [s.v] : shown(s.v), knownRef.current); if (document.activeElement === el) caretAt(el, s.c) })
+ }, []) // eslint-disable-line react-hooks/exhaustive-deps
+ // The draft: what was typed in this box before, its mentions too while they're still there, and its files if Still
+ // still has them. A new chat's goes with it once the chat has an id.
  useLayoutEffect(() => {
-  const kept = readDraft(draft), el = box.current
-  let p: Part[] = [kept]
-  try { if (kept.startsWith('{"parts":')) p = (JSON.parse(kept).parts as unknown[]).map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "") } catch { /* plain text */ }
+  flush() // what was typed under the last key is kept under it
+  const was = drafted.current, el = box.current; drafted.current = draft
+  if (was && draft && was !== draft && /(^|\.)chat\.new$/.test(was) && (textOf(partsRef.current).trim() || filesRef.current.length)) {
+   keepDraft(was, null); rekey(was, draft); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined })
+   return // the new chat got its id: what's in the box stays, now under it, with its undo steps
+  }
+  const kept = readDraft(draft)
+  const p: Part[] = kept?.parts ? shown(kept.parts) : [kept?.text ?? ""]
   if (el) el.innerHTML = markup(p, knownRef.current)
+  if (el && draft) adopt(draft, el, kept)
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
- }, [draft])
+  setRestored(!!(kept?.text.trim() || kept?.files?.length))
+  setFiles([])
+  if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
+  if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); const s = getSelection(); s?.selectAllChildren(el); s?.collapseToEnd() }
+ }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  // The caret at the end of the box (it isn't in the box yet).
  const end = () => { const el = box.current, s = getSelection(); if (!el || !s) return; el.focus(); s.selectAllChildren(el); s.collapseToEnd() }
  useEffect(() => { if (autoFocus) end() }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -279,15 +409,21 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   const el = box.current; if (!el) return
   dress(el, known)
   const p = read(el), t = textOf(p)
-  setParts(p); keepDraft(draft, mentions(p).length ? JSON.stringify({ parts: p }) : t); setPick(0); setShut(null); onTyping?.(!!t.trim())
+  setParts(p); save(p, files); setPick(0); setShut(null); setRestored(false); onTyping?.(!!t.trim())
  }
  const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
  const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
+ // The draft stays until Still says it took the message: if it couldn't, the text comes back (drafts.tsx sent).
  const submit = () => {
   if (!message || disabled) return
-  onSubmit(message, attached, files.map(f => f.id))
+  flush(); sending(draft); unsent.current = files
+  onSubmit(message, attached, files.map(f => f.id), draft)
   if (box.current) box.current.innerHTML = ""
-  setParts([]); setBefore(""); setFiles([]); keepDraft(draft, ""); onTyping?.(false)
+  setParts([]); setBefore(""); setFiles([]); setRestored(false); onTyping?.(false)
+ }
+ const discard = () => { // Discard on Draft restored: the box empties, as a step to undo, and the draft goes
+  const el = box.current; if (!el) return
+  change(el, []); setFiles([]); pending.current = null; clearTimeout(timer.current); keepDraft(draft, null); setRestored(false); el.focus()
  }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
@@ -354,12 +490,13 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
+  {restored && <InputGroupAddon align="block-start" className="draft-addon"><DraftHint onDiscard={discard} /></InputGroupAddon>}
   {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
-   {files.map(f => <FileChip key={f.id} file={f} onRemove={() => setFiles(files.filter(x => x !== f))} />)}
+   {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
   </InputGroupAddon>}
-  <div ref={box} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
+  <div ref={box} data-history={draft} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
-   onInput={sync} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
+   onInput={sync} onBlur={flush} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
    onDrop={e => { // text dropped on the box comes in as plain text
     if (dragging(e)) return
     e.preventDefault()
@@ -373,7 +510,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
     if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
     if ((e.key === "Backspace" || e.key === "Delete") && unmention(e.key === "Delete")) { e.preventDefault(); return }
-    if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); return }
+    if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); save(parts, files.slice(0, -1)); return }
     if (e.key === "Enter") { e.preventDefault(); if (e.shiftKey) document.execCommand("insertLineBreak"); else submit() } }} />
   <InputGroupAddon align="block-end">
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add files, a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
@@ -396,21 +533,53 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
 }
 
 // The AI asked something with ask_user: pick an option, write an answer, or skip.
-function QuestionCard({ q, companion, send }: { q: { text: string; options: string[]; page?: string | null; kickoff?: boolean }; companion?: Companion; send: Send }) {
+function QuestionCard({ q, companion, send, draft }: { q: { text: string; options: string[]; page?: string | null; kickoff?: boolean }; companion?: Companion; send: Send; draft?: string }) {
  const [own, setOwn] = useState("")
+ const kept = useDraft<HTMLInputElement>(draft) // a written answer is kept as a draft until it's sent
+ const answer = (text: string) => { kept.done(); send("aiAnswer", { text }) }
  useEffect(() => { // 1-9 picks an option, unless the user is typing
-  const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) send("aiAnswer", { text: q.options[n - 1] }) }
+  const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) answer(q.options[n - 1]) }
   addEventListener("keydown", key); return () => removeEventListener("keydown", key)
  }, [q, send])
  return <div className="ask-card" role="group" aria-label="Question from your AI">
   {q.page && <div className="ask-help"><strong>Help with this page</strong><Button size="sm" variant="outline" onClick={() => send("aiHelpPage", { id: q.page })}>Open the page</Button></div>}
   <div className="ask-q"><Face companion={companion} size={22} /><p>{q.text}</p></div>
-  {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => send("aiAnswer", { text: o })}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
-  <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) send("aiAnswer", { text: own }) }}>
-   <input aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
-   <Button type="button" variant="ghost" size="sm" onClick={() => send("aiAnswer", { text: "" })}>Skip</Button>
+  {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => answer(o)}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
+  {kept.hint}
+  <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) answer(own) }}>
+   <input ref={kept.ref} {...kept.props} aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
+   <Button type="button" variant="ghost" size="sm" onClick={() => answer("")}>Skip</Button>
    <Button type="submit" size="sm" disabled={!own.trim()}>Send</Button>
   </form>
+ </div>
+}
+
+/// Choices a companion offers in its reply (a choices block, see nextSteps.ts): pick one, pick several then Submit, or
+/// pick from a dropdown, and type your own when it allows. The pick goes back as your reply, so a card is answered once:
+/// after your reply it shows what you picked and takes no more.
+function ChoiceCard({ choice, answer, live, onPick }: { choice: Choice; answer?: string; live: boolean; onPick: (text: string) => void }) {
+ const [sent, setSent] = useState("")
+ const [picked, setPicked] = useState<string[]>([])
+ const [own, setOwn] = useState("")
+ const done = answer ?? sent, off = !live || !!done
+ const go = (text: string) => { if (off || !text.trim()) return; setSent(text.trim()); onPick(text.trim()) }
+ const chosen = (o: string) => done ? done.split("\n").includes(o) : picked.includes(o)
+ const one = picked[0] ?? ""
+ return <div className="ask-card choice-card" role="group" aria-label={choice.question || "Choices"} data-done={done ? "" : undefined}>
+  {choice.question && <p className="choice-q">{choice.question}</p>}
+  {choice.type === "dropdown" ? <form className="ask-own" onSubmit={e => { e.preventDefault(); go(one) }}>
+   <Select value={done && choice.options.includes(done) ? done : one} disabled={off} onValueChange={v => setPicked([v])}>
+    <SelectTrigger size="sm" className="choice-select" aria-label="Pick one"><SelectValue placeholder="Pick one…" /></SelectTrigger>
+    <SelectContent>{choice.options.map(o => <SelectItem key={o} value={o}>{o}</SelectItem>)}</SelectContent></Select>
+   <Button type="submit" size="sm" disabled={off || !one}>Send</Button>
+  </form> : <div className="ask-options">{choice.options.map(o => choice.type === "multiple"
+   ? <button key={o} type="button" role="checkbox" aria-checked={chosen(o)} className="ask-option" disabled={off} onClick={() => setPicked(chosen(o) ? picked.filter(x => x !== o) : [...picked, o])}><span className="choice-box" aria-hidden>{chosen(o) && <Check />}</span><span>{o}</span></button>
+   : <button key={o} type="button" className="ask-option" aria-pressed={chosen(o)} disabled={off} onClick={() => go(o)}><span>{o}</span>{chosen(o) && <Check className="choice-picked" aria-hidden />}</button>)}</div>}
+  {choice.type === "multiple" && <div className="choice-submit"><Button size="sm" disabled={off || !picked.length} onClick={() => go(choice.options.filter(o => picked.includes(o)).join("\n"))}>Submit</Button></div>}
+  {choice.other && <form className="ask-own" onSubmit={e => { e.preventDefault(); go(own) }}>
+   <input aria-label="Type your own" placeholder="Or type your own…" value={done && !choice.options.some(chosen) ? done : own} disabled={off} onChange={e => setOwn(e.target.value)} />
+   <Button type="submit" size="sm" disabled={off || !own.trim()}>Send</Button>
+  </form>}
  </div>
 }
 
@@ -418,11 +587,11 @@ function QuestionCard({ q, companion, send }: { q: { text: string; options: stri
 function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: () => void }) {
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const status = statusOf(current)
- const pending = ai.pending && <p className="ai-fine">Your message runs as soon as {current?.name ?? "your AI"} is ready.</p>
+ const pending = ai.pending && <p className="ai-fine">Your message runs as soon as {current?.name ?? "your model"} is ready.</p>
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
-  <h3>Bring your own AI</h3>
-  <p>Still runs on the AI you already pay for, through its own app on this computer. No API keys, no credits, no extra plan. Your chats go only to your AI provider.</p>
+  <h3>Pick your model</h3>
+  <p>Still runs on the AI you already pay for, through its own app on this computer. No API key needed, no credits, no extra plan. Your chats go only to your AI provider.</p>
   <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
  </div>
@@ -435,13 +604,13 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
-   <p>{current.name} needs {current.maker}'s app on this PC. Run this in PowerShell, then sign in with your plan.</p>
+   <p>{current.name} needs {current.maker}'s app on this {MAC ? "Mac" : "PC"}. Run this in {SHELL}, then sign in with your plan.</p>
    <code className="byo-cmd">{current.installCommand}</code>
    {current.installer && <>
     <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>
     <div className="ai-trust"><ShieldCheck /><span>Uses {current.maker}'s official installer from <Tip label={current.installer}><b>{host(current.installer)}</b></Tip>. It installs just for you and needs no admin rights.</span></div>
    </>}
-   <div className="ai-row"><Button variant="link" size="sm" onClick={() => send("aiCheck")}>I already installed it</Button><Button variant="link" size="sm" onClick={onSettings}>Pick another AI</Button></div>
+   <div className="ai-row"><Button variant="link" size="sm" onClick={() => send("aiCheck")}>I already installed it</Button><Button variant="link" size="sm" onClick={onSettings}>Pick another model</Button></div>
   </>}
   {pending}
  </div>
@@ -461,7 +630,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <p>{current.name} uses your own {current.maker} account. Sign in once and you're set.</p>
    <Button className="ai-go" onClick={() => send("aiLogin")}>Sign in with {current.maker}</Button>
    <div className="ai-trust"><LockKeyhole /><span>You sign in on {current.maker}'s own website, in a tab here. Still never sees your password.</span></div>
-   <Button variant="link" size="sm" onClick={onSettings}>Pick another AI</Button>
+   <Button variant="link" size="sm" onClick={onSettings}>Pick another model</Button>
   </>}
   {pending}
  </div>
@@ -488,19 +657,23 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   const el = log.current; if (!el) return
   if (back.current != null) { el.scrollTop = back.current; back.current = undefined } else el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
  }, [ai.messages.length, busy, !!ai.question])
+ const pinned = useRef(true) // the user is at the bottom of the chat
  const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
   fadeTop(e); const el = e.currentTarget
+  pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8
   if (ai.chatId) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
  }
  // Timed from when the run started, so it reads right after switching chats.
  useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
  // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
  // "Don't remember this chat": a chat that exists flips its own flag, a new one starts off the record.
- const chat = ai.chats.find(c => c.id === ai.chatId)
+ const chat = chatOf(ai, ai.chatId)
  const [offRecord, setOffRecord] = useState(false)
  const forget = chat ? !!chat.noMemory : offRecord
- const submit = (value: string, tabs: string[] = [], files: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
+ const submit = (value: string, tabs: string[] = [], files: string[] = [], draft?: string) => send("aiSend", { text: value, companion: companion?.id, draft, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
  const you = calledBy(companion)
+ const parent = chat?.from ? chatOf(ai, chat.from) : undefined
+ const childStatus = busy ? (needsYou(ai, ai.chatId) ? "needs" : "working") : ai.task?.state === "failed" ? "failed" : ai.task?.reason === "stopped" ? "stopped" : "replied"
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
@@ -510,7 +683,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text], who: m.who }) }
   else items.push(m)
  }
- const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read"].includes(items[i]?.role)
+ const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more). A teammate's line has its face.
  const whoOf = (i: number) => items[i]?.who ?? ai.chatCompanion
@@ -522,10 +695,21 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  }
  const turn = (i: number) => same(i) ? "ai-turn is-more" : "ai-turn"
  const setup = Setup({ ai, send, onSettings })
+ // Text that grows after it's drawn (a table, a card, the next steps) keeps the end of the chat in view while the user is there.
+ useEffect(() => {
+  const el = log.current; if (!el || typeof ResizeObserver === "undefined") return
+  const keep = new ResizeObserver(() => { if (pinned.current) el.scrollTop = el.scrollHeight })
+  keep.observe(el); if (el.firstElementChild) keep.observe(el.firstElementChild)
+  return () => keep.disconnect()
+ }, [ai.chatId, !!setup])
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
  const openLink = (url: string) => send("new", { url })
 
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
+  {!setup && chat?.from && <div className="task-head"><div className="chat-column">
+   <Button variant="ghost" size="sm" className="task-back" onClick={() => send(mode === "panel" ? "aiOpenChat" : "chatOpen", { id: chat.from })}><ArrowLeft /><span>Back to {parent?.title ?? "the chat"}</span></Button>
+   <StatusPill status={childStatus} /><span className="task-profile"><Globe />{chat.profile === "companion" ? "Companion profile" : "Your profile"}</span>{busy && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: chat.id })}><Square />Stop</Button>}
+  </div></div>}
   {setup ?? <div className="ai-log" ref={log} onScroll={keepScroll}><div className="chat-column">
    {!items.length && !ai.question && (mode === "tab" ? <div className="chat-hello">
     <button type="button" className="profile-open chat-hello-face" aria-label={`${name}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={168} follow gesture="wave" gestureAt={1} /></button>
@@ -535,7 +719,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    </div> : <div className="ai-hello">
     <Face companion={companion} size={64} />
     <h3>What should we do?</h3>
-    <p>I can read this page, search the web, compare and click around in my own background tabs. Switch AI any time, even mid-task.</p>
+    <p>I can read this page, search the web, compare and click around in my own background tabs. Switch models any time, even mid-task.</p>
     <div className="ai-ideas">{IDEAS.map(([Icon, label, prompt]) => <button key={label} className="ai-idea" onClick={() => submit(prompt)}><span><Icon aria-hidden /></span>{label}</button>)}</div>
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
@@ -554,88 +738,99 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
     if (m.role === "user") return <div key={i} className="ai-msg is-user"><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
-    if (m.role === "ask" || m.role === "tell") return <ExchangeCard key={i} m={m} ai={ai} send={send} onLink={openLink} />
+    if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
-    const { body, next } = nextSteps(m.text)
-    const last = i === items.length - 1 && !busy
+    const { body, choice } = choicesOf(m.text)
+    const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined
     return <div key={i} className={turn(i)}>{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
-     {next.length > 0 && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
-     {last && <>{!!ai.worked && <p className="ai-timer">Took {clock(ai.worked)}</p>}
-      <div className="ai-actions"><IconButton label="Copy" onClick={() => send("copyText", { text: body })}><Copy /></IconButton></div></>}
+     {choice && <ChoiceCard choice={choice} answer={answer} live={i === items.length - 1 && !busy} onPick={text => submit(text)} />}
+     <div className="ai-actions"><IconButton label="Copy" onClick={() => { send("copyText", { text: body }); toast("Copied") }}><Copy /></IconButton></div>
     </div>
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? "Working · " + clock(tick) : `${name} is writing…`}</p></div>}
   </div></div>}
+  {!busy && ai.chatId && ai.task?.state === "interrupted" && <Alert className="task-bar"><AlertDescription>{ai.task.unsure
+    ? `Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
+    : `Still closed while ${name} was mid-task.`}</AlertDescription><Button size="sm" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button></Alert>}
+  {!busy && ai.chatId && ai.task?.state === "waiting" && ai.task.reason === "signin" && <Alert className="task-bar"><AlertDescription>{name} is waiting: sign in to carry on.</AlertDescription>
+   <Button size="sm" variant="outline" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button><Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button></Alert>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
-   {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
-   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} send={send} />}
+   {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} draft={"answer." + (ai.chatId ?? "new")} />}
+   {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} companions={ai.companions} send={send} incognito={ai.incognito} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
-   <Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
+   {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
-    {companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
-    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
-   </div>
+    {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
+    : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
+    {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
+    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && !provider.api && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+   </div></>}
   </div></div>}
  </section>
 }
 
-/// One companion messaging another: who asked whom, the message, how it's going and the reply. It opens to the whole
-/// exchange; the one asked has it in a chat of its own, and Stop ends it while it works.
-function ExchangeCard({ m, ai, send, onLink }: { m: Message; ai: AiState; send: Send; onLink: (url: string) => void }) {
+/// Where this chat's pages open (Settings → Where companions browse): the user's own profile, or the companion profile
+/// with its own sign-ins. Switching closes the chat's pages and tells its AI before its next step.
+function ProfileChip({ chat, busy, send }: { chat: ChatRow; busy: boolean; send: Send }) {
+ const companion = chat.profile === "companion"
+ const pick = (profile: string) => send("aiChatProfile", { id: chat.id, profile })
+ return <DropdownMenu>
+  <DropdownMenuTrigger asChild disabled={busy}><button type="button" className="chat-profile" aria-label={`Browses in ${companion ? "the companion profile" : "your profile"}`} title={busy ? "Change it when this chat isn't working" : undefined}><Globe />{companion ? "Companion profile" : "Your profile"}<ChevronDown /></button></DropdownMenuTrigger>
+  <DropdownMenuContent align="start" className="chat-profile-menu">
+   <DropdownMenuLabel>Where this chat browses</DropdownMenuLabel>
+   <DropdownMenuItem onSelect={() => pick("regular")}><span>Your profile<small>Your sign-ins</small></span>{!companion && <Check />}</DropdownMenuItem>
+   <DropdownMenuItem onSelect={() => pick("companion")}><span>Companion profile<small>Its own sign-ins, apart from yours</small></span>{companion && <Check />}</DropdownMenuItem>
+  </DropdownMenuContent>
+ </DropdownMenu>
+}
+
+const PILL: Record<string, string> = { working: "Working", needs: "Needs you", replied: "Done", failed: "Failed", stopped: "Stopped" }
+const StatusPill = ({ status }: { status: string }) => <span className="delegation-pill" data-status={status}>{status === "working" && <Spinner />}{PILL[status] ?? status}</span>
+
+/// R18: a teammate's help as one row among the steps: who asked whom for what, and how it's going. It opens to what was
+/// asked and the result; View opens the child task. Never the prompt Still sent.
+function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState; send: Send; mode: "tab" | "panel"; onLink: (url: string) => void }) {
  const [open, setOpen] = useState(false)
- const from = companionOf(ai, m.who ?? ""), to = companionOf(ai, m.to ?? ""), status = m.status ?? "working", tell = m.role === "tell"
- const label = { working: "Working", replied: tell ? "Done" : "Replied", failed: "Failed", stopped: "Stopped" }[status] ?? status
- return <div className="exchange" data-status={status} data-open={open || undefined} style={{ "--hue": hueOf(to) } as CSSProperties}>
-  <button type="button" className="exchange-head" aria-expanded={open} onClick={() => setOpen(!open)}>
-   <span className="exchange-faces"><Face companion={from} size={24} /><ArrowRight aria-hidden /><Face companion={to} size={24} mood={status === "working" ? "working" : "idle"} /></span>
-   <span className="exchange-who"><b>{from?.name ?? "A former teammate"}</b> {tell ? "handed this to" : "asked"} <b>{to?.name ?? "a former teammate"}</b></span>
-   <span className="exchange-status">{status === "working" ? <Spinner /> : status === "replied" ? <Check /> : null}{label}</span>
-   <ChevronDown className="exchange-chevron" aria-hidden />
-  </button>
-  <p className="exchange-message">{m.text}</p>
-  {m.reply && <div className="exchange-reply">{open ? <Markdown text={m.reply} onLink={onLink} /> : <p>{m.reply}</p>}</div>}
-  {(open || status === "working") && <div className="exchange-actions">
-   {m.chat && <Button variant="ghost" size="sm" onClick={() => send("chatOpen", { id: m.chat })}>Open {to?.name ?? "their"}'s chat</Button>}
-   {status === "working" && m.chat && <Button variant="outline" size="sm" onClick={() => send("aiStop", { id: m.chat })}><Square />Stop</Button>}
+ const mate = (id?: string | null) => ai.companions?.find(c => c.id === id)
+ const from = mate(m.who), to = mate(m.to), working = (m.status ?? "working") === "working"
+ const status = working && needsYou(ai, m.chat ?? "") ? "needs" : m.status ?? "working"
+ return <div className="ai-steps-group delegation" data-status={status} data-open={open || undefined}>
+  <div className="ai-steps-row">
+   <button type="button" className="delegation-toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
+    <span className="delegation-faces" aria-hidden><Face companion={from} size={20} /><ArrowRight /><Face companion={to} size={20} mood={working ? "working" : "idle"} /></span>
+    <span className="ai-step-line"><b>{from?.name ?? "A former teammate"}</b> asked <b>{to?.name ?? "a former teammate"}</b>{m.title ? ` for ${m.title}` : <span>: {m.text}</span>}</span>
+    <StatusPill status={status} /><ChevronDown className="ai-steps-chevron" aria-hidden />
+   </button>
+   {m.chat && <Tip label="View"><Button variant="ghost" size={mode === "panel" ? "icon-xs" : "xs"} className="delegation-view" aria-label={`View ${to?.name ?? "their"} work`} onClick={() => send(mode === "panel" ? "aiOpenChat" : "chatOpen", { id: m.chat })}>{mode === "panel" ? <ArrowUpRight /> : "View"}</Button></Tip>}
+  </div>
+  {open && <div className="delegation-body">
+   <p className="delegation-asked">{m.text}</p>
+   {m.reply && <div className="delegation-result"><Markdown text={choicesOf(m.reply).body} onLink={onLink} /></div>}
+   {working && m.chat && <Button variant="outline" size="xs" onClick={() => send("aiStop", { id: m.chat })}><Square />Stop</Button>}
   </div>}
  </div>
 }
 
-// AI apps, what the AI can see, and the saved chats.
-function AiSettings({ ai, send, done }: { ai: AiState; send: Send; done: () => void }) {
- return <div className="ai-pane">
-  <section><h4>Your AI</h4><p>Each runs on this PC with the plan you already pay for. Switch between them in the model list under the message box.</p>
-   <AiPicker ai={ai} send={send} onPick={id => { send("aiHarness", { harness: id }); done() }} /></section>
-  <Separator />
-  <section><h4>What it can see</h4><p>Only your <strong>{ai.profile}</strong> profile and its tabs. Never private tabs, saved passwords or cookies.</p></section>
-  <Separator />
-  <section><h4>Chats</h4><p>{ai.chats.length ? `${ai.chats.length} saved on this PC.` : "None saved yet."}</p>
-   <Button variant="outline" size="sm" disabled={!ai.chats.length || !!ai.runs?.length} onClick={() => send("aiDeleteAll")}><Trash2 />Delete all chats</Button></section>
- </div>
-}
-
-// The chat panel beside an ordinary page (the Chat button), or the AI settings.
-export function AiPanel({ ai, send, view, setView, tabs, activeTab, onFile }: { ai: AiState; send: Send; view: "chat" | "settings"; setView: (v: "chat" | "settings") => void; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
+// The chat panel beside an ordinary page (the Chat button). Its gear opens Settings, Models.
+export function AiPanel({ ai, send, tabs, activeTab, onFile }: { ai: AiState; send: Send; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
  const companion = companionOf(ai, ai.chatCompanion)
  const mood = useRunMood(ai)
  const [panel, setPanel] = useState<HTMLElement | null>(null)
  return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
   <div className="ai-head">
-   {view !== "chat" ? <IconButton label="Back" onClick={() => setView("chat")}><ArrowLeft /></IconButton> : <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>}
-   <div className="ai-title"><strong>{view === "settings" ? "AI settings" : ai.chats.find(c => c.id === ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
-   {view === "chat" && <>
-    <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
-    <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
-    <IconButton label="AI settings" onClick={() => setView("settings")}><Settings2 /></IconButton>
-   </>}
-   <IconButton label="Close chat" onClick={() => { setView("chat"); send("aiToggle") }}><X /></IconButton>
+   <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>
+   <div className="ai-title"><strong>{chatOf(ai, ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
+   <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
+   <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
+   <IconButton label="Model settings" onClick={() => openModelSettings(send)}><Settings2 /></IconButton>
+   <IconButton label="Close chat" onClick={() => send("aiToggle")}><X /></IconButton>
   </div>
-  {view === "settings" ? <AiSettings ai={ai} send={send} done={() => setView("chat")} /> : <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => setView("settings")} onFile={onFile} />}
+  <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => openModelSettings(send)} onFile={onFile} />
  </CollisionBoundary.Provider></aside>
 }
 
@@ -647,13 +842,13 @@ export function RunAnnouncer({ ai }: { ai: AiState }) {
  const [say, setSay] = useState("")
  const last = useRef<Record<string, boolean>>({})
  useEffect(() => {
-  const runs = ai.runs ?? [], title = (id: string) => ai.chats.find(c => c.id === id)?.title || "Your chat", lines: string[] = []
+  const runs = ai.runs ?? [], title = (id: string) => chatOf(ai, id)?.title || "Your chat", lines: string[] = []
   const now: Record<string, boolean> = Object.fromEntries(runs.map(r => [r.id, waits(r)]))
   for (const r of runs) if (!(r.id in last.current)) lines.push(title(r.id) + ": working"); else if (now[r.id] && !last.current[r.id]) lines.push(title(r.id) + " needs you")
   for (const id in last.current) if (!(id in now)) lines.push(title(id) + ": done")
   last.current = now
   if (lines.length) setSay(lines.join(". "))
- }, [ai.runs, ai.chats])
+ }, [ai.runs, ai.chats, ai.privateChats])
  return <div className="sr-only run-announcer" role="status" aria-live="polite">{say}</div>
 }
 
@@ -675,11 +870,11 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
  useEffect(() => { const flip = () => setOpen(!open); window.addEventListener("still-tasks", flip); return () => window.removeEventListener("still-tasks", flip) }) // Ctrl+Shift+K
  const [, setNow] = useState(0)
  useEffect(() => { if (!open) return; const t = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(t) }, [open])
- const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !isRunning(ai, c.id)).slice(0, 6), apps = tabs.filter(t => t.inChat?.startsWith("app:")), empty = !runs.length && !unread.length && !apps.length
+ const runs = ai.runs ?? [], unread = ai.chats.filter(c => c.unread && !c.archived && !c.from && !isRunning(ai, c.id)).slice(0, 6), apps = tabs.filter(t => t.inChat?.startsWith("app:")), empty = !runs.length && !unread.length && !apps.length
  useEffect(() => { if (empty) setOpen(false) }, [empty]) // eslint-disable-line react-hooks/exhaustive-deps
  if (empty) return null
  const waiting = runs.filter(waits).length
- const chat = (id: string) => ai.chats.find(c => c.id === id)
+ const chat = (id: string) => chatOf(ai, id)
  return <DropdownMenu open={open} onOpenChange={setOpen}>
   <DropdownMenuTrigger asChild><Button variant="ghost" size="sm" className="tasks-button" aria-label={`Running tasks: ${runs.length} running${waiting ? `, ${waiting} need you` : ""}${unread.length ? `, ${unread.length} new` : ""}`} title="Running tasks · Ctrl+Shift+K">
    {runs.length > waiting ? <Spinner className="tasks-spin" /> : <ListTodo />}{runs.length > 0 && <b>{runs.length}</b>}
@@ -689,7 +884,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
    <DropdownMenuLabel>Running tasks</DropdownMenuLabel>
    {runs.map(r => { const c = chat(r.id); return <div key={r.id} className="tasks-item">
     <DropdownMenuItem onSelect={() => send("chatOpen", { id: r.id })}><Face companion={companionOf(ai, c?.companion)} size={22} mood={waits(r) ? "needs" : "working"} />
-     <span className="tasks-title">{c?.title ?? "Chat"}<small>{waits(r) ? "Needs you" : "Working · " + clock(since(r.started))}</small></span>
+     <span className="tasks-title">{c?.title ?? "Chat"}<small>{(waits(r) ? "Needs you" : "Working · " + clock(since(r.started))) + (c?.profile === "companion" ? " · Companion profile" : "")}</small></span>
      {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
     {tabs.filter(t => t.inChat === r.id).map(t => <div key={t.id} className="tasks-page">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.title || host(t.url)}</span><button onClick={() => send("aiHelpPage", { id: t.id })}>Watch</button><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}

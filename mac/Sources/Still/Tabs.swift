@@ -26,7 +26,7 @@ extension Browser {
   if let open = tabs.first(where: { $0.chatId == chatId }) { return open }
   let tab = Tab()
   tab.chatId = chatId
-  let title = aiChats.first { $0.id == chatId }?.title ?? ""
+  let title = chatById(chatId)?.title ?? ""
   tab.title = title.isEmpty ? "Chat" : title
   tabs.append(tab)
   saveLater()
@@ -37,6 +37,58 @@ extension Browser {
   let tab = chatTab(chatId)
   select(tab)
   return tab
+ }
+
+ // MARK: The Still app tab (Windows: IsAppTab, Go and OpenChat in MainWindow.xaml.cs)
+
+ /// A Still app tab: it shows a chat or one of the home's pages, and going from one to another changes it in place.
+ /// In an incognito window it's that window's private tab, and it only ever shows the window's own chats.
+ func isAppTab(_ t: Tab) -> Bool { t.inChat == nil && (t.chatId != nil || t.url.isEmpty && (!t.isPrivate || incognito)) }
+ func spot(_ t: Tab) -> String { t.chatId.map { "chat:" + $0 } ?? "home:" + t.home }
+ /// A place Back or Forward can still go: a home page, or a chat that's still here and not open in another tab.
+ func canGo(_ spot: String) -> Bool {
+  guard spot.hasPrefix("chat:") else { return true }
+  let id = String(spot.dropFirst(5))
+  return myChats.contains { $0.id == id } && !tabs.contains { $0.chatId == id }
+ }
+ /// The app tab in view with nothing else on screen: Back and Forward move through its own places.
+ var appNav: Tab? { if let tab = active, isAppTab(tab), shown?.view == nil { return tab }; return nil }
+ /// Where a chat or home page opens: the app tab in view, else the one used last, else a new one.
+ func appTab() -> Tab {
+  if let tab = active, isAppTab(tab) { return tab }
+  return tabs.filter { isAppTab($0) }.max { $0.lastSeen < $1.lastSeen } ?? newTab(prompt: false)
+ }
+ /// Shows a chat ("chat:<id>") or home page ("home:<page>") in an app tab, in place; Back comes back here.
+ func go(_ tab: Tab, _ to: String, remember: Bool = true) {
+  if to != spot(tab) {
+   if remember { tab.back.append(spot(tab)); tab.forward = [] }
+   if to.hasPrefix("chat:") {
+    let id = String(to.dropFirst(5))
+    let chat = myChats.first { $0.id == id }
+    tab.chatId = id; tab.home = ""; tab.title = chat.map { $0.title.isEmpty ? "Chat" : $0.title } ?? "Chat"
+    if let chat { aiView.chat = chat; aiView.error = "" }
+   } else { tab.chatId = nil; tab.home = String(to.dropFirst(5)); tab.title = tab.isPrivate ? "Private tab" : "New tab" }
+   tab.pageOpen = false
+  }
+  select(tab)
+ }
+ /// Opens a chat: where it's already open (in any window like this one), else in a new tab when asked, else in place.
+ func openChat(_ id: String, newTab: Bool = false) {
+  if let open = tabs.first(where: { $0.chatId == id }) { select(open); return }
+  if !incognito, let other = browsers.first(where: { b in b !== self && !b.incognito && b.tabs.contains { $0.chatId == id } }), let open = other.tabs.first(where: { $0.chatId == id }) {
+   other.window.makeKeyAndOrderFront(nil); other.select(open); return
+  }
+  if newTab { openChatTab(id) } else { go(appTab(), "chat:" + id) }
+ }
+ /// Back (-1) or Forward (1) in the app tab, past chats that were deleted or opened in another tab since.
+ func appStep(_ step: Int) {
+  guard let tab = appNav else { return }
+  while let to = step < 0 ? tab.back.popLast() : tab.forward.popLast() {
+   guard canGo(to) else { continue }
+   if step < 0 { tab.forward.append(spot(tab)) } else { tab.back.append(spot(tab)) }
+   go(tab, to, remember: false); return
+  }
+  schedulePublish()
  }
 
  // MARK: Recent tabs

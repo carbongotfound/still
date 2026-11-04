@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { MAC, cn } from "@/lib/utils"
 import type { ToolData } from "./BrowserTools"
+import { destroy, isGone, useGone } from "./Undo"
 import "./passwords.css"
 type Send = (op: string, payload?: Record<string, unknown>) => void
 type Ask = (title: string, body: string, run: () => void) => void
@@ -61,7 +62,8 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
   ? ask("Turn on auto sign-in?", "When a site has one saved login, Still fills it as soon as the page opens. You still press Sign in yourself.", () => send("passwordPermission", { feature, enabled }))
   : send("passwordPermission", { feature, enabled })
  const words = filter.trim().toLowerCase()
- const shown = (data.vault ?? []).filter(v => (v.origin + " " + v.username).toLowerCase().includes(words))
+ useGone()
+ const shown = (data.vault ?? []).filter(v => !isGone("login:" + v.id) && (v.origin + " " + v.username).toLowerCase().includes(words))
  if (draft) return <form className="vault-form" onSubmit={e => { e.preventDefault(); send("vaultSave", draft) }}>
   <label htmlFor="login-site">Website</label><Input id="login-site" type="url" required placeholder="https://example.com" value={draft.origin} onChange={e => setDraft({ ...draft, origin: e.target.value })} />
   <label htmlFor="login-user">Username or email</label><Input id="login-user" autoComplete="off" value={draft.username} onChange={e => setDraft({ ...draft, username: e.target.value })} />
@@ -81,7 +83,7 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
    <Button variant="ghost" size="icon-sm" aria-label="Export passwords" title="Export passwords" disabled={!data.vault?.length} onClick={() => ask("Export your passwords?", "Still saves them in a CSV file that anyone who opens it can read. Keep it somewhere safe and delete it when you're done.", () => send("vaultExport"))}><Upload /></Button>
   </div>
   <ScrollArea className="tools-list passwords-list">
-   {shown.map(v => <Row key={v.id} entry={v} password={revealed[v.id]} here={currentOrigin === v.origin} send={send} ask={ask} hide={() => setRevealed(r => { const { [v.id]: _, ...rest } = r; return rest })} />)}
+   {shown.map(v => <Row key={v.id} entry={v} password={revealed[v.id]} here={currentOrigin === v.origin} send={send} hide={() => setRevealed(r => { const { [v.id]: _, ...rest } = r; return rest })} />)}
    {data.vault?.length === 0 && <p className="empty-state">Passwords you save or import show up here.</p>}
    {!!data.vault?.length && shown.length === 0 && <p className="empty-state">No passwords match “{filter}”.</p>}
    {!!data.never?.length && <>
@@ -92,7 +94,7 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
  </>
 }
 
-function Row({ entry: v, password, here, send, ask, hide }: { entry: Entry; password?: string; here: boolean; send: Send; ask: Ask; hide: () => void }) {
+function Row({ entry: v, password, here, send, hide }: { entry: Entry; password?: string; here: boolean; send: Send; hide: () => void }) {
  return <div className="tool-row password-row">
   <KeyRound />
   <div className="tool-copy"><strong>{host(v.origin)}</strong><small>{v.username || "No username"}</small>
@@ -103,7 +105,7 @@ function Row({ entry: v, password, here, send, ask, hide }: { entry: Entry; pass
   <Button variant="ghost" size="icon-sm" aria-label={"Copy password for " + host(v.origin)} onClick={() => send("vaultCopy", { id: v.id })}><Copy /></Button>
   <Button variant="ghost" size="icon-sm" aria-label={"Edit login for " + host(v.origin)} onClick={() => send("vaultEdit", { id: v.id })}><Pencil /></Button>
   {here && <Button variant="ghost" size="icon-sm" aria-label={"Fill login for " + host(v.origin)} onClick={() => send("vaultFill", { id: v.id })}><LogIn /></Button>}
-  <Button variant="ghost" size="icon-sm" aria-label={"Delete login for " + host(v.origin)} onClick={() => ask("Delete this login?", (v.username || "The login") + " on " + host(v.origin) + " will be removed from Still.", () => send("vaultDelete", { id: v.id }))}><Trash2 /></Button>
+  <Button variant="ghost" size="icon-sm" aria-label={"Delete login for " + host(v.origin)} onClick={() => destroy({ key: "login:" + v.id, title: "Delete this login?", body: (v.username || "The login") + " on " + host(v.origin) + " is removed from Still, with its saved password.", action: "Delete login", done: "Login deleted", run: () => send("vaultDelete", { id: v.id }) })}><Trash2 /></Button>
  </div>
 }
 

@@ -35,5 +35,32 @@ Check(gemini.OfType<AgentEvent.ToolCall>().Single().Name == "mcp_still_open_tab"
 Check(gemini.OfType<AgentEvent.Message>().Select(m => m.Text).SequenceEqual(["The title is ", "Example Domain."]), "Manifest jsonl: only assistant text");
 Check(gemini.OfType<AgentEvent.Message>().All(m => m.Join == ""), "Manifest jsonl: streamed pieces join into one reply");
 
+var gem = Read("gemini.jsonl", AgentStream.Gemini);
+Check(gem.OfType<AgentEvent.Session>().SingleOrDefault()?.Id == "4f7f937b-f0f1-48ce-9ba7-084ff3df4ae1", "Gemini: init's session id");
+Check(gem.OfType<AgentEvent.ToolCall>().SingleOrDefault()?.Name == "list_tabs", "Gemini: mcp_still_ prefix dropped from tool names");
+Check(gem.OfType<AgentEvent.ToolResult>().SingleOrDefault() is { Ok: false } r && r.Id == gem.OfType<AgentEvent.ToolCall>().Single().Id, "Gemini: a failed tool result matches its call");
+Check(gem.OfType<AgentEvent.Message>().Count() == 2 && gem.OfType<AgentEvent.Message>().All(m => m.Join == ""), "Gemini: streamed pieces join into one reply, the user's prompt left out");
+Check(gem.OfType<AgentEvent.Usage>().SingleOrDefault()?.Text.StartsWith("Last reply: 28k in") == true, "Gemini: token usage from the result");
+Check(!gem.OfType<AgentEvent.Error>().Any(), "Gemini: no errors on a good run");
+Check(AgentStream.Gemini(JsonNode.Parse("""{"type":"result","status":"error","error":{"type":"FatalAuthenticationError","message":"[API Error: 401]"},"stats":{}}""")!).OfType<AgentEvent.Error>().Single().Text == "[API Error: 401]", "Gemini: an error result");
+Check(!AgentStream.Gemini(JsonNode.Parse("""{"type":"error","severity":"warning","message":"slow"}""")!).Any(), "Gemini: warnings aren't errors");
+
+var oc = Read("opencode.jsonl", AgentStream.OpenCode);
+Check(oc.OfType<AgentEvent.Session>().Select(s => s.Id).Distinct().SingleOrDefault() == "ses_e622d5288ffe1XVjjLO0q4mDv2", "OpenCode: session id");
+Check(oc.OfType<AgentEvent.ToolCall>().SingleOrDefault()?.Name == "list_tabs", "OpenCode: still_ prefix dropped from tool names");
+Check(oc.OfType<AgentEvent.ToolResult>().SingleOrDefault() is { Ok: false }, "OpenCode: a failed tool gives a failed result");
+Check(oc.OfType<AgentEvent.Message>().SingleOrDefault()?.Text.StartsWith("Done.") == true, "OpenCode: the answer");
+Check(oc.OfType<AgentEvent.Usage>().Count() == 2 && oc.OfType<AgentEvent.Usage>().Last().Text.StartsWith("Last reply: 8.8k in"), "OpenCode: tokens per step");
+Check(AgentStream.OpenCode(JsonNode.Parse("""{"type":"error","error":{"name":"UnknownError","data":{"message":"Session not found"}}}""")!).OfType<AgentEvent.Error>().Single().Text == "Session not found", "OpenCode: an error's message");
+
+// A helper's permissions: the strictest rule up the chain wins (Delegation.Strictest).
+Check(Delegation.Strictest(["always", "always"]) == "always", "Delegation: allowed when everyone up the chain allows it");
+Check(Delegation.Strictest(["ask", "always"]) == "ask", "Delegation: the asker's Ask beats the helper's Always");
+Check(Delegation.Strictest(["chat", "always"]) == "chat", "Delegation: the asker's Allow in this chat beats the helper's Always");
+Check(Delegation.Strictest(["always", "chat"]) == "chat", "Delegation: the helper's own stricter rule stays");
+Check(Delegation.Strictest(["chat", "always", "ask"]) == "ask", "Delegation: anyone up the chain asking means it asks");
+Check(Delegation.Strictest(["always", "someday"]) == "ask", "Delegation: a mode it doesn't know asks");
+Check(Delegation.Strictest([]) == "ask", "Delegation: no rule at all asks");
+
 Console.WriteLine(failed == 0 ? "PASSED" : $"FAILED {failed}");
 return failed == 0 ? 0 : 1;

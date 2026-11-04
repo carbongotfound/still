@@ -1,9 +1,12 @@
-"""Set it up with Jonah, through a real signed-in agent app (uses that plan): a baker answers Jonah's questions, skips one,
+"""Setup through a real signed-in agent app (uses that plan; Claude Haiku at low effort by default). First the four
+steps on a fresh profile: connect the app, hire Miso, and setup's first task, the sample page that ships with Still,
+which Miso opens, reads and compares. Then Set me up again with Jonah: a baker answers Jonah's questions, skips one,
 and the interview runs until Jonah has what it needs (or "That's enough" after ten turns). Checks the follow-ups and
-what it set up: a hire from the library, what each companion focuses on, memories, routines off, a first task. Frames
-of the whole interview go to frames/ (for a GIF). Nothing is approved or sent. Run it by hand only.
+what it set up: companions suggested from the library (none hired), what Jonah focuses on, memories, a first task.
+Frames of the whole interview go to frames/ (for a GIF). Questions are skipped; nothing is approved or sent. Run it by
+hand only.
 
-Run: python tests/desktop/setup_live.py artifacts/Still-QA/Still.exe [claude]
+Run: python tests/desktop/setup_live.py artifacts/Still-QA/Still.exe [claude] [model] [effort]
 """
 import json
 from pathlib import Path
@@ -14,10 +17,13 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 from qa import js, launch, rpc, send, until  # noqa: E402
+import welcome as W  # noqa: E402  setup's steps
 
 ROOT = Path(__file__).resolve().parents[2]
 EXE = Path(sys.argv[1]).resolve()
 AGENT = sys.argv[2] if len(sys.argv) > 2 else "claude"
+MODEL = sys.argv[3] if len(sys.argv) > 3 else "haiku"
+EFFORT = sys.argv[4] if len(sys.argv) > 4 else "low"
 RUN = ROOT / "artifacts" / ("setup-live-" + AGENT + "-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 # The baker's answers, by what the question is about (the first topic word found wins); the third question is skipped.
@@ -30,11 +36,65 @@ ANSWERS = [(("first", "start with", "right now", "help with"), "First, find me a
            (("",), "I run a small bakery. We sell sourdough to six cafes in town, plus walk-ins on Saturdays.")]
 TURNS = 10
 CHECKS = []
+RESULT = {}
 
 
 def check(ok, name):
     CHECKS.append({"name": name, "passed": bool(ok)})
     print(("PASS " if ok else "FAIL ") + name, flush=True)
+
+
+def first_task():
+    """The four steps with the real app, then the sample page as the first task: Miso opens it, reads it and compares."""
+    profile = RUN / "first"
+    profile.mkdir(parents=True)
+    process = launch(EXE, profile)
+    chats = lambda: json.loads((profile / "ai" / "chats.json").read_text(encoding="utf-8")) if (profile / "ai" / "chats.json").exists() else []
+    try:
+        until(lambda: js(process, "!!document.querySelector('.welcome.ob .ob-dots')"), 20)
+        if until(lambda: js(process, "!!document.querySelector('.intro')"), 3):
+            time.sleep(1)
+            W.key(process, " ")
+        time.sleep(3)
+        send(process, "aiAdvanced", on=True)
+        send(process, "aiModel", harness=AGENT, model=MODEL, effort=EFFORT)
+        W.next_step(process)
+        W.pick_ai(process, "Claude" if AGENT == "claude" else AGENT)
+        check(until(lambda: "is ready" in W.card(process), 30), f"Connect finds the app signed in ({W.card(process)[:80]!r})")
+        W.next_step(process)
+        check(W.make(process, "Miso", "Helps me shop: compares products and prices for me.", wait=150), "Miso asks what to help with in a chat, then says what it will do")
+        plain = js(process, "[...document.querySelectorAll('.ob-plain li')].map(l => l.innerText.trim())") or []
+        check(len(plain) >= 1 and not js(process, "document.querySelector('.ob-more')?.open"), f"in plain words, with the instructions closed ({plain})")
+        time.sleep(1)
+        W.click(process, ".ob-next")  # Hire Miso
+        until(lambda: js(process, "!!document.querySelector('.joined-card')"), 6)
+        W.click_text(process, ".joined-actions button", "Start chatting")
+        until(lambda: W.step_now(process) == 4, 5)
+        time.sleep(1.5)
+        W.click(process, ".ob-tasks [role=radio]")
+        time.sleep(.6)
+        W.click(process, ".ob-next")
+        miso = until(lambda: next((c for c in chats() if c.get("Messages")), None), 30) or {}
+        asked = next((m.get("Text", "") for m in miso.get("Messages", []) if m.get("Role") == "user"), "")  # after Still's note, on a fresh profile, that it let the app use the tabs
+        check(asked.startswith("Open https://sample.still.internal/compare.html"), "Let's go starts the sample task in Miso's chat")
+
+        def done():
+            now = next((c for c in chats() if c["Id"] == miso.get("Id")), {})
+            if now.get("Running"):
+                send(process, "aiAnswer", id=now["Id"], text="")  # a question is skipped
+            return not now.get("Running") and any(m["Role"] == "assistant" and m["Text"].strip() for m in now.get("Messages", [])) and now
+        end = until(done, 300, 5) or {}
+        answer = "\n\n".join(m["Text"] for m in end.get("Messages", []) if m["Role"] == "assistant")
+        rpc(process, "capture", name="first-task.png")
+        check(all(n in answer for n in ("Pinecrest", "Tallow", "Marlin")) and sum(p in answer for p in ("129", "74", "159")) >= 2,
+              f"Miso compares the three packs from the page, with their prices ({len(answer)} characters)")
+        check(any(t["InChat"] and "sample.still.internal" in t["Url"] for t in rpc(process)["tabs"]), "It worked in its own tab, beside the chat")
+        RESULT["first"] = {"answer": answer, "messages": [{"role": m["Role"], "text": m["Text"]} for m in end.get("Messages", [])]}
+        rpc(process, "quit")
+        process.wait(timeout=15)
+    finally:
+        if process.poll() is None:
+            process.kill()
 
 
 def main():
@@ -67,6 +127,8 @@ def main():
     try:
         send(process, "aiCheck")
         time.sleep(4)
+        send(process, "aiAdvanced", on=True)
+        send(process, "aiModel", harness=AGENT, model=MODEL, effort=EFFORT)
         send(process, "welcomeAgain", talk=True)
         until(lambda: js(process, "!!document.querySelector('.ob-interview')"), 20)
         time.sleep(1)
@@ -101,9 +163,9 @@ def main():
         time.sleep(3)  # saved a moment later
         prefs = json.loads((PROFILE / "state.json").read_text(encoding="utf-8")).get("Preferences", {})
         team = prefs.get("Companions", [])
-        check(any(r.startswith("New on your team: ") for r in rows) and len(team) > 1, f"It hired from the library ({[c['Name'] for c in team]})")
-        check(all(c["Job"].count("For me: ") == 1 for c in team), "Every companion got what to focus on for this user")
-        check(all(not r["On"] for c in team for r in c.get("Routines", [])) and any("routine, off" in r for r in rows), "It suggested routines, all off")
+        check(any(r.startswith("Suggested for your team: ") for r in rows) and [c["Name"] for c in team] == ["Jonah"], f"It suggests companions from the library and hires nobody ({[c['Name'] for c in team]})")
+        check(all(c["Job"].count("For me: ") == 1 for c in team), "Jonah got what to focus on for this user")
+        check(all(not r["On"] for c in team for r in c.get("Routines", [])), "Any routine it set up starts off")
         check(any(r.startswith("First, I'll help with: ") and "flour" in r.lower() for r in rows), "The first task is the one asked for")
         facts = json.loads((PROFILE / "companions" / "zest0001" / "memory.json").read_text(encoding="utf-8")) if (PROFILE / "companions" / "zest0001" / "memory.json").exists() else []
         check(len(facts) >= 3, f"Jonah remembers {len(facts)} things about the user")
@@ -111,7 +173,7 @@ def main():
         js(process, "document.querySelector('.ob-summary').scrollTop = 1e6")
         time.sleep(.6); film()
         rpc(process, "capture", name="summary-end.png")
-        (RUN / "result.json").write_text(json.dumps({"agent": AGENT, "minutes": round((time.monotonic() - started) / 60, 1), "said": said, "rows": rows,
+        (RUN / "result.json").write_text(json.dumps({**RESULT, "agent": AGENT, "model": MODEL, "effort": EFFORT, "minutes": round((time.monotonic() - started) / 60, 1), "said": said, "rows": rows,
                                                     "companions": [{k: c.get(k) for k in ("Name", "Crew", "Job", "Tone", "Routines")} for c in team], "facts": [f["Text"] for f in facts],
                                                     "checks": CHECKS}, indent=2))
         rpc(process, "quit")
@@ -125,4 +187,6 @@ def main():
         print(("PASSED " if not failed else "FAILED ") + f"{len(CHECKS) - len(failed)}/{len(CHECKS)}", "->", RUN)
 
 
+first_task()
 main()
+W.SERVER.shutdown()

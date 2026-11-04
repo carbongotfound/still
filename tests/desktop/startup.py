@@ -15,6 +15,8 @@ import threading
 import time
 import uuid
 
+from qa import until_started
+
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("startup-" + uuid.uuid4().hex); RUN.mkdir(parents=True)
 RESULT = []
@@ -67,7 +69,7 @@ try:
             if '--cold-bundle' in sys.argv: environment['DOTNET_BUNDLE_EXTRACT_BASE_DIR']=str(RUN/('bundle-'+str(index)))
             start=time.monotonic(); process=subprocess.Popen([str(exe),'--qa','--profile',str(profile),url],env=environment)
             wait(lambda:visible(process.pid)); shown=time.monotonic()-start
-            wait(lambda:(profile/'qa-pipe.txt').exists() and (profile/'qa-pipe.txt').read_text(encoding='utf-8-sig').endswith(str(process.pid)))
+            until_started(process)
             wait(lambda:ready(process,url)); usable=time.monotonic()-start
             s=rpc(process); samples.append({'cycle':cycle,'window_seconds':round(shown,3),'usable_seconds':round(usable,3),'stages':s.get('startup')})
             print(str(index)+' / '+str(cycle)+': '+json.dumps(samples[-1]),flush=True)

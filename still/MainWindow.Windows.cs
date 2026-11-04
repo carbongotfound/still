@@ -53,7 +53,7 @@ public partial class MainWindow
  {
   var dpi = VisualTreeHelper.GetDpi(this);
   int x = (int)Math.Round(dip.X * dpi.DpiScaleX), y = (int)Math.Round(dip.Y * dpi.DpiScaleY);
-  var candidates = Windows.Where(w => w != this && !w.closing).Select(w => (w, h: new WindowInteropHelper(w).Handle))
+  var candidates = Windows.Where(w => w != this && !w.closing && w.incognito == incognito).Select(w => (w, h: new WindowInteropHelper(w).Handle))
    .Where(c => c.h != IntPtr.Zero && !IsIconic(c.h) && GetWindowRect(c.h, out var r) && x >= r.Left && x < r.Right && y >= r.Top && y < r.Bottom).ToList();
   if (candidates.Count <= 1) return candidates.FirstOrDefault().w;
   for (var h = GetTopWindow(IntPtr.Zero); h != IntPtr.Zero; h = GetWindow(h, 2)) // GW_HWNDNEXT, top to bottom
@@ -62,7 +62,7 @@ public partial class MainWindow
  }
 
  int WindowNumber => Windows.IndexOf(this) + 1;
- object WindowsData() => Windows.Where(w => w != this && !w.closing).Select(w => new { id = w.WindowId, name = "Window " + w.WindowNumber, title = w.active?.Title ?? "" });
+ object WindowsData() => Windows.Where(w => w != this && !w.closing && w.incognito == incognito).Select(w => new { id = w.WindowId, name = "Window " + w.WindowNumber, title = w.active?.Title ?? "" });
 
  // Every open window's tabs are saved together; closing a window drops its tabs, as in Chrome.
  // The session: each normal window's tabs, numbered by window; never private tabs or a temporary window's. With only
@@ -97,6 +97,8 @@ public partial class MainWindow
  async Task MoveTab(BrowserTab tab, MainWindow? target, Point? screenPoint)
  {
   if (!tabs.Contains(tab) || target == this) return;
+  // Tabs stay with windows of their kind, and an incognito chat and its pages stay in the window that holds the chat.
+  if (target != null && target.incognito != incognito || incognito && (tab.ChatId ?? tab.InChat ?? tab.RunChat) != null) return;
   if (tab.LoadingTask is { } loading) await loading;
   if (!tabs.Contains(tab)) return;
   // The live page goes with the tab: no reload, so it keeps its scroll, forms, sign-ins and video.

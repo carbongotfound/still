@@ -1,17 +1,17 @@
-import { useEffect, useRef, useState, type CSSProperties } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, Dices, FolderOpen, Library, MessageSquare, MoreHorizontal, Palette, Pencil, Plus, Search, Settings2, SquarePen, Trash2, Users, X } from "lucide-react"
+import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
+import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, UserX, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
-import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog"
+import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { AiLogo } from "./AiLogo"
-import { Face, hueOf, type Companion, type Mode } from "./Buddy"
+import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
-import { LookEditor } from "./LookEditor"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, fromPremade, fromShared } from "./crew"
+import { deleteAllChats, deleteChat, destroy, fire } from "./Undo"
 import { PluginsPage, Who } from "./Plugins"
 import { toast } from "sonner"
 
@@ -28,7 +28,6 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
   {item("home", "New chat", SquarePen)}
   {item("chats", "Chats", MessageSquare)}
   {item("library", "Library", Library)}
-  {item("companions", "Companions", Users)}
   {item("skills", "Skills & plugins", BookOpen)}
   <span className="home-rail-gap" />
   <button className="home-rail-item" aria-label="Settings" title="Settings" onClick={onSettings}><Settings2 /></button>
@@ -55,15 +54,22 @@ export function CompanionSwitch({ ai, companion, onPick, onEdit }: { ai: AiState
 const ago = (iso: string) => { const m = (Date.now() - Date.parse(iso)) / 6e4; return m < 60 ? Math.max(1, Math.round(m)) + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d" }
 const dayOf = (iso: string) => { const d = new Date(iso), now = new Date(); const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5); return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "This week" : "Earlier" }
 
+/// A chat in a list: a click opens it in this Still tab; a middle click or the menu's Open in new tab opens it in a tab of its own.
+export function ChatLink({ id, send, className, title, children }: { id: string; send: Send; className: string; title?: string; children: ReactNode }) {
+ const own = () => send("chatOpen", { id, newTab: true })
+ return <ContextMenu><ContextMenuTrigger asChild>
+  <button className={className} title={title} onClick={() => send("chatOpen", { id })} onMouseDown={e => { if (e.button === 1) e.preventDefault() }} onAuxClick={e => { if (e.button === 1) own() }}>{children}</button>
+ </ContextMenuTrigger><ContextMenuContent><ContextMenuItem onSelect={own}><ExternalLink />Open in new tab</ContextMenuItem></ContextMenuContent></ContextMenu>
+}
+
 export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNew: () => void }) {
  const [find, setFind] = useState("")
  const [only, setOnly] = useState<"" | "unread" | "needs" | "archived">("")
  const [who, setWho] = useState("")
  const [oldest, setOldest] = useState(false)
- const [wipe, setWipe] = useState(false)
  const needs = (id: string) => needsYou(ai, id)
  const first = ai.companions?.[0]?.id
- const chats = ai.chats.filter(c => (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
+ const chats = ai.chats.filter(c => !c.from && (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
   && (!who || (c.companion || first) === who) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
  if (oldest) chats.reverse()
  const groups = chats.reduce<[string, typeof chats][]>((all, c) => { const day = dayOf(c.updated); if (all.at(-1)?.[0] === day) all.at(-1)![1].push(c); else all.push([day, [c]]); return all }, [])
@@ -71,8 +77,8 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const mate = companionOf(ai, who)
  return <section className="home-page" aria-label="Chat History">
   <header className="home-page-head"><h1>Chat History</h1>
-   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
-    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => setWipe(true)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+   {!ai.incognito && <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><MoreHorizontal /></Button></DropdownMenuTrigger>
+    <DropdownMenuContent align="end"><DropdownMenuItem disabled={!ai.chats.length || !!ai.runs?.length} onSelect={() => deleteAllChats(send, ai.chats.length)} className="text-destructive"><Trash2 />Delete all chats</DropdownMenuItem></DropdownMenuContent></DropdownMenu>}
    <Button className="home-new" onClick={onNew}><Plus />New chat</Button>
   </header>
   <label className="history-find"><Search /><input aria-label="Search chats" placeholder="Search chats..." value={find} onChange={e => setFind(e.target.value)} /></label>
@@ -88,16 +94,12 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
   {!chats.length && <p className="home-empty">{find || only || who ? "No chats match." : "Your chats show up here. Start one from the new tab page."}</p>}
   {groups.map(([day, list]) => <div key={day} className="history-group"><h2>{day}</h2>
    {list.map(c => <div key={c.id} className="history-row">
-    <button className="history-open" onClick={() => send("chatOpen", { id: c.id })}><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
-     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</button>
+    <ChatLink id={c.id} send={send} className="history-open"><Face companion={companionOf(ai, c.companion)} size={30} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
+     {needs(c.id) ? <span className="history-needs">Needs input</span> : c.unread ? <i className="is-unread" aria-label="Unread" /> : isRunning(ai, c.id) ? <small>Working</small> : <small>{ago(c.updated)}</small>}</ChatLink>
     <button className="history-act" aria-label={c.archived ? "Unarchive " + c.title : "Archive " + c.title} title={c.archived ? "Unarchive" : "Archive"} onClick={() => send("chatArchive", { id: c.id, on: !c.archived })}>{c.archived ? <ArchiveRestore /> : <Archive />}</button>
-    <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => send("aiDeleteChat", { id: c.id })}><Trash2 /></button>
+    <button className="history-act" disabled={isRunning(ai, c.id)} aria-label={"Delete " + c.title} title="Delete" onClick={() => deleteChat(send, c)}><Trash2 /></button>
    </div>)}
   </div>)}
-  <AlertDialog open={wipe} onOpenChange={setWipe}><AlertDialogContent>
-   <AlertDialogHeader><AlertDialogTitle>Delete all chats?</AlertDialogTitle><AlertDialogDescription>Every chat in this profile goes away. Your AI app may keep its own copy.</AlertDialogDescription></AlertDialogHeader>
-   <AlertDialogFooter><AlertDialogCancel>Keep them</AlertDialogCancel><AlertDialogAction onClick={() => send("aiDeleteAll")}>Delete all</AlertDialogAction></AlertDialogFooter>
-  </AlertDialogContent></AlertDialog>
  </section>
 }
 
@@ -125,7 +127,8 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
     <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
-    <button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
+    <div className="mate-acts"><button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
+     <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => fire(send, c, (ai.companions?.length ?? 0) <= 1)}><UserX />Fire</button></div>
     </div>
    </article> })}
   </div>
@@ -136,6 +139,10 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
 }
 
 /// Skills & plugins: the Plugins page (Plugins.tsx) with the user's skills among the apps. One search finds both.
+/// Reset a skill Still ships to its own version: the user's changes to it go.
+export const resetSkill = (send: Send, k: Skill) => destroy({ key: "skill-reset:" + k.id, title: `Reset ${k.name}?`, body: `Your changes to ${k.name} go, and it's back to the version Still ships.`,
+ action: "Reset skill", done: `${k.name} reset`, run: () => send("skillReset", { id: k.id }) })
+
 export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
  const [editing, setEditing] = useState<Skill | null>(null)
  const blank = () => setEditing({ id: "", name: "", description: "", when: "", body: "" })
@@ -145,8 +152,11 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
   const list = <div className="skill-list">{found.map(k => <div key={k.id} className="skill-row">
    <span className="skill-icon"><BookOpen /></span>
    <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.description && " · " + k.description}</small></button>
-   <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />
-   <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => send("skillDelete", { id: k.id })}><Trash2 /></button>
+   {k.id === "setup" ? <small className="skill-always">Every companion, on their first chat</small>
+    : <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />}
+   {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => resetSkill(send, k)}><RotateCcw /></button>}
+   {k.id !== "setup" && <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => destroy({ key: "skill:" + k.id, title: `Delete ${k.name}?`, action: "Delete skill", done: `Deleted ${k.name}`,
+    body: `The skill goes, and ${(ai.companions ?? []).filter(m => m.skills?.includes(k.id)).length || "no"} companions stop using it.`, run: () => send("skillDelete", { id: k.id }) })}><Trash2 /></button>}
   </div>)}</div>
   return q ? <section className="plug-group skills-part" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2></div>{list}</section>
    : found.length ? list : <p className="home-empty skills-empty">Skills are short how-tos your companions follow: type / in a message to use one. <button className="plug-all" onClick={blank}>Write your first one</button></p>
@@ -157,7 +167,7 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
  </>
 }
 
-function SkillEditor({ skill, onClose, onSave }: { skill: Skill; onClose: () => void; onSave: (k: Skill) => void }) {
+export function SkillEditor({ skill, onClose, onSave }: { skill: Skill; onClose: () => void; onSave: (k: Skill) => void }) {
  const [k, setK] = useState(skill)
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog skill-dialog">
@@ -196,7 +206,7 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
     <button className="history-open" onClick={() => onOpen(f.path)}><FileIcon path={f.path} /><b>{nameOf(f.path)}</b><small>{chat ? chat.title + " · " : ""}{ago(f.saved)}</small></button>
     {chat && <button className="history-act" aria-label={"Open the chat for " + f.name} title="Open chat" onClick={() => send("chatOpen", { id: chat.id })}><MessageSquare /></button>}
     <button className="history-act" aria-label={"Show " + f.name + " in its folder"} title="Show in folder" onClick={() => send("fileShow", { path: f.path })}><FolderOpen /></button>
-    <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => send("fileDelete", { path: f.path })}><Trash2 /></button>
+    <button className="history-act" aria-label={"Delete " + f.name} title="Delete" onClick={() => destroy({ key: "file:" + f.path, title: `Delete ${nameOf(f.path)}?`, body: "The file is deleted from this computer, not moved to the trash.", action: "Delete file", done: "File deleted", run: () => send("fileDelete", { path: f.path }) })}><Trash2 /></button>
    </div> })}</div>
   </>}
  </section>
@@ -219,56 +229,3 @@ export function RenameAsk({ companion, onSave }: { companion: Companion; onSave:
  </Dialog>
 }
 
-// Create or edit a companion: their look, name, job and way of talking, the AI they run on and how hard they think, their skills.
-const MODE_NAMES: [Mode, string][] = [["efficient", "Quick"], ["default", "Everyday"], ["expert", "Thorough"]]
-/// `only`: it's the last companion, and Still always keeps one, so Delete explains instead.
-export function CompanionEditor({ ai, companion, canDelete, only, onClose, onSave, onDelete }: { ai: AiState; companion: Companion; canDelete: boolean; only?: boolean; onClose: () => void; onSave: (c: Companion) => void; onDelete: () => void }) {
- const [c, setC] = useState<Companion>({ mode: "default", skills: [], tone: "", ai: "", ...companion })
- const [lastOne, setLastOne] = useState(false)
- const [styling, setStyling] = useState(false)
- const skills = ai.skills ?? []
- useEffect(() => { // the folder picked in Windows' own dialog
-  const got = (e: MessageEvent) => { if (e.data?.kind === "folder") setC(old => ({ ...old, folder: e.data.data.path })) }
-  window.chrome?.webview?.addEventListener("message", got); return () => window.chrome?.webview?.removeEventListener("message", got)
- }, [])
- const state = (id: string) => { const h = ai.harnesses.find(x => x.id === id); return !h ? "" : !h.installed || h.status === "missing" ? "Not installed" : h.status === "signedOut" ? "Sign in first" : "" }
- return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
-  <DialogContent className="app-dialog companion-dialog" style={{ "--hue": hueOf(c) } as CSSProperties}>
-   <DialogHeader><DialogTitle>{companion.id ? "Edit " + companion.name : "New companion"}</DialogTitle><DialogDescription>Who you work with in a chat. Their job tells your AI how to help.</DialogDescription></DialogHeader>
-   <form className="companion-form" onSubmit={e => { e.preventDefault(); if (c.name.trim()) onSave({ ...c, name: c.name.trim() }) }}>
-    <div className="companion-preview"><Face companion={c} size={120} follow />
-     <div className="companion-look">
-      <Button type="button" variant="outline" size="sm" onClick={() => setStyling(true)}><Palette />Customize</Button>
-      <Button type="button" variant="ghost" size="sm" className="companion-random" onClick={() => setC({ ...c, look: lookKey(surprise()) })}><Dices />Surprise me</Button>
-     </div>
-    </div>
-    {styling && <LookEditor companion={c} onClose={() => setStyling(false)} onSave={look => { setC({ ...c, look }); setStyling(false) }} />}
-    <label><span>Name</span><Input required maxLength={24} value={c.name} onChange={e => setC({ ...c, name: e.target.value })} /></label>
-    <label><span>What should they do?</span><textarea className="companion-job" rows={3} maxLength={1000} placeholder="For example: a careful researcher who checks sources and cites them." value={c.job} onChange={e => setC({ ...c, job: e.target.value })} /></label>
-    <div className="companion-row">
-     <label><span>Runs on</span><span className="ai-select"><AiLogo id={c.ai || ai.harness} size={20} /><select className="companion-select" value={c.ai} onChange={e => setC({ ...c, ai: e.target.value })}>
-      <option value="">Your AI{ai.harnesses.find(h => h.id === ai.harness) ? " (" + ai.harnesses.find(h => h.id === ai.harness)!.name + ")" : ""}</option>
-      {ai.harnesses.filter(h => !h.secondary || h.id === c.ai).map(h => <option key={h.id} value={h.id}>{h.name}{state(h.id) && " · " + state(h.id)}</option>)}
-     </select></span></label>
-     <div className="companion-field"><span>Thinking</span><div className="companion-modes" role="radiogroup" aria-label="Thinking">{MODE_NAMES.map(([m, label]) => <button type="button" key={m} role="radio" aria-checked={c.mode === m} onClick={() => setC({ ...c, mode: m })}>{label}</button>)}</div></div>
-    </div>
-    {c.ai && state(c.ai) && <p className="companion-note">{ai.harnesses.find(h => h.id === c.ai)?.name} isn't ready yet. Set it up from the chat sidebar, and {c.name || "they"} can start.</p>}
-    <div className="companion-field"><span>Skills they always use</span>
-     {skills.length ? <div className="companion-skills">{skills.map(k => { const on = c.skills?.includes(k.id); return <button type="button" key={k.id} aria-pressed={on} title={k.description} onClick={() => setC({ ...c, skills: on ? c.skills?.filter(x => x !== k.id) : [...(c.skills ?? []), k.id] })}><BookOpen />{k.name}{on && <X />}</button> })}</div>
-      : <p className="companion-note">No skills yet. Make some on the Skills page, then give them to {c.name || "your companion"} here.</p>}</div>
-    <div className="companion-field"><span>Working folder</span>
-     <div className="companion-folder"><code title={c.folder}>{c.folder || "None, so they can't touch your files."}</code>
-      <Button type="button" variant="outline" size="sm" onClick={() => window.chrome?.webview?.postMessage({ op: "pickFolder" })}><FolderOpen />{c.folder ? "Change" : "Pick a folder"}</Button>
-      {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => setC({ ...c, folder: "" })}>Remove</Button>}</div>
-     {c.folder && (c.ai || ai.harness) !== "claude" && <p className="companion-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}</div>
-    <label><span>How should {c.name.trim() || "they"} talk?</span><textarea className="companion-job" rows={2} maxLength={600} placeholder="For example: upbeat and quick, with short answers and a joke now and then." value={c.tone} onChange={e => setC({ ...c, tone: e.target.value })} /></label>
-    {lastOne && <p className="companion-note is-warn" role="alert">{companion.name} is your only companion, and Still needs at least one. Add another before you delete {companion.name}.</p>}
-    <div className="companion-actions">
-     {canDelete && <Button type="button" variant="ghost" className="mr-auto text-destructive" onClick={() => only ? setLastOne(true) : onDelete()}><Trash2 />Delete</Button>}
-     <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
-     <Button type="submit" className="companion-save" disabled={!c.name.trim()}>Save</Button>
-    </div>
-   </form>
-  </DialogContent>
- </Dialog>
-}

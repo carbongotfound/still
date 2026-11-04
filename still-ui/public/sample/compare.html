@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Compare weekend backpacks (sample page from Still)</title>
+<style>
+ :root { --bg:#f7f4ee; --card:#fff; --ink:#2b2622; --soft:#6f665d; --line:#e4ddd2; --accent:#b4562e; color-scheme:light dark; }
+ @media (prefers-color-scheme: dark) { :root { --bg:#1d1b19; --card:#282522; --ink:#efe9e1; --soft:#a89f94; --line:#3a3530; --accent:#e38a5f; } }
+ * { box-sizing:border-box; }
+ body { margin:0; background:var(--bg); color:var(--ink); font:15px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; }
+ .note { background:var(--accent); color:#fff; text-align:center; padding:8px 16px; font-size:13.5px; font-weight:600; }
+ main { max-width:980px; margin:0 auto; padding:28px 20px 48px; }
+ h1 { font-size:26px; margin:0 0 4px; }
+ .lead { color:var(--soft); margin:0 0 24px; }
+ .grid { display:grid; grid-template-columns:repeat(auto-fit, minmax(260px, 1fr)); gap:16px; }
+ article { background:var(--card); border:1px solid var(--line); border-radius:14px; padding:18px; display:flex; flex-direction:column; gap:10px; }
+ article h2 { font-size:18px; margin:0; }
+ .price { font-size:22px; font-weight:700; }
+ .stars { color:var(--accent); font-weight:600; }
+ dl { display:grid; grid-template-columns:auto 1fr; gap:4px 12px; margin:0; font-size:14px; }
+ dt { color:var(--soft); }
+ dd { margin:0; }
+ ul { margin:0; padding-left:18px; font-size:14px; }
+ blockquote { margin:0; padding:8px 12px; border-left:3px solid var(--line); color:var(--soft); font-size:14px; }
+ table { width:100%; border-collapse:collapse; margin-top:28px; background:var(--card); border:1px solid var(--line); border-radius:14px; overflow:hidden; font-size:14px; }
+ th, td { padding:10px 12px; border-bottom:1px solid var(--line); text-align:left; }
+ th { color:var(--soft); font-weight:600; }
+ footer { margin-top:28px; color:var(--soft); font-size:13px; }
+</style>
+</head>
+<body>
+<div class="note" role="note">Sample page from Still. These products, prices and reviews are made up, and nothing here is for sale.</div>
+<main>
+ <h1>Weekend backpacks, side by side</h1>
+ <p class="lead">Three made-up packs for two or three nights away. Compare price, weight, room and what reviewers say.</p>
+ <div class="grid">
+  <article id="pinecrest">
+   <h2>Pinecrest Weekender 28</h2>
+   <div class="price">$129</div>
+   <div class="stars">4.6 out of 5 (212 reviews)</div>
+   <dl>
+    <dt>Capacity</dt><dd>28 liters</dd>
+    <dt>Weight</dt><dd>1.1 kg</dd>
+    <dt>Laptop sleeve</dt><dd>Up to 16 inches</dd>
+    <dt>Rain cover</dt><dd>Included</dd>
+    <dt>Warranty</dt><dd>5 years</dd>
+   </dl>
+   <ul><li>Opens flat like a suitcase</li><li>Padded hip belt</li><li>Fits most airline cabin limits</li></ul>
+   <blockquote>"Packed it for three nights with room to spare. The hip belt makes a real difference." (Dana, verified buyer)</blockquote>
+   <blockquote>"Heavier than I expected when empty." (Sam, verified buyer)</blockquote>
+  </article>
+  <article id="tallow">
+   <h2>Tallow Daypack 22</h2>
+   <div class="price">$74</div>
+   <div class="stars">4.2 out of 5 (89 reviews)</div>
+   <dl>
+    <dt>Capacity</dt><dd>22 liters</dd>
+    <dt>Weight</dt><dd>0.6 kg</dd>
+    <dt>Laptop sleeve</dt><dd>Up to 14 inches</dd>
+    <dt>Rain cover</dt><dd>Not included</dd>
+    <dt>Warranty</dt><dd>2 years</dd>
+   </dl>
+   <ul><li>Lightest of the three</li><li>Water bottle pockets on both sides</li><li>No hip belt</li></ul>
+   <blockquote>"Great for one night. For two, I had to wear my jacket instead of packing it." (Priya, verified buyer)</blockquote>
+   <blockquote>"Straps started to fray after a few months." (Jordan, verified buyer)</blockquote>
+  </article>
+  <article id="marlin">
+   <h2>Marlin Trek 32</h2>
+   <div class="price">$159</div>
+   <div class="stars">4.4 out of 5 (147 reviews)</div>
+   <dl>
+    <dt>Capacity</dt><dd>32 liters</dd>
+    <dt>Weight</dt><dd>1.4 kg</dd>
+    <dt>Laptop sleeve</dt><dd>None</dd>
+    <dt>Rain cover</dt><dd>Included</dd>
+    <dt>Warranty</dt><dd>Lifetime</dd>
+   </dl>
+   <ul><li>Most room of the three</li><li>Adjustable back length</li><li>Too big for some cabin limits</li></ul>
+   <blockquote>"Carried it on a rainy hiking weekend and everything stayed dry." (Lee, verified buyer)</blockquote>
+   <blockquote>"No laptop sleeve, so it isn't for work trips." (Alex, verified buyer)</blockquote>
+  </article>
+ </div>
+ <table>
+  <caption class="lead" style="caption-side:top;text-align:left;padding:0 0 8px">At a glance</caption>
+  <thead><tr><th>Pack</th><th>Price</th><th>Capacity</th><th>Weight</th><th>Rating</th></tr></thead>
+  <tbody>
+   <tr><td>Pinecrest Weekender 28</td><td>$129</td><td>28 L</td><td>1.1 kg</td><td>4.6</td></tr>
+   <tr><td>Tallow Daypack 22</td><td>$74</td><td>22 L</td><td>0.6 kg</td><td>4.2</td></tr>
+   <tr><td>Marlin Trek 32</td><td>$159</td><td>32 L</td><td>1.4 kg</td><td>4.4</td></tr>
+  </tbody>
+ </table>
+ <footer>This page ships with Still, so you can watch your companion work on a page without touching a real shop.</footer>
+</main>
+</body>
+</html>
