@@ -107,6 +107,7 @@ public sealed class Preferences
  public List<ApiProvider> ApiProviders { get; set; } = []; // API providers the user added: settings and spending only, never the key (ApiKeyStore)
  public bool Autofill { get; set; } = true;
  public bool SaveDrafts { get; set; } = true; // Settings > Save drafts: message boxes keep what's typed until it's sent
+ public bool AutoUpdate { get; set; } = true; // Settings > About > Update automatically: off, a new version downloads and installs only when you click Update
  public bool Sounds { get; set; } = true; // setup, the intro and the look editor; browsing never makes a sound
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

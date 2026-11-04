@@ -272,6 +272,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 ## Updates and install
 
 - ✅ **Auto-update (Windows)**: checks GitHub at start and every 2 h, verifies SHA-256, installs on close or Restart to update (`MainWindow.Updates.cs`); installed copy only.
+- 🚧 **Update automatically (Windows)** (`still-2.10/stage-18-drafts`): Settings > About > Updates, on by default. Off: Still still checks and shows Update, but downloads and installs only when you click it, and a version already downloaded doesn't install on close (`Prefs.AutoUpdate`). Turning it on checks at once. Not on the Mac, which never installs on its own.
 - ✅ **Update notice (Mac)**: same check; updating means downloading from the release page (`Tools.swift`).
 - ✅ **Windows installer**: Inno Setup, per-user, no admin, installs WebView2 if missing; no portable copy is offered (`installer/Still.iss`).
 - ✅ **Link hand-off**: tiny `StillOpen.exe` passes clicked links to the open Still over a pipe; single-instance (`launcher/StillOpen.c`).
