@@ -90,12 +90,18 @@ try:
     # Onboarding: every app in one list, each with its state.
     send(process, "aiToggle")
     send(process, "aiCheck")
+    # Claude, ChatGPT, Grok and Gemini show first; OpenCode and the manifests wait under More agents, which opens in place.
+    folded = until(lambda: rpc(process, "shellEval", script="(b => b ? b.innerText.replace(/\\s+/g, ' ').trim() : '')(document.querySelector('.byo-more'))"), 30)
+    first = text(process)
+    check(folded.startswith("More agents") and "Fake missing" not in first and all(n in first for n in ("Claude", "ChatGPT", "Grok", "Gemini")),
+          f"Claude, ChatGPT, Grok and Gemini show; the rest wait under More agents ({folded!r})")
+    rpc(process, "shellEval", script="document.querySelector('.byo-more[aria-expanded=false]')?.click()")
     shown = until(lambda: (t := text(process)) and "Fake missing" in t and "Fake agent\nLogged in" in t and t, 30)
     check(shown and all(n in shown for n in ("ChatGPT", "Grok", "Claude")), "Pick your model lists ChatGPT, Grok and Claude")
     check(shown and "Codex" not in shown, "The screen never says Codex")
     names = rpc(process, "shellEval", script="[...document.querySelectorAll('.byo-row strong')].map(s => s.innerText)") or []
-    check("More agents" not in (shown or "") and all(n in names for n in ("OpenCode", "Fake agent", "Fake signed out", "Fake missing")) and len(names) == len(set(names)),
-          f"One list: OpenCode and the three manifests, the broken one skipped ({names})")
+    check(all(n in names for n in ("OpenCode", "Fake agent", "Fake signed out", "Fake missing")) and len(names) == len(set(names)),
+          f"More agents opens them in the same list: OpenCode and the three manifests, the broken one skipped ({names})")
     rows = shown
     check(rows and "Fake agent\nLogged in" in rows, "Signed-in row")
     check(rows and "Fake signed out\nInstalled\nSet up" in rows, "Installed but signed out row, with Set up")
