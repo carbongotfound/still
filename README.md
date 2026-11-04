@@ -41,9 +41,9 @@ The full list is in [FEATURES.md](FEATURES.md).
 
 ### Ask about the page you're on
 
-Open the side chat on any page and ask away. The companion reads the page, answers with sources and suggests what to ask next. This one is a real run: Claude Haiku on low effort, about 17 seconds.
+Open the side chat on any page and ask away. The companion reads the page, answers, and offers the next step as a choice card you answer in one click. In this shot it runs on a local test model added as a Compatible API.
 
-<p align="center"><img src="docs/screenshots/page-chat.webp" alt="A Wikipedia article on sourdough with the side chat open: Research Maya read the page and summed it up with sources" width="900"></p>
+<p align="center"><img src="docs/screenshots/page-chat.webp" alt="A Wikipedia article on sourdough with the side chat open: Research Maya read the page, summed it up in four points and asks what's next with a choice card" width="900"></p>
 
 ### Hire a team for the busywork
 
@@ -76,13 +76,13 @@ Every fact a companion keeps shows up in Settings with where it came from. Add t
 
 Pick Claude, ChatGPT, Grok, Gemini or OpenCode, signed in with your own plan, and switch any time, even mid-chat. Or plug in an OpenAI- or Claude-compatible API, like a model running on your own machine.
 
-<p align="center"><img src="docs/screenshots/ai-picker.webp" alt="The model list under the message box: Claude and its models, ChatGPT, Grok and its models, Gemini, OpenCode, and a local model added as a Compatible API" width="900"></p>
+<p align="center"><img src="docs/screenshots/ai-picker.webp" alt="The side chat's model list: Claude and its models, ChatGPT, Grok and its models, Gemini, a local model added as a Compatible API, More agents and Model settings" width="400"></p>
 
 ### Delete without the panic
 
 Deleting a chat, a companion, a memory, a key or your history asks first and says what goes. Then you get about six seconds to undo before anything is really deleted.
 
-<p align="center"><img src="docs/screenshots/undo.webp" alt="Chat history after deleting a chat: a Chat deleted toast with an Undo button at the top" width="900"></p>
+<p align="center"><img src="docs/screenshots/undo.webp" alt="Chat history after deleting a chat: a Chat deleted toast with an Undo button at the top" width="700"></p>
 
 ## Supported AI apps
 
@@ -108,6 +108,7 @@ To add one, pick **Add a model** in Still's menu. It opens **Settings > Models**
 
 - **A full browser.** Tabs, groups, split view, private windows and profiles, tabs on top or on the side. Ads and trackers blocked, YouTube ads included, and one-click import from Chrome, Edge, Brave, Opera GX, Vivaldi and Firefox.
 - **The message box.** `#` attaches a tab, `@` pulls in a teammate, `/` runs a skill, and you can drop in up to 10 files.
+- **Drafts and undo.** What you type in a message box comes back after a refresh or a restart, and Ctrl+Z (Cmd+Z on the Mac) brings back text you deleted.
 - **Plugins.** Gmail, Slack, Notion, GitHub and the rest of [Composio](https://composio.dev)'s catalog, with **your own** Composio key. Reads go ahead, anything that sends, posts, deletes or pays asks first.
 - **You stay in charge.** Per-site permissions, AI rules per site and per companion, and an 8 second countdown you can cancel before buying, sending, deleting or touching a payment field. A colored cursor shows where the companion clicks, **Take over** lets you drive, **Stop** ends the run.
 - **A password manager** encrypted with Windows DPAPI or the macOS Keychain. Companions never see saved passwords.
