@@ -25,6 +25,7 @@ import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
 import type { ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
+import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
@@ -271,29 +272,6 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
  return typing ? "listening" : "idle"
 }
 
-// What the user typed and didn't send, per box: the home box (the main window's is kept on disk; another window's while
-// it's open), each chat's, and a new chat's until it has an id. Kept on disk in the interface's own storage, so it's
-// still there after leaving, closing the tab or restarting Still, never in the chat itself. An incognito window's stay in
-// memory. Sending or emptying the box forgets it; one not touched for 7 days is dropped.
-type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[] }
-const WEEK = 7 * 86400000
-const inMemory = new Map<string, string>()
-const memoryDrafts = { getItem: (k: string) => inMemory.get(k) ?? null, setItem: (k: string, v: string) => void inMemory.set(k, v), removeItem: (k: string) => void inMemory.delete(k) }
-const drafts = (key: string) => key.startsWith("private.") ? memoryDrafts : key.startsWith("window.") ? sessionStorage : localStorage
-const readDraft = (key?: string): Draft | null => {
- if (!key) return null
- try {
-  const raw = drafts(key).getItem("still.draft." + key); if (!raw) return null
-  let d: Draft = { text: raw } // older drafts: the text, or {"parts": [...]}
-  try { const j = JSON.parse(raw); if (j && typeof j === "object" && !Array.isArray(j)) d = { ...j, text: j.text ?? "" } } catch { /* plain text */ }
-  if (d.at && Date.now() - d.at > WEEK) { drafts(key).removeItem("still.draft." + key); return null }
-  return d
- } catch { return null }
-}
-const keepDraft = (key: string | undefined, d: Draft | null) => { if (key) try { if (d) drafts(key).setItem("still.draft." + key, JSON.stringify({ ...d, at: Date.now() })); else drafts(key).removeItem("still.draft." + key) } catch { /* storage unavailable */ } }
-try { // on load: drafts left for more than 7 days go
- for (const k of Object.keys(localStorage)) if (k.startsWith("still.draft.")) readDraft(k.slice(12))
-} catch { /* storage unavailable */ }
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
@@ -308,7 +286,7 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 // into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[]) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[], draft?: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
  const drafted = useRef(draft)
  const [parts, setParts] = useState<Part[]>([])
@@ -317,15 +295,17 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
  const [dropping, setDropping] = useState(false)
+ const [restored, setRestored] = useState(false) // the box came back with a draft: Draft restored, with Discard
  const me = useId()
  const partsRef = useRef(parts), filesRef = useRef(files)
  useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
  const pending = useRef<(() => void) | null>(null), timer = useRef(0)
  const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
  const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
-  const key = draft, t = textOf(p), d: Draft | null = t.trim() || f.length ? { text: t, parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined } : null
-  pending.current = () => keepDraft(key, d); clearTimeout(timer.current); timer.current = window.setTimeout(flush, 300)
+  const key = draft, d = { text: textOf(p), parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined }
+  pending.current = () => keepDraft(key, d); clearTimeout(timer.current); timer.current = window.setTimeout(flush, 500)
  }
+ const unsent = useRef<Attached[]>([]) // the files of the message being sent, back in the box if Still couldn't send it
  useEffect(() => { addEventListener("beforeunload", flush); return () => { removeEventListener("beforeunload", flush); flush() } }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { // what Still kept from a pick, drop or paste in this box
   const got = (e: Event) => { // added now, or (.kept) a draft's that are still there
@@ -333,7 +313,9 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    if (d.files?.length) { const all = [...filesRef.current, ...d.files].slice(0, MAX_FILES); setFiles(all); if (d.to === me) save(partsRef.current, all) }
    if (d.error) toast(d.error)
   }
-  addEventListener("still-attached", got); return () => removeEventListener("still-attached", got)
+  const back = (e: Event) => { if ((e as CustomEvent).detail === draft && unsent.current.length) { setFiles(unsent.current); save(partsRef.current, unsent.current); unsent.current = [] } }
+  addEventListener("still-attached", got); addEventListener("still-unsent", back)
+  return () => { removeEventListener("still-attached", got); removeEventListener("still-unsent", back) }
  }, [me, draft]) // eslint-disable-line react-hooks/exhaustive-deps
  const take = (list: FileList | File[]) => {
   const all = [...list], room = MAX_FILES - files.length
@@ -351,19 +333,25 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const knownRef = useRef(known)
  useMascotVersion(); usePluginData(send) // a companion's picture, or an app's logo, can come in after it's mentioned
  useEffect(() => { knownRef.current = known; if (box.current) dress(box.current, known) })
+ const shown = (p: Part[]) => p.map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "")
+ useEffect(() => { // Undo and redo put a step back with its mentions, the caret where it was
+  const el = box.current; if (el) appliers.set(el, s => { el.innerHTML = markup(typeof s.v === "string" ? [s.v] : shown(s.v), knownRef.current); if (document.activeElement === el) caretAt(el, s.c) })
+ }, []) // eslint-disable-line react-hooks/exhaustive-deps
  // The draft: what was typed in this box before, its mentions too while they're still there, and its files if Still
  // still has them. A new chat's goes with it once the chat has an id.
  useLayoutEffect(() => {
   flush() // what was typed under the last key is kept under it
   const was = drafted.current, el = box.current; drafted.current = draft
   if (was && draft && was !== draft && /(^|\.)chat\.new$/.test(was) && (textOf(partsRef.current).trim() || filesRef.current.length)) {
-   keepDraft(was, null); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined })
-   return // the new chat got its id: what's in the box stays, now under it
+   keepDraft(was, null); rekey(was, draft); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined })
+   return // the new chat got its id: what's in the box stays, now under it, with its undo steps
   }
   const kept = readDraft(draft)
-  const p: Part[] = kept?.parts ? kept.parts.map(x => typeof x === "string" ? x : live(x, knownRef.current) ?? (x as Mention).name ?? "") : [kept?.text ?? ""]
+  const p: Part[] = kept?.parts ? shown(kept.parts) : [kept?.text ?? ""]
   if (el) el.innerHTML = markup(p, knownRef.current)
+  if (el && draft) adopt(draft, el, kept)
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
+  setRestored(!!(kept?.text.trim() || kept?.files?.length))
   setFiles([])
   if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
   if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); const s = getSelection(); s?.selectAllChildren(el); s?.collapseToEnd() }
@@ -383,15 +371,21 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   const el = box.current; if (!el) return
   dress(el, known)
   const p = read(el), t = textOf(p)
-  setParts(p); save(p, files); setPick(0); setShut(null); onTyping?.(!!t.trim())
+  setParts(p); save(p, files); setPick(0); setShut(null); setRestored(false); onTyping?.(!!t.trim())
  }
  const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
  const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
+ // The draft stays until Still says it took the message: if it couldn't, the text comes back (drafts.tsx sent).
  const submit = () => {
   if (!message || disabled) return
-  onSubmit(message, attached, files.map(f => f.id))
+  flush(); sending(draft); unsent.current = files
+  onSubmit(message, attached, files.map(f => f.id), draft)
   if (box.current) box.current.innerHTML = ""
-  setParts([]); setBefore(""); setFiles([]); pending.current = null; clearTimeout(timer.current); keepDraft(draft, null); onTyping?.(false)
+  setParts([]); setBefore(""); setFiles([]); setRestored(false); onTyping?.(false)
+ }
+ const discard = () => { // Discard on Draft restored: the box empties, as a step to undo, and the draft goes
+  const el = box.current; if (!el) return
+  change(el, []); setFiles([]); pending.current = null; clearTimeout(timer.current); keepDraft(draft, null); setRestored(false); el.focus()
  }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
@@ -458,10 +452,11 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
+  {restored && <InputGroupAddon align="block-start" className="draft-addon"><DraftHint onDiscard={discard} /></InputGroupAddon>}
   {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
    {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
   </InputGroupAddon>}
-  <div ref={box} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
+  <div ref={box} data-history={draft} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
    onInput={sync} onBlur={flush} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
    onDrop={e => { // text dropped on the box comes in as plain text
@@ -500,19 +495,22 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
 }
 
 // The AI asked something with ask_user: pick an option, write an answer, or skip.
-function QuestionCard({ q, companion, send }: { q: { text: string; options: string[]; page?: string | null; kickoff?: boolean }; companion?: Companion; send: Send }) {
+function QuestionCard({ q, companion, send, draft }: { q: { text: string; options: string[]; page?: string | null; kickoff?: boolean }; companion?: Companion; send: Send; draft?: string }) {
  const [own, setOwn] = useState("")
+ const kept = useDraft<HTMLInputElement>(draft) // a written answer is kept as a draft until it's sent
+ const answer = (text: string) => { kept.done(); send("aiAnswer", { text }) }
  useEffect(() => { // 1-9 picks an option, unless the user is typing
-  const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) send("aiAnswer", { text: q.options[n - 1] }) }
+  const key = (e: KeyboardEvent) => { const n = Number(e.key); if (n >= 1 && n <= q.options.length && !(e.target as HTMLElement).closest("input,textarea,[contenteditable]")) answer(q.options[n - 1]) }
   addEventListener("keydown", key); return () => removeEventListener("keydown", key)
  }, [q, send])
  return <div className="ask-card" role="group" aria-label="Question from your AI">
   {q.page && <div className="ask-help"><strong>Help with this page</strong><Button size="sm" variant="outline" onClick={() => send("aiHelpPage", { id: q.page })}>Open the page</Button></div>}
   <div className="ask-q"><Face companion={companion} size={22} /><p>{q.text}</p></div>
-  {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => send("aiAnswer", { text: o })}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
-  <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) send("aiAnswer", { text: own }) }}>
-   <input aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
-   <Button type="button" variant="ghost" size="sm" onClick={() => send("aiAnswer", { text: "" })}>Skip</Button>
+  {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => answer(o)}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
+  {kept.hint}
+  <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) answer(own) }}>
+   <input ref={kept.ref} {...kept.props} aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
+   <Button type="button" variant="ghost" size="sm" onClick={() => answer("")}>Skip</Button>
    <Button type="submit" size="sm" disabled={!own.trim()}>Send</Button>
   </form>
  </div>
@@ -605,7 +603,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const chat = chatOf(ai, ai.chatId)
  const [offRecord, setOffRecord] = useState(false)
  const forget = chat ? !!chat.noMemory : offRecord
- const submit = (value: string, tabs: string[] = [], files: string[] = []) => send("aiSend", { text: value, companion: companion?.id, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
+ const submit = (value: string, tabs: string[] = [], files: string[] = [], draft?: string) => send("aiSend", { text: value, companion: companion?.id, draft, ...(!chat && offRecord && { noMemory: true }), ...(tabs.length && { tabs }), ...(files.length && { files }) })
  const you = calledBy(companion)
  const parent = chat?.from ? chatOf(ai, chat.from) : undefined
  const childStatus = busy ? (needsYou(ai, ai.chatId) ? "needs" : "working") : ai.task?.state === "failed" ? "failed" : ai.task?.reason === "stopped" ? "stopped" : "replied"
@@ -695,7 +693,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
-   {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} />}
+   {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} draft={"answer." + (ai.chatId ?? "new")} />}
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} companions={ai.companions} send={send} incognito={ai.incognito} />}
    {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}

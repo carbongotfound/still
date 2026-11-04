@@ -106,6 +106,7 @@ public sealed class Preferences
  public string AiHarness { get; set; } = ""; // the AI sidebar's agent: "claude", "chatgpt", "grok", "gemini", "opencode", an API provider's or a manifest's id, or "" until chosen
  public List<ApiProvider> ApiProviders { get; set; } = []; // API providers the user added: settings and spending only, never the key (ApiKeyStore)
  public bool Autofill { get; set; } = true;
+ public bool SaveDrafts { get; set; } = true; // Settings > Save drafts: message boxes keep what's typed until it's sent
  public bool Sounds { get; set; } = true; // setup, the intro and the look editor; browsing never makes a sound
  public bool RestoreTabs { get; set; } = true;
  public string DownloadFolder { get; set; } = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads");

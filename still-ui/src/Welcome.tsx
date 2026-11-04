@@ -7,6 +7,7 @@ import { cn, fadeTop, MAC } from "@/lib/utils"
 import { AiPicker, type AiState } from "./AiSidebar"
 import { QuickApi } from "./ApiProviders"
 import { lookOf, type Companion, type ReplyLength } from "./Buddy"
+import { useDraft } from "./drafts"
 import { INTERESTS, JoinedCard, LIBRARY, ROLE_TEXT, SETUP_CREW, fromPremade, starters } from "./crew"
 import { generate } from "./generate"
 import { IntroLayer } from "./Intro"
@@ -154,9 +155,11 @@ function Interview({ who, send, onClose, onDone, making, onMade }: { who: Compan
  useEffect(() => { if (making && s?.done && s.made) onMade?.(s.made) }, [s?.done]) // eslint-disable-line react-hooks/exhaustive-deps
  const waiting = !s || s.busy
  const last = s?.turns.at(-1)
- const answer = (t: string) => { if (!t.trim() || waiting) return; send("setupAnswer", { text: t.trim() }); setText("") }
+ const kept = useDraft<HTMLInputElement>("setup." + who.id) // what's typed to them is kept as a draft until it's sent
+ const answer = (t: string) => { if (!t.trim() || waiting) return; kept.done(); send("setupAnswer", { text: t.trim() }); setText("") }
  const say = (placeholder: string) => <form className="ob-say" onSubmit={e => { e.preventDefault(); answer(text) }}>
-  <input aria-label={placeholder} placeholder={placeholder} maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
+  {kept.hint}
+  <input ref={kept.ref} {...kept.props} aria-label={placeholder} placeholder={placeholder} maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
   <Button type="submit" size="icon-sm" aria-label="Send" disabled={!text.trim() || waiting}><ArrowUp /></Button>
  </form>
  const row = (c: Change) => <li key={c.key} className={cn(c.undone && "is-undone")}>

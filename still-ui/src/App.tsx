@@ -41,6 +41,7 @@ import { SaveLoginBar } from "./Passwords"
 import { GetStarted, Welcome, startCreating } from "./Welcome"
 import { Tour } from "./Tour"
 import { Confirmer, deleteChat, destroy, fire, isAsking, isGone, useGone } from "./Undo"
+import { draftSettings, sent, takeDrafts } from "./drafts"
 import { WhatsNew, notesFor, releaseOf } from "./WhatsNew"
 import type { ToolData } from "./BrowserTools"
 
@@ -67,7 +68,7 @@ function ExtensionPanel({ panel }: { panel: ExtensionRef }) {
   <div className="ext-panel-slot" ref={slot} />
  </aside>
 }
-type State = { welcome?:boolean; welcomeTalk?:boolean; seenVersion?:string; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string;tool?:string;target?:string;since?:string;count?:number;recent?:string[]};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
+type State = { welcome?:boolean; welcomeTalk?:boolean; seenVersion?:string; noExtensions?:boolean; noAi?:boolean; sidePanel?:ExtensionRef|null; pinnedExtensions?:ExtensionRef[]; profileName:string; maximized:boolean; loginOffer?:{id:string;origin:string;username:string;password:string;update:boolean}; permission?:{id:string;site:string;kind:string}; update?:{version:string;current:string;ready?:boolean;progress?:number;busy?:boolean;selfUpdate?:boolean;downloading?:boolean}; version?:string; windows?:{id:string;name:string;title:string}[]; secondary?:boolean; incognito?:boolean; agent?:{client:string;pending:boolean;action:string;ask?:string;paused?:boolean;signIn?:string;tab?:string;key?:string;tool?:string;target?:string;since?:string;count?:number;recent?:string[]};working?:string[]; dialog?:{id:string;kind:string;message:string;defaultText:string;site:string}; mcpCommand?:string; activeId: string; dark: boolean; focusMode: boolean; fullScreen:boolean; appFullScreen?:boolean; preferences: { theme: string; search: string; restore: boolean; blocking: boolean; downloads: string; tracking:string; memory:boolean; autofill:boolean; startup:boolean; startupDisabled:boolean; isDefaultBrowser?:boolean; tearOff?:boolean; agents?:boolean; askInChat?:boolean; agentProfile?:string; companionSession?:boolean; tabLayout?:string; chatTitles?:string; sidebarWidth?:number; newTab?:string; interests?:string[]; sounds?:boolean; osSoundsOff?:boolean; drafts?:boolean }; zoom:number; tabs: Tab[]; history: Visit[]; bookmarks: Visit[]; downloads: DownloadItem[]; canBack: boolean; canForward: boolean; siteBlocking: boolean; chatPage?: { id: string; url: string; title: string; loading: boolean; favicon?: string } | null; groups?: Group[]; split?: { left: string; right: string; ratio: number } | null; picks?: AddressPick[] }
 type Bridge = { postMessage: (v: unknown) => void; addEventListener: (name: string, listener: (e: MessageEvent) => void) => void; removeEventListener: (name: string, listener: (e: MessageEvent) => void) => void }
 declare global { interface Window { chrome?: { webview?: Bridge } } }
 // What's waiting to be deleted behind an Undo toast stays out of every list (Undo.tsx).
@@ -136,7 +137,7 @@ type Finding = [string, string, string, string]
 const SETTINGS_FIND: Finding[] = [
  ["setup", "general", "Run setup again", "welcome first steps start over"], ["talk", "general", "Set me up with your companion", "setup questions layout"],
  ["search", "general", "Search engine", "google bing duckduckgo"], ["default", "general", "Default browser", "open links"], ["startup", "general", "Open Still at sign-in", "login start boot"],
- ["restore", "general", "Pick up where you left off", "restore tabs session reopen"], ["sounds", "general", "Sounds", "audio jingle mute"], ["downloads", "general", "Download folder", "files save location"],
+ ["restore", "general", "Pick up where you left off", "restore tabs session reopen"], ["drafts", "general", "Save drafts", "draft unsent message prompt restore crash undo"], ["sounds", "general", "Sounds", "audio jingle mute"], ["downloads", "general", "Download folder", "files save location"],
  ["import", "general", "Import browsing data", "chrome edge firefox brave bookmarks history passwords"], ["export", "general", "Export bookmarks", "backup file"],
  ["profiles", "general", "Profiles", "spaces accounts separate"], ["extensions", "general", "Extensions", "chrome web store add-ons"],
  ["theme", "appearance", "Theme", "dark light black system mode colors"], ["layout", "appearance", "Tab layout", "classic modern side vertical tabs"], ["tearoff", "appearance", "Drag tabs into their own window", "tear off new window"],
@@ -505,7 +506,9 @@ export default function App() {
  useEffect(() => {
   const listener = (e: MessageEvent) => {
    const data = e.data
-   if (data.kind === "state") setState(data)
+   if (data.kind === "state") { draftSettings(data.preferences?.drafts !== false, !!data.incognito); setState(data) }
+   if (data.kind === "drafts") takeDrafts(data.data)
+   if (data.kind === "sent") { if (!data.ok && data.error) toast(data.error); if (data.draft) sent(data.draft, !!data.ok) }
    if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted ?? []) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
@@ -789,7 +792,7 @@ export default function App() {
            <Space companion={companion} team={ai.companions} mood={typing ? "listening" : "idle"} onOpen={() => setProfile(companion.id)} onPick={setBuddy} />
            <div className="home-compose"><Composer draft={state.secondary ? "window.home" : "home"} ai={ai} send={send} onTyping={setTyping} companion={companion} onCompanion={setBuddy} tabs={state.tabs}
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
-            onSubmit={(text, tabs, files) => { send("aiSend", { text, home: true, companion: companion.id, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>
+            onSubmit={(text, tabs, files, draft) => { send("aiSend", { text, home: true, companion: companion.id, draft, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>
            <div className="home-chips">
             <button onClick={() => setView("skills")}><BookOpen />Skills & plugins</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
@@ -892,6 +895,9 @@ export default function App() {
         <SetRow id="default" title="Default browser" help={state.preferences.isDefaultBrowser ? "Still opens your links." : `Open links from other apps in Still. ${MAC ? "macOS" : "Windows"} asks you to confirm.`}>{state.preferences.isDefaultBrowser ? <span className="tool-caption">✓ Default</span> : <Button variant="outline" size="sm" onClick={() => send("defaultBrowser")}>Make default</Button>}</SetRow>
         <SetRow id="startup" title="Open Still at sign-in" help={<>{MAC ? "Start with your launch profile when you log in to your Mac." : "Start with your launch profile when you sign in to Windows."}{state.preferences.startupDisabled && <> {MAC ? "It's switched off in Login Items. " : "Windows has disabled this startup entry. "}<Button variant="link" className="h-auto p-0 text-xs" onClick={() => send("startupSettings")}>{MAC ? "Open Login Items" : "Open Windows startup settings"}</Button></>}</>}><Switch aria-label="Open Still at sign-in" checked={state.preferences.startup} onCheckedChange={enabled => send("startup", { enabled })} /></SetRow>
         <SetRow id="restore" title="Pick up where you left off" help="Restore tabs when Still opens."><Switch aria-label="Restore tabs" checked={state.preferences.restore} onCheckedChange={v => preference("restore", String(v))} /></SetRow>
+        <SetRow id="drafts" title="Save drafts" help="Keep what you type in a message box until it's sent, even if Still closes. Drafts stay on this computer, never for private windows.">
+         <Switch aria-label="Save drafts" checked={state.preferences.drafts !== false && !isGone("drafts")} onCheckedChange={v => v ? preference("drafts", "true") : destroy({ key: "drafts", title: "Turn off Save drafts?", action: "Turn off", done: "Save drafts is off",
+          body: "Drafts you haven't sent are deleted, and nothing you type is kept until you turn it on again.", run: () => preference("drafts", "false") })} /></SetRow>
         <SetRow id="sounds" title="Sounds" help={soundsBlocked ? soundsBlocked + "." : "The intro, and a short jingle when setup is done. Browsing never makes a sound."}><Switch aria-label="Sounds" disabled={!!soundsBlocked} checked={sounds} onCheckedChange={v => preference("sounds", String(v))} /></SetRow>
        </SetCard>
        <SetCard title="Files and data">

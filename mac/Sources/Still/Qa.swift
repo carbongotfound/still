@@ -159,7 +159,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  case "evalTab":
   guard let view = browsers.lazy.flatMap(\.tabs).first(where: { $0.id == text("id") })?.view else { once.fire(#"{"error":"no page"}"#); return }
   qaEval(view, text("script"), done)
- case "key": done(["ok": qaKey(b, text("key"), text("mods"))])
+ case "key": done(["ok": qaKey(b, text("key"), text("mods"), post: request["post"] as? Bool ?? false)])
  case "capture": qaCapture(b, text("name"), (request["scale"] as? NSNumber)?.doubleValue ?? 1, done)
  case "systemTheme":
   qaSystemTheme = text("value") == "Light" ? "Light" : "Dark"
@@ -275,7 +275,8 @@ private func qaJson(_ value: Any?) -> String {
 /// first, as for a real key press; otherwise it goes to the focused view. Returns false for a Command shortcut nothing has.
 private var qaForward = DispatchTime.now() // when Still, brought forward for a key, is ready for keys
 private var qaQueued = DispatchTime.now() // until then, keys posted earlier may still wait in the event queue
-private func qaKey(_ b: Browser, _ key: String, _ mods: String) -> Bool {
+/// post: through the event queue even with Command held, so the page sees it before the menu bar (as a real press does).
+private func qaKey(_ b: Browser, _ key: String, _ mods: String, post: Bool = false) -> Bool {
  let held = Set(mods.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
  let ctrl = held.contains("Control"), alt = held.contains("Alt"), shift = held.contains("Shift")
  var name = key
@@ -313,7 +314,8 @@ private func qaKey(_ b: Browser, _ key: String, _ mods: String) -> Bool {
  guard let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: b.window.windowNumber,
                                    context: nil, characters: typed.0, charactersIgnoringModifiers: typed.0, isARepeat: false, keyCode: typed.1) else { return false }
  // A shortcut waits behind keys still queued, as a typed one would; posted, it reaches the menu bar the same way.
- let queued = qaQueued > .now()
+ let queued = post || qaQueued > .now()
+ if post { b.window.makeFirstResponder(b.shell) } // posted: for the interface's own boxes, as after a click in one
  if !queued, NSApp.mainMenu?.performKeyEquivalent(with: down) == true { return true }
  if !queued, flags.contains(.command) { return false }
  qaPost(b, down)
