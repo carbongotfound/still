@@ -99,7 +99,7 @@ def main():
         # The home mascot opens Jonah's profile, on General.
         js(p, "document.querySelector('.home-face')?.click()")
         check(until(lambda: shown(p, ".profile-panel[aria-label=\"Jonah's profile\"] .profile-stage canvas, .profile-panel .profile-stage img"), 10), "Clicking the home mascot opens its profile, with a live mascot on the stage")
-        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Files Memory Model", "Six tabs: General, Skills & plugins, Routines, Files, Memory, Model (no Plugins tab)")
+        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Files Memory AI", "Six tabs: General, Skills & plugins, Routines, Files, Memory, AI (no Plugins tab)")
         time.sleep(1)
 
         # A screenshot per tab, and what each one holds.
@@ -116,9 +116,9 @@ def main():
             else:
                 print("capture:", got)
 
-        # Model: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
+        # AI: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
         click(p, ".profile-modes button", "Thorough")
-        check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
+        check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "AI: picking Thorough saves it")
         press(p, ".profile-tablist [role=tab][id$='-trigger-skills']", "mousedown")
         until(lambda: shown(p, ".profile-list [role=switch]"), 3)
         kit = mates().get("Jonah", {}).get("Skills") or []

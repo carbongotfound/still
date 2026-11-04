@@ -6,17 +6,17 @@ import { cn } from "@/lib/utils"
 import { lookOf, type Companion } from "./Buddy"
 import { PREMADES } from "./crew"
 import {
- BODY_COLORS, EXTRAS, HOLD, EYE_SHAPES, FINISHES, FORMS, MARKINGS, MOUTHS, PROPS, SOLIDS, STARTS, TEAM_LOOKS, TOPS,
- change, hasAccent, history, isV2, lookKey, markColor, newStyle, redo, reset, surprise, undo, v2, type History, type Locks, type Look,
+ BODY_COLORS, EXTRAS, HOLD, EYE_SHAPES, FINISHES, FORMS, MOUTHS, PROPS, SOLIDS, STARTS, TEAM_LOOKS, TOPS,
+ change, hasAccent, history, isV2, lookKey, newStyle, redo, reset, surprise, undo, v2, type History, type Locks, type Look,
 } from "./look"
 import { Mascot, loadEngine, pictureOf, useMascotVersion, type Frame } from "./Mascot"
 
 // Customize: a big live preview that changes with each pick, the companion at the sizes it's seen at (40, 24 and 18px,
 // light and dark), and its look in tabs: where to start (curated looks, or a team look to make your own), the body,
-// colors (a solid body, an optional accent, a marking only if picked, each in any color), the face, and a top feature and
+// colors (a solid body and an optional accent, each in any color), the face, and a top feature and
 // accessory. Every pick can be undone; Reset goes back to the look
-// it opened with; Cancel keeps the saved look as it was. A look from before the new style is shown as it is, with Try
-// the new style: nothing changes until then.
+// it opened with; Cancel keeps the saved look as it was. A classic look (from before the new style) is shown as it is, and
+// every tab works on it: the first change moves it to the nearest new-style look (newStyle) and makes that change.
 const TABS = [["start", "Start"], ["body", "Body"], ["colors", "Colors"], ["face", "Face"], ["extras", "Extras"]] as const
 type Tab = (typeof TABS)[number][0]
 const LOCKS: [keyof Locks, string][] = [["body", "Body"], ["colors", "Colors"], ["face", "Face"], ["feature", "Feature"]]
@@ -59,6 +59,8 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
  const [nudge, setNudge] = useState(0)
  const settled = useSettled(look, 220)
  const hadProp = !isV2(saved) && saved.prop
+ const asNew = (l: Look) => isV2(l) ? l : newStyle(l, !!hadProp && HOLD[saved.prop] !== "worn") // a classic look, as it'd be changed
+ const now = asNew(look) // what the tabs show as picked
  useEffect(() => { void loadEngine().then(m => FORMS.forEach(([f]) => m?.preload("f-" + f))) }, []) // the five bodies load as the editor opens: a pick shows at once
  const live = useRef({ from: "", at: 0 }) // the color picker being dragged: its picks a second apart or less are one change
  const go = (next: Look, wave = true, from = "") => {
@@ -66,7 +68,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
   live.current = { from, at: Date.now() }
   setH(x => merge ? { ...x, now: next, future: [] } : change(x, next)); if (wave) setNudge(n => n + 1)
  }
- const set = (patch: Partial<Look>, from: string | false = "") => go(v2({ ...(look as Required<Look>), ...patch }), !from, from || "")
+ const set = (patch: Partial<Look>, from: string | false = "") => go(v2({ ...(now as Required<Look>), ...patch }), !from, from || "")
  const startFrom = (l: Look, from = "") => { go(l); setTeam(from && lookKey(l)); setTab("body") }
  const step = (f: (h: History) => History) => setH(x => f(x))
  useEffect(() => {
@@ -83,7 +85,7 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
   <div className={cn("look-grid is-3d", className)} role="radiogroup" aria-label={label}>{list.map(([k, name]) =>
    <button type="button" key={k || "none"} role="radio" aria-checked={now === k} aria-label={name} title={name} className={cn("look-option", now === k && "is-picked")} data-option={k || "none"} onClick={() => go(pick(k))}>
     <LookThumb look={pick(k)} frame={frame} /><small>{name}</small></button>)}</div>
- const part = (key: keyof Look) => (k: string) => v2({ ...(settled.v === 2 ? settled : look) as Required<Look>, [key]: k })
+ const part = (key: keyof Look) => (k: string) => v2({ ...asNew(settled.v === 2 ? settled : look) as Required<Look>, [key]: k })
  const lock = <div className="look-locks" role="group" aria-label="Keep these when you surprise">{LOCKS.map(([k, label]) =>
   <button type="button" key={k} aria-pressed={!!locks[k]} title={(locks[k] ? "Kept: " : "Keep ") + label.toLowerCase()} onClick={() => setLocks(l => ({ ...l, [k]: !l[k] }))}>{locks[k] ? <Lock /> : <LockOpen />}{label}</button>)}</div>
  const body: Record<Tab, ReactNode> = {
@@ -97,31 +99,28 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
      <LookThumb look={l} /><small>{name}</small></button>
    })}</div>
   </>,
-  body: tiles("Body", FORMS, part("form"), look.form ?? ""),
+  body: tiles("Body", FORMS, part("form"), now.form ?? ""),
   colors: <>
    <h4 className="look-heading">Body color</h4>
-   <Swatches small custom list={SOLIDS} value={look.color} onPick={(c, live) => set({ color: c, second: hasAccent(look) ? look.second : c }, live && "body")} />
+   <Swatches small custom list={SOLIDS} value={now.color} onPick={(c, live) => set({ color: c, second: hasAccent(now) ? now.second : c }, live && "body")} />
    <h4 className="look-heading">Accent</h4>
    <p className="look-hint">Optional. A second color for the feet and anything on top.</p>
-   <Swatches small custom none="No accent" label="Accent" list={SOLIDS} value={hasAccent(look) ? look.second! : ""} onPick={(c, live) => set({ second: c || look.color }, live && "accent")} />
-   <h4 className="look-heading">Marking</h4>
-   {tiles("Marking", MARKINGS, part("marking"), look.marking ?? "")}
-   {look.marking && look.marking !== "none" && <Swatches small custom label="Marking color" list={SOLIDS} value={markColor(look)} onPick={(c, live) => set({ mark: c }, live && "mark")} />}
+   <Swatches small custom none="No accent" label="Accent" list={SOLIDS} value={hasAccent(now) ? now.second! : ""} onPick={(c, live) => set({ second: c || now.color }, live && "accent")} />
    <div className="look-row" role="radiogroup" aria-label="Finish"><span>Finish</span>{FINISHES.map(([k, name]) =>
-    <button type="button" key={k} role="radio" aria-checked={look.finish === k} className={cn(look.finish === k && "is-picked")} onClick={() => set({ finish: k })}>{name}</button>)}</div>
+    <button type="button" key={k} role="radio" aria-checked={now.finish === k} className={cn(now.finish === k && "is-picked")} onClick={() => set({ finish: k })}>{name}</button>)}</div>
   </>,
   face: <>
    <h4 className="look-heading">Eyes</h4>
-   {tiles("Eyes", EYE_SHAPES, part("eye"), look.eye ?? "", "bust", "is-face")}
+   {tiles("Eyes", EYE_SHAPES, part("eye"), now.eye ?? "", "bust", "is-face")}
    <h4 className="look-heading">Mouth</h4>
-   {tiles("Mouth", MOUTHS, part("mouth"), look.mouth ?? "", "bust", "is-face")}
+   {tiles("Mouth", MOUTHS, part("mouth"), now.mouth ?? "", "bust", "is-face")}
   </>,
   extras: <>
    <h4 className="look-heading">On top</h4>
-   {tiles("On top", TOPS, part("top"), look.top ?? "", "bust", "is-face")}
+   {tiles("On top", TOPS, part("top"), now.top ?? "", "bust", "is-face")}
    <h4 className="look-heading">Accessory</h4>
-   {tiles("Accessory", EXTRAS, part("accessory"), look.accessory ?? "", "bust", "is-face")}
-   {hadProp && <label className="look-check"><input type="checkbox" checked={!!look.prop} disabled={HOLD[saved.prop] === "worn"} onChange={e => set({ prop: e.target.checked ? saved.prop : "" })} />
+   {tiles("Accessory", EXTRAS, part("accessory"), now.accessory ?? "", "bust", "is-face")}
+   {hadProp && <label className="look-check"><input type="checkbox" checked={!!now.prop} disabled={HOLD[saved.prop] === "worn"} onChange={e => set({ prop: e.target.checked ? saved.prop : "" })} />
     Keep the {(PROPS.find(([k]) => k === saved.prop)?.[1] ?? saved.prop).toLowerCase()}{HOLD[saved.prop] === "worn" ? " (stays with the classic look)" : ""}</label>}
   </>,
  }
@@ -136,12 +135,12 @@ export function LookEditor({ companion, onClose, onSave }: { companion: Companio
     {fresh ? <div className="look-surprise">
      <Button type="button" variant="outline" size="sm" onClick={() => go(surprise(look, locks))}><Dices />Surprise me</Button>{lock}
     </div> : <div className="look-classic">
-     <p>This is the classic look. The new style has more bodies, colors and faces.</p>
-     <Button type="button" variant="outline" size="sm" onClick={() => { go(newStyle(look, !!hadProp && HOLD[saved.prop] !== "worn")); setTab("body") }}><Sparkles />Try the new style</Button>
+     <p>This is the classic look. Change anything to move to the new style, with more bodies, colors and faces.</p>
+     <Button type="button" variant="outline" size="sm" onClick={() => { go(asNew(look)); setTab("body") }}><Sparkles />Try the new style</Button>
     </div>}
    </div>
    <div className="look-panel">
-    <div className="look-tabs" role="tablist">{TABS.map(([k, label]) => <button type="button" key={k} role="tab" aria-selected={tab === k} disabled={!fresh && k !== "start"} onClick={() => setTab(k)}>{label}</button>)}</div>
+    <div className="look-tabs" role="tablist">{TABS.map(([k, label]) => <button type="button" key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}>{label}</button>)}</div>
     <div className="look-body" role="tabpanel" aria-label={TABS.find(t => t[0] === tab)![1]}>{body[tab]}</div>
     <div className="look-foot">
      <Button type="button" variant="ghost" size="icon" aria-label="Undo" title="Undo" disabled={!h.past.length} onClick={() => step(undo)}><Undo2 /></Button>
