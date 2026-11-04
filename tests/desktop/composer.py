@@ -88,11 +88,12 @@ def main():
                   f"At {w}px the model and effort move to their own line: Default effort reads in full, the model name ends in an ellipsis ({labels})")
         js(p, "[...document.querySelectorAll('.composer')].forEach(c => { c.style.width = ''; c.style.maxWidth = ''; c.style.minWidth = '' })")
 
-        # Logos: the model list in the side chat's Model settings, every app in it. Only read: nothing here is clicked.
+        # Logos: Your models in Settings, every app in it, More agents opened. Only read: no app's row is clicked.
         js(p, "document.querySelector('[aria-label=\"Model settings\"]')?.click()")
-        until(lambda: js(p, "!!document.querySelector('.byo-row')"), 10)
+        until(lambda: js(p, "!!document.querySelector('#set-ai .byo-more')"), 10)
+        js(p, "document.querySelector('#set-ai .byo-more')?.click()")
         time.sleep(.4)
-        logos = js(p, "Object.fromEntries([...document.querySelectorAll('.byo-row')].map(r => [r.querySelector('strong')?.innerText ?? '', r.querySelector('.ai-logo.is-letter') ? 'letter' : (r.querySelector('.ai-logo path')?.getAttribute('d') || '').slice(0, 9)]))") or {}
+        logos = js(p, "Object.fromEntries([...document.querySelectorAll('#set-ai .byo-row')].map(r => [r.querySelector('strong')?.innerText ?? '', r.querySelector('.ai-logo.is-letter') ? 'letter' : (r.querySelector('.ai-logo path')?.getAttribute('d') || '').slice(0, 9)]))") or {}
         gem = next((v for k, v in logos.items() if k.startswith("Gemini")), None)
         oc = next((v for k, v in logos.items() if k.startswith("OpenCode")), None)
         check(gem and gem.startswith("M20.616"), f"Gemini shows its logo ({gem})")

@@ -1,5 +1,5 @@
 import { useState } from "react"
-import { Check, KeyRound, Plus, Trash2, X } from "lucide-react"
+import { Check, KeyRound, Trash2, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -159,14 +159,13 @@ export function QuickApi({ api, send }: { api?: ApiState; send: Send }) {
 
 /// Settings → Models → API providers: for people with an API key instead of a plan. Each provider is labelled
 /// Compatible: Still checks the formats against its own test server, not against real providers.
+/// Adding one is in Your models, under More agents (DeepSeek or Other compatible API), so it isn't offered twice.
 export function ApiProviders({ api, send }: { api?: ApiState; send: Send }) {
- const [adding, setAdding] = useState(false)
  const list = api?.providers ?? []
  return <div className="api-providers">
   <p className="plug-note">Use your own API key with a provider that speaks the OpenAI or Anthropic format. It uses your API key and your provider bills you per use. Signing in with a plan doesn't need this. Test connection sends one tiny request, which your provider may bill.</p>
   {api?.error && <p className="api-warn" role="alert">{api.error}</p>}
   {list.map(p => <Provider key={p.id} p={p} busy={api?.busy ?? ""} send={send} />)}
-  {adding ? <div className="api-card"><ApiForm send={send} done={() => setAdding(false)} /></div>
-   : <Button size="sm" variant="outline" onClick={() => setAdding(true)}><Plus />Add an API provider</Button>}
+  {!list.length && <p className="plug-note">None added yet. Add one in Your models, under More agents.</p>}
  </div>
 }

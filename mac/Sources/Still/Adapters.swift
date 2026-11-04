@@ -185,6 +185,9 @@ class AgentAdapter {
   CopilotAdapter(id: "copilot", name: "GitHub Copilot", app: "Copilot CLI", command: "copilot").with {
    $0.maker = "GitHub"; $0.installCommand = "npm install -g @github/copilot"; $0.site = "https://github.com/github/copilot-cli"; $0.terminalSignIn = "copilot login"; $0.secondary = true; $0.compatible = true
   },
+  DshAdapter(id: "dsh", name: "DeepSeek Harness", app: "DeepSeek Harness", command: "dsh").with {
+   $0.maker = "DeepSeek"; $0.installCommand = "npm install -g @deepseek-ai/dsh"; $0.site = "https://github.com/deepseek-ai/deepseek-harness"; $0.terminalSignIn = "dsh web"; $0.secondary = true; $0.compatible = true
+  },
   // Mac only: Amp's docs run it on Windows through WSL, which Still doesn't drive.
   AmpAdapter(id: "amp", name: "Amp", app: "Amp", command: "amp").with {
    $0.maker = "Amp"; $0.installCommand = "curl -fsSL https://ampcode.com/install.sh | bash"; $0.site = "https://ampcode.com"; $0.terminalSignIn = "amp login"; $0.secondary = true; $0.compatible = true
@@ -292,6 +295,34 @@ final class CopilotAdapter: AgentAdapter {
  }
  override func parse(_ e: [String: Any]) -> [AgentEvent] { plain(jsonText(e)) }
  override func plain(_ line: String) -> [AgentEvent] { line.trimmingCharacters(in: .whitespaces).isEmpty ? [] : [.message(line, join: "\n")] }
+}
+
+/// DeepSeek Harness (`dsh`, DeepSeek's own agent), built from its docs and source (github.com/deepseek-ai/deepseek-harness),
+/// not run live: the headless profile with its JSON event stream, the prompt on stdin, and a --patch overlay in the run
+/// folder that adds Still's MCP server, turns its own tools off, turns its session-log upload off and lets it use the
+/// sign-in or key saved in its own app. Still never reads that sign-in.
+final class DshAdapter: AgentAdapter {
+ // Its own tools: shell, files, jobs, skills, sub-agents, workflows, web and MCP resources.
+ static let tools = ["tool-bash", "tool-pwsh", "tool-jobs", "tool-fs", "tool-fs-search", "tool-working-directory", "tool-skill",
+  "tool-agent-team", "tool-subagent-control", "tool-subagent", "tool-subagent-fork", "tool-workflow", "tool-web", "mcp-resources"]
+ override var gaps: [String] { ["To sign in or add your DeepSeek key, run dsh web in a terminal.", "It is a developer preview, so it may change or break.",
+  "No model or effort settings in Still yet, so every mode uses the model you set in DeepSeek Harness.", "DeepSeek Harness keeps its own record of incognito chats on this computer."] }
+ override var env: [String: String] { ["DSH_TELEMETRY_MODE": "DISABLED"] }
+ override func args(_ exe: String, _ r: RunRequest) async throws -> [String] {
+  // A patch replaces a row's whole config, so the session-log row gets one of its own. JSON is YAML, so no escaping to get wrong.
+  let patch = r.folder + "/still-dsh.yml"
+  let rows: [[String: Any]] = [
+   ["insert": [["id": "still-mcp", "name": "@deepseek-ai/dsh-mcp-client", "config": ["serverName": "still", "transport": "stdio",
+    "command": stillExecutable, "args": r.mcp, "cwd": r.folder, "toolCallTimeoutMs": 660000]]]], // ask_user waits for the user
+   ["id": "session-log-deepseek", "config": ["enabled": false]]]
+   + ["credentials", "authorization", "deepseek-account"].map { ["id": $0, "disabled": false] }
+   + Self.tools.map { ["id": $0, "disabled": true] }
+  try JSONSerialization.data(withJSONObject: rows, options: [.withoutEscapingSlashes]).write(to: URL(fileURLWithPath: patch))
+  var args = ["--profile", "headless", "--patch", patch, "--json"]
+  if r.resume, let session = r.session { args += ["--session-id", session] }
+  return args + ["-"]
+ }
+ override func parse(_ e: [String: Any]) -> [AgentEvent] { AgentStream.dsh(e) }
 }
 
 /// Amp (`amp`), built from its docs, not run live: execute mode with the prompt on stdin, Claude-style stream-json, a
@@ -544,7 +575,7 @@ final class ManifestAdapter: AgentAdapter {
    guard let data = try? Data(contentsOf: folder.appendingPathComponent(name)),
          let json = (try? JSONSerialization.jsonObject(with: data, options: [.json5Allowed])) as? [String: Any] else { NSLog("Still: skipped agents/\(name)"); continue }
    let s = Spec(json)
-   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode", "qwen", "copilot", "amp"].contains(s.id),
+   guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode", "qwen", "copilot", "amp", "dsh"].contains(s.id),
          !s.command.isEmpty, !s.run.isEmpty else { continue }
    let adapter = ManifestAdapter(id: s.id, name: s.name.isEmpty ? s.id : s.name, app: s.name.isEmpty ? s.command : s.name, command: s.command)
    adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.signIn = s.signin; adapter.domains = s.domains; adapter.secondary = true
@@ -928,6 +959,21 @@ enum AgentStream {
   case "error":
    let error = e["error"] as? [String: Any]
    return [.error(str((error?["data"] as? [String: Any])?["message"]) ?? str(error?["name"]) ?? "failed")]
+  default: break
+  }
+  return []
+ }
+ /// DeepSeek Harness (`--profile headless --json`, built from its docs and source, not run live): session first, then text
+ /// and thinking once each step commits, tool_call and tool_result, a final event repeating the answer (skipped), and
+ /// error for a failure outside a turn. Still's tools come as mcp__still__<tool>.
+ static func dsh(_ e: [String: Any]) -> [AgentEvent] {
+  switch str(e["type"]) {
+  case "session": if let session = str(e["sessionId"]), !session.isEmpty { return [.session(session)] }
+  case "text": if let text = str(e["text"]), !text.isEmpty { return [.message(text, join: nil)] }
+  case "thinking": return [.thinking]
+  case "tool_call": return [.toolCall(id: str(e["callId"]) ?? "", name: bare(str(e["tool"]), "mcp__still__"), args: e["input"])]
+  case "tool_result": return [.toolResult(id: str(e["callId"]) ?? "", ok: str(e["status"]) == "completed")]
+  case "error": return [.error(str(e["message"]) ?? "failed")]
   default: break
   }
   return []

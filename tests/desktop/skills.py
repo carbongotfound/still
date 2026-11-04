@@ -5,12 +5,16 @@ gives the body of one of its own skills with a "Used skill" step and refuses any
 brings the body in, that a tier's model and effort reach the AI app and can be reset, that a model the app refuses is
 retried once on its default model with a note in the chat, that next steps show as buttons, that an image or a video link
 shows as a card (the image only on Show image, fetched by Still within its limits), and that the end of a reply sits
-close to the message box. A tier saved before launch shows in Settings, as after a restart.
+close to the message box. Choices: every app is told about the choices block; a card offers one pick, several then
+Submit, a dropdown, or your own words; the pick goes back as your reply, and a card takes one answer. A block that isn't
+valid JSON stays as text. A reply has no Took line, its Copy shows on hover, and message text selects and copies. A tier saved before launch shows in Settings, as after a restart.
 
 Usage: python tests/desktop/skills.py <QA exe>
 The fake AI app (its models: good and notonplan) answers the last line of its prompt:
   SKILL: <id> [<id>...]   calls load_skill with each id and writes what it got to results.jsonl
   NEXT                    replies with a paragraph and three next steps
+  CHOOSE / MULTI / DROP   replies with a choices block: one pick and your own words / several / a dropdown
+  BADJSON                 replies with a choices block that isn't JSON
   MEDIA                   replies with an image whose address doesn't answer and a YouTube link with a start time
   anything else           replies "Okay."
 With --model notonplan it answers the way Claude Code does for a model the user can't use, and exits 1.
@@ -26,7 +30,7 @@ import uuid
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("skills-" + uuid.uuid4().hex[:8])
@@ -90,6 +94,14 @@ FAKE = textwrap.dedent(r'''
         text("Done.")
     elif verb == "MEDIA":
         text("Here's the lamp I found.\n\n![A blue desk lamp](https://127.0.0.1:9/lamp.png)\n\n[How desk lamps work](https://youtu.be/abcDEF12345?t=95)")
+    elif verb == "CHOOSE":
+        text('Two good ones.\n\n```choices\n{"question": "Where to?", "type": "single", "options": ["Lisbon", "Porto"], "other": true}\n```')
+    elif verb == "MULTI":
+        text('Pick what matters.\n\n```choices\n{"question": "Which should I compare?", "type": "multiple", "options": ["Price", "Weight", "Battery"]}\n```')
+    elif verb == "DROP":
+        text('Which day?\n\n```choices\n{"question": "Pick a day", "type": "dropdown", "options": ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9"]}\n```')
+    elif verb == "BADJSON":
+        text("Here's a list.\n\n```choices\nnot json at all\n```")
     elif verb == "NEXT":
         text("Here's the short version: the blue one is cheaper.\n\n**Next steps**\n>> Compare the two cheapest options\n>> **Check delivery times**\n>> Save the table")
     else:
@@ -157,6 +169,80 @@ def again(p, cid, text):
     n = len(chat(cid)["Messages"])
     send(p, "aiSend", text=text)
     until(lambda: len(chat(cid)["Messages"]) > n + 1 and not chat(cid).get("Running"), 60)
+
+
+CARD = "[...document.querySelectorAll('.chat-view .choice-card')].pop()"
+
+
+def card(p):
+    """The last choice card: its question, options, picked ones, and whether it's answered and takes no more."""
+    return js(p, "(c => c && { q: c.querySelector('.choice-q')?.innerText ?? '', options: [...c.querySelectorAll('.ask-option')].map(b => b.innerText.trim()),"
+                 " on: [...c.querySelectorAll('.ask-option[aria-pressed=true], .ask-option[aria-checked=true]')].map(b => b.innerText.trim()), done: c.hasAttribute('data-done'),"
+                 " off: [...c.querySelectorAll('button, input')].every(b => b.disabled), own: !!c.querySelector('[aria-label=\"Type your own\"]'),"
+                 " select: c.querySelector('.choice-select')?.innerText.trim() ?? null })(" + CARD + ")") or {}
+
+
+def option(p, words):
+    return js(p, f"(c => {{ const b = [...(c?.querySelectorAll('.ask-option') ?? [])].find(b => b.innerText.trim() === {json.dumps(words)}); b?.click(); return !!b && !b.disabled }})({CARD})")
+
+
+def users(cid):
+    return [m["Text"] for m in chat(cid)["Messages"] if m["Role"] == "user"]
+
+
+def answered(cid, n):
+    return until(lambda: len(chat(cid)["Messages"]) > n + 1 and not chat(cid).get("Running"), 60)
+
+
+def mouse(p, kind, x, y, **more):
+    rpc(p, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": x, "y": y, **more})
+
+
+def drag_select(p, sel):
+    """Selects the last element's text with the mouse, from its first character to its last."""
+    box = js(p, "(e => { if (!e) return null; const r = document.createRange(); r.selectNodeContents(e); const q = [...r.getClientRects()].filter(q => q.width)"
+                "; if (!q.length) return null; const a = q[0], z = q.at(-1); return [a.left + 1, a.top + a.height / 2, z.right - 1, z.top + z.height / 2] })"
+                f"([...document.querySelectorAll({json.dumps(sel)})].pop())")
+    if not box:
+        return ""
+    x0, y0, x1, y1 = box
+    js(p, "getSelection().removeAllRanges()")
+    mouse(p, "mousePressed", x0, y0, button="left", buttons=1, clickCount=1)
+    mouse(p, "mouseMoved", (x0 + x1) / 2, y1, button="left", buttons=1)
+    mouse(p, "mouseMoved", x1, y1, button="left", buttons=1)
+    mouse(p, "mouseReleased", x1, y1, button="left", buttons=0, clickCount=1)
+    return js(p, "getSelection().toString()") or ""
+
+
+def copy_keys(p):
+    """Ctrl+C (Cmd+C on the Mac) as the keyboard sends it; returns what the page's copy saw selected."""
+    js(p, "window.__copied = null; document.addEventListener('copy', () => { window.__copied = getSelection().toString() }, { once: true })")
+    if MAC:
+        rpc(p, "key", key="C", mods="Control", post=True)
+    else:
+        for kind in ("rawKeyDown", "keyUp"):
+            rpc(p, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": kind, "key": "c", "code": "KeyC", "windowsVirtualKeyCode": 67, "modifiers": 2})
+    return until(lambda: js(p, "window.__copied"), 3) or ""
+
+
+def clipboard():
+    """The Windows clipboard's text."""
+    import ctypes
+    u, k = ctypes.windll.user32, ctypes.windll.kernel32
+    u.GetClipboardData.restype = k.GlobalLock.restype = ctypes.c_void_p
+    k.GlobalLock.argtypes = k.GlobalUnlock.argtypes = [ctypes.c_void_p]
+    if not u.OpenClipboard(None):
+        return None
+    try:
+        h = u.GetClipboardData(13)  # CF_UNICODETEXT
+        if not h:
+            return ""
+        try:
+            return ctypes.wstring_at(k.GlobalLock(h))
+        finally:
+            k.GlobalUnlock(h)
+    finally:
+        u.CloseClipboard()
 
 
 def tiers(p):
@@ -227,12 +313,92 @@ def main():
 
         # Next steps show as buttons, without the markup.
         again(p, nora, "NEXT")
-        shown = until(lambda: js(p, "[...document.querySelectorAll('.ai-next-step')].map(b => b.innerText.trim())"), 10) or []
+        shown = until(lambda: js(p, "[...document.querySelectorAll('.choice-card .ask-option')].map(b => b.innerText.trim())"), 10) or []
         check(shown == ["Compare the two cheapest options", "Check delivery times", "Save the table"], f"Next steps show as three buttons: {shown}")
         body = js(p, "[...document.querySelectorAll('.chat-view .md')].pop()?.innerText || ''") or ""
         check(">>" not in body and "Next steps" not in body and "blue one is cheaper" in body, "and the reply shows without the >> lines or their label")
 
         rpc(p, "capture", name="skills-next-steps.png")
+
+        # Choices: every app is told; a pick goes back as the reply, and a card takes one answer.
+        check("one choices block" in first and "```choices" in first, "The first turn tells the AI how to offer choices, with an example")
+        n = len(chat(nora)["Messages"])
+        check(option(p, "Check delivery times") and answered(nora, n) and users(nora)[-1] == "Check delivery times", f"Picking a next step sends it as your reply ({users(nora)[-1:]})")
+        c = until(lambda: (c := card(p)) and c.get("done") and c, 5) or {}
+        check(c.get("off") and c.get("on") == ["Check delivery times"], f"Then the card shows your pick and takes no more ({c})")
+        n = len(chat(nora)["Messages"])
+        option(p, "Save the table")
+        time.sleep(1.5)
+        check(len(chat(nora)["Messages"]) == n, "Clicking it again sends nothing")
+        check("Took " not in (js(p, "document.querySelector('.chat-view')?.innerText ?? ''") or ""), "A reply has no Took line")
+
+        again(p, nora, "MULTI")
+        c = until(lambda: (c := card(p)) and c.get("q") == "Which should I compare?" and c, 10) or {}
+        submit = "[...(" + CARD + ")?.querySelectorAll('button') ?? []].find(b => b.innerText.trim() === 'Submit')"
+        check(c.get("options") == ["Price", "Weight", "Battery"] and js(p, submit + "?.disabled"), f"Several: options to tick, Submit off until one is ticked ({c})")
+        option(p, "Price")
+        option(p, "Battery")
+        c = card(p)
+        check(c.get("on") == ["Price", "Battery"] and not c.get("done") and len(chat(nora)["Messages"]) == n + 2, f"Ticking sends nothing yet ({c.get('on')})")
+        n = len(chat(nora)["Messages"])
+        js(p, submit + "?.click()")
+        check(answered(nora, n) and users(nora)[-1] == "Price\nBattery", f"Submit sends the ticked ones as your reply ({users(nora)[-1:]})")
+        check(until(lambda: card(p).get("done") and card(p).get("off"), 5), "and the card takes no more")
+
+        again(p, nora, "DROP")
+        c = until(lambda: (c := card(p)) and c.get("q") == "Pick a day" and c, 10) or {}
+        check(c.get("select") is not None and not c.get("options"), f"A long list is a dropdown ({c})")
+        js(p, "(t => t?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' })))((" + CARD + ")?.querySelector('.choice-select'))")
+        listed = until(lambda: js(p, "[...document.querySelectorAll('[role=option]')].map(o => o.innerText.trim())"), 3) or []
+        js(p, "(o => { o?.focus(); o?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })) })([...document.querySelectorAll('[role=option]')].find(o => o.innerText.trim() === 'Day 7'))")
+        check(len(listed) == 9 and until(lambda: card(p).get("select") == "Day 7", 3), f"It lists every option, and picking one shows it ({len(listed)}, {card(p).get('select')})")
+        n = len(chat(nora)["Messages"])
+        js(p, "[...(" + CARD + ")?.querySelectorAll('button') ?? []].find(b => b.innerText.trim() === 'Send')?.click()")
+        check(answered(nora, n) and users(nora)[-1] == "Day 7" and until(lambda: card(p).get("off"), 5), f"Send sends it, once ({users(nora)[-1:]})")
+
+        again(p, nora, "CHOOSE")
+        c = until(lambda: (c := card(p)) and c.get("q") == "Where to?" and c, 10) or {}
+        check(c.get("options") == ["Lisbon", "Porto"] and c.get("own"), f"One pick, with a box for your own words ({c})")
+        js(p, "(i => { Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(i, 'Madeira'); i.dispatchEvent(new Event('input', { bubbles: true })) })"
+              "((" + CARD + ").querySelector('[aria-label=\"Type your own\"]'))")
+        n = len(chat(nora)["Messages"])
+        js(p, "(" + CARD + ").querySelector('[aria-label=\"Type your own\"]').closest('form').querySelector('button[type=submit]').click()")
+        check(answered(nora, n) and users(nora)[-1] == "Madeira", f"Your own words go back as your reply ({users(nora)[-1:]})")
+        c = until(lambda: (c := card(p)) and c.get("done") and c, 5) or {}
+        check(c.get("off") and not c.get("on") and js(p, "(" + CARD + ").querySelector('[aria-label=\"Type your own\"]').value") == "Madeira", "and the card shows them, taking no more")
+        rpc(p, "capture", name="skills-choices.png")
+
+        again(p, nora, "BADJSON")
+        bad = js(p, "(t => t && [t.innerText, !!t.querySelector('.choice-card')])([...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.innerText.includes(\"Here's a list\")))") or ["", True]
+        check("not json at all" in bad[0] and not bad[1], "A choices block that isn't JSON stays as text, with no card")
+        check(js(p, "document.querySelectorAll('.chat-view .choice-card').length") == 4, "Plain replies get no card (four cards in all)")
+
+        # Reply actions show on hover, lined up with the message; message text selects and copies.
+        acts = "[...document.querySelectorAll('.chat-view .ai-turn > .ai-actions')].pop()"
+        look = lambda: js(p, f"(a => a && [getComputedStyle(a).opacity, Math.round(a.querySelector('svg').getBoundingClientRect().left - a.parentElement.querySelector('.ai-msg').getBoundingClientRect().left)])({acts})") or []  # noqa: E731
+        check(js(p, "['.ai-msg.is-user', '.ai-msg.is-assistant .md'].every(s => (c => c.userSelect || c.webkitUserSelect)(getComputedStyle(document.querySelector('.chat-view ' + s))) === 'text')"),
+              "Your messages and the replies are selectable text")
+        if MAC:
+            js(p, "(e => getSelection().selectAllChildren(e))([...document.querySelectorAll('.chat-view .ai-msg.is-assistant .md p')].pop())")
+            got = copy_keys(p)
+            check("Here's a list" in got, f"Cmd+C copies the selected reply text ({got[:40]!r})")
+        else:
+            mouse(p, "mouseMoved", 4, 4)
+            time.sleep(.4)
+            hidden = look()
+            js(p, f"{acts}.parentElement.querySelector('.ai-msg').scrollIntoView({{ block: 'center' }})")
+            box = js(p, f"(r => [r.left + r.width / 2, r.top + r.height / 2])({acts}.parentElement.querySelector('.ai-msg').getBoundingClientRect())")
+            mouse(p, "mouseMoved", *box)
+            time.sleep(.4)
+            shown = look()
+            check(hidden[:1] == ["0"] and shown[:1] == ["1"], f"Copy shows only while the pointer is over the reply ({hidden}, {shown})")
+            check(shown and abs(shown[1]) <= 2, f"lined up with the reply's text ({shown[1:]}px)")
+            mine = drag_select(p, ".chat-view .ai-msg.is-user")
+            check(mine == "BADJSON", f"Dragging across your own message selects it ({mine!r})")
+            reply = drag_select(p, ".chat-view .ai-msg.is-assistant .md p")
+            check(reply.startswith("Here's a list"), f"and across a reply ({reply!r})")
+            got = copy_keys(p)
+            check(got.startswith("Here's a list") and (clipboard() or "").startswith("Here's a list"), f"Ctrl+C copies it ({got!r})")
 
         # Media: an image and a video link on lines of their own show as cards; the image waits for Show image.
         again(p, nora, "MEDIA")

@@ -95,12 +95,12 @@ Still runs the AI's own app in the background, signed in to your plan. It never 
 | **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
 | **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
 | **OpenCode** | [OpenCode](https://opencode.ai) | It runs on the provider you set up inside OpenCode (`opencode providers login`). |
-| **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models > API providers**. Labelled **Compatible**. |
+| **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models**, under **More agents** (**DeepSeek** comes filled in). Labelled **Compatible**. |
 | **Claude-compatible API** | Still's own agent | Same as above, for services that speak the Anthropic Messages format. Labelled **Compatible**. |
 
-Qwen Code, GitHub Copilot CLI and Amp (Mac only) are there too, labelled **Compatible**.
+Qwen Code, GitHub Copilot CLI, [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DeepSeek's own agent, a developer preview) and Amp (Mac only) are there too, labelled **Compatible**.
 
-To add one, pick **Add a model** in Still's menu. **Model settings** lists every app with its state on your computer (**Logged in**, **Installed** or **Not installed**) and an **Add** or **Set up** button, and the API presets below them. If an app is already installed and signed in, Still finds it.
+To add one, pick **Add a model** in Still's menu. It opens **Settings > Models**, where **Your models** lists every app with its state on your computer (**Logged in**, **Installed** or **Not installed**) and an **Add** or **Set up** button. Claude, ChatGPT, Grok and Gemini come first; the others and the API presets wait under **More agents**. If an app is already installed and signed in, Still finds it.
 
 **About Compatible APIs:** you pay your provider per use. The key goes in Windows DPAPI or the macOS Keychain, only its last four characters ever show, and it's sent only over https (plain http only to `localhost` and `127.0.0.1`). **Test connection** checks the address, key, model, streaming and tool calls with one tiny request, which your provider may bill. They're labelled **Compatible** because Still tests them against its own test server, not against every real provider.
 
