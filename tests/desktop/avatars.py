@@ -3,7 +3,8 @@ through every frame of every move, on a flat background. A non-background pixel 
 Also checks the Blender avatar files (still-ui/src/assets/avatar): nothing on their outer pixel ring, the visible body
 (alpha 8 and up) at least 10% from every side, and that they're the 2D ones (a dark outline round the body); and that
 chat sizes (48px and under) are 2D, bigger ones live 3D. And the places people meet them, at their sizes (places()); the
-Blender companions' every clip, ten frames a second, at the Companions page's corner size.
+Blender companions' every clip, ten frames a second, at the Companions page's corner size. Under 40px a head
+(head_files(), heads()): the tier by size, the head at 85 to 90% of the box, sharper files when scaled, the initial if it fails.
 
 Run: python tests/desktop/avatars.py artifacts/Still-QA/Still.exe
 """
@@ -29,7 +30,7 @@ LOOKS = [{"color": "#f7a26a", "shape": "tall", "prop": ""}, {"color": "#f2a5c4",
          {"color": "#f39079", "shape": "tall", "prop": "mug"}, {"color": "#93d6bd", "shape": "bean", "prop": "laptop"},
          {"color": "#e6896b", "shape": "bean", "prop": ""}, {"color": "#10a37f", "shape": "round", "prop": ""},
          {"color": "#2b2b2b", "shape": "block", "prop": ""}, {"color": "#d7a8ff", "shape": "gumdrop", "prop": "", "accessory": "bow"}]
-SMALL = (16, 20, 24, 30, 32, 40, 48)  # 2D (Mascot.tsx FLAT): tabs, menus, the header, chat turns, the working pill
+SMALL = (40, 48)  # 2D whole bodies (Mascot.tsx FLAT): chat turns; under 40px a head (heads())
 BIG = (56, 112, 260)          # the picker, the Companions page's corner, card art (every Blender clip at 112)
 STATES = ("idle", "listening", "thinking", "working", "needs", "done", "error", "talking", "pointing")  # Mascot.tsx STATES
 RESULT = []
@@ -145,6 +146,105 @@ def frames(process, profile, size, live, rig=False):
         what = gesture or state
         check(not bad, f"{size}px {what}: {len(times)} frame{'s' * (len(times) > 1)} clear of the edge" + (f" (touching: looks {sorted(bad)})" if bad else ""))
 
+# Stage 11 head tiers (Mascot.tsx tierOf): the icon up to 20px, the portrait 21 to 39px, the whole body from 40px.
+HEAD_SIZES = (16, 18, 20, 22, 24, 28, 32, 34, 40)
+tier_of = lambda size: "icon" if size <= 20 else "portrait" if size <= 39 else "full"
+
+
+def drawn(im):
+    """The share of the box the drawn head takes (alpha 128 and up, the longer side), and whether its outer ring is clear."""
+    a = im.getchannel("A")
+    box = a.point(lambda v: 255 if v >= 128 else 0).getbbox()
+    w, h = im.size
+    ring = [a.getpixel((x, y)) for x in range(w) for y in (0, h - 1)] + [a.getpixel((x, y)) for y in range(h) for x in (0, w - 1)]
+    return (max(box[2] - box[0], box[3] - box[1]) / w if box else 0), not any(ring)
+
+
+def head_files():
+    """The shipped heads (still-ui/src/assets/head): every rig's icon at 16, 20, 32, 40, 48 and 60px and portrait at 40, 80
+    and 120px, the head at 85 to 90% of the box (from 40px up: at 20px a pixel is 5% of the box) and nothing on the outer
+    ring."""
+    pngs = sorted((ROOT / "still-ui" / "src" / "assets" / "head").glob("*.png"))
+    check(len(pngs) == 72, f"{len(pngs)} head files: 8 rigs, the icon at six sizes and the portrait at three")
+    for png in pngs:
+        share, clear = drawn(Image.open(png).convert("RGBA"))
+        px = int(png.stem.rsplit("-", 1)[1])
+        ok = clear and (px < 40 or .85 <= share <= .90)
+        check(ok, f"{png.name}: the head takes {share:.0%} of the box, outer ring {'clear' if clear else 'TOUCHED'}")
+
+
+SHARE = """JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map(m => { const i = m.querySelector('img')
+ const w = i?.srcset ? +(i.srcset.split(', ').find(s => new URL(s.split(' ')[0], location.href).href === i.currentSrc) || ' 0w').split(' ').pop().slice(0, -1) : 0
+ const o = { tier: m.dataset.tier || 'full', img: !!i, ok: !!i && i.complete && i.naturalWidth > 0, set: !!i?.srcset, w, src: (i?.currentSrc || '').split('/').pop().slice(0, 40), initial: !!m.querySelector('.mascot-initial') }
+ if (!o.ok || o.set) return o
+ const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; const g = c.getContext('2d'); g.drawImage(i, 0, 0)
+ const d = g.getImageData(0, 0, c.width, c.height).data; let l = 1e9, t = 1e9, r = -1, b = -1, edge = false
+ for (let y = 0; y < c.height; y++) for (let x = 0; x < c.width; x++) { const a = d[(y * c.width + x) * 4 + 3]; if (a >= 128) { l = Math.min(l, x); r = Math.max(r, x); t = Math.min(t, y); b = Math.max(b, y) } if (a && (x === 0 || y === 0 || x === c.width - 1 || y === c.height - 1)) edge = true }
+ return { ...o, px: c.width, share: r < 0 ? 0 : +(Math.max(r - l + 1, b - t + 1) / c.width).toFixed(3), edge } }))"""
+
+
+def heads(process, profile, out):
+    """Every look, the shipped rigs and looks of your own (three made at random), at every size from 16 to 40px: the tier
+    by size, a picture for each (a look of your own is drawn on demand with the head frame), the head at 85 to 90% of the
+    box, nothing touching the box on screen; at 150% and 200% scale the sharper files; a picture that fails shows the
+    initial on the companion's color. Light and dark sheets for review go to out."""
+    import random
+    seed = random.randrange(1 << 16)
+    rnd = random.Random(seed)
+    shapes, props, extras = ["bean", "tall", "gumdrop", "block", "round", "squat", "bump", "lean"], ["", "laptop", "mug", "headphones", "notebook", "phone", "camera"], ["", "glasses", "bow", "sprout", "flower"]
+    mine = [{"color": "#%02x%02x%02x" % tuple(rnd.randrange(40, 240) for _ in range(3)), "shape": rnd.choice(shapes), "prop": rnd.choice(props), "accessory": rnd.choice(extras)} for _ in range(3)]
+    print(f"Random looks (seed {seed}): {json.dumps(mine)}")
+    looks = LOOKS + mine
+    def show(size):
+        js(process, "document.dispatchEvent(new CustomEvent('still-mascot-reel', { detail: %s }))" % json.dumps({"size": size, "looks": looks}))
+        js(process, "window.chrome?.webview?.postMessage({ op: 'bounds', x: 0, y: 0, width: 1, height: 1, viewportWidth: innerWidth }) ?? 1")  # the page's view out of the way
+    for size in HEAD_SIZES:
+        show(size)
+        js(process, "(() => { const r = document.querySelector('.mascot-reel'); document.documentElement.style.background = document.body.style.background = 'rgb%s'; Object.assign(r.style, { display: 'flex', flexWrap: 'wrap', gap: '24px', padding: '24px' }); return 1 })()" % (PAPER,))
+        want = tier_of(size)
+        got = lambda: json.loads(js(process, SHARE) or "[]")
+        until(lambda: len(got()) == len(looks) and all(g["ok"] or want == "full" for g in got()), 30)
+        k = got()
+        check(len(k) == len(looks) and all(g["tier"] == want for g in k), f"{size}px: every look at the {want} tier")
+        if want != "full":
+            check(all(g["ok"] for g in k), f"{size}px: every look has its picture ({sum(g['ok'] for g in k)}/{len(k)})")
+            own = [g for g in k if not g["set"]]
+            check(own and all(.85 <= g["share"] <= .90 and not g["edge"] for g in own),
+                  f"{size}px: looks drawn on demand ({len(own)}) take {min((g['share'] for g in own), default=0):.0%} to {max((g['share'] for g in own), default=0):.0%} of the box, clear of its edge")
+        bad = touching(process, profile, len(looks))
+        check(not bad, f"{size}px: nothing touches the box on screen" + (f" (looks {bad})" if bad else ""))
+    # The review sheets: every look at every head size, light and dark.
+    for dark in (False, True):
+        js(process, """(() => { const root = document.getElementById('root'); document.documentElement.classList.toggle('dark', %s); const bg = %s
+          document.documentElement.style.background = document.body.style.background = bg; return 1 })()""" % ("true" if dark else "false", json.dumps("#1c1c1e" if dark else "#ffffff")))
+        for size in (16, 20, 24, 32):
+            show(size)
+            until(lambda: all(g["ok"] for g in json.loads(js(process, SHARE) or "[]")), 20)
+            js(process, "Object.assign(document.querySelector('.mascot-reel').style, { display: 'flex', flexWrap: 'wrap', gap: '14px', padding: '20px' })")
+            time.sleep(.3)
+            rpc(process, "capture", name=f"heads-{'dark' if dark else 'light'}-{size}.png")
+    js(process, "document.documentElement.classList.remove('dark')")
+    # At 150% and 200% scale (Windows only: the shell's DevTools), the browser takes a file at least as sharp as the screen.
+    if sys.platform == "win32":
+        for scale in (1.5, 2):
+            rpc(process, "shellCdp", method="Emulation.setDeviceMetricsOverride", parameters={"width": 0, "height": 0, "deviceScaleFactor": scale, "mobile": False})
+            for size in (20, 32):
+                show(size)
+                until(lambda: all(g["ok"] for g in json.loads(js(process, SHARE) or "[]")), 20)
+                k = [g for g in json.loads(js(process, SHARE) or "[]") if g["set"]]
+                dpr = js(process, "devicePixelRatio")
+                check(dpr == scale and k and all(g["w"] >= size * scale for g in k), f"At {scale:.0%} scale, {size}px heads use the sharper files ({k[0]['w'] if k else 'none'}w)")
+                rpc(process, "capture", name=f"heads-{int(scale * 100)}-{size}.png")
+        rpc(process, "shellCdp", method="Emulation.clearDeviceMetricsOverride", parameters={})
+    # A picture that fails: the initial on the companion's color.
+    show(24)
+    until(lambda: all(g["ok"] for g in json.loads(js(process, SHARE) or "[]")), 20)
+    js(process, "document.querySelector('.mascot-reel .mascot img').dispatchEvent(new Event('error'))")
+    initial = until(lambda: js(process, "(() => { const i = document.querySelector('.mascot-reel .mascot .mascot-initial'); return i ? getComputedStyle(i).backgroundColor : '' })()"), 5)
+    check(initial == "rgb(247, 162, 106)", f"A picture that fails shows the initial on the companion's color ({initial})")
+    for f in profile.glob("heads-*.png"):
+        f.replace(out / f.name)
+
 
 # The body's box in each companion canvas (opaque pixels: the shadow is fainter), in CSS px, against its art's box.
 BODY = """(sel, box) => [...document.querySelectorAll(sel)].map(m => { const c = m.querySelector('canvas[data-live]'), r = m.getBoundingClientRect()
@@ -201,6 +301,7 @@ def places():
 
 
 files()
+head_files()
 places()
 profile = ROOT / "artifacts" / ("avatars-" + uuid.uuid4().hex[:8]) / "profile"
 profile.mkdir(parents=True)
@@ -210,9 +311,10 @@ process = launch(EXE, profile)
 try:
     reel(process, 168)
     until(lambda: js(process, "!!document.querySelector('.mascot-reel canvas[data-live]')"), 30)
-    chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")
+    chunk = js(process, "performance.getEntriesByType('resource').map(e => e.name).find(n => n.includes('companion3d'))")         or js(process, "new URL(%s, location.href).href" % json.dumps("assets/" + next((ROOT / "still" / "Shell" / "assets").glob("companion3d-*.js")).name))  # WKWebView lists no chunks
     js(process, f"import({json.dumps(chunk)}).then(m => {{ window.__clips = m.DUR }})")
     until(lambda: js(process, "!!window.__clips"), 10)
+    heads(process, profile, profile.parent)
     for size in SMALL:
         frames(process, profile, size, live=False)
     for size in BIG:

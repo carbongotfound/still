@@ -19,6 +19,8 @@ import time
 import uuid
 import winreg
 
+from qa import until_started
+
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("features-" + uuid.uuid4().hex)
 RUN.mkdir(parents=True)
@@ -113,7 +115,7 @@ try:
     registry("Software\\Classes\\" + EXT, PROGID)
     registry("Software\\Classes\\" + PROGID + "\\shell\\open\\command", '"' + sys.executable + '" "' + str(opener) + '" "%1"')
     PROCESS = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), URL])
-    wait(lambda: (profile / "qa-pipe.txt").exists(), 30)
+    until_started(PROCESS)
     wait(ready)
     wait(lambda: rpc("shellEval", script="!!document.querySelector('[aria-label=\"Downloads\"]')"))
     position = rpc("eval", script="(()=>{let r=document.querySelector('a').getBoundingClientRect();return {x:r.x+r.width/2,y:r.y+r.height/2}})()")
@@ -124,7 +126,7 @@ try:
     wait(lambda: rpc("shellEval", script="!!document.querySelector('.dl-row small')"))
     # Real React events with the browser's native event sequencing.
     rpc("shellEval", script="document.querySelector('.dl-row small').dispatchEvent(new MouseEvent('dblclick',{bubbles:true,detail:2}))")
-    wait(lambda: marker.exists())
+    wait(lambda: marker.exists() and marker.read_text().endswith("\n"))  # the opener makes the file, then writes its line
     check(len(marker.read_text().splitlines()) == 1, "Double-click completed download opens its actual file once")
     downloaded = marker.read_text().strip()
     check(Path(downloaded).is_file() and Path(downloaded).read_bytes() == b"synthetic downloaded file", "Opened file is the downloaded content")

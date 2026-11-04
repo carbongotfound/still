@@ -29,8 +29,7 @@ actions until they ask for one app: list_connected_plugins (names only), find_pl
 run_plugin_action; reads go ahead, writes ask (Deny or Allow once, nothing else); per-companion switches under the
 Connected check and in the profile; a missing app gets a card that connects it; Composio down; Disconnect. Settings
 shows the key only as set with its last four characters: Change checks a new key before it replaces the old one, and
-Delete turns plugins off. Then setup's Connect your tools step with a key: the belt turns into a grid, a tap connects
-Gmail, and Jonah, who works in it, bounces and says so.
+Delete turns plugins off. Setup has no plugins step since 2.10: plugins come up from the home page and Settings.
 
 Run: python tests/desktop/plugins.py artifacts/Still-QA/Still.exe
 """
@@ -38,7 +37,6 @@ import http.server
 import json
 import os
 from pathlib import Path
-import shutil
 import sys
 import textwrap
 import threading
@@ -388,7 +386,6 @@ def main():
     finally:
         rpc(process, "quit")
         process.wait(timeout=20)
-    setup(env)
 
 
 def home_stack(process, capture=""):
@@ -657,7 +654,9 @@ def disconnect(process):
     open_plugins(process)
     manage(process, "gmail")
     js(process, "[...document.querySelectorAll('.plug-manage button')].find(b => b.innerText.trim() === 'Disconnect')?.click()")
-    check(until(lambda: len(MOCK["deleted"]) == 1 and head(process) == "1 connected", 10), "Disconnect removes the account at Composio and from the page")
+    until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: len(MOCK["deleted"]) == 1 and head(process) == "1 connected", 15), "Disconnect asks, then removes the account at Composio and from the page")
     send(process, "openPanel", name="settings", value="skills")
     row = lambda: js(process, "document.querySelector('.set-main #set-composio')?.innerText") or ""
     check(until(lambda: "ending in" in row() and KEY[-4:] in row(), 10) and not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY[-8:])})"),
@@ -670,9 +669,9 @@ def disconnect(process):
     check(until(lambda: KEY2[-4:] in row() and not js(process, "!!document.querySelector('#set-composio input')"), 10) and until(lambda: MOCK["seen"][-1]["key"] == KEY2, 5),
           "and a good one does: Composio gets the new key from then on")
     js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete')?.click()")
-    check(until(lambda: "Delete the key?" in row(), 5) and key_file().exists(), "Delete asks first")
-    js(process, "[...document.querySelectorAll('#set-composio button')].find(b => b.innerText.trim() === 'Delete key')?.click()")
-    check(until(lambda: not key_file().exists() and "Not set" in row() and js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 10),
+    check(until(lambda: "Delete the Composio key?" in (js(process, "document.querySelector('[data-slot=alert-dialog-content]')?.innerText") or ""), 5) and key_file().exists(), "Delete asks first")
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: not key_file().exists() and "Not set" in row() and js(process, "!!document.querySelector(\"#set-composio input[aria-label='Composio API key']\")"), 15),
           "Delete forgets the key, and Settings offers the field again")
     check(len(MOCK["deleted"]) == 1 and not nowhere(), "Your apps stay connected in your Composio account, and no key is left in any file")
     close_panel(process)
@@ -681,51 +680,6 @@ def disconnect(process):
     ask(process, "NOPLUG")
     idle(process)
     check(not any(c["ok"] for c in calls("NOPLUG")), "and companions are back to plugins off")
-
-
-def setup(env):
-    """Setup's Connect your tools with a key: the belt turns into a grid, a tap connects Gmail, and Jonah bounces and says so."""
-    profile = RUN / "profile2"
-    (profile / "agents").mkdir(parents=True)
-    shutil.copy(PROFILE / "agents" / "fake.json", profile / "agents" / "fake.json")
-    MOCK["accounts"].clear()
-    process = launch(EXE, profile, env)
-    try:
-        js(process, "localStorage.setItem('still.intro', '1'); location.reload()")
-        step = lambda: js(process, "Number(document.querySelector('.ob-dots')?.getAttribute('aria-valuenow') ?? 0)")
-        def forward(selector=".ob-next"):
-            at = step()
-            js(process, f"document.querySelector('{selector}')?.click()")
-            until(lambda: step() == at + 1, 6)
-            time.sleep(1.2)
-        until(lambda: js(process, "!!document.querySelector('.welcome.ob .ob-next')"), 20)
-        time.sleep(1.5)
-        forward()  # hello -> import
-        forward(".ob-not-now")  # -> ai
-        if not until(lambda: js(process, "(() => { const b = [...document.querySelectorAll('.byo-main')].find(b => b.innerText.includes('Fake agent')); b?.click(); return !!b })()"), 4):
-            js(process, "document.querySelector('.byo-more')?.click()")
-            until(lambda: js(process, "(() => { const b = [...document.querySelectorAll('.byo-main')].find(b => b.innerText.includes('Fake agent')); b?.click(); return !!b })()"), 6)
-        until(lambda: js(process, "!!document.querySelector('.byo-row[data-chosen] .byo-ok')"), 10)
-        time.sleep(1)
-        forward()  # -> crew
-        until(lambda: js(process, "document.querySelectorAll('.crew-card').length") >= 8, 5)
-        js(process, "document.querySelector(\".crew-pick[aria-label='Hire Sales Jonah']\")?.click()")
-        time.sleep(.6)
-        forward()  # -> tools
-        check(until(lambda: js(process, "!!document.querySelector('.plug-belt')"), 5), "Setup: Connect your tools shows the belt")
-        paste_key(process, KEY, ".ob-talk")
-        check(until(lambda: js(process, "document.querySelectorAll('.plug-grid .plug-pick').length") == 24 and not js(process, "!!document.querySelector('.plug-belt')"), 10), "With a key, the belt stops and becomes a grid to pick from")
-        check(not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY)})") and key_file(profile).exists() and not nowhere(profile), "The key is kept encrypted there too, and never shows")
-        js(process, "document.querySelector(\".plug-pick[aria-label='Connect Gmail']\")?.click()")
-        sign_in(process, "Gmail")
-        check(until(lambda: js(process, "document.querySelector(\".plug-pick[aria-label='Gmail is connected']\")?.getAttribute('aria-pressed')") == "true", 10), "Gmail gets its check")
-        check(until(lambda: "Now I can work in Gmail" in (js(process, "document.querySelector('.ob-team-line, .ob-cheer')?.innerText") or ""), 5), "Jonah, who works in Gmail, bounces and says so")
-        rpc(process, "capture", name="tools-connected.png")
-        foot = js(process, "[...document.querySelectorAll('.ob-foot button')].map(b => b.innerText.trim() + (b.disabled ? ' (off)' : ''))") or []
-        check(foot == ["Back", "Continue"], f"With an app connected, Continue goes on ({foot})")
-    finally:
-        rpc(process, "quit")
-        process.wait(timeout=20)
 
 
 if __name__ == "__main__":

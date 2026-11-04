@@ -8,6 +8,7 @@ Out: artifacts/attach-*/ (attach-*.png in the profile folder)
 """
 import base64
 import json
+import os
 from pathlib import Path
 import re
 import sys
@@ -201,12 +202,22 @@ def main():
         until(lambda: not next((c for c in chats() if c.get("Running")), None), 15)
         send(p, "aiDeleteChat", id=chat.get("Id", ""))
         check(until(lambda: not any((PROFILE / "ai" / "attachments" / i).exists() for i in sent_ids), 5), "Deleting the chat deletes its files")
-        # A file attached but never sent is cleared the next time Still starts.
+        # A file attached but never sent stays for its draft, and goes once it's 7 days old.
+        unsent = [d for d in (PROFILE / "ai" / "attachments").iterdir()]
         rpc(p, "quit")
         until(lambda: p.poll() is not None, 15)
         p = launch(EXE, PROFILE)
         until(lambda: js(p, "!!document.body.innerText.length"), 20)
-        check(until(lambda: not any((PROFILE / "ai" / "attachments").iterdir()), 5), "A file that was never sent is gone after a restart")
+        time.sleep(2)
+        check(unsent and all(d.is_dir() for d in unsent), f"A file that was never sent stays after a restart, for its draft ({len(unsent)})")
+        rpc(p, "quit")
+        until(lambda: p.poll() is not None, 15)
+        week = time.time() - 8 * 86400
+        for d in unsent:
+            os.utime(d, (week, week))
+        p = launch(EXE, PROFILE)
+        until(lambda: js(p, "!!document.body.innerText.length"), 20)
+        check(until(lambda: not any((PROFILE / "ai" / "attachments").iterdir()), 5), "...and is gone once it's more than 7 days old")
     finally:
         try:
             rpc(p, "quit")

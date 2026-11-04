@@ -1,0 +1,117 @@
+{
+ "starts": [
+  [
+   "Lemon pebble",
+   "{\"v\":2,\"color\":\"#f6d56a\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#f6d56a\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"sprout\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Sky column",
+   "{\"v\":2,\"color\":\"#8cc3ee\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#3a5a9c\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"antennae\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Leaf block",
+   "{\"v\":2,\"color\":\"#a6cf9c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#a6cf9c\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Peony gumdrop",
+   "{\"v\":2,\"color\":\"#f2a5c4\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"gumdrop\",\"second\":\"#f2a5c4\",\"eye\":\"round\",\"mouth\":\"grin\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Oat bean",
+   "{\"v\":2,\"color\":\"#ddd4c6\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#8a6a50\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"cap\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Coral pebble",
+   "{\"v\":2,\"color\":\"#f39079\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#f39079\",\"eye\":\"wide\",\"mouth\":\"grin\",\"top\":\"tuft\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Lilac column",
+   "{\"v\":2,\"color\":\"#c0a3ec\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"column\",\"second\":\"#c0a3ec\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ],
+  [
+   "Mint gumdrop",
+   "{\"v\":2,\"color\":\"#93d6bd\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#2f8f86\",\"eye\":\"round\",\"mouth\":\"o\",\"top\":\"antennae\",\"finish\":\"gloss\"}"
+  ],
+  [
+   "Slate block",
+   "{\"v\":2,\"color\":\"#9aa3b2\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#f4f2ee\",\"eye\":\"narrow\",\"mouth\":\"smile\",\"top\":\"cap\",\"finish\":\"gloss\"}"
+  ],
+  [
+   "Periwinkle bean",
+   "{\"v\":2,\"color\":\"#a7b5f0\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#a7b5f0\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"sprout\",\"finish\":\"matte\"}"
+  ]
+ ],
+ "team": [
+  [
+   "sales",
+   "{\"v\":2,\"color\":\"#ff8a4c\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#b8481c\",\"eye\":\"narrow\",\"mouth\":\"grin\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ],
+  [
+   "growth",
+   "{\"v\":2,\"color\":\"#f7a1c4\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#c4466f\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"tuft\",\"finish\":\"matte\"}"
+  ],
+  [
+   "planner",
+   "{\"v\":2,\"color\":\"#9fe39a\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#3f8a45\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ],
+  [
+   "marketing",
+   "{\"v\":2,\"color\":\"#ffd84d\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#d98a1c\",\"eye\":\"wide\",\"mouth\":\"grin\",\"top\":\"antennae\",\"finish\":\"matte\"}"
+  ],
+  [
+   "engineer",
+   "{\"v\":2,\"color\":\"#7cc4ff\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#3f7fc6\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"cap\",\"finish\":\"matte\"}"
+  ],
+  [
+   "research",
+   "{\"v\":2,\"color\":\"#b79cff\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#7b5cf0\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"none\",\"finish\":\"matte\"}"
+  ]
+ ],
+ "surprise": [
+  "{\"v\":2,\"color\":\"#f3e2a6\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#f3e2a6\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"cap\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#f2a5c4\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#f2a5c4\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"cap\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#8cc3ee\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"gumdrop\",\"second\":\"#8cc3ee\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"antennae\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f39079\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#7a4a88\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f39079\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"bean\",\"second\":\"#f39079\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"tuft\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#ff8a4c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#b8481c\",\"eye\":\"round\",\"mouth\":\"grin\",\"top\":\"tuft\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#cfc9c0\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"pebble\",\"second\":\"#cfc9c0\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#ddd4c6\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"pebble\",\"second\":\"#ddd4c6\",\"eye\":\"narrow\",\"mouth\":\"smile\",\"top\":\"tuft\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f3e2a6\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#7f9a4e\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"antennae\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#f7a26a\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#fff0dc\",\"eye\":\"round\",\"mouth\":\"o\",\"top\":\"sprout\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#9fe39a\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#3f8a45\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#8b6fd6\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#8b6fd6\",\"eye\":\"narrow\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a7b5f0\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"block\",\"second\":\"#a7b5f0\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"tuft\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#d9b2e6\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#93d6bd\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#a7b5f0\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"pebble\",\"second\":\"#a7b5f0\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"sprout\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#8cc3ee\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#3a5a9c\",\"eye\":\"narrow\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#c0a3ec\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#c0a3ec\",\"eye\":\"round\",\"mouth\":\"grin\",\"top\":\"cap\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#cfc9c0\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#cfc9c0\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"sprout\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a47b5b\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#a47b5b\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#e5574f\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#e5574f\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"antennae\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f3e2a6\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#7f9a4e\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"antennae\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#d9b2e6\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"pebble\",\"second\":\"#93d6bd\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f6c3b0\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#f6c3b0\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"tuft\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#93d6bd\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#93d6bd\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#ff8a4c\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#b8481c\",\"eye\":\"round\",\"mouth\":\"grin\",\"top\":\"none\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#d9b2e6\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#93d6bd\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f7a1c4\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#c4466f\",\"eye\":\"wide\",\"mouth\":\"smile\",\"top\":\"antennae\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#ffd84d\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#d98a1c\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"sprout\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a7b5f0\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#a7b5f0\",\"eye\":\"round\",\"mouth\":\"o\",\"top\":\"tuft\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a6cf9c\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"bean\",\"second\":\"#4f8a4a\",\"eye\":\"wide\",\"mouth\":\"grin\",\"top\":\"none\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#5fae6e\",\"shape\":\"gumdrop\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"gumdrop\",\"second\":\"#5fae6e\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"antennae\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a6cf9c\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#a6cf9c\",\"eye\":\"narrow\",\"mouth\":\"smile\",\"top\":\"cap\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#8b6fd6\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#8b6fd6\",\"eye\":\"wide\",\"mouth\":\"o\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f7a1c4\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#c4466f\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#a7b5f0\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"bow\",\"form\":\"bean\",\"second\":\"#f6d56a\",\"eye\":\"round\",\"mouth\":\"o\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#e5574f\",\"shape\":\"block\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"block\",\"second\":\"#e5574f\",\"eye\":\"narrow\",\"mouth\":\"hmm\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#93d6bd\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"flower\",\"form\":\"pebble\",\"second\":\"#2f8f86\",\"eye\":\"wide\",\"mouth\":\"grin\",\"top\":\"cap\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#8cc3ee\",\"shape\":\"tall\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"column\",\"second\":\"#3a5a9c\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"antennae\",\"finish\":\"gloss\"}",
+  "{\"v\":2,\"color\":\"#f6d56a\",\"shape\":\"lean\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"bean\",\"second\":\"#f6d56a\",\"eye\":\"sleepy\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#4a5263\",\"shape\":\"round\",\"prop\":\"\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#4a5263\",\"eye\":\"round\",\"mouth\":\"o\",\"top\":\"tuft\",\"finish\":\"gloss\"}"
+ ],
+ "kept": [
+  "{\"v\":2,\"color\":\"#86d0c8\",\"shape\":\"round\",\"prop\":\"mug\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#86d0c8\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#f39079\",\"shape\":\"lean\",\"prop\":\"laptop\",\"accessory\":\"bow\",\"form\":\"bean\",\"second\":\"#f39079\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"none\",\"finish\":\"matte\"}",
+  "{\"v\":2,\"color\":\"#9aa3b2\",\"shape\":\"round\",\"prop\":\"camera\",\"accessory\":\"\",\"form\":\"pebble\",\"second\":\"#9aa3b2\",\"eye\":\"round\",\"mouth\":\"smile\",\"top\":\"sprout\",\"finish\":\"matte\"}"
+ ]
+}

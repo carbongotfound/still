@@ -59,7 +59,7 @@ public static class ProfileCatalog
   using var catalogGate=await Lock();var profile=Read().Single(p=>p.Id=="default");
   using var instanceGate=new System.Threading.Mutex(true,App.InstanceName(Folder(profile)),out var exclusive);
   if(!exclusive||IsCurrent(profile))throw new InvalidOperationException("Open another profile, then close Default before resetting it.");
-  string[] names=["WebView","Extensions","ExtensionCache","state.json","state.json.bak","state.json.tmp","logins.dpapi","logins.dpapi.tmp","errors.log"];
+  string[] names=["WebView","Extensions","ExtensionCache","state.json","state.json.bak","state.json.tmp","logins.dpapi","logins.dpapi.tmp","api-keys","errors.log"];
   var paths=names.Select(n=>Path.Combine(App.ProfileHome,n)).Where(Path.Exists).ToArray();
   foreach(var path in paths)CheckTree(App.ProfileHome,path);
   foreach(var path in paths){if(Directory.Exists(path))Directory.Delete(path,true);else File.Delete(path);}

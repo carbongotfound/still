@@ -81,6 +81,22 @@ final class ShellScheme: NSObject, WKURLSchemeHandler {
 
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
+/// The interface. Edit > Undo and Redo take Still's own steps in its text boxes (still-ui drafts.tsx), as Cmd+Z does there;
+/// anywhere else they're WebKit's.
+final class ShellView: WKWebView {
+ @objc func undo(_ sender: Any?) { step(-1) }
+ @objc func redo(_ sender: Any?) { step(1) }
+ private func step(_ by: Int) {
+  evaluateJavaScript("window.__stillHistory?.(\(by)) === true") { [weak self] done, _ in
+   guard done as? Bool != true, let undo = self?.undoManager else { return }
+   if by < 0 { if undo.canUndo { undo.undo() } } else if undo.canRedo { undo.redo() }
+  }
+ }
+ override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+  item.action == #selector(undo(_:)) || item.action == #selector(redo(_:)) ? true : super.validateUserInterfaceItem(item)
+ }
+}
+
 /// A page. Spots the interface keeps open over it (pageHoles: the AI's glow and its controls) show the shell through and take its clicks.
 final class PageView: WKWebView {
  var holes: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])? // in points, from the page's top left
@@ -116,9 +132,12 @@ final class Tab: NSObject {
  var group = "" // a tab group's id, "" = none
  var chatId: String? // a chat tab: shows this AI chat instead of a page
  var pageOpen = false // a chat tab showing its AI's page beside the conversation
+ var home = "" // an app tab without a chat: the home page it shows ("" home, chats, companions, library, skills)
+ var back: [String] = [], forward: [String] = [] // an app tab's own back and forward: "chat:<id>" or "home:<page>" (see go)
  var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  var agentKey: String? // which AI run is at work here
  var runChat: String? // an ordinary tab Still's chat AI opened: "Open chat" opens that chat
+ var engine: String? // "Companion": the page is in the companion profile (Where companions browse); nil: the user's own
  var favicon = ""
  var closed = false, reader = false, edited = false, media = false
  var blocked = 0
@@ -223,12 +242,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   window.contentView = root
 
   let config = WKWebViewConfiguration()
+  // The interface's storage is the profile's own; an incognito window's lives in memory and goes with the window.
+  config.websiteDataStore = incognito || isTemp ? .nonPersistent() : Profiles.shellStore(support)
   config.setURLSchemeHandler(ShellScheme(root: resources.appendingPathComponent("Shell")), forURLScheme: "still")
   config.mediaTypesRequiringUserActionForPlayback = [] // the intro's sound starts before the first click
   config.userContentController.add(self, name: "still")
   config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
   config.userContentController.addUserScript(WKUserScript(source: macStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-  shell = WKWebView(frame: root.bounds, configuration: config)
+  shell = ShellView(frame: root.bounds, configuration: config)
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
   shell.setValue(false, forKey: "drawsBackground") // until the interface paints, the window's own color shows, not WebKit's white
@@ -245,6 +266,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    startAgentServer()
    startAi()
    Browser.watchRoutines()
+   watchSummaries()
    if isQa { startQa() }
    startUpdateChecks()
   }
@@ -286,21 +308,22 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "theme": pref("Theme", "System"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
    "tracking": pref("Tracking", "Balanced"), "memory": pref("MemorySaver", true), "autofill": pref("Autofill", true),
-   "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
+   "drafts": pref("SaveDrafts", true), "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
-   "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "isDefaultBrowser": isDefaultBrowser,
+   "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "agentProfile": pref("AgentProfile", "regular"), "companionSession": Profiles.companionSession, "isDefaultBrowser": isDefaultBrowser,
    "tabLayout": pref("TabLayout", "Classic"), "chatTitles": pref("ChatTitles", ""), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
    "sidebarWidth": pref("SidebarWidth", 248.0)
   ]
   let tabList: [[String: Any]] = tabs.map { tab in
    var row: [String: Any] = [
     "id": tab.id, "group": tab.group, "title": tab.title, "url": tab.url, "pinned": tab.pinned, "agent": tab.agent ?? "", "aiGroup": tab.aiGroup,
-    "isPrivate": tab.isPrivate, "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted, "inUse": tab.inUse,
+    "isPrivate": tab.isPrivate, "engine": tab.isPrivate ? "Private" : tab.engine ?? "Default", "loading": tab.loading, "sleeping": tab.view == nil && !tab.url.isEmpty, "blocked": tab.blocked, "muted": tab.muted, "inUse": tab.inUse,
     "favicon": tab.favicon, "secure": tab.url.hasPrefix("https://"), "certificateError": false
    ]
    if let chat = tab.runChat { row["runChat"] = chat }
    if let key = tab.agentKey, runs[key] != nil { row["driverChat"] = key }
    if let chat = tab.chatId { row["chatId"] = chat }
+   if !tab.home.isEmpty { row["home"] = tab.home }
    if let chat = tab.inChat { row["inChat"] = chat }
    return row
   }
@@ -324,6 +347,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["noExtensions"] = true
   state["noAi"] = false
   state["welcome"] = welcome && !secondary && !incognito
+  state["seenVersion"] = store.seenVersion
   state["version"] = currentVersion
   state["zoom"] = Int(((shown?.view?.pageZoom ?? 1) * 100).rounded())
   state["preferences"] = preferences
@@ -331,8 +355,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["history"] = visits
   state["bookmarks"] = marks
   state["downloads"] = files
-  state["canBack"] = shown?.view?.canGoBack ?? false
-  state["canForward"] = shown?.view?.canGoForward ?? false
+  state["canBack"] = appNav.map { $0.back.contains(where: canGo) } ?? shown?.view?.canGoBack ?? false
+  state["canForward"] = appNav.map { $0.forward.contains(where: canGo) } ?? shown?.view?.canGoForward ?? false
   state["siteBlocking"] = pref("Blocking", true) && !unblocked.contains(shown?.view?.url?.host ?? "")
   state["mcpCommand"] = Bundle.main.executablePath ?? ""
   if let agent = agentData() { state["agent"] = agent }
@@ -362,9 +386,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   switch op {
   case "ready":
    ready = true
+   send(["kind": "drafts", "data": loadDrafts()]) // before the state, so the message boxes find them when they show
    publish() // the interface draws nothing until its first state
    shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
    publishAi()
+   if let problem = chatsProblem { chatsProblem = nil; toast(problem) }
   case "bounds":
    if contentFullScreen { return } // keep the normal layout for when the video leaves fullscreen
    shellRatio = number("viewportWidth") > 0 ? shell.bounds.width / number("viewportWidth") : 1
@@ -391,8 +417,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
     if move.group != before.group { move.group = !move.pinned && at > 0 && tabs[at - 1].group == before.group ? before.group : "" }
     saveLater()
    }
-  case "back": shown?.view?.goBack()
-  case "forward": shown?.view?.goForward()
+  case "back": if let view = shown?.view, view.canGoBack { view.goBack() } else { appStep(-1) }
+  case "forward": if let view = shown?.view, view.canGoForward { view.goForward() } else { appStep(1) }
   case "reload": if let view = shown?.view { if view.isLoading { view.stopLoading() } else { view.reload() } }
   case "zoom": if let view = shown?.view { view.pageZoom = number("amount") == 0 ? 1 : min(3, max(0.3, view.pageZoom + number("amount"))) }
   case "find": if let view = shown?.view, !text("text").isEmpty { view.find(text("text"), configuration: WKFindConfiguration()) { _ in } }
@@ -414,6 +440,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()
   case "clearHistory": history.removeAll(); store.picks.removeAll(); save(); toast("History cleared.")
+  case "clearCompanionData": // Settings → Clear the companion profile: the user's own sign-ins stay
+   companionStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Companion profile cleared. Companions are signed out of every site there.") }
   case "clearCookies":
    pageStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Cookies and website data cleared.") }
   case "siteBlocking":
@@ -425,6 +453,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    }
   case "preference": setPreference(text("key"), text("value"))
   case "welcomeDone": welcome = false; saveLater(); applyTheme()
+  case "whatsNewSeen": store.seenVersion = releaseLine; saveLater(); for browser in browsers { browser.publish() }
   case "defaultBrowser": makeDefault()
   case "chooseDownloads":
    let picker = NSOpenPanel()
@@ -457,7 +486,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, cookies: data["cookies"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
-  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) { toast(unavailable) }
+  case "draftSave": saveDraft(data["key"] as? String ?? "", data["draft"])
+  default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) && !handleApi(op, data) { toast(unavailable) }
   }
  }
 
@@ -471,6 +501,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "memory": prefs["MemorySaver"] = value == "true"
   case "autofill": prefs["Autofill"] = value == "true"
   case "sounds": prefs["Sounds"] = value == "true"
+  case "drafts": prefs["SaveDrafts"] = value == "true"; if value != "true" { deleteDrafts() }
   case "tearOff": prefs["TabTearOff"] = value == "true"
   case "newTab": if ["companion", "sites"].contains(value) { prefs["NewTab"] = value }
   case "tabLayout": if ["Classic", "Modern"].contains(value) { prefs["TabLayout"] = value; for browser in browsers { browser.placeTrafficLights(); browser.schedulePublish() } }
@@ -478,6 +509,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    prefs["AgentsEnabled"] = value == "true"
    if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
   case "askInChat": prefs["AgentsAskInChat"] = value == "true"
+  case "agentProfile": if ["regular", "companion"].contains(value) { prefs["AgentProfile"] = value }
   case "chatTitles": if value.count < 200 && (value.isEmpty || value == "off" || value.contains("/")) { prefs["ChatTitles"] = value }
   default: toast(unavailable); return
   }
@@ -591,7 +623,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func createView(_ tab: Tab, configuration: WKWebViewConfiguration? = nil) -> WKWebView {
   let config = configuration ?? WKWebViewConfiguration()
   if configuration == nil {
-   config.websiteDataStore = tab.isPrivate ? privateStore : pageStore
+   config.websiteDataStore = tab.isPrivate ? privateStore : tab.engine == "Companion" ? companionStore : pageStore
    config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
    config.mediaTypesRequiringUserActionForPlayback = []
    config.preferences.isFraudulentWebsiteWarningEnabled = true
@@ -1014,8 +1046,23 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if action.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
    decisionHandler(.cancel); return
   }
+  if let url = action.request.url, url.host == sampleHost, action.targetFrame?.isMainFrame == true, sampleLoads.remove(ObjectIdentifier(view)) == nil {
+   decisionHandler(.cancel); loadSample(view, url); return
+  }
   if action.targetFrame?.isMainFrame == true { applyBlocking(view, host: action.request.url?.host) }
   decisionHandler(.allow)
+ }
+
+ /// Setup's first task works on a made-up comparison page that ships with Still (Shell/sample), at an https address
+ /// agents may open. WebKit can't serve an https host from files, so the page is handed over as if it came from there
+ /// (Windows maps the host to the folder).
+ func loadSample(_ view: WKWebView, _ url: URL) {
+  let folder = resources.appendingPathComponent("Shell/sample").standardizedFileURL
+  let file = folder.appendingPathComponent(url.lastPathComponent.isEmpty || url.path == "/" ? "compare.html" : url.lastPathComponent).standardizedFileURL
+  guard file.deletingLastPathComponent() == folder, file.pathExtension == "html", let data = try? Data(contentsOf: file),
+        let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1", headerFields: ["Content-Type": "text/html; charset=utf-8"]) else { return }
+  sampleLoads.insert(ObjectIdentifier(view))
+  _ = view.loadSimulatedRequest(URLRequest(url: url), response: response, responseData: data)
  }
 
  func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
@@ -1064,6 +1111,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let opener = tabs.first(where: { $0.view === view }), action.navigationType != .linkActivated, siteRule(opener, "Popups") == "Deny" { return nil }
   let tab = Tab()
   tab.isPrivate = incognito || tabs.first { $0.view === view }?.isPrivate ?? false
+  if !tab.isPrivate { tab.engine = tabs.first { $0.view === view }?.engine } // a link from a companion's page stays in its profile
   tabs.append(tab)
   let created = createView(tab, configuration: configuration)
   select(tab)
@@ -1141,6 +1189,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func windowDidBecomeKey(_ notification: Notification) { lastActiveBrowser = self; schedulePublish() }
  func windowWillClose(_ notification: Notification) {
   closing = true
+  if incognito { endIncognito() }
   saveAll()
   if !temporary && !incognito { closedWindows.append((at: Date(), tabs: tabs)) }
   for tab in tabs { unload(tab) }
@@ -1169,8 +1218,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "findTab": openPanel("tabs", "")
   case "find", "history", "downloads", "settings", "bookmarks", "about": openPanel(name, "")
   case "reload": handle("reload", [:])
-  case "back": shown?.view?.goBack()
-  case "forward": shown?.view?.goForward()
+  case "back": handle("back", [:])
+  case "forward": handle("forward", [:])
   case "bookmark": toggleBookmark()
   case "zoomIn": handle("zoom", ["amount": 0.1])
   case "zoomOut": handle("zoom", ["amount": -0.1])
@@ -1187,6 +1236,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "aiChat": aiShortcut("chat")
   case "aiStop": aiShortcut("stop")
   case "aiTasks": aiShortcut("tasks")
+  case "aiAdd": aiShortcut("add")
   default:
    let strip = tabs.filter { $0.inChat == nil }
    if name.hasPrefix("tab"), let number = Int(name.dropFirst(3)), !strip.isEmpty { select(number == 9 ? strip[strip.count - 1] : strip[min(number - 1, strip.count - 1)]) }
@@ -1203,7 +1253,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
  func applicationDidFinishLaunching(_ notification: Notification) {
   if isQa && qaSystemTheme == nil { qaSystemTheme = ProcessInfo.processInfo.environment["STILL_QA_SYSTEM_THEME"] ?? "Dark" }
-  Profiles.holdRunningLock()
+  if Profiles.holdRunningLock() { Children.sweep() }
   loadStore()
   let browser = Browser()
   restoreOtherWindows()
@@ -1224,7 +1274,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
  func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { true }
  func applicationWillTerminate(_ notification: Notification) {
+  quitting = true
   saveAll(); AgentRun.endAll()
+  try? FileManager.default.removeItem(atPath: incognitoFolder) // incognito windows' folders (the next start sweeps what's left)
   // A temporary profile is deleted as it closes (the next temp window sweeps any leftovers).
   if isTemp, support.standardizedFileURL.path.hasPrefix(FileManager.default.temporaryDirectory.appendingPathComponent("Still-temp").standardizedFileURL.path + "/") { try? FileManager.default.removeItem(at: support) }
  }
@@ -1351,7 +1403,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   add("AI", [
    command("Chat with Your AI", "aiChat", "a", [.command, .shift]),
    command("Running Tasks", "aiTasks", "k", [.command, .shift]),
-   command("Stop the AI", "aiStop", ".")
+   command("Stop the AI", "aiStop", "."),
+   .separator(),
+   command("Add a Model…", "aiAdd", "")
   ])
   var tabItems = [
    command("Show Next Tab", "nextTab", right, [.command, .option]),

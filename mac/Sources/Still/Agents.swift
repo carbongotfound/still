@@ -40,6 +40,9 @@ final class Worker {
  var paused = false // the user took over: its calls wait until they hand it back
  var signIn = "" // paused on a sign-in page of this site: the user signs in, then hands it back
  var signedIn: (site: String, at: Date)? // when the user last handed back after signing in
+ // For the pill: the tool running now and what it works on (a site, a search, a teammate; never what's typed),
+ // the steps done since this stretch of work began, and the last few of them in the past tense.
+ var tool = "", target = "", count = 0, since: Date? = nil, recent: [String] = []
 }
 var workers: [String: Worker] = [:]
 func worker(_ who: String) -> Worker {
@@ -65,8 +68,27 @@ func hue(_ companion: Companion?) -> String {
  }
 }
 /// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
-func atWork() -> [String: Worker] { workers.filter { approvedAgents.contains($0.value.name.lowercased()) && ($0.value.paused || Date().timeIntervalSince($0.value.seen) < 120) } }
-func did(_ who: String, _ action: String) { worker(who).action = action.count > 90 ? String(action.prefix(90)) + "…" : action }
+func atWork() -> [String: Worker] { workers.filter { approvedAgents.contains($0.value.name.lowercased()) && ($0.value.paused || !$0.value.tool.isEmpty || Date().timeIntervalSince($0.value.seen) < 120) } }
+func did(_ who: String, _ action: String) {
+ let me = worker(who)
+ me.action = action.count > 90 ? String(action.prefix(90)) + "…" : action
+ me.recent.append(me.action); if me.recent.count > 5 { me.recent.removeFirst() }
+}
+/// What a step works on, for the pill: the search, the teammate (with what it's about) or the site; never typed text.
+func targetOf(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
+ if tool == "web_search" { return clipped(argText(args, "query").trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " "), 60) }
+ if tool == "ask_companion" || tool == "tell_companion" {
+  let name = argText(args, "name").trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "@"))
+  var title = argText(args, "title").trimmingCharacters(in: .whitespacesAndNewlines).trimmingCharacters(in: CharacterSet(charactersIn: ".")).replacingOccurrences(of: "\n", with: " ")
+  if title.count > 1, title.dropFirst().first?.isLowercase == true { title = title.prefix(1).lowercased() + title.dropFirst() } // "Pricing research" reads as "about pricing research"; "SEO audit" stays
+  return name.isEmpty ? "" : title.isEmpty ? name : name + " about " + clipped(title, 50)
+ }
+ if ["run_plugin_action", "get_plugin_tools", "find_plugins", "list_connected_plugins"].contains(tool) { return "" }
+ var url = argText(args, "url")
+ if url.isEmpty, let id = agentTabs[who] { url = findTab(id)?.tab.url ?? "" }
+ guard let scheme = URL(string: url)?.scheme, scheme == "http" || scheme == "https" else { return "" }
+ return hostName(url)
+}
 
 // One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
 var approvalWaiters: [Once<Bool?>]? = nil
@@ -90,14 +112,15 @@ func askToSignIn(_ who: String, _ browser: Browser, _ tab: Tab, _ site: String) 
  let me = worker(who)
  if me.paused { return }
  me.paused = true; me.signIn = site
+ taskState(runs[who], "paused", "site")
  if !tab.closed { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
  publishEverywhere(); browser.toast(me.label + " needs you to sign in to " + site + ". It never sees your password.")
 }
 
 /// The window agent calls and links from other apps land in: the one used last, never a sign-in window.
 var homeBrowser: Browser? {
- if let last = lastActiveBrowser, !last.temporary, browsers.contains(where: { $0 === last }) { return last }
- return browsers.first { !$0.temporary } ?? browsers.first
+ if let last = lastActiveBrowser, !last.temporary, !last.incognito, browsers.contains(where: { $0 === last }) { return last }
+ return browsers.first { !$0.temporary && !$0.incognito } ?? browsers.first { !$0.temporary } ?? browsers.first
 }
 func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
  for browser in browsers { if let tab = browser.tabs.first(where: { $0.id == id }) { return (browser, tab) } }
@@ -106,6 +129,7 @@ func findTab(_ id: String) -> (browser: Browser, tab: Tab)? {
 /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
 func chatRunner(_ who: String) -> Browser? {
  guard let run = runs[who] else { return nil }
+ if run.chat.ephemeral { return ownerOf(run.chat) } // an incognito chat's pages stay in its window
  return browsers.first { $0.showing(run.chat) } ?? browsers.first { $0.tabs.contains { $0.chatId == run.chat.id } } ?? homeBrowser
 }
 /// No keyboard or mouse for a minute, or Still is hidden or every window minimized: nobody will see the bar.
@@ -134,8 +158,10 @@ var sessionGrants = Set<String>() // outside apps: "who action site" allowed unt
 @MainActor func approve(_ run: ChatRun, _ what: String, _ site: String, _ action: String, _ why: String, countdown: Bool) async -> String {
  let card = Approval(id: String((0..<8).map { _ in "0123456789abcdef".randomElement()! }), what: what, site: site, action: action, why: why, until: countdown ? Date().addingTimeInterval(8) : nil)
  run.approvals.append(card); publishAiEverywhere()
+ if !countdown { taskState(run, "waiting", "approval", what + " on " + site) }
  let answer: String = await withCheckedContinuation { done in card.answer.wait(countdown ? 8 : 600) { done.resume(returning: $0 ?? (countdown ? "go" : "timeout")) } }
  run.approvals.removeAll { $0 === card }; publishAiEverywhere()
+ if !countdown && !run.approvals.contains(where: { $0.until == nil }) { taskState(run, "running") }
  return answer
 }
 
@@ -483,6 +509,7 @@ extension Browser {
    }
   }
   let me = worker(who)
+  if Date().timeIntervalSince(me.seen) > 120 && !me.paused { me.since = Date(); me.count = 0; me.recent = [] } // a new stretch of work
   me.seen = Date()
   // The user took over: wait for them to hand it back, like a person would.
   let paused = Date().addingTimeInterval(40)
@@ -513,11 +540,23 @@ extension Browser {
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
   let limit: Double = tool == "ask_user" || tool == "run_plugin_action" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
-  switch await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }) {
-  case .done(let reply): return reply ?? agentFail("Failed.")
-  case .interrupted(let reply): return reply
-  case .late: return agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
+  // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
+  let going = runs[who]
+  if let going, let intent = going.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
+  me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
+  defer { me.tool = ""; me.count += 1; me.seen = Date() }
+  let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }), result: String
+  switch raced {
+  case .done(let reply): result = reply ?? agentFail("Failed.")
+  case .interrupted(let reply): result = reply
+  case .late: result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
   }
+  if let going {
+   if let ran = going.intent { if case .done = raced { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off: uncertain
+   checkpoint(going, tool, result)
+  }
+  if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
+  return result
  }
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Nil: no answer yet; the question stays up.
@@ -592,7 +631,9 @@ extension Browser {
    let x = agentTabs[a.key] == shownId, y = agentTabs[b.key] == shownId
    return x != y ? !x : a.value.seen < b.value.seen
   }) else { return nil }
-  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "signIn": me.signIn, "key": key]
+  var data: [String: Any] = ["client": me.name, "pending": false, "action": me.action, "ask": "", "paused": me.paused, "signIn": me.signIn, "key": key,
+   "tool": me.tool, "target": me.target, "count": me.count, "recent": me.recent]
+  if let since = me.since { data["since"] = ISO8601DateFormatter().string(from: since) }
   if let tab = agentTabs[key] { data["tab"] = tab }
   return data
  }
@@ -601,6 +642,7 @@ extension Browser {
  func takeOver(_ on: Bool, _ key: String) {
   guard let me = workers[key] else { return }
   me.paused = on
+  taskState(runs[key], on ? "paused" : "running")
   if !on && !me.signIn.isEmpty { me.signedIn = (me.signIn, Date()); me.signIn = "" }
   if on { agentInterrupts.removeValue(forKey: key)?.set(agentFail(tookOver)) }
   if on, let id = agentTabs[key], let (browser, tab) = findTab(id) { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
@@ -663,6 +705,8 @@ extension Browser {
   let tab = Tab()
   tab.url = url; tab.title = url.isEmpty ? "New tab" : hostName(url)
   tab.agent = worker(who).name; tab.agentKey = who
+  tab.isPrivate = incognito // an incognito chat's pages: the window's private website data
+  if !incognito && onCompanion(who) { tab.engine = "Companion" }
   tab.aiGroup = chat == nil && !background
   tab.runChat = background ? nil : chat
   tab.inChat = background ? chat ?? "app:" + who : nil
@@ -685,7 +729,8 @@ extension Browser {
   if id.isEmpty, let last = agentTabs[who], findTab(last) != nil { id = last }
   for browser in browsers {
    guard let tab = id.isEmpty ? (browser === self ? browser.active : nil) : browser.tabs.first(where: { $0.id == id }) else { continue }
-   if tab.isPrivate { throw AgentError("Private tabs are off-limits to agents.") }
+   // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
+   if incognitoRun(who) ? (tab.inChat ?? tab.runChat) != who : tab.isPrivate { throw AgentError(incognitoRun(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.") }
    browser.claim(who, tab)
    return (browser, tab)
   }
@@ -763,9 +808,12 @@ extension Browser {
   let marked = pref("SensitiveSites", [String]()).contains { onSite($0, site) }
   if action == "interact" && (!why.isEmpty || marked) { action = "sensitive"; if why.isEmpty { why = "You marked " + site + " as sensitive." } }
   let run = runs[who]
-  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
-  let mode = permissionMode(run?.chat.companion ?? "", site, action) ?? (run != nil ? defaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site
-  let granted = mode == "always" || mode == "chat" && (run.map { $0.chat.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
+  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  let up = run.map { exchangeOf($0.chat) }
+  let mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site
+  var granted = mode == "always" || mode == "chat" && (up.map { $0.root.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
   guard let run else {
    if granted { return nil }
    let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site
@@ -778,13 +826,18 @@ extension Browser {
    return nil
   }
   if granted && action != "sensitive" { if action == "interact" { audit(run.chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat") }; return nil }
-  let answer = await approve(run, what, site, action, why, countdown: granted)
+  var answer = await approve(run, what, site, action, why, countdown: granted)
+  if answer == "always" && run.chat.ephemeral { answer = "chat" } // an incognito chat writes no site rules
   if answer == "always" { setPermission(site, action, "", "always") }
-  if answer == "chat" && !run.chat.allowed.contains(key) { run.chat.allowed.append(key) }
+  if let root = up?.root, answer == "chat" && !root.allowed.contains(key) { root.allowed.append(key) }
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
                  "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
   audit(run.chat, what, site, results[answer] ?? "You said no")
   publishAiEverywhere()
+  if ["always", "chat", "once", "go", "now"].contains(answer) && action == "sensitive" {
+   if run.recheck { run.recheck = false; for s in run.task.sensitive where s.outcome == nil { s.outcome = "rechecked" } }
+   run.intent = AiSensitive(what, site)
+  }
   switch answer {
   case "always", "chat", "once", "go", "now": return nil
   case "cancel": return agentFail("The user cancelled this before it ran. Don't try it again unless they ask.")
@@ -796,12 +849,21 @@ extension Browser {
 
  @MainActor func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String {
   do {
+   if incognitoRun(who), ["remember", "forget", "update_knowledge", "save_file", "offer_routine"].contains(tool) { return agentFail(keepsNothing) }
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
    case "offer_routine": return await offerRoutine(who, args)
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action": return await pluginTool(who, tool, args)
-   case "remember", "recall", "forget", "update_knowledge": return memoryTool(who, tool, args)
+   case "remember", "recall", "forget", "update_knowledge", "read_knowledge", "open_memory_source": return memoryTool(who, tool, args)
+   case "load_skill":
+    // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
+    let id = tidy((args["id"] as? String ?? "")).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+    guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }), mine.skills.contains(id), let skill = Skill.all.first(where: { $0.id == id }) else {
+     return agentFail("You don't have a skill with the id \"\(id)\". Use an id from your skills listed at the start of the chat, or carry on without one.")
+    }
+    chatStep(run.chat, "Used skill " + skill.name); publishAiEverywhere()
+    return agentOk(["skill": skill.name, "instructions": skill.body])
    case "save_file":
     let reply = saveFile(who, args)
     if let done = (jsonObject(reply)?["result"] as? [String: Any])?["done"] as? String, let space = done.firstIndex(of: " "), let end = done.range(of: " in the user's Library") {
@@ -811,7 +873,7 @@ extension Browser {
    case "list_tabs":
     var list: [[String: Any]] = []
     for (index, browser) in browsers.enumerated() {
-     for tab in browser.tabs where !tab.isPrivate {
+     for tab in browser.tabs where incognitoRun(who) ? (tab.inChat ?? tab.runChat) == who : !tab.isPrivate {
       var item: [String: Any] = ["tabId": tab.id, "title": tab.title, "url": tab.url, "window": index + 1]
       if tab === browser.active { item["active"] = true }
       if agentTabs[who] == tab.id { item["yours"] = true }
@@ -827,7 +889,11 @@ extension Browser {
     let url = try agentWebUrl(argText(args, "url")), chat = runs[who] != nil ? who : nil
     let mine = browsers.flatMap(\.tabs).filter { !$0.closed && (chat != nil ? ($0.runChat ?? $0.inChat) == chat : $0.aiGroup && $0.agentKey == who || $0.inChat == "app:" + who) }
     if mine.count >= 6 { return agentFail("You already have 6 tabs open. Reuse one with navigate, or close one with close_tab first.") } // tabs one chat (or one outside AI) may have open at once
-    let tab = (chatRunner(who) ?? self).openAgentTab(who, url, background: background)
+    // An incognito chat's pages open in its window; no other agent opens one in an incognito window.
+    guard let host = incognitoRun(who) ? chatRunner(who) : chatRunner(who) ?? self, host.incognito == incognitoRun(who) else {
+     return agentFail(incognitoRun(who) ? "The incognito window closed." : "Agents don't open tabs in an incognito window.")
+    }
+    let tab = host.openAgentTab(who, url, background: background)
     await waitLoaded(tab)
     did(who, "Opened " + hostName(tab.url)); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "navigate":
@@ -1100,9 +1166,10 @@ extension Browser {
   }
   let specific = rules.filter { !ruleText($0, "Site").isEmpty || !ruleText($0, "Companion").isEmpty }
    .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
-  let run = shown.flatMap { runs[$0.id] }
+  // The shown chat's cards, and those of the child tasks it started (they ask in the user's chat).
+  let asking = shown.map { s in runs.values.filter { $0.chat === s || $0.chat.from != nil && exchangeOf($0.chat).root === s } } ?? []
   return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()),
-          "approvals": run.map { r in r.approvals.map { ["id": $0.id, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] } } as Any? ?? NSNull(),
+          "approvals": asking.flatMap { r in r.approvals.map { ["id": $0.id, "run": r.chat.id, "who": r.chat.companion, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] as [String: Any] } },
           "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
  }
 }
@@ -1262,12 +1329,17 @@ enum Mcp {
  // Still's own companions keep a memory of the user, on this computer, one per companion; and Still's own chat can show
  // the user a question with options and wait for the answer.
  static let chatTools: [Tool] = [
-  tool("remember", "Keep one short, lasting fact about the user in your memory, like \"Prefers aisle seats\" or \"Sister Maya lives in Lisbon\". It's saved with today's date and this chat. A fact that repeats one you have updates it. Never pass passwords, codes, card or account numbers, form data or anything from private tabs: Still refuses them.",
-       [str("fact", "The fact, in one short sentence"), str("kind", "fact, preference, habit, person or project")], ["fact"]),
-  tool("recall", "Look up what you remember about the user: the facts that best match the words given, with their ids and dates. Leave query empty for the most important ones.", [str("query", "A few words about what you're looking for")], []),
-  tool("update_knowledge", "Rewrite one of your knowledge files (listed at the start of the chat) with what it should hold now. Pass its whole new text in short, tidy Markdown, keeping what's still true. Never put passwords, codes, card or account numbers, form data or anything from private tabs in it: Still refuses them.",
-       [str("file", "The file's id, like \"deals\""), str("text", "The file's full new text, in Markdown")], ["file", "text"]),
-  tool("forget", "Forget a fact: pass its id from recall, or a few words that every fact to forget contains. Use it when the user asks you to forget something.", [str("id", "The fact's id"), str("about", "Or: words in the facts to forget")], []),
+  tool("remember", "Keep one short, lasting thing about the user in your memory, like \"Prefers aisle seats\" or \"Lives in Lisbon\": one sentence, 300 characters at most (the chat keeps the details). It's saved with today's date and the message it came from. To change something you remember, pass its id as replaces (or the same slot): the old version stays as history and stops counting. When the user corrects you, use kind correction. Never pass passwords, codes, card or account numbers, form data or anything from private tabs: Still refuses them, and it refuses what the user asked you to forget unless they say it again.",
+       [str("fact", "The fact, in one short sentence"), str("kind", "profile (who they are, how to talk to them), preference, fact, person, project or correction"), str("subject", "Who it's about when it's not the user, like \"Maya (sister)\""),
+        str("replaces", "The id of the memory this one updates, from recall"), str("slot", "A name for a thing that holds one value, like \"home city\" or \"browser\": a new memory in the same slot replaces the old"),
+        bool("guessed", "true when you worked it out from what they did rather than they told you. It's kept apart and marked until they confirm it")], ["fact"]),
+  tool("recall", "Look up what you remember about the user, and summaries of your past chats with them: what best matches the words given, with ids, dates and where each came from. Leave query empty for the most important ones. When nothing matches, it says so: don't guess.", [str("query", "A few words about what you're looking for")], []),
+  tool("open_memory_source", "Show the messages a memory or a past chat came from, to check what the user actually said. Pass a memory's id or a past chat's id from recall.", [str("id", "The memory's or the past chat's id")], ["id"]),
+  tool("read_knowledge", "Read one of your knowledge files (listed at the start of the chat): its full text and its version.", [str("file", "The file's id, like \"deals\"")], ["file"]),
+  tool("update_knowledge", "Rewrite one of your knowledge files with what it should hold now. Read it first: pass its whole new text in short, tidy Markdown, keeping what's still true, and the version you read. If it changed since, nothing is written and you get the current text to work from. Never put passwords, codes, card or account numbers, form data or anything from private tabs in it: Still refuses them.",
+       [str("file", "The file's id, like \"deals\""), str("text", "The file's full new text, in Markdown"), str("version", "The version read_knowledge gave you")], ["file", "text", "version"]),
+  tool("forget", "Forget something: pass its id from recall (that forgets every version of it), or words that every memory to forget contains. If more than three match, nothing is forgotten and you get the list to check with the user. Use it when the user asks you to forget something.", [str("id", "The memory's id"), str("about", "Or: words in the memories to forget")], []),
+  tool("load_skill", "Load one of your skills, listed at the start of the chat, by its id: you get its full steps to follow. Call it before you start whenever a skill's line describes the task, and skip it when none does. Only your own skills load.", [str("id", "The skill's id from your list, like \"pitch\"")], ["id"]),
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
         str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),
@@ -1277,9 +1349,9 @@ enum Mcp {
   // Teammates: the user's other companions, each with its own role, memory and tools (Ai.swift, exchange).
   tool("list_companions", "List your teammates: the user's other companions, what each one does, and which one is you.", [], []),
   tool("ask_companion", "Ask a teammate something and wait for their reply (up to 10 minutes). They answer with their own role, memory and tools, and only they see your message. Say what you need and why, with what they need from you. The user sees the exchange.",
-       [str("name", "The teammate's name, from list_companions"), str("message", "What you're asking them")], ["name", "message"]),
-  tool("tell_companion", "Hand work over to a teammate without waiting: they do it in their own chat, where the user sees it. Give them everything they need to do it.",
-       [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you")], ["name", "message"]),
+       [str("name", "The teammate's name, from list_companions"), str("message", "What you're asking them"), str("title", "What you're asking for in a few words, as in \"asked Jonah for a pitch\": a pitch. The user sees it.")], ["name", "message"]),
+  tool("tell_companion", "Hand work over to a teammate without waiting: they do it in the background and their result comes back to this chat, where the user sees it. Give them everything they need to do it.",
+       [str("name", "The teammate's name, from list_companions"), str("message", "What they should do, with what they need from you"), str("title", "What you're asking for in a few words, as in \"asked Jonah for a pitch\": a pitch. The user sees it.")], ["name", "message"]),
   // The user's own apps (Gmail, Calendar, Slack…) through Composio, once they connect them (Plugins.swift).
   tool("list_connected_plugins", "Names of the user's apps (plugins) connected for you, like Gmail or Slack. Names only: get_plugin_tools loads one app's actions.", [], []),
   tool("find_plugins", "Look up apps Still can connect through Composio, by name or category: each one's name, categories and whether it's connected for you.",
@@ -1295,7 +1367,7 @@ enum Mcp {
  // Each profile is its own Still process with its own socket. The AI sidebar's agent is locked to its own profile.
  static func toolList(_ lockProfile: Bool) -> [Tool] {
   if noTools { return [] }
-  if lockProfile { return browserTools + chatTools }
+  if lockProfile { return browserTools + chatTools.filter { !noPlugins || !["list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action"].contains($0.name) } }
   return [listProfilesTool] + browserTools.map { Tool(name: $0.name, description: $0.description, props: $0.props + [profileProp], required: $0.required) }
  }
  static let instructions: String = "You're driving the user's own Still browser, signed in as them. "
@@ -1321,6 +1393,7 @@ enum Mcp {
 
  static var runId = "" // Still's own chat: which chat this server works for (--run)
  static var noTools = false // --no-tools: a talk with no browser at all (setup's interview)
+ static var noPlugins = false // --no-plugins: an incognito chat, where connected apps are off
  static let outLock = NSLock(), stateLock = NSLock()
  static var cancelledIds = Set<String>()
  // Questions this server asks the user through their AI app (MCP elicitation), by request id.
@@ -1338,6 +1411,7 @@ enum Mcp {
   let forced = argAfter("--as"), lockProfile = CommandLine.arguments.contains("--this-profile")
   runId = argAfter("--run") ?? ""
   noTools = CommandLine.arguments.contains("--no-tools")
+  noPlugins = CommandLine.arguments.contains("--no-plugins")
   var client = forced ?? "An AI agent", canElicit = false
   let tools = toolList(lockProfile).map { schema($0) }
   let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1"

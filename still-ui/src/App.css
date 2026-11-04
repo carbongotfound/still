@@ -80,7 +80,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .new-tab-page>p { font-size:13px;color:var(--muted-foreground);margin:14px 0 34px; }
 .start-search[data-slot="button"] { width:414px;height:49px;font-size:13px;font-weight:400;color:var(--muted-foreground);justify-content:flex-start;gap:13px;padding:0 17px;background:color-mix(in srgb,var(--muted) 32%,var(--background));border:1px solid var(--input);border-radius:13px;box-shadow:inset 0 1px 0 #ffffff04,0 6px 20px #0001; }
 .start-search[data-slot="button"]:hover { border-color:color-mix(in oklab,var(--foreground) 28%,transparent); }
-.start-search svg { width:14px;height:14px;opacity:.65; }.start-search kbd { margin-left:auto;opacity:.6; }
+.start-search[data-slot="button"]:focus-visible { border-color:var(--ring);box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 50%,transparent),0 6px 20px #0001; }
+.start-search svg { width:14px;height:14px;opacity:.65; }.start-search kbd { margin-left:auto; }
 .private-caption { display:flex;gap:8px;align-items:center;position:absolute;bottom:35px;font-size:11px;color:var(--muted-foreground); }.private-caption svg { width:12px;height:12px; }
 .top-tab-strip { height:43px;flex:none;background:var(--chrome);padding:2px 10px 5px;border-bottom:1px solid var(--border);overflow-x:auto;scrollbar-width:none; }
 .top-tab-list { position:relative;display:flex;gap:5px;align-items:center; }
@@ -153,6 +154,33 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 [data-slot="tooltip-content"] { font-size:11px;border:1px solid var(--border);background:var(--popover);color:var(--foreground);border-radius:6px;box-shadow:0 4px 15px #0004; }
 [data-sonner-toast].still-toast { min-height:35px;max-height:36px;padding:9px 14px;border-radius:7px;font-size:11px;overflow:hidden;white-space:nowrap; }
 [data-sonner-toast].still-toast [data-title] { overflow:hidden;text-overflow:ellipsis; }
+/* Undo after a delete (Undo.tsx): the button stays readable in the slim toast. */
+[data-sonner-toast].undo-toast [data-button] { height:22px; padding:0 10px; margin-left:auto; border-radius:5px; font-size:11px; font-weight:600; }
+.mate-fire svg, .team-fire svg { width:14px; height:14px; }
+.team-fire { color:var(--destructive); }
+/* What's New (WhatsNew.tsx): a compact card on a small 3D stage. Transforms only, so it stays light. */
+.whatsnew { max-width:440px !important; padding:18px 18px 14px; gap:10px; }
+.whatsnew-kicker { font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
+.whatsnew-stage { perspective:900px; display:grid; place-items:center; padding:8px 4px 14px; touch-action:pan-y; user-select:none; overflow:hidden;
+ background:radial-gradient(ellipse 70% 55% at 50% 100%, color-mix(in oklab,var(--primary) 14%,transparent), transparent 70%); border-radius:14px; }
+.whatsnew-card { margin:0; width:100%; aspect-ratio:16/10; border-radius:12px; overflow:hidden; transform-style:preserve-3d; background:var(--muted);
+ box-shadow:0 1px 0 color-mix(in oklab,var(--foreground) 8%,transparent), 0 18px 34px -14px rgb(0 0 0 / .45), 0 0 0 1px var(--border); position:relative; }
+.whatsnew-card::after { content:""; position:absolute; inset:0; background:linear-gradient(125deg, rgb(255 255 255 / .16), transparent 42%); pointer-events:none; }
+.whatsnew-card img { width:100%; height:100%; object-fit:cover; object-position:top left; display:block; }
+.whatsnew-title { font-size:16px; font-weight:650; text-wrap:balance; }
+.whatsnew-text { font-size:13px; line-height:1.5; margin-top:-4px; }
+.whatsnew-nav { display:flex; align-items:center; justify-content:center; gap:8px; }
+.whatsnew-dots { display:flex; gap:6px; }
+.whatsnew-dots button { width:7px; height:7px; border-radius:99px; background:color-mix(in oklab,var(--foreground) 22%,transparent); transition:width .2s,background-color .2s; }
+.whatsnew-dots button[aria-selected=true] { width:18px; background:var(--primary); }
+.whatsnew-foot { display:flex; justify-content:space-between; align-items:center; }
+/* Settings > Companions: each companion with Edit and Fire. */
+.team-rows { display:grid; }
+.team-row { display:flex; align-items:center; gap:10px; padding:8px 16px; }
+.team-row-text { display:grid; flex:1; min-width:0; } .team-row b { font-size:13px; font-weight:600; } .team-row small { color:var(--muted-foreground); font-size:12px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+/* The profile's General tab ends with Fire. */
+.profile-fire { display:flex; align-items:center; gap:12px; margin-top:18px; padding-top:14px; border-top:1px solid var(--border); }
+.profile-fire > div { display:grid; flex:1; min-width:0; } .profile-fire b { font-size:13px; } .profile-fire small { color:var(--muted-foreground); font-size:12px; line-height:1.5; }
 [data-sonner-toaster],[data-sonner-toast] { pointer-events:none!important; }
 @media(max-width:900px) {.nav-controls{width:86px}.address-bar kbd{display:none}.address-bar{max-width:350px}.page-tools{gap:0}.window-bar{gap:2px}.start-search[data-slot="button"]{width:310px} }
 @media(prefers-reduced-motion:reduce) { *,*::before,*::after { animation-duration:.01ms!important;transition-duration:.01ms!important;scroll-behavior:auto!important; } }
@@ -388,7 +416,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 :root:not(.dark) .selected-tab { box-shadow:0 1px 2px #2a201410,0 0 0 1px #2a20140d; }
 
 /* AI: the face, the brand marks, the AI's own tabs */
-.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 0; gap:1px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
+.ai-pill[data-slot="button"] { height:30px; padding:0 12px 0 3px; gap:8px; border-radius:100px; font-size:12px; font-weight:600; margin-right:6px; }
 .ai-pill.is-open[data-slot="button"], .ai-pill.is-open[data-slot="button"]:hover { background:var(--primary); border-color:var(--primary); color:var(--primary-foreground); }
 .ai-logo { display:inline-grid; place-items:center; flex:none; line-height:1; }
 .ai-logo.is-letter { border-radius:50%; box-shadow:inset 0 0 0 1.25px color-mix(in oklab,currentColor 35%,transparent); font-weight:650; color:var(--muted-foreground); }
@@ -423,7 +451,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-idea { display:flex; flex-direction:column; align-items:flex-start; gap:9px; padding:13px; border-radius:14px; border:1px solid var(--border); background:var(--card); text-align:left; font-size:12.5px; font-weight:500; transition:transform .2s var(--ease-spring),border-color .15s,box-shadow .2s; }
 .ai-idea span { display:grid; place-items:center; width:28px; height:28px; border-radius:9px; background:var(--muted); color:var(--foreground); } .ai-idea span svg { width:15px; height:15px; }
 .ai-idea:hover, .ai-pick-card:hover { transform:translateY(-2px); border-color:color-mix(in oklab,var(--foreground) 18%,transparent); box-shadow:0 8px 20px -12px #0005; }
-.ai-log { flex:1; min-height:0; overflow-y:auto; padding:10px 18px 12px; display:flex; flex-direction:column; gap:14px; }
+.ai-log { flex:1; min-height:0; overflow-y:auto; padding:10px 18px 0; display:flex; flex-direction:column; gap:14px; scroll-padding-bottom:var(--chat-end,24px); }
+.chat-view { --chat-end:24px; } .chat-view[data-mode=tab] { --chat-end:32px; } .is-split .chat-view[data-mode=tab] { --chat-end:24px; } /* the gap above the message box */
 .ai-msg { overflow-wrap:anywhere; line-height:1.6; }
 .ai-msg.is-user { align-self:flex-end; max-width:min(560px,85%); margin:18px 0 10px; padding:11px 18px; border-radius:20px 20px 6px 20px; background:var(--muted); white-space:pre-wrap; }
 .ai-msg.is-user:first-child { margin-top:0; }
@@ -449,12 +478,18 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-steps-group[open] .ai-steps-chevron { rotate:180deg; } .ai-steps-group summary:hover .ai-steps-chevron { color:var(--foreground); }
 .ai-steps-group ol { margin:0; padding:12px; border-top:1px solid var(--border); list-style:none; display:flex; flex-direction:column; gap:8px; font-size:.88em; }
 .ai-timer { margin:0; padding-top:8px; font-size:.9em; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
-.ai-next { display:flex; flex-direction:column; gap:2px; margin-top:2px; }
-.ai-next-step { display:flex; align-items:center; gap:12px; padding:7px 8px; border-radius:10px; text-align:left; transition:background .15s; }
-.ai-next-step:hover:not(:disabled) { background:var(--muted); } .ai-next-step:disabled { opacity:.6; }
-.ai-next-step svg { width:24px; height:24px; flex:none; padding:5px; border-radius:50%; border:1px solid var(--input); color:var(--muted-foreground); }
-.ai-actions { display:flex; gap:2px; margin:-4px 0 0 -6px; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
-.ai-compose { padding:4px 14px 14px; } /* with the log's 12px: 16px above the composer */
+.tiers { display:flex; flex-direction:column; gap:16px; } .tiers[data-off] .tier-ai { opacity:.5; }
+.tiers-note { margin:0; font-size:.9em; color:var(--muted-foreground); }
+.tier-head { display:flex; align-items:center; gap:8px; font-weight:500; margin-bottom:2px; } .tier-head [data-slot=button] { margin-left:auto; }
+.tier-row { display:grid; grid-template-columns:minmax(96px,auto) 1fr 1fr; gap:8px; align-items:center; padding:3px 0; } .tier-row [data-slot=select-trigger] { width:100%; }
+.tier-name { display:flex; align-items:center; gap:6px; } .tier-name svg { width:15px; height:15px; color:var(--muted-foreground); }
+.tier-failed { grid-column:2 / -1; color:var(--destructive); font-size:.85em; }
+/* A reply's actions (Copy) show while the pointer is on the reply or a key is on them, lined up with its text. Their
+   row keeps its place, so nothing moves when they appear. */
+.ai-actions { display:flex; gap:2px; margin:-8px 0 0 -6px; opacity:0; transition:opacity .15s; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
+.ai-turn:hover > .ai-actions, .ai-actions:focus-within { opacity:1; }
+@media (hover:none) { .ai-actions { opacity:1; } }
+.ai-compose { padding:0 14px 14px; } /* the gap above it is the log's --chat-end */
 .ai-compose [data-slot=input-group] { border-radius:18px; background:var(--card); border-color:var(--input); box-shadow:0 1px 2px #2a20140a,0 10px 28px -16px #2a201440; }
 .dark .ai-compose [data-slot=input-group] { box-shadow:0 10px 28px -14px #000c; }
 .ai-compose .composer-input { max-height:180px; }
@@ -462,6 +497,25 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-send[data-slot]:hover { background:var(--hue,#7c66f5); opacity:.88; } .ai-send[data-slot]:disabled { background:var(--muted); color:var(--muted-foreground); opacity:1; }
 .ai-send.is-stop[data-slot], .ai-send.is-stop[data-slot]:hover { background:#e5484d; }
 .composer-gap { flex:1; }
+/* The message box's row stays inside the box at any width: the companion chip and the model name shrink and cut
+   their text with an ellipsis; attach, effort and send keep their size. */
+.composer [data-slot=input-group-addon][data-align=block-end] { min-width:0; max-width:100%; }
+.composer { container:composer / inline-size; }
+@container composer (max-width:300px) { .composer [data-slot=input-group-addon][data-align=block-end] { gap:4px; padding-inline:8px; } }
+.composer [data-slot=input-group-addon][data-align=block-end] > * { flex:none; }
+.composer [data-slot=input-group-addon][data-align=block-end] > .composer-gap { flex:1 1 0; min-width:0; }
+.composer [data-slot=input-group-addon][data-align=block-end] > .mode-chip { flex:0 1 auto; min-width:2.5rem; }
+.composer [data-slot=input-group-addon][data-align=block-end] > .ai-pick { flex:0 1 auto; min-width:2.25rem; overflow:hidden; }
+.composer [data-slot=input-group-addon][data-align=block-end] > .ai-pick:not(.ai-model) { flex:none; }
+/* A narrow box puts the model and effort pickers on their own line: the effort reads in full, the model name shortens. */
+@container composer (max-width:360px) {
+ .composer [data-slot=input-group-addon][data-align=block-end] { flex-wrap:wrap; row-gap:0; }
+ .composer [data-slot=input-group-addon][data-align=block-end]::after { content:""; order:1; flex-basis:100%; }
+ .composer [data-slot=input-group-addon][data-align=block-end] > .ai-pick { order:2; margin-top:4px; flex:0 0 auto; max-width:100%; }
+ .composer [data-slot=input-group-addon][data-align=block-end] > .ai-pick.ai-model { flex:0 1 auto; min-width:0; }
+}
+.composer .mode-chip > span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.composer .mode-chip > :not(span) { flex:none; }
 /* Attachments: a file chip shows its kind, name and size; dragging files over the box lights it up. */
 .file-chip .file-icon { width:16px; height:18px; border-radius:4px; background:none; } .file-chip .file-icon svg { width:14px; height:14px; }
 .file-chip > span { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .file-chip small { color:var(--muted-foreground); font-size:11px; }
@@ -470,6 +524,12 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .composer-drop { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:inherit; pointer-events:none; font-weight:600;
  background:color-mix(in oklab,var(--hue,#5c7a76) 16%,var(--card)); color:var(--foreground); } .composer-drop svg { width:16px; height:16px; }
 .menu-hint { margin-left:auto; font-size:11px; color:var(--muted-foreground); }
+/* Draft restored: a box that came back with what was typed before, with Discard. */
+.draft-addon[data-slot] { padding:8px 12px 0; }
+.draft-hint { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted-foreground); }
+.draft-hint button { padding:1px 8px; border-radius:6px; font:inherit; font-weight:600; color:var(--foreground); background:color-mix(in oklab,var(--foreground) 7%,transparent); }
+.draft-hint button:hover { background:color-mix(in oklab,var(--foreground) 12%,transparent); }
+.draft-hint button:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .composer[data-slot=input-group]:has(:disabled) { opacity:1; background:var(--card); } .ai-send svg { width:15px; height:15px; } .ai-send[aria-label=Stop] svg { width:11px; height:11px; fill:currentColor; }
 /* Chats and setup scroll by wheel, trackpad and keys with no scrollbar; once scrolled, the top edge fades (fadeTop). */
 .ai-log, .ai-pane, .ob-talk, .ob-chat { scrollbar-width:none; } .ai-log::-webkit-scrollbar, .ai-pane::-webkit-scrollbar, .ob-talk::-webkit-scrollbar, .ob-chat::-webkit-scrollbar { display:none; }
@@ -481,24 +541,28 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-usage svg { width:12px;height:12px;flex:none; }
 /* One companion messaging another, in the chat: the two faces with an arrow, who asked whom, a status pill (Working,
    Replied or Done, Failed, Stopped), the message and the reply in two lines each. It opens to all of both. */
-.exchange { display:flex; flex-direction:column; gap:6px; margin:6px 0 6px 42px; padding:10px 14px 12px 10px; border-radius:16px; background:color-mix(in oklab,var(--hue) 8%,var(--card)); box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--hue) 28%,var(--border)); animation:ai-in .25s ease-out; }
-.exchange-head { display:flex; align-items:center; gap:10px; width:100%; min-width:0; text-align:left; border-radius:10px; }
-.exchange-head:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
-.exchange-faces { flex:none; display:flex; align-items:center; gap:2px; } .exchange-faces > svg { width:13px; height:13px; color:var(--muted-foreground); }
-.exchange-who { flex:1; min-width:0; font-size:13px; color:var(--muted-foreground); } .exchange-who b { color:var(--foreground); font-weight:600; }
-.exchange-status { flex:none; display:flex; align-items:center; gap:5px; padding:2px 9px; border-radius:99px; font-size:11.5px; font-weight:500; background:var(--muted); color:var(--muted-foreground); }
-.exchange-status svg { width:12px; height:12px; }
-.exchange[data-status=working] .exchange-status { background:color-mix(in oklab,var(--hue) 24%,transparent); color:var(--foreground); }
-.exchange[data-status=replied] .exchange-status { background:color-mix(in oklab,#22c55e 18%,transparent); color:var(--foreground); }
-.exchange[data-status=failed] .exchange-status { background:color-mix(in oklab,var(--destructive) 16%,transparent); color:var(--foreground); }
-.exchange[data-status=stopped] { opacity:.75; }
-.exchange-chevron { flex:none; width:15px; height:15px; color:var(--muted-foreground); transition:rotate .2s; } .exchange[data-open] .exchange-chevron { rotate:180deg; }
-.exchange-message, .exchange-reply > p { margin:0 0 0 2px; font-size:13.5px; line-height:1.5; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; }
-.exchange-reply { padding:8px 11px; border-radius:11px; background:var(--card); box-shadow:inset 0 0 0 1px var(--border); }
-.exchange-reply > p { margin:0; color:var(--foreground); }
-.exchange[data-open] .exchange-message { display:block; white-space:pre-wrap; }
-.exchange-actions { display:flex; flex-wrap:wrap; gap:6px; justify-content:flex-end; }
-.exchange-actions [data-slot=button] { border-radius:99px; height:28px; }
+/* R18: a teammate's help is one row in a step card (same padding and gap): from → to, what was asked for, a status pill
+   and View. It opens to what was asked and the result, clamped; View shows the whole child task. */
+.delegation-toggle { flex:1; min-width:0; display:flex; align-items:center; gap:10px; height:24px; text-align:left; border-radius:8px; font-size:.93em; }
+.delegation-toggle:focus-visible, .delegation-view:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.delegation-toggle .ai-step-line { flex:1; }
+.delegation-faces { flex:none; display:flex; align-items:center; gap:2px; } .delegation-faces > svg { width:12px; height:12px; color:var(--muted-foreground); }
+.delegation-pill { flex:none; display:inline-flex; align-items:center; gap:5px; padding:2px 8px; border-radius:99px; font-size:11.5px; font-weight:500; line-height:16px; background:var(--muted); color:var(--muted-foreground); }
+.delegation-pill svg { width:12px; height:12px; }
+.delegation-pill[data-status=working] { color:var(--foreground); }
+.delegation-pill[data-status=needs] { background:color-mix(in oklab,#f59e0b 22%,transparent); color:var(--foreground); }
+.delegation-pill[data-status=replied] { background:color-mix(in oklab,#22c55e 18%,transparent); color:var(--foreground); }
+.delegation-pill[data-status=failed] { background:color-mix(in oklab,var(--destructive) 16%,transparent); color:var(--foreground); }
+.delegation[data-open] .ai-steps-chevron { rotate:180deg; }
+.delegation-view { flex:none; margin-left:-4px; }
+/* The side panel is narrow: one face (the summary names both), no chevron and an icon for View, so the summary has room. */
+.chat-view[data-mode=panel] .delegation-faces > :not(:last-child), .chat-view[data-mode=panel] .delegation .ai-steps-chevron { display:none; }
+.delegation-body { display:flex; flex-direction:column; align-items:flex-start; gap:8px; padding:12px; border-top:1px solid var(--border); font-size:.9em; }
+.delegation-asked { margin:0; color:var(--muted-foreground); white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
+.delegation-result { align-self:stretch; max-height:14em; overflow:hidden; padding:8px 11px; border-radius:10px; background:var(--background); box-shadow:inset 0 0 0 1px var(--border); }
+/* A child task: back to the chat it came from, and how it's going. */
+.task-head { flex:none; padding:8px 0 0; } .task-head .chat-column { display:flex; align-items:center; gap:8px; }
+.task-back { min-width:0; } .task-back span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* A message a teammate sent this companion: their face and name over it, tinted in their color. */
 .ai-msg.is-user.is-teammate { background:color-mix(in oklab,var(--hue) 12%,var(--muted)); }
 .ai-asker { display:flex; align-items:center; gap:6px; margin:-2px 0 6px -4px; font-size:12px; font-weight:600; color:var(--muted-foreground); white-space:normal; }
@@ -508,6 +572,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-queued button { display:grid; place-items:center; width:20px; height:20px; border-radius:6px; color:var(--muted-foreground); }
 .ai-queued button:hover { background:var(--accent); color:var(--foreground); } .ai-queued svg { width:13px; height:13px; }
 .ai-error { margin:0 14px 8px; width:auto; }
+.task-bar { display:flex; align-items:center; gap:10px; margin:0 14px 8px; width:auto; }
+.task-bar [data-slot=alert-description] { flex:1; min-width:0; }
 
 /* Picking and setting up an AI */
 .ai-picker { display:flex; flex-direction:column; gap:8px; width:100%; }
@@ -605,10 +671,10 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-sidebar .chat-view { font-size:13px; }
 .is-split .chat-view { font-size:14px; }
 .chat-column { width:100%; max-width:680px; margin:0 auto; }
-.ai-log > .chat-column { display:flex; flex-direction:column; gap:18px; min-height:100%; }
-.chat-view[data-mode=tab] .ai-log { padding:60px 44px 18px; }
-.chat-view[data-mode=tab] .ai-compose { padding:6px 44px 20px; }
-.is-split .chat-view[data-mode=tab] .ai-log { padding:56px 28px 14px; } .is-split .chat-view[data-mode=tab] .ai-compose { padding:4px 28px 16px; }
+.ai-log > .chat-column { flex:none; display:flex; flex-direction:column; gap:18px; min-height:100%; padding-bottom:var(--chat-end,24px); } /* flex:none: shrunk to the log, its end gap would sit under the messages */
+.chat-view[data-mode=tab] .ai-log { padding:60px 44px 0; }
+.chat-view[data-mode=tab] .ai-compose { padding:0 44px 20px; }
+.is-split .chat-view[data-mode=tab] .ai-log { padding:56px 28px 0; } .is-split .chat-view[data-mode=tab] .ai-compose { padding:0 28px 16px; }
 .chat-view[data-mode=tab] .composer[data-slot=input-group] { border-radius:24px; }
 .chat-view[data-mode=tab] .composer-input { min-height:64px; padding:16px 18px 4px; font-size:14.5px; }
 .chat-view[data-mode=tab] .composer [data-slot=input-group-addon] { padding:4px 10px 10px; }
@@ -682,6 +748,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .byo-tile { display:grid; place-items:center; flex:none; width:36px; height:36px; border-radius:10px; background:var(--muted); font-size:13px; font-weight:600; letter-spacing:-.02em; color:var(--foreground); }
 .byo-name { display:flex; flex-direction:column; min-width:0; flex:1; }
 .byo-name strong { font-size:14px; font-weight:540; }
+.byo-tag { height:16px; padding:0 6px; margin-left:4px; font-size:10px; font-weight:500; vertical-align:1px; }
 .byo-name small { display:flex; align-items:center; gap:5px; font-size:12.5px; color:var(--muted-foreground); }
 .byo-name small svg { width:13px; height:13px; }
 .byo-row[data-status=ready] .byo-name small { color:#2f7d4a; } .dark .byo-row[data-status=ready] .byo-name small { color:#6fd394; }
@@ -690,17 +757,32 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .byo-act[aria-expanded=true] svg { transform:rotate(180deg); }
 .byo-how { grid-column:1 / -1; padding:2px 6px 6px 54px; font-size:12.5px; color:var(--muted-foreground); }
 .byo-how p { margin:0 0 6px; }
+.byo-gaps { grid-column:1 / -1; margin:0; padding:0 6px 6px 54px; font-size:12px; line-height:1.5; color:var(--muted-foreground); }
+.api-providers { display:flex; flex-direction:column; gap:12px; align-items:flex-start; }
+.api-card { align-self:stretch; display:flex; flex-direction:column; gap:8px; padding:12px 14px; border:1px solid var(--border); border-radius:12px; }
+.api-head { display:flex; flex-wrap:wrap; align-items:center; gap:8px; } .api-kind { font-size:12px; color:var(--muted-foreground); }
+.api-key { display:flex; flex-wrap:wrap; align-items:center; gap:6px; font-size:13px; } .api-key svg { width:14px; height:14px; color:var(--muted-foreground); }
+.api-key code { font:12.5px ui-monospace,SFMono-Regular,Consolas,monospace; }
+.api-bad, .api-warn { color:var(--destructive); } .api-warn { margin:0; font-size:12.5px; }
+.api-spend p { margin:0; font-size:13px; }
+.api-checks { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; font-size:12.5px; }
+.api-checks li { display:flex; gap:6px; align-items:baseline; } .api-checks svg { width:13px; height:13px; flex:none; color:var(--destructive); transform:translateY(2px); }
+.api-checks li[data-ok] svg { color:var(--primary); }
+.api-form { display:flex; flex-direction:column; gap:10px; }
+.api-presets { display:flex; flex-wrap:wrap; align-items:center; gap:8px; font-size:12.5px; color:var(--muted-foreground); }
+.api-form label { display:flex; flex-direction:column; gap:4px; font-size:12.5px; color:var(--muted-foreground); }
+.api-pair { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
 .byo-cmd { display:block; padding:8px 10px; border-radius:10px; background:var(--muted); color:var(--foreground); font:13px ui-monospace,SFMono-Regular,Consolas,monospace; user-select:all; overflow-x:auto; white-space:nowrap; }
 .byo-how .ai-row { justify-content:flex-start; margin-top:4px; }
-.byo-more { display:flex; align-items:center; gap:4px; align-self:flex-start; padding:4px 6px; border:0; background:none; font-size:12.5px; color:var(--muted-foreground); }
-.byo-more svg { width:14px; height:14px; }
-.byo-more[aria-expanded=true] svg { transform:rotate(180deg); }
+.byo-how.byo-api { padding-left:6px; }
 .chat-info-row > b small { display:block; font-size:11.5px; color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; }
 
 /* Mascots: a live canvas over a still picture of the same pose */
 .mascot { position:relative; display:inline-block; flex:none; width:var(--s); height:var(--s); }
 .mascot > img, .mascot > canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; user-select:none; }
 .mascot > canvas { opacity:0; }
+.dark .mascot.is-head::after { content:"";position:absolute;inset:6%;border-radius:50%;box-shadow:0 0 0 1px rgb(255 255 255/.16);pointer-events:none; } /* the dark outline would sink into a dark page */
+.mascot-initial { position:absolute;inset:6%;display:grid;place-items:center;border-radius:50%;font:600 calc(var(--s) * .48)/1 var(--font-sans);font-style:normal;user-select:none; }
 .mascot > canvas[data-live] { opacity:1; }
 .mascot:has(> canvas[data-live]) > img { visibility:hidden; }
 .mascot-sheet { min-height:100vh; padding:28px 32px; background:var(--background); color:var(--foreground); display:grid; gap:18px; align-content:start; }
@@ -713,20 +795,41 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 [data-kind=claude] { --drive:#de7d58; } [data-kind=chatgpt] { --drive:#3fb79a; } [data-kind=grok] { --drive:#a6d930; }
 .page-glow { position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 3px var(--drive),inset 0 0 26px 4px color-mix(in oklab,var(--drive) 50%,transparent);animation:page-glow 2.4s ease-in-out infinite; }
 @keyframes page-glow { 50% { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--drive) 70%,transparent),inset 0 0 18px 2px color-mix(in oklab,var(--drive) 35%,transparent); } }
-/* The pill: the companion at work, then Take over and Stop. It breathes in the companion's hue. */
-.page-control { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;width:max-content;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px;padding:8px 8px 8px 10px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 16%,var(--card));color:var(--foreground);box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border));animation:page-control-in 260ms cubic-bezier(.22,1,.36,1),page-pill 2.6s ease-in-out 260ms infinite; }
-.page-control.is-paused { background:color-mix(in oklab,#e2a33b 24%,var(--card)); animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
-@keyframes page-pill { 50% { box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 0 0 1px color-mix(in oklab,var(--drive,#888) 50%,var(--border)),0 0 0 5px color-mix(in oklab,var(--drive,#888) 28%,transparent); } }
-.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;gap:2px;padding:0 8px 0 2px;line-height:1.25; }
-.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis; } .page-control-text small { font-size:11.5px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
-.page-control button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 14px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
-.page-control button svg { width:14px;height:14px; }
-.page-take { background:color-mix(in oklab,var(--drive,#888) 42%,var(--card));color:var(--foreground); } .page-take:hover { background:color-mix(in oklab,var(--drive,#888) 58%,var(--card)); }
-.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
-.page-stop { width:32px;padding:0 !important;background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 16%,transparent); } .page-stop:hover { color:var(--destructive);background:color-mix(in oklab,var(--destructive) 12%,transparent); }
-.page-stop svg { width:12px !important;height:12px !important;fill:currentColor;stroke:none; }
+/* The pill: who's at work and what they're doing right now, then Take over, Open chat and Stop. A solid card with a
+   border and a shadow, so it reads over any page; the companion's hue only tints it and turns in the ring round its head. */
+.page-dock { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px; }
+.page-control { position:relative;min-width:0;display:flex;align-items:center;gap:6px;padding:5px 6px 5px 2px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 7%,var(--card));color:var(--foreground);border:1px solid color-mix(in oklab,var(--drive,#888) 38%,var(--border));box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 2px 6px -2px rgb(0 0 0/.16);outline:none;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
+.page-control:focus-visible { box-shadow:0 0 0 2px var(--ring),0 14px 34px -16px rgb(0 0 0/.45); }
+.page-control:is([data-state=paused],[data-state=signin]) { background:color-mix(in oklab,#e2a33b 12%,var(--card));border-color:color-mix(in oklab,#e2a33b 50%,var(--border)); }
+.page-control[data-state=approval] { border-color:color-mix(in oklab,#e2a33b 70%,var(--border)); }
+.page-control[data-state=done] { animation:page-done 2.4s ease forwards; }
+@keyframes page-done { 0%,70% { opacity:1; } 100% { opacity:0; translate:0 6px; } }
+.page-more { width:22px !important;height:32px;padding:0 !important;background:transparent;color:var(--muted-foreground); } .page-more:hover { color:var(--foreground); }
+.page-more svg { transition:rotate 160ms; } .page-more[aria-expanded=true] svg { rotate:180deg; }
+.page-head { position:relative;flex:none;width:32px;height:32px;display:grid;place-items:center; }
+.page-head::before { content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--drive,#888) 0 30%,color-mix(in oklab,var(--drive,#888) 26%,transparent) 30% 100%);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));animation:page-ring 3s linear infinite; }
+.page-control:not([data-state=working]) .page-head::before { animation:none;background:color-mix(in oklab,var(--drive,#888) 75%,transparent); }
+@keyframes page-ring { to { rotate:1turn; } }
+.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;gap:1px;padding:0 6px 0 2px;line-height:1.25; }
+.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:page-step 200ms ease; }
+@keyframes page-step { from { opacity:0; } }
+.page-control-text small { font-size:12px;color:color-mix(in oklab,var(--foreground) 74%,var(--card));white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.page-count { display:none; }
+.page-control button, .page-panel button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
+.page-control button svg, .page-panel button svg { width:14px;height:14px; }
+.page-take { background:var(--foreground);color:var(--background); } .page-take:hover { background:color-mix(in oklab,var(--foreground) 84%,var(--background)); }
+.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 18%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
+.page-stop { width:32px;padding:0 !important;margin-left:4px;background:color-mix(in oklab,var(--destructive) 13%,var(--card));color:var(--destructive); } .page-stop:hover { background:color-mix(in oklab,var(--destructive) 24%,var(--card)); }
+.page-stop svg { fill:currentColor;stroke:none; }
+.page-panel { position:absolute;right:0;bottom:calc(100% + 8px);width:min(320px,calc(100vw - 32px));display:grid;gap:10px;padding:12px 12px 10px;border-radius:16px;background:var(--card);color:var(--foreground);border:1px solid var(--border);box-shadow:0 18px 40px -18px rgb(0 0 0/.5);animation:page-control-in 200ms ease; }
+.page-panel > b { display:flex;justify-content:space-between;gap:8px;font-size:13px; } .page-panel > b small { font-weight:400;color:var(--muted-foreground); }
+.page-panel ol { margin:0;padding:0 0 0 18px;display:grid;gap:4px;font-size:12.5px;color:color-mix(in oklab,var(--foreground) 76%,var(--card)); } .page-panel li.is-now { color:var(--foreground);font-weight:600; }
+.page-panel-buttons { display:flex;gap:6px;justify-content:flex-end; }
+.page-others { display:flex;align-items:center;height:36px;padding:0 10px 0 6px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--foreground);box-shadow:0 10px 24px -14px rgb(0 0 0/.45);font-size:12px;font-weight:600;flex:none; }
+.page-others .mascot + .mascot { margin-left:-6px; } .page-others b { margin-left:5px; }
+@media (max-width:520px) { .page-take span, .page-chat span { display:none; } .page-take, .page-chat { width:32px;padding:0 !important; } .page-control-text { max-width:150px; } }
 @keyframes page-control-in { from { opacity:0; } }
-@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-control.is-paused, .page-tabs i { animation:none; } }
+@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-head::before, .page-control-text b, .page-panel, .page-tabs i { animation:none; } .page-count { display:inline; } }
 
 /* The home (new tab): a slim rail, the companion switcher, the face, the message box, chips and ideas. Pages swap in on the right. */
 .home-rail { width:56px; flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 0 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 45%,var(--background)); }
@@ -738,7 +841,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .home-rail-item svg { width:18px; height:18px; }
 .home-rail-gap { flex:1; }
 .home-rail .chat-side-avatar { margin-top:6px; }
-.home-main { position:relative; flex:1; min-width:0; overflow-y:auto; display:flex; flex-direction:column; align-items:center; padding:14px 24px 48px; }
+.home-main { position:relative; flex:1; min-width:0; overflow-y:auto; scrollbar-width:none; display:flex; flex-direction:column; align-items:center; padding:14px 24px 48px; }
 .home-main::before { content:""; position:absolute; inset:0 0 auto; height:260px; pointer-events:none; background:radial-gradient(color-mix(in oklab,var(--foreground) 6%,transparent) 1.2px,transparent 1.4px) 0 0/14px 14px; -webkit-mask-image:radial-gradient(120% 100% at 50% 0,#000 20%,transparent 80%); mask-image:radial-gradient(120% 100% at 50% 0,#000 20%,transparent 80%); }
 .home-main > * { position:relative; }
 .home-top { width:100%; display:flex; justify-content:center; align-items:center; min-height:44px; }
@@ -873,6 +976,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-icon { display:grid; place-items:center; width:34px; height:34px; flex:none; border-radius:10px; background:var(--muted); } .skill-icon svg { width:16px; height:16px; }
 .skill-open { flex:1; min-width:0; display:flex; flex-direction:column; text-align:left; } .skill-open b { font-size:14px; font-weight:560; }
 .skill-open small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--muted-foreground); }
+.skill-always { flex:none; font-size:12px; color:var(--muted-foreground); }
 
 /* The companion editor's extra rows */
 .companion-look { display:flex; flex-direction:column; gap:10px; }
@@ -1106,7 +1210,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 @media (prefers-reduced-motion: reduce) { .tab-group-chevron, .close-tab { transition:none; } }
 
 /* Customize: the companion big on the left, its parts in tabs on the right */
-.look-dialog[data-slot=dialog-content] { max-width:min(940px,calc(100vw - 48px)); width:min(940px,calc(100vw - 48px)); height:min(640px,calc(100vh - 60px)); padding:0; gap:0; display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); overflow:hidden; }
+.look-dialog[data-slot=dialog-content] { max-width:min(940px,calc(100vw - 48px)); width:min(940px,calc(100vw - 48px)); height:min(720px,calc(100vh - 60px)); padding:0; gap:0; display:grid; grid-template-columns:minmax(0,5fr) minmax(0,6fr); overflow:hidden; }
 .look-stage { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:14px; padding:24px; background:radial-gradient(circle at 1px 1px,color-mix(in oklab,var(--foreground) 9%,transparent) 1px,transparent 0) 0 0/18px 18px,color-mix(in oklab,var(--hue) 10%,var(--background)); }
 .look-stage b { font:500 22px/1.2 var(--font-serif,serif); }
 .look-panel { display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); }
@@ -1136,7 +1240,24 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .look-check { display:flex; align-items:center; gap:8px; font-size:13px; }
 .look-row { display:flex; align-items:center; gap:6px; font-size:13px; color:var(--muted-foreground); } .look-row span { width:84px; }
 .look-row button { height:28px; padding:0 12px; border-radius:999px; box-shadow:0 0 0 1px var(--border); color:var(--foreground); } .look-row button.is-picked { box-shadow:0 0 0 2px var(--foreground); }
-.look-foot { display:flex; justify-content:flex-end; gap:8px; padding:14px 20px; border-top:1px solid var(--border); }
+.look-foot { display:flex; justify-content:flex-end; align-items:center; gap:8px; padding:14px 20px; border-top:1px solid var(--border); }
+.look-stage { gap:10px; } .look-stage .mascot { max-width:100%; max-height:46vh; }
+.look-actual { display:flex; gap:6px; }
+.look-sizes { display:flex; align-items:center; gap:10px; padding:6px 10px; border-radius:12px; background:var(--background); color:var(--foreground); box-shadow:0 0 0 1px var(--border); }
+.look-surprise, .look-classic { display:flex; flex-direction:column; align-items:center; gap:8px; text-align:center; } .look-classic p { max-width:30ch; font-size:13px; color:var(--muted-foreground); }
+.look-locks { display:flex; flex-wrap:wrap; justify-content:center; gap:4px; }
+.look-locks button { display:inline-flex; align-items:center; gap:4px; height:26px; padding:0 9px; border-radius:999px; font-size:12px; color:var(--muted-foreground); box-shadow:0 0 0 1px var(--border); } .look-locks svg { width:12px; height:12px; }
+.look-locks button[aria-pressed=true] { color:var(--foreground); box-shadow:0 0 0 1.5px var(--foreground); }
+.look-heading { font-size:13px; font-weight:600; } .look-hint { font-size:12.5px; color:var(--muted-foreground); margin-top:-8px; } .look-foot .look-hint { margin:0; }
+/* Colors: no accent (a slashed circle), and any color (the system picker, a rainbow until a color of its own is picked) */
+.look-colors .is-none { position:relative; overflow:hidden; background:var(--background); }
+.look-colors .is-none::after { content:""; position:absolute; left:50%; top:14%; bottom:14%; width:1.5px; background:var(--muted-foreground); transform:translateX(-50%) rotate(45deg); }
+.look-custom { position:relative; aspect-ratio:1; border-radius:50%; cursor:pointer; background:var(--swatch,conic-gradient(#f26b6b,#f6d56a,#93d6bd,#8cc3ee,#c0a3ec,#f2a5c4,#f26b6b)); box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 10%,transparent); transition:box-shadow .15s,transform .2s var(--ease-spring); }
+.look-custom:hover { transform:scale(1.08); } .look-custom.is-picked { box-shadow:0 0 0 2px var(--background),0 0 0 4px var(--foreground); }
+.look-custom input { position:absolute; inset:0; width:100%; height:100%; opacity:0; cursor:pointer; }
+.look-custom:has(input:focus-visible) { outline:2px solid var(--ring); outline-offset:2px; }
+.look-grid.is-3d .look-option canvas, .look-grid.is-3d .look-option img { width:72px; height:72px; }
+.look-tabs button:disabled { opacity:.4; }
 @media (max-width:720px) { .look-dialog[data-slot=dialog-content] { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); height:calc(100vh - 40px); } .look-stage .mascot { --s:160px !important; } .look-panel { border-left:0; border-top:1px solid var(--border); } }
 
 /* Setup: full window, light, a warm dot grid; your helper big on the left, talking in bubbles on the right */
@@ -1301,6 +1422,20 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .md-draft > p { margin:0; white-space:pre-wrap; font-size:14px; line-height:1.55; }
 .md-draft > button { position:absolute; top:7px; right:7px; display:inline-flex; align-items:center; gap:5px; height:26px; padding:0 9px; border-radius:8px; font-size:12px; color:var(--muted-foreground); }
 .md-draft > button:hover { background:var(--background); color:var(--foreground); } .md-draft > button svg { width:13px; height:13px; }
+.md-media { margin:4px 0; max-width:360px; border-radius:12px; border:1px solid var(--border); background:var(--muted); overflow:hidden; }
+.md-media img { display:block; width:100%; max-height:280px; object-fit:contain; background:var(--background); }
+.md-media-empty { display:flex; align-items:center; justify-content:center; gap:8px; min-height:96px; padding:12px; font-size:13px; color:var(--muted-foreground); }
+.md-media-empty svg { width:16px; height:16px; flex:none; }
+.md-media-empty button { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:8px; border:1px solid var(--border); background:var(--background); color:var(--foreground); font-size:13px; }
+.md-media-empty button:disabled { opacity:.6; }
+.md-media figcaption { display:flex; flex-wrap:wrap; align-items:baseline; gap:4px 10px; padding:8px 12px; font-size:12px; color:var(--muted-foreground); }
+.md-media figcaption span { color:var(--foreground); font-size:13px; }
+.md-media figcaption a { margin-left:auto; }
+.md-media-frame { position:relative; display:block; aspect-ratio:16/9; background:var(--background); }
+.md-media-frame img { width:100%; height:100%; max-height:none; object-fit:cover; }
+.md-media-frame .md-media-empty { position:absolute; inset:0; }
+.md-play { position:absolute; inset:0; margin:auto; width:48px; height:48px; border-radius:50%; display:flex; align-items:center; justify-content:center; background:rgb(0 0 0 / .6); color:#fff; }
+.md-play svg { width:20px; height:20px; margin-left:2px; }
 .md-table table { border-collapse:collapse; width:100%; font-size:13.5px; } .md-table th { text-align:left; font-weight:600; background:var(--muted); }
 .md-table th, .md-table td { padding:7px 10px; border-bottom:1px solid var(--border); } .md-table tr:last-child td { border-bottom:0; }
 .tasks-page { display:flex; align-items:center; gap:7px; margin:0 6px 4px 38px; padding:4px 6px; border-radius:8px; font-size:12px; color:var(--muted-foreground); }
@@ -1325,24 +1460,12 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .joined-badge svg { width:16px; height:16px; stroke-width:3; }
 @keyframes joined-pop { from { transform:scale(0); } to { transform:scale(1); } }
 @media (prefers-reduced-motion: reduce) { .joined-badge { animation:none; } }
-.joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button] { border-radius:99px; }
+.joined-actions { display:flex; justify-content:flex-end; gap:8px; } .joined-actions [data-slot=button], .joined-main [data-slot=button] { border-radius:99px; }
+.joined-main { display:flex; justify-content:center; } .joined-main [data-slot=button]:disabled { opacity:1; }
 /* Each role pitches itself: a speech bubble pops out over its card on hover or focus, then three "I'll" lines and what it learns */
-/* Plugins (Plugins.tsx): name chips, setup's belt and grid, Skills & plugins */
+/* Plugins (Plugins.tsx): name chips, Skills & plugins */
 .plug-chip { display:inline-flex; align-items:center; gap:8px; padding:4px 12px 4px 4px; border-radius:99px; border:1px solid var(--border); background:var(--card); font-size:13px; font-weight:500; white-space:nowrap; color:inherit; }
 .plug-chip i { display:grid; place-items:center; width:24px; height:24px; border-radius:50%; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); font-style:normal; font-weight:700; font-size:12px; }
-.plug-belt { display:grid; gap:10px; margin:6px 0 16px; }
-.plug-row { overflow:hidden; mask-image:linear-gradient(90deg,transparent,#000 10%,#000 90%,transparent); }
-.plug-track { display:flex; gap:10px; width:max-content; animation:plug-slide 60s linear infinite; }
-.plug-row.is-reverse .plug-track { animation-direction:reverse; animation-duration:72s; }
-.plug-belt:hover .plug-track { animation-play-state:paused; }
-@keyframes plug-slide { to { transform:translateX(calc(-50% - 5px)); } }
-@media (prefers-reduced-motion: reduce) { .plug-belt { display:flex; flex-wrap:wrap; gap:8px; } .plug-row, .plug-track { display:contents; } .plug-track { animation:none; } .plug-track > [aria-hidden=true] { display:none; } }
-.plug-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(168px,1fr)); gap:8px; margin:6px 0 16px; }
-.plug-pick { display:flex; align-items:center; justify-content:space-between; gap:6px; padding:2px 12px 2px 2px; border-radius:99px; border:1px solid var(--border); background:var(--card); color:inherit; transition:background .15s,border-color .15s,transform .15s; }
-.plug-pick .plug-chip { border:0; background:none; }
-.plug-pick:hover:not(:disabled) { background:var(--accent); } .plug-pick:active:not(:disabled) { transform:scale(.97); }
-.plug-pick.is-on { border-color:color-mix(in oklab,var(--primary) 55%,var(--border)); } .plug-pick:disabled:not(.is-on) { opacity:.55; }
-.plug-pick svg { flex:none; width:15px; height:15px; } .plug-pick.is-on svg { color:var(--primary); }
 .plug-key { display:grid; gap:8px; } .plug-key-row { display:flex; gap:8px; } .plug-key-row input { flex:1; min-width:0; }
 .plug-error { margin:0; font-size:12px; color:var(--destructive); }
 .plug-note { margin:0; font-size:12px; line-height:1.55; color:var(--muted-foreground); } .plug-note a { color:inherit; text-decoration:underline; text-underline-offset:2px; }
@@ -1397,12 +1520,9 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .setting-row.is-stacked { display:grid; gap:12px; } .plug-keyline { display:flex; align-items:center; gap:24px; } .plug-keyline > div:first-child { flex:1; min-width:0; }
 .plug-keyacts { display:flex; gap:8px; flex:none; } .plug-cancel { justify-self:start; }
 .plug-confirm { display:flex; flex-wrap:wrap; align-items:center; gap:8px; padding:10px 12px; border-radius:12px; background:var(--secondary); } .plug-confirm p { flex:1 1 260px; margin:0; font-size:12px; line-height:1.5; }
-.ob-team { display:flex; flex-wrap:wrap; gap:16px; margin:4px 0 14px; padding-top:30px; }
-.ob-team-mate { position:relative; display:grid; justify-items:center; }
-.ob-team-line { position:absolute; bottom:calc(100% - 2px); left:50%; translate:-50% 0; white-space:nowrap; padding:4px 10px; border-radius:99px; background:var(--popover); color:var(--popover-foreground); font-size:12px; box-shadow:0 4px 14px #0002; animation:ob-team-line .35s ease both; }
-@keyframes ob-team-line { from { opacity:0; transform:translateY(6px); } }
-.ob-cheer { width:fit-content; margin:0 0 12px; animation:ob-team-line .35s ease both; }
 .home-page-sub { margin:40px 0 16px; font-family:var(--font-display); font-size:22px; font-weight:480; letter-spacing:-.01em; }
+.mate-acts { display:flex; align-items:center; gap:6px; }
+.mate-fire { display:inline-flex; align-items:center; gap:5px; height:30px; padding:0 12px; border-radius:99px; border:1px solid color-mix(in oklab,var(--destructive) 35%,var(--border)); color:color-mix(in oklab,var(--destructive) 80%,var(--foreground)); font-size:12.5px; font-weight:580; transition:color .15s,background-color .15s; } .mate-fire:hover { color:var(--destructive); background:color-mix(in oklab,var(--destructive) 12%,transparent); }
 .mate-memory { display:flex; align-items:center; gap:6px; margin:0 0 10px; font-size:12px; color:var(--muted-foreground); } .mate-memory:hover { color:var(--foreground); } .mate-memory svg { width:13px; height:13px; }
 /* Settings > Memory */
 .memory-settings { display:flex; flex-direction:column; gap:10px; }
@@ -1413,6 +1533,13 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .memory-row { display:flex; align-items:center; gap:4px; padding:8px 8px 8px 12px; border-radius:10px; background:var(--muted); }
 .memory-row > div { flex:1; min-width:0; } .memory-row p { margin:0; font-size:13.5px; line-height:1.4; overflow-wrap:anywhere; } .memory-row small { font-size:11.5px; color:var(--muted-foreground); }
 .memory-row[data-kind=chat] { background:none; box-shadow:inset 0 0 0 1px var(--border); } .memory-row.is-editing { gap:6px; padding:0; background:none; }
+.memory-row small { display:block; } .memory-source { opacity:.85; } .memory-summary { color:var(--foreground) !important; margin:2px 0; line-height:1.4; }
+.memory-versions { margin:4px 0 0 12px; padding:0; list-style:none; display:flex; flex-direction:column; gap:2px; font-size:12px; color:var(--muted-foreground); } .memory-versions small { margin-left:6px; }
+.memory-switch { display:flex; align-items:center; gap:12px; padding:8px 12px; border-radius:10px; box-shadow:inset 0 0 0 1px var(--border); } .memory-switch > div { flex:1; min-width:0; } .memory-switch b { display:block; font-size:13px; font-weight:550; } .memory-switch small { font-size:11.5px; color:var(--muted-foreground); }
+.memory-note { margin:6px 0 0; font-size:12px; line-height:1.5; color:var(--muted-foreground); } .memory-note b { font-weight:550; color:var(--foreground); }
+.memory-controls { display:flex; flex-wrap:wrap; gap:4px; }
+.profile-join { display:flex; flex-direction:column; gap:6px; margin:6px 0; padding:10px; border-radius:10px; box-shadow:inset 0 0 0 1px var(--border); } .profile-join > div { display:flex; gap:6px; }
+.profile-diff { margin:0; max-height:160px; overflow:auto; font-size:11.5px; white-space:pre-wrap; } .profile-diff del { color:var(--destructive); text-decoration:none; }
 /* An empty chat: the companion, big, saying hi, with ideas from what the user is into */
 .chat-hello-face { margin-bottom:2px; }
 .chat-starters { display:flex; flex-wrap:wrap; justify-content:center; gap:8px; max-width:640px; margin-top:16px; }
@@ -1420,6 +1547,14 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .chat-starters button:hover { transform:translateY(-1px); box-shadow:0 0 0 1px var(--border),0 8px 18px -12px rgb(0 0 0/.35); } .chat-starters svg { width:14px; height:14px; color:#d39b2a; }
 .chat-under { display:flex; flex-wrap:wrap; align-items:center; gap:6px 14px; margin:7px 4px 0; } .chat-under:empty { display:none; } .chat-under .ai-usage { margin:0; }
 .chat-memory { display:inline-flex; align-items:center; gap:7px; font-size:11.5px; color:var(--muted-foreground); cursor:pointer; }
+.chat-profile { display:inline-flex; align-items:center; gap:5px; height:22px; padding:0 6px; margin-left:-6px; border-radius:6px; font-size:11.5px; color:var(--muted-foreground); }
+.chat-profile:hover:not(:disabled) { background:var(--muted); color:var(--foreground); } .chat-profile:disabled { opacity:.6; }
+.chat-profile:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
+.chat-profile svg { width:13px; height:13px; } .chat-profile svg:last-child { width:12px; height:12px; opacity:.7; }
+.chat-profile-menu [role=menuitem] { justify-content:space-between; gap:16px; }
+.task-profile { display:inline-flex; align-items:center; gap:5px; font-size:11.5px; color:var(--muted-foreground); } .task-profile svg { width:13px; height:13px; }
+.chat-profile-menu [role=menuitem] span { display:flex; flex-direction:column; } .chat-profile-menu small { color:var(--muted-foreground); font-size:11.5px; }
+.chat-incognito { display:flex; gap:7px; margin:0; font-size:11.5px; line-height:1.45; color:var(--muted-foreground); text-wrap:pretty; } .chat-incognito svg { flex:none; width:13px; height:13px; margin-top:2px; }
 
 /* The intro (Intro.tsx): a dark layer the companion wakes up on. One clock: every cue is a delay from the start, in step
    with sounds/intro.ogg and the "wake" clip. The bloom is a hole in the dark layer growing out of the companion, so it
@@ -1494,8 +1629,8 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .ob-mains-face { display:grid; place-items:center; width:72px; height:72px; margin-bottom:4px; border-radius:50%; background:color-mix(in oklab,var(--hue) 26%,var(--ob-card)); }
 .ob-note.is-warn, .companion-note.is-warn { color:var(--destructive); }
 /* A companion's profile (ProfilePanel.tsx): a sheet from the right, on an 8px grid */
-.profile-scrim { position:fixed; inset:0; z-index:60; background:rgb(0 0 0 / .28); animation:profile-fade .2s ease-out; }
-.profile-panel { position:fixed; top:8px; right:8px; bottom:8px; z-index:61; width:min(520px, calc(100vw - 16px)); display:flex; flex-direction:column; background:var(--background); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 64px rgb(0 0 0 / .2); overflow:hidden; animation:profile-in .24s cubic-bezier(.2,.8,.2,1); }
+.profile-scrim { position:fixed; inset:0; z-index:45; background:rgb(0 0 0 / .28); animation:profile-fade .2s ease-out; }
+.profile-panel { position:fixed; top:8px; right:8px; bottom:8px; z-index:46; width:min(520px, calc(100vw - 16px)); display:flex; flex-direction:column; background:var(--background); border:1px solid var(--border); border-radius:16px; box-shadow:0 24px 64px rgb(0 0 0 / .2); overflow:hidden; animation:profile-in .24s cubic-bezier(.2,.8,.2,1); }
 .profile-panel.is-closing { animation:profile-out .16s ease-in forwards; } .profile-scrim.is-closing { animation:profile-fade .16s ease-in reverse forwards; }
 @keyframes profile-in { from { opacity:0; transform:translateX(32px); } }
 @keyframes profile-out { to { opacity:0; transform:translateX(32px); } }
@@ -1536,6 +1671,21 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-modes button:hover { background:var(--muted); }
 .profile-modes button[aria-checked=true] { border-color:var(--hue); background:color-mix(in oklab,var(--hue) 10%,transparent); box-shadow:inset 0 0 0 1px var(--hue); }
 .profile-modes b { font-size:14px; font-weight:600; } .profile-modes small { font-size:12px; color:var(--muted-foreground); }
+/* Personality and reply length: side by side, wrapping on a narrow panel. */
+.profile-modes.is-row { grid-template-columns:repeat(auto-fit,minmax(104px,1fr)); } .profile-modes.is-row button { padding:10px 12px; }
+.profile-field > span small { margin-left:4px; font-weight:400; color:var(--muted-foreground); }
+/* Stage 17: the name menu's AI settings row (what they run on below it), the key on the AI tab, AI settings… in the message box's menus */
+.profile-menu-two { display:flex; flex-direction:column; gap:1px; min-width:0; } .profile-menu-two small { font-size:11.5px; color:var(--muted-foreground); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.profile-key { display:flex; align-items:center; gap:8px; font-size:13px; } .profile-key > svg { width:16px; height:16px; color:var(--muted-foreground); } .profile-key > span { flex:1; min-width:0; } .profile-key code { font-size:12px; }
+.profile-field .tiers { margin:0; }
+.ai-pick-foot { flex:none; padding:0 4px 4px; } .ai-pick-foot [data-slot=select-separator] { margin:0 -4px 4px; }
+/* The mode menu fits above the box: its list of companions gives up room first, so Advanced and AI settings… stay in view */
+.mode-menu[data-slot=dropdown-menu-content] { display:flex; flex-direction:column; } .mode-mates { min-height:80px; }
+.ai-pick-settings, .mode-settings { color:var(--muted-foreground); } .ai-pick-settings svg, .mode-settings svg { width:15px; height:15px; }
+/* Make your own: the generator under Instructions, and Hire at the bottom of the panel. */
+.profile-suggest { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:-8px; }
+.profile-draft-title { font-size:15px; font-weight:600; }
+.profile-foot { display:flex; justify-content:flex-end; gap:8px; padding:12px 16px; border-top:1px solid var(--border); }
 .profile-routine { display:flex; flex-direction:column; gap:8px; padding:12px; border:1px solid var(--border); border-radius:12px; }
 .profile-routine textarea { border:0; padding:4px; resize:none; }
 /* A hired companion's knowledge files, under its memory: each one's name, what it holds and what's in it so far. */
@@ -1678,3 +1828,96 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 @media (max-width: 520px) { .hire-profile-skills { grid-template-columns:minmax(0,1fr); } }
 /* Setup speaks in the same typeface as the rest of Still's UI. */
 .welcome.ob { --font-display:var(--font-ui); }
+/* 2.10 welcome: headline, Connect, the review before Hire, the first task's preview, and Get started on the new tab page */
+.ob-headline { margin:0 0 4px; font-family:var(--font-display); font-size:clamp(26px,3.2vw,38px); font-weight:460; line-height:1.12; letter-spacing:-.02em; text-wrap:balance; color:var(--ob-ink); }
+.ob-connect { display:flex; flex-direction:column; gap:8px; margin-top:4px; }
+.ob-status { display:flex; align-items:center; gap:12px; padding:12px 14px; border-radius:14px; border:1px solid var(--ob-line); background:var(--ob-card); }
+.ob-status > span { flex:1; display:flex; flex-direction:column; gap:2px; min-width:0; } .ob-status b { font-size:14px; font-weight:600; } .ob-status small { font-size:12.5px; color:var(--ob-soft); line-height:1.45; overflow-wrap:anywhere; }
+.ob-status code { font-size:12px; padding:1px 5px; border-radius:6px; background:var(--ob-hover); color:var(--ob-ink); }
+.ob-status.is-error small { color:var(--destructive); } .ob-status button { flex:none; color:var(--ob-ink); }
+.ob-ready { display:flex; align-items:center; gap:8px; margin:0; font-size:13.5px; font-weight:560; } .ob-ready svg { width:16px; height:16px; color:#3f8a52; }
+.ob-how, .ob-api { font-size:12.5px; color:var(--ob-soft); } .ob-how summary, .ob-api summary { cursor:pointer; width:max-content; padding:4px 0; color:var(--ob-ink); font-weight:560; }
+.ob-how p, .ob-api p { margin:6px 0 0; line-height:1.5; }
+.ob-api-form { margin-top:8px; max-width:28rem; color:var(--ob-ink); }
+.ob-row.is-top { align-items:start; } .ob-row.is-top > span { padding-top:10px; }
+.ob-row .ob-build-actions { margin-top:8px; }
+.ob-chips small.ob-note { align-self:center; margin-left:4px; }
+.ob-review b { display:block; font-size:12.5px; font-weight:600; color:var(--ob-soft); margin-bottom:6px; }
+.ob-review textarea { font-size:13.5px !important; line-height:1.5; }
+.ob-plain { display:flex; flex-direction:column; gap:8px; margin:0; padding:0; list-style:none; font-size:15px; line-height:1.4; }
+.ob-plain li { display:flex; gap:9px; align-items:flex-start; } .ob-plain svg { flex:none; width:16px; height:16px; margin-top:2px; color:var(--ob-soft); }
+.ob-more summary { width:fit-content; cursor:pointer; font-size:12.5px; color:var(--ob-soft); } .ob-more summary:hover { color:inherit; } .ob-more[open] summary { margin-bottom:8px; }
+.ob-chips.is-static span { padding:5px 11px; border-radius:99px; border:1px solid var(--ob-line); background:var(--ob-hover); font-size:13px; }
+.ob-tasks button > span { display:flex; flex-direction:column; gap:2px; } .ob-tasks button > span b { font-weight:560; }
+.ob-tasks button small { display:inline-flex; align-items:center; gap:5px; font-size:12.5px; color:var(--ob-soft); } .ob-tasks button small svg { width:13px; height:13px; }
+.ob-preview { display:flex; flex-direction:column; gap:8px; padding:12px 14px; border-radius:14px; border:1px dashed var(--ob-dot-done); background:var(--ob-card); }
+.ob-preview > b { width:max-content; padding:1px 8px; border-radius:99px; background:var(--ob-hover); font-size:11.5px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
+.ob-preview p { margin:0; font-size:13px; color:var(--ob-soft); line-height:1.45; } .ob-preview div { display:flex; gap:6px; } .ob-preview button[data-variant=ghost] { color:var(--ob-ink); }
+.ob-foot .ob-browse { font-size:13px; color:var(--ob-soft); padding:6px 10px; border-radius:8px; } .ob-foot .ob-browse:hover { color:var(--ob-ink); background:var(--ob-hover); }
+.ob-summary li button.is-hire { background:var(--ob-accent); border-color:var(--ob-accent); color:var(--ob-accent-ink); }
+.new-tab-create[data-slot="button"] { margin-top:18px; gap:8px; }
+.get-started { display:flex; flex-wrap:wrap; align-items:center; justify-content:center; gap:6px; margin-top:26px; max-width:min(640px,92%); font-size:12.5px; }
+.get-started > b { font-weight:560; color:var(--muted-foreground); margin-right:4px; }
+.get-started button { display:inline-flex; align-items:center; gap:6px; height:30px; padding:0 12px; border-radius:99px; border:1px solid var(--border); color:var(--foreground); background:color-mix(in oklab,var(--background) 80%,transparent); }
+.get-started button:hover:not(:disabled) { background:var(--accent); } .get-started button:disabled { opacity:.7; cursor:default; }
+.get-started button svg { width:14px; height:14px; opacity:.75; }
+.get-started .get-started-x { width:30px; padding:0; justify-content:center; border-color:transparent; background:none; }
+
+/* Still's own pages (the new tab page and its views: Chat History, Companions, Library) scroll by wheel, trackpad and
+   keys with no scrollbar showing, like the chats. */
+.home-main::-webkit-scrollbar { display:none; }
+
+/* Chat text: replies and your messages can be selected and copied (mouse, Ctrl+C or Cmd+C). The rest of Still stays
+   unselectable, so buttons and drags work as before. */
+.ai-msg, .ai-msg *, .delegation-body, .delegation-body *, .choice-q { -webkit-user-select:text; user-select:text; }
+.ai-msg { cursor:text; } .ai-msg :is(a, button) { cursor:pointer; }
+
+/* Replies read cleanly at every size: a paragraph gap of about half a line, list items close together with muted
+   markers lined up under the text, a lead-in line kept with its list, and bold at Still's 600. */
+.ai-msg.is-assistant { text-rendering:optimizeLegibility; font-kerning:normal; }
+.ai-msg .md { gap:.75em; }
+.ai-msg .md :is(p, li, h3, h4, h5) { margin:0; }
+.ai-msg .md :is(ul, ol) { gap:.3em; padding-left:1.35em; }
+.ai-msg .md li { padding-left:.2em; line-height:1.55; }
+.ai-msg .md li::marker { color:color-mix(in oklab,var(--foreground) 45%,transparent); }
+.ai-msg .md ol { font-variant-numeric:tabular-nums; }
+.ai-msg .md p:has(+ :is(ul, ol)) { margin-bottom:-.3em; }
+.ai-msg .md :is(strong, b, h3, h4, h5) { font-weight:600; }
+.ai-msg .md h3 { font-size:1.08em; line-height:1.4; margin-top:.3em; } .ai-msg .md h4 { font-size:1em; line-height:1.4; margin-top:.2em; }
+.ai-msg .md code { font-size:.88em; }
+
+/* Choice cards: what a companion offers you to pick, under its reply. Your pick goes back as your reply. */
+.choice-card { margin:0; padding:12px; box-shadow:none; animation:none; }
+.choice-q { margin:0 0 2px; font-weight:550; line-height:1.5; }
+.choice-card .ask-options { margin-top:8px; }
+.choice-card .ask-option:disabled { cursor:default; opacity:.55; }
+.choice-card .ask-option:disabled:hover { border-color:var(--border); background:var(--background); }
+.choice-card .ask-option:is([aria-pressed=true], [aria-checked=true]) { opacity:1; border-color:color-mix(in oklab,var(--hue,#7c66f5) 60%,transparent); background:color-mix(in oklab,var(--hue,#7c66f5) 10%,var(--background)); }
+.choice-box { display:grid; place-items:center; width:16px; height:16px; flex:none; border-radius:5px; border:1.5px solid var(--input); }
+.ask-option[aria-checked=true] .choice-box { border-color:var(--hue,#7c66f5); background:var(--hue,#7c66f5); color:#fff; }
+.choice-box svg { width:12px; height:12px; stroke-width:3; }
+.choice-picked { width:15px; height:15px; flex:none; margin-left:auto; color:var(--hue,#7c66f5); }
+.choice-submit { display:flex; justify-content:flex-end; margin-top:8px; }
+.choice-card .ask-own { margin-top:8px; } .choice-card .ask-own input:disabled { opacity:.6; }
+.choice-select[data-slot] { flex:1; min-width:0; }
+
+/* The model pickers: a pill with the app's logo under the message box, a field in a companion's Model tab, and one menu
+   look for both: logos, the one in use checked, More agents opening in place, Model settings… kept at the bottom. */
+button.ai-pick { display:inline-flex; align-items:center; white-space:nowrap; outline:none; }
+button.ai-pick:focus-visible { box-shadow:0 0 0 2px var(--ring); } button.ai-pick:disabled { opacity:.5; pointer-events:none; }
+.ai-pick > svg:last-child { width:14px; height:14px; flex:none; opacity:.6; }
+.ai-model-menu[data-slot=dropdown-menu-content] { width:auto; min-width:220px; max-width:min(320px,var(--radix-dropdown-menu-content-available-width)); }
+.ai-model-menu [data-slot=dropdown-menu-item] { gap:8px; }
+.ai-pick-on { width:15px; height:15px; flex:none; margin-left:auto; }
+.ai-more { color:var(--muted-foreground); } .ai-more > svg { margin-left:auto; transition:rotate .2s; } .ai-more[aria-expanded=true] > svg { rotate:180deg; }
+.ai-model-menu .ai-pick-foot { position:sticky; bottom:-4px; z-index:1; margin:0 -4px -4px; padding:0 4px 4px; background:var(--popover); }
+.ai-model-menu .ai-pick-foot [data-slot=dropdown-menu-separator] { margin:0 -4px 4px; }
+.runs-on { display:flex; align-items:center; gap:9px; width:100%; height:36px; padding:0 10px; border-radius:9px; border:1px solid var(--input); background:var(--background); font-size:13.5px; color:var(--foreground); text-align:left; outline:none; transition:background .15s; }
+.runs-on:hover { background:var(--muted); } .runs-on:focus-visible { box-shadow:0 0 0 2px var(--ring); }
+.runs-on > svg:last-child { width:15px; height:15px; flex:none; margin-left:auto; opacity:.6; }
+.runs-on-menu[data-slot=dropdown-menu-content] { width:var(--radix-dropdown-menu-trigger-width); max-width:none; }
+.byo-more { display:flex; align-items:center; gap:8px; width:100%; padding:8px 12px; border-radius:12px; color:var(--muted-foreground); font-size:13px; font-weight:500; text-align:left; transition:background .15s,color .15s; }
+.byo-more:hover { background:var(--muted); color:var(--foreground); }
+.byo-more small { padding:0 7px; border-radius:99px; background:var(--muted); font-size:11px; line-height:18px; }
+.byo-more > svg { width:15px; height:15px; margin-left:auto; transition:rotate .2s; } .byo-more[aria-expanded=true] > svg { rotate:180deg; }
+.set-models > .plug-note { margin:0 0 12px; }

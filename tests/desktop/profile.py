@@ -13,7 +13,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, text, until  # noqa: E402
+from qa import CREW, ROOT, companions_page, js, launch, launcher, rpc, send, text, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("profile-" + uuid.uuid4().hex[:8])
@@ -99,7 +99,7 @@ def main():
         # The home mascot opens Jonah's profile, on General.
         js(p, "document.querySelector('.home-face')?.click()")
         check(until(lambda: shown(p, ".profile-panel[aria-label=\"Jonah's profile\"] .profile-stage canvas, .profile-panel .profile-stage img"), 10), "Clicking the home mascot opens its profile, with a live mascot on the stage")
-        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Files Memory Model", "Six tabs: General, Skills & plugins, Routines, Files, Memory, Model (no Plugins tab)")
+        check(js(p, "document.querySelector('.profile-tablist')?.innerText.replace(/\\s+/g, ' ').trim()") == "General Skills & plugins Routines Files Memory AI", "Six tabs: General, Skills & plugins, Routines, Files, Memory, AI (no Plugins tab)")
         time.sleep(1)
 
         # A screenshot per tab, and what each one holds.
@@ -116,9 +116,9 @@ def main():
             else:
                 print("capture:", got)
 
-        # Model: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
+        # AI: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
         click(p, ".profile-modes button", "Thorough")
-        check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
+        check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "AI: picking Thorough saves it")
         press(p, ".profile-tablist [role=tab][id$='-trigger-skills']", "mousedown")
         until(lambda: shown(p, ".profile-list [role=switch]"), 3)
         kit = mates().get("Jonah", {}).get("Skills") or []
@@ -141,7 +141,7 @@ def main():
         check(rows == [f"Skills {len(z.get('Skills') or [])}", f"Routines {len(z.get('Routines') or [])}"], f"Skills and Routines rows with their counts, above the instructions ({rows})")
         box = ".profile-field.is-instructions textarea"
         brief = js(p, f"document.querySelector('{box}')?.value") or ""
-        check(brief.startswith("# Sales") and "## When you join the team" in brief and "offer_routine" in brief, "Companion instructions show Still's whole setup for the role")
+        check(brief.startswith("# Sales") and "## How you judge the work" in brief and "offer_routine" in brief, "Instructions show Still's whole setup for the role")
         type_into(p, box, brief + "\n\nALWAYS END WITH A HAIKU.")
         check(until(lambda: mates().get("Zesty", {}).get("Instructions", "").endswith("ALWAYS END WITH A HAIKU."), 5), "An edit saves as you type")
         check(until(lambda: click(p, ".profile-instructions-foot button", "Reset to Still's version"), 3) and until(lambda: mates().get("Zesty", {}).get("Instructions") == "", 5)
@@ -167,7 +167,7 @@ def main():
         log = BIN / "prompts.jsonl"
         ran = until(lambda: log.exists() and "ROUTINE check the price" in log.read_text(), 45, .5)
         check(ran, "At its time, the routine runs through the fake agent")
-        check(ran and "ALWAYS END WITH A HAIKU." in log.read_text() and "## When you join the team" in log.read_text(), "and it follows the edited instructions")
+        check(ran and "ALWAYS END WITH A HAIKU." in log.read_text() and "## How you judge the work" in log.read_text(), "and it follows the edited instructions")
         last = until(lambda: (mates().get("Zesty", {}).get("Routines") or [{}])[0].get("Last"), 5)
         check(last == now.strftime("%Y-%m-%d"), "and it's marked as run today, so it runs once")
         time.sleep(32)
@@ -186,10 +186,10 @@ def main():
         menu(p, "Duplicate")
         check(until(lambda: "Zesty 2" in mates(), 5) and until(lambda: js(p, "document.querySelector('.profile-switch b')?.innerText") == "Zesty 2", 3), "Duplicate makes a copy and shows it")
         check(not mates().get("Zesty 2", {}).get("Routines"), "The copy starts without routines")
-        menu(p, "Delete Zesty 2")
+        menu(p, "Fire Zesty 2")
         until(lambda: shown(p, "[role=alertdialog]"), 3)
         js(p, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
-        check(until(lambda: "Zesty 2" not in mates(), 5) and until(lambda: not shown(p, ".profile-panel"), 3), "Delete asks first, removes the copy and closes the panel")
+        check(until(lambda: not shown(p, ".profile-panel"), 3) and until(lambda: "Zesty 2" not in mates(), 15), "Fire asks first, closes the panel and removes the copy once Undo is gone")
 
         # Esc closes; paste the shared companion on the Companions page.
         js(p, "document.querySelector('.home-face')?.click()")
@@ -201,8 +201,7 @@ def main():
         check(mates()["Jonah"].get("Instructions") == "", "and Still's instructions")
         escape(p)
         check(until(lambda: not shown(p, ".profile-panel"), 2), "Esc closes the profile")
-        js(p, "document.querySelector('.home-rail-item[aria-label=Companions]')?.click()")
-        until(lambda: shown(p, ".mate-grid"), 5)
+        companions_page(p)
         js(p, f"(() => {{ const d = new DataTransfer(); d.setData('text/plain', {json.dumps(json.dumps({**shared, 'name': 'Pasty'}))}); document.body.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: d, bubbles: true }})) }})()")
         check(until(lambda: "Pasty" in mates(), 5) and mates()["Pasty"]["Job"] == "Finds the best price before I buy anything.", "Pasting a shared companion on the Companions page adds them")
         js(p, "document.querySelector(\".mate-portrait[aria-label='Edit Pasty']\")?.click()")

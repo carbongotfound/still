@@ -16,6 +16,8 @@ import threading
 import time
 import uuid
 
+from qa import until_started
+
 ROOT = Path(__file__).resolve().parents[2]
 EXE = Path(sys.argv[1]).resolve()
 RUNS = int(sys.argv[2]) if len(sys.argv) > 2 else 3
@@ -135,7 +137,7 @@ def launch(tabs):
         "Tabs": [{"Id": "t%d" % i, "Title": "Tab %d" % i, "Url": URL + "/tab-%d" % i} for i in range(tabs)], "ActiveId": "t0"}))
     started = time.monotonic()
     process = subprocess.Popen([str(EXE), "--qa", "--profile", str(profile), "--profiles-root", str(profile)])
-    until(lambda: (profile / "qa-pipe.txt").exists() or process.poll() is not None)
+    until_started(process)
     until(lambda: ready(process, "t0"))
     return process, time.monotonic() - started
 

@@ -59,23 +59,26 @@ extension Browser {
   let view = active?.view
   let screens = browsers.map { b -> [String: Any] in
    let spot = qaTopLeft(b.window)
-   return ["id": b.windowId, "tabs": b.tabs.map(\.url), "privateTabs": b.tabs.filter(\.isPrivate).count, "secondary": b.secondary, "incognito": b.incognito, "left": spot.left, "top": spot.top]
+   return ["id": b.windowId, "tabs": b.tabs.map(\.url), "privateTabs": b.tabs.filter(\.isPrivate).count, "secondary": b.secondary, "incognito": b.incognito, "temporary": b.temporary, "left": spot.left, "top": spot.top]
   }
   let spot = qaTopLeft(window)
   return [
    "activeId": n(active?.id), "panel": panel, "dark": dark, "theme": pref("Theme", "System"), "aiCalls": AgentRun.launched, "startup": NSNull(),
    "fullScreen": window.styleMask.contains(.fullScreen), "browserFullScreen": false, "contentFullScreen": false,
-   "windowState": window.isMiniaturized ? "Minimized" : window.isZoomed ? "Maximized" : "Normal", "focusMode": focusMode, "shellErrors": qaShellErrors, "pointerOnPage": pointerOnPage,
+   "windowState": window.isMiniaturized ? "Minimized" : window.isZoomed ? "Maximized" : "Normal", "focusMode": focusMode, "overlay": overlay, "shellErrors": qaShellErrors, "pointerOnPage": pointerOnPage,
    "appActive": NSApp.isActive, "keyWindow": window.isKeyWindow, "responder": window.firstResponder.map { String(describing: type(of: $0)) } ?? "",
    "sidePanelUrl": NSNull(), "sidePanelWidth": NSNull(), "extensionPopup": false,
    "viewport": ["pageX": pageFrame.minX, "pageY": pageFrame.minY, "pageWidth": pageFrame.width, "pageHeight": pageFrame.height, "visible": view.map { $0.isHidden ? "Collapsed" : "Visible" } ?? "Collapsed",
                 "viewWidth": n(view?.frame.width), "viewHeight": n(view?.frame.height), "hostWidth": pageFrame.width, "hostHeight": pageFrame.height, "zoom": n(view.map { Double($0.pageZoom) })] as [String: Any],
    "protection": ["reputation": n(view?.configuration.preferences.isFraudulentWebsiteWarningEnabled), "tracking": pref("Tracking", "Balanced"), "blocking": pref("Blocking", true)] as [String: Any],
-   "windows": screens, "title": window.title, "width": window.frame.width, "height": window.frame.height, "left": spot.left, "top": spot.top,
+   "windows": screens, "privateChats": aiView.privateChats.map(\.id), "incognitoFolder": privateFolder, "interrupted": interruptedChats.map(\.id), "title": window.title, "width": window.frame.width, "height": window.frame.height, "left": spot.left, "top": spot.top,
    "tabs": tabs.map { t -> [String: Any] in [
     "Id": t.id, "Title": t.title, "Url": t.url, "Pinned": t.pinned, "Private": t.isPrivate, "InChat": n(t.inChat), "RunChat": n(t.runChat), "ChatId": n(t.chatId),
+    "Home": t.home, "back": t.back.count, "forward": t.forward.count, "appBack": appNav === t && t.back.contains(where: canGo),
     "Loading": t.loading, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
-    "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view)
+    "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view),
+    "enginePrivate": n(t.view.map { !$0.configuration.websiteDataStore.isPersistent }),
+    "engineProfile": n(t.view.map { $0.configuration.websiteDataStore === pageStore ? "Default" : $0.configuration.websiteDataStore === companionStore ? "Companion" : $0.configuration.websiteDataStore === privateStore ? "Private" : "Other" })
    ] },
    "history": history, "bookmarks": bookmarks, "hidden": store.hidden,
    "downloads": downloads.map { ["Path": n($0.path?.path), "status": $0.status, "bytes": $0.task.progress.completedUnitCount] as [String: Any] },
@@ -136,12 +139,17 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  let once = Once<String>()
  once.action = reply
  DispatchQueue.main.asyncAfter(deadline: .now() + 30) { once.fire(jsonText(["error": "timed out"])) }
- guard let request = jsonObject(line), let op = request["op"] as? String, let b = browsers.first else { once.fire(jsonText(["error": "bad request"])); return }
+ // "window": a window's id runs the request there (an incognito window's interface, say).
+ guard let request = jsonObject(line), let op = request["op"] as? String, let b = (request["window"] as? String).flatMap({ id in browsers.first { $0.windowId == id } }) ?? browsers.first else { once.fire(jsonText(["error": "bad request"])); return }
  func text(_ key: String) -> String { request[key] as? String ?? "" }
  let done: (Any) -> Void = { once.fire(($0 as? String) ?? qaJson($0)) }
  switch op {
  case "state": done(b.qaState())
  case "tabs": done(b.qaTabs())
+ case "closeWindow": browsers.first { $0.windowId == text("id") }?.window.close(); done(["ok": true])
+ case "closeAll": // like closing each window in turn, this one first
+  done(["ok": true])
+  DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
  case "shellEval": qaWhenReady(b) { qaEval(b.shell, text("script"), done) }
  case "eval":
@@ -151,7 +159,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  case "evalTab":
   guard let view = browsers.lazy.flatMap(\.tabs).first(where: { $0.id == text("id") })?.view else { once.fire(#"{"error":"no page"}"#); return }
   qaEval(view, text("script"), done)
- case "key": done(["ok": qaKey(b, text("key"), text("mods"))])
+ case "key": done(["ok": qaKey(b, text("key"), text("mods"), post: request["post"] as? Bool ?? false)])
  case "capture": qaCapture(b, text("name"), (request["scale"] as? NSNumber)?.doubleValue ?? 1, done)
  case "systemTheme":
   qaSystemTheme = text("value") == "Light" ? "Light" : "Dark"
@@ -163,6 +171,9 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   let point = NSPoint(x: x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - y)
   let found = NSApp.orderedWindows.first { w in w.frame.contains(point) && browsers.contains { $0.window === w } }
   done(["found": n(browsers.first { $0.window === found }?.windowId)])
+ case "menu": // a click on a menu bar item, by its menu's title and its own (one with no shortcut, like AI > Add a Model…)
+  let menu = NSApp.mainMenu?.items.first { ($0.submenu?.title ?? $0.title) == text("menu") }?.submenu // the title is the submenu's
+  if let menu, let i = menu.items.firstIndex(where: { $0.title == text("item") }) { menu.performActionForItem(at: i); done(["ok": true]) } else { done(["ok": false]) }
  case "quit":
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) } // after the reply is on its way
@@ -183,13 +194,22 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
 }
 
 /// The DevTools input calls the tests make on Windows, as real AppKit events on the interface or the page: the mouse at
-/// CSS pixels from its top left (moved, pressed, released, wheel) and typed text. Anything else isn't on the Mac.
+/// CSS pixels from its top left (moved, pressed and released with any button, wheel), keys and typed text. Anything else isn't on the Mac.
 private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [String: Any]) -> Bool {
  func number(_ key: String) -> CGFloat { CGFloat((p[key] as? NSNumber)?.doubleValue ?? 0) }
  switch method {
  case "Input.insertText":
   b.window.makeFirstResponder(view)
   view.insertText(p["text"] as? String ?? "")
+ case "Input.dispatchKeyEvent": // a real key press the box handles (rawKeyDown or keyDown, then keyUp), queued as the keyboard's are
+  let keys: [String: (UInt16, String)] = ["Backspace": (51, "\u{7F}"), "Delete": (117, "\u{F728}"), "ArrowLeft": (123, "\u{F702}"), "ArrowRight": (124, "\u{F703}"),
+   "ArrowUp": (126, "\u{F700}"), "ArrowDown": (125, "\u{F701}"), "Enter": (36, "\r"), "Tab": (48, "\t"), "Escape": (53, "\u{1B}")]
+  guard let (code, typed) = keys[p["key"] as? String ?? ""] else { return false }
+  let up = p["type"] as? String == "keyUp"
+  guard let event = NSEvent.keyEvent(with: up ? .keyUp : .keyDown, location: .zero, modifierFlags: code >= 115 ? [.function] : [], timestamp: ProcessInfo.processInfo.systemUptime,
+   windowNumber: b.window.windowNumber, context: nil, characters: typed, charactersIgnoringModifiers: typed, isARepeat: false, keyCode: code) else { return false }
+  b.window.makeFirstResponder(view)
+  qaPost(b, event)
  case "Input.dispatchMouseEvent":
   let at = view.convert(NSPoint(x: number("x"), y: view.isFlipped ? number("y") : view.bounds.height - number("y")), to: nil)
   let kind = p["type"] as? String ?? ""
@@ -209,6 +229,14 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
     b.window.makeKeyAndOrderFront(nil)
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { move.postToPid(getpid()) }
    }
+   return true
+  }
+  if kind == "mousePressed" || kind == "mouseReleased", let button = p["button"] as? String, button == "right" || button == "middle" {
+   // Like the wheel: an event with no window, so its screen point is read as the window point
+   let down = kind == "mousePressed", right = button == "right"
+   guard let click = CGEvent(mouseEventSource: nil, mouseType: right ? (down ? .rightMouseDown : .rightMouseUp) : (down ? .otherMouseDown : .otherMouseUp),
+    mouseCursorPosition: CGPoint(x: at.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - at.y), mouseButton: right ? .right : .center), let event = NSEvent(cgEvent: click) else { return false }
+   switch (right, down) { case (true, true): view.rightMouseDown(with: event); case (true, false): view.rightMouseUp(with: event); case (false, true): view.otherMouseDown(with: event); default: view.otherMouseUp(with: event) }
    return true
   }
   let types: [String: NSEvent.EventType] = ["mouseMoved": .mouseMoved, "mousePressed": .leftMouseDown, "mouseReleased": .leftMouseUp]
@@ -233,7 +261,8 @@ private func qaJson(_ value: Any?) -> String {
   case let list as [Any]: return list.map(plain)
   case let object as [String: Any]: return object.mapValues(plain)
   case let date as Date: return ISO8601DateFormatter().string(from: date)
-  case is String, is NSNumber, is NSNull: return value
+  case let number as NSNumber: return number.doubleValue.isFinite ? number : NSNull() // NaN and Infinity aren't JSON
+  case is String, is NSNull: return value
   default: return "\(value)"
   }
  }
@@ -249,7 +278,8 @@ private func qaJson(_ value: Any?) -> String {
 /// first, as for a real key press; otherwise it goes to the focused view. Returns false for a Command shortcut nothing has.
 private var qaForward = DispatchTime.now() // when Still, brought forward for a key, is ready for keys
 private var qaQueued = DispatchTime.now() // until then, keys posted earlier may still wait in the event queue
-private func qaKey(_ b: Browser, _ key: String, _ mods: String) -> Bool {
+/// post: through the event queue even with Command held, so the page sees it before the menu bar (as a real press does).
+private func qaKey(_ b: Browser, _ key: String, _ mods: String, post: Bool = false) -> Bool {
  let held = Set(mods.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) })
  let ctrl = held.contains("Control"), alt = held.contains("Alt"), shift = held.contains("Shift")
  var name = key
@@ -287,19 +317,25 @@ private func qaKey(_ b: Browser, _ key: String, _ mods: String) -> Bool {
  guard let down = NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: b.window.windowNumber,
                                    context: nil, characters: typed.0, charactersIgnoringModifiers: typed.0, isARepeat: false, keyCode: typed.1) else { return false }
  // A shortcut waits behind keys still queued, as a typed one would; posted, it reaches the menu bar the same way.
- let queued = qaQueued > .now()
+ let queued = post || qaQueued > .now()
+ if post { b.window.makeFirstResponder(b.shell) } // posted: for the interface's own boxes, as after a click in one
  if !queued, NSApp.mainMenu?.performKeyEquivalent(with: down) == true { return true }
  if !queued, flags.contains(.command) { return false }
- // Queued like a real key press, so event monitors see it. Keys reach only the active app's key window, so a key brings
- // Still forward first, and the keys sent meanwhile wait their turn.
+ qaPost(b, down)
+ return true
+}
+
+/// Queued like a real key press, so event monitors see it and AppKit closes the undo step before it (edits made between
+/// events share one, so Undo would take back several). Keys reach only the active app's key window, so a key brings
+/// Still forward first, and the keys sent meanwhile wait their turn.
+private func qaPost(_ b: Browser, _ event: NSEvent) {
  if !b.window.isKeyWindow && qaForward < .now() {
   NSApp.activate(ignoringOtherApps: true)
   b.window.makeKeyAndOrderFront(nil)
   qaForward = .now() + 0.25
  }
  qaQueued = max(qaForward, .now()) + 0.2
- DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) { NSApp.postEvent(down, atStart: false) }
- return true
+ DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) { NSApp.postEvent(event, atStart: false) }
 }
 
 // MARK: Capture

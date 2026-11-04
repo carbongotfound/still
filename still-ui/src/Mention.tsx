@@ -39,7 +39,7 @@ export const clip = (title: string) => { const c = [...title]; return c.length >
 // A tab with no favicon and a skill draw theirs in CSS. Tabs in sent messages are known by their address.
 function look(m: Mention, known: Known): { inner: string; hue?: string } {
  const icon = (src?: string) => src ? `<img src="${esc(src)}" alt="" draggable="false">` : "<i></i>"
- if (m.kind === "mate") { const c = known.companions.find(c => c.id === m.id); return { inner: icon(c && avatarOf(lookOf(c))) + esc(m.name), hue: c && hueOf(c) } }
+ if (m.kind === "mate") { const c = known.companions.find(c => c.id === m.id); return { inner: icon(c && avatarOf(lookOf(c), 16)) + esc(m.name), hue: c && hueOf(c) } }
  if (m.kind === "tab") return { inner: icon(known.tabs.find(t => t.id === m.id || t.url === m.id)?.favicon) + esc(clip(m.name)) }
  if (m.kind === "plugin") { const logo = logoOf(m.id); return { inner: (logo ? icon(logo) : `<i>${esc(m.name.charAt(0))}</i>`) + esc(m.name), hue: plugColor(m.id) } }
  return { inner: icon() + esc(m.name) }

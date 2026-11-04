@@ -4,7 +4,8 @@ agents folder) connects to Still's MCP server and runs the command on the last l
   REMEMBER: <fact>   calls remember
   RECALL: <words>    calls recall
   FORGET: <words>    calls forget
-  KNOW: <file> | <text>  calls update_knowledge
+  KNOW: <file> | <text>  calls read_knowledge, then update_knowledge with the version it read
+  READ: <file>       calls read_knowledge
 Every tool result goes to results.jsonl, every prompt to prompts.jsonl.
 
 Run: python tests/desktop/memory.py artifacts/Still-QA/Still.exe
@@ -12,7 +13,6 @@ Out: artifacts/memory-*/ (memory-page.png, Settings > Memory)
 """
 import http.server
 import json
-import os
 from pathlib import Path
 import sys
 import textwrap
@@ -76,10 +76,15 @@ FAKE = textwrap.dedent(r'''
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
     last = prompt.strip().splitlines()[-1]
     verb, _, rest = last.partition(": ")
-    tool = {"REMEMBER": ("remember", "fact"), "RECALL": ("recall", "query"), "FORGET": ("forget", "about"), "KNOW": ("update_knowledge", "file")}.get(verb)
+    tool = {"REMEMBER": ("remember", "fact"), "RECALL": ("recall", "query"), "FORGET": ("forget", "about"), "KNOW": ("update_knowledge", "file"), "READ": ("read_knowledge", "file")}.get(verb)
     if tool:
         file, _, text = rest.partition(" | ")
-        r = request("tools/call", {"name": tool[0], "arguments": {tool[1]: rest, "kind": "preference"} if tool[0] == "remember" else {"file": file, "text": text} if verb == "KNOW" else {tool[1]: rest}})["result"]
+        version = ""
+        if verb == "KNOW":
+            r = request("tools/call", {"name": "read_knowledge", "arguments": {"file": file}})["result"]
+            try: version = json.loads(r["content"][0]["text"]).get("version", "")
+            except ValueError: pass
+        r = request("tools/call", {"name": tool[0], "arguments": {tool[1]: rest, "kind": "preference"} if tool[0] == "remember" else {"file": file, "text": text, "version": version} if verb == "KNOW" else {tool[1]: rest}})["result"]
         with open(os.path.join(here, "results.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"ask": last, "error": bool(r.get("isError")), "text": r["content"][0]["text"]}) + "\n")
     say({"type": "assistant", "message": {"content": [{"type": "text", "text": "Okay, done."}]}})
     still.stdin.close()
@@ -136,7 +141,7 @@ def main():
         kept = [f for f in facts() if f["Text"] == "Prefers aisle seats on long flights"]
         check(not said.get("error") and len(kept) == 1 and kept[0]["Chat"] == a.get("Id") and kept[0]["Kind"] == "preference" and kept[0]["At"],
               "remember keeps the fact with its kind, date and the chat it came from")
-        check(any(f["Kind"] == "chat" and f["Key"] == "chat:" + a.get("Id", "") for f in facts()), "The chat itself is remembered as a past chat")
+        check(not any(f["Kind"] == "chat" for f in facts()) and kept and kept[0].get("Source") == "chat" and kept[0].get("Msg") == 0, "It records where it came from; the chat itself isn't a memory item (summaries are)")
         b, said = ask(process, "RECALL: seats")
         prompt = lines("prompts.jsonl")[-1]["prompt"]
         check("What you remember about the user" in prompt and "Prefers aisle seats on long flights" in prompt, "The next chat starts out knowing it")
@@ -144,7 +149,7 @@ def main():
 
         # One copy of a fact.
         ask(process, "REMEMBER: Prefers aisle seats on long flights.")
-        check(sum("aisle seats" in f["Text"] and f["Kind"] != "chat" for f in facts()) == 1, "Remembering it again keeps one copy")
+        check(sum("aisle seats" in f["Text"] for f in facts()) == 1, "Remembering it again keeps one copy")
 
         # Forget.
         _, said = ask(process, "FORGET: aisle seats")
@@ -154,13 +159,13 @@ def main():
         # rewrites one, keeping its name, and the next chat knows it. Only her own files, and never off the record.
         notes = PROFILE / "companions" / "maya" / "knowledge"
         check(sorted(f.stem for f in notes.glob("*.md")) == ["findings", "market", "sources"], "Maya has her role's three knowledge files")
-        check('## Findings (file "findings")' in prompt and "(Empty so far.)" in prompt and "update_knowledge" in prompt, "and her chats start out with them, empty so far")
+        check('Findings (file "findings", version ' in prompt and "empty so far" in prompt and "read_knowledge" in prompt, "and her chats start out with an index of them, empty so far")
         _, said = ask(process, "KNOW: findings | - Most suppliers ship in 6 weeks (source: the 2026 survey)")
         body = (notes / "findings.md").read_text(encoding="utf-8")
         check(not said.get("error") and "Findings" in said.get("text", "") and body.startswith("---\nname: Findings\nabout: ") and body.rstrip().endswith("- Most suppliers ship in 6 weeks (source: the 2026 survey)"),
               "update_knowledge rewrites a file, keeping its name and what it holds")
-        ask(process, "RECALL: suppliers")
-        check("Most suppliers ship in 6 weeks" in lines("prompts.jsonl")[-1]["prompt"], "The next chat starts out knowing it")
+        _, said = ask(process, "READ: findings")
+        check("Most suppliers ship in 6 weeks" in said.get("text", "") and "Most suppliers" not in lines("prompts.jsonl")[-1]["prompt"], "The next chat reads it on demand; the prompt has the index, not the text")
         _, said = ask(process, "KNOW: diary | anything")
         check(said.get("error") and "no knowledge file" in said.get("text", "") and not (notes / "diary.md").exists(), "A file that isn't one of hers is refused")
         _, said = ask(process, "KNOW: findings | Allergic to peanuts", noMemory=True)
@@ -197,11 +202,13 @@ def main():
         send(process, "openPanel", name="settings", value="memory")
         rows = lambda: js(process, "[...document.querySelectorAll('.memory-row')].map(r => r.innerText)") or []
         check(until(lambda: any("Maya lives in Porto" in r for r in rows()), 10), "Settings > Memory lists what Maya remembers")
-        check("Past chats" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), "and the past chats")
+        check("Added by the user in Settings" in (js(process, "document.querySelector('.memory-settings')?.innerText") or ""), "and where each thing came from")
         time.sleep(.6)
         rpc(process, "capture", name="memory-page.png")
         js(process, "[...document.querySelectorAll('.memory-row')].find(r => r.innerText.includes('Maya'))?.querySelector('[aria-label^=Forget]')?.click()")
-        check(until(lambda: not any("Maya" in f["Text"] for f in facts()), 5), "Forget on the Memory page forgets it")
+        until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+        js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+        check(until(lambda: not any("Maya" in f["Text"] for f in facts()), 15), "Forget on the Memory page asks, then forgets it once Undo is gone")
         errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
         check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     finally:

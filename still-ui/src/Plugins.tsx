@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils"
 import type { AiState } from "./AiSidebar"
 import type { Companion } from "./Buddy"
 import { BODY_COLORS } from "./look"
+import { destroy } from "./Undo"
 import SHIPPED from "./assets/apps.json"
 
 // Plugins: the user's apps through Composio, a third-party service, with their own project API key (MainWindow.Plugins.cs
@@ -82,23 +83,6 @@ export function PluginStack({ plugins, send, onOpen }: { plugins?: PluginsState;
  return <button className="home-plugins" onClick={onOpen} aria-label={on.length ? `Plugins: ${andList(on.map(c => c.name))} connected` : "Plugins: none connected yet"}><Stack on={on} />Plugins</button>
 }
 
-/// Setup's belt: two rows of apps gliding opposite ways, paused under the pointer. Reduced motion gets a still grid (App.css).
-export function PluginBelt() {
- return <div className="plug-belt" aria-label="Apps you can connect">{[POPULAR.slice(0, 12), POPULAR.slice(12)].map((row, i) =>
-  <div key={i} className={cn("plug-row", i === 1 && "is-reverse")}><div className="plug-track">
-   {[...row, ...row].map(([slug, name], j) => <PluginChip key={j} slug={slug} name={name} hidden={j >= row.length} />)}
-  </div></div>)}</div>
-}
-
-/// With a key: the same apps as a grid to pick from. A tap connects it; connected ones have a check.
-export function PluginGrid({ plugins, send }: { plugins: PluginsState; send: Send }) {
- return <div className="plug-grid" role="group" aria-label="Connect an app">{POPULAR.map(([slug, name]) => {
-  const on = plugins.connected.some(c => c.slug === slug), busy = plugins.connecting === slug
-  return <button key={slug} className={cn("plug-pick", on && "is-on")} aria-pressed={on} aria-label={on ? `${name} is connected` : `Connect ${name}`} disabled={on || !!plugins.connecting}
-   onClick={() => send("pluginConnect", { slug })}><PluginChip slug={slug} name={name} />{busy ? <Loader2 className="animate-spin" /> : on ? <Check /> : null}</button>
- })}</div>
-}
-
 /// Where the key comes from, then paste it once. Composio checks it before it's kept (a bad one never replaces a good
 /// one), it's kept like saved passwords, and the field empties right away. Composio's For You page shows a Connect key
 /// (ck_…) that its API refuses: the steps point past it.
@@ -129,17 +113,16 @@ export function ThirdParty() {
 /// Settings → Skills & plugins: the key, shown only as set with its last four characters. Change it (the new one is
 /// checked before it replaces the old one) or delete it, which turns plugins off.
 export function PluginKeySetting({ plugins, send }: { plugins?: PluginsState; send: Send }) {
- const [changing, setChanging] = useState(false), [deleting, setDeleting] = useState(false)
+ const [changing, setChanging] = useState(false)
  const end = plugins?.key ? plugins.keyEnd ?? "" : ""
  useEffect(() => { if (!plugins?.checking && !plugins?.problem) setChanging(false) }, [plugins?.checking]) // eslint-disable-line react-hooks/exhaustive-deps
  if (!plugins?.key) return <div className="setting-row is-stacked" id="set-composio"><div><strong>Composio API key</strong><p>Not set. Plugins stay off until you add your own project API key.</p></div>
   <PluginKey plugins={plugins} send={send} /></div>
  return <div className="setting-row is-stacked" id="set-composio">
   <div className="plug-keyline"><div><strong>Composio API key</strong><p>Set, ending in <code className="plug-end">{end}</code>. Still never shows the rest of it, here or anywhere else.</p></div>
-   {!changing && !deleting && <div className="plug-keyacts"><Button size="sm" variant="outline" onClick={() => setChanging(true)}>Change</Button><Button size="sm" variant="outline" onClick={() => setDeleting(true)}>Delete</Button></div>}</div>
+   {!changing && <div className="plug-keyacts"><Button size="sm" variant="outline" onClick={() => setChanging(true)}>Change</Button><Button size="sm" variant="outline" onClick={() => destroy({ key: "plugin-key", title: "Delete the Composio key?",
+    body: "Plugins turn off and companions lose your apps. Your apps stay connected in your Composio account, ready if you add a key again.", action: "Delete key", done: "Composio key deleted", run: () => send("pluginKeyRemove") })}>Delete</Button></div>}</div>
   {changing && <><PluginKey plugins={plugins} send={send} label="Save new key" steps={false} /><Button size="sm" variant="ghost" className="plug-cancel" onClick={() => setChanging(false)}>Cancel</Button></>}
-  {deleting && <div className="plug-confirm" role="alert"><p>Delete the key? Plugins turn off and companions lose your apps. Your apps stay connected in your Composio account, ready if you add a key again.</p>
-   <Button size="sm" variant="ghost" onClick={() => setDeleting(false)}>Cancel</Button><Button size="sm" variant="destructive" onClick={() => { send("pluginKeyRemove"); setDeleting(false) }}>Delete key</Button></div>}
  </div>
 }
 
@@ -186,7 +169,8 @@ function Tiles({ apps, ai, send }: { apps: PluginApp[]; ai: AiState; send: Send 
   <AppTile app={a} p={p} send={send} open={open === a.slug} onOpen={() => setOpen(open === a.slug ? "" : a.slug)} />
   {i === end && account && <li className="plug-manage" aria-label={`${account.name}: who can use it`}>
    <Who what={account.name} companions={ai.companions ?? []} on={m => !m.pluginsOff?.includes(account.slug)} onToggle={(m, on) => send("pluginToggle", { companion: m.id, slug: account.slug, on })} />
-   <Button size="sm" variant="ghost" onClick={() => { send("pluginDisconnect", { id: account.id }); setOpen("") }}><Unplug />Disconnect</Button></li>}
+   <Button size="sm" variant="ghost" onClick={() => destroy({ key: "plugin:" + account.id, title: `Disconnect ${account.name}?`, body: `Companions can't use ${account.name} anymore. You'd sign in to it again to connect it.`,
+    action: "Disconnect", done: `${account.name} disconnected`, onConfirm: () => setOpen(""), run: () => send("pluginDisconnect", { id: account.id }) })}><Unplug />Disconnect</Button></li>}
  </Fragment>)}</ul>
 }
 
@@ -220,7 +204,7 @@ export function PluginsPage({ ai, send, skills, onNewSkill }: { ai: AiState; sen
    {more && cats.slice(shown).map(c => chip(c))}</div>
 
   {!p?.key && <div className="plug-connect"><h3>Turn on plugins with your Composio key</h3>
-   <p className="plug-note">Companions work in your apps through Composio, with your own project API key. Reading is free. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
+   <p className="plug-note">Companions work in your apps through Composio, with your own project API key. Reading goes ahead. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
    <PluginKey plugins={p} send={send} /><ThirdParty /></div>}
   {p?.key && p.status === "down" && <div className="plug-down" role="alert"><p>Composio isn't answering, so plugins are unavailable right now. Everything else in Still works as usual.</p><Button size="sm" variant="outline" onClick={() => send("pluginRefresh", { force: true })}>Try again</Button></div>}
   {p?.key && p.status === "bad" && <div className="plug-down" role="alert"><p className="plug-error">Composio doesn't accept your key any more. Paste a new project API key (ak_…) in Settings.</p><Button size="sm" variant="outline" onClick={() => send("openPanel", { name: "settings", value: "skills" })}>Change key</Button></div>}

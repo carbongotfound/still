@@ -1,6 +1,6 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type CSSProperties } from "react"
 import { motion } from "motion/react"
-import { Mascot, pictureOf, useMascotVersion, type MascotState } from "./Mascot"
+import { Mascot, pictureOf, useMascotVersion, type MascotState, type Tier } from "./Mascot"
 import { AGENT_LOOKS, DEFAULT_LOOK, ROLE_LOOKS, ROLE_PROPS, isOld, parseLook, type Look } from "./look"
 
 // The old companion hues: a companion saved before looks existed keeps its color.
@@ -8,15 +8,21 @@ export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; knowledge?: Note[]; tone?: string; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; summaries?: ChatSummary[]; knowledge?: Note[]; setup?: "pending" | "done"; capture?: boolean; joinSection?: boolean; tone?: string; role?: string; personality?: Personality; length?: ReplyLength; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
  crew?: string // the crew member it was picked from (crew.tsx)
  askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
+/// A companion's personality preset ("" = only its Tone in the user's words) and how long its replies are.
+export type Personality = "" | "direct" | "warm" | "playful" | "formal"
+export type ReplyLength = "short" | "balanced" | "detailed"
 /// Something a companion does on a schedule, in a new chat: days are 0 (Sunday) to 6, time is HH:MM on this PC's clock.
 export type Routine = { id: string; text: string; time: string; days: number[]; on: boolean }
 /// One of a companion's knowledge files (still/Assets/roles/<role>/knowledge): the working notes of its job, filled in as it works.
-export type Note = { id: string; name: string; about: string; text: string }
-/// One thing a companion remembers about the user. A "chat" is a past chat it learned from.
-export type Fact = { id: string; text: string; kind: string; at: string; chat: string; key?: string; chatTitle?: string | null }
+export type Note = { id: string; name: string; about: string; text: string; version?: string; updated?: string; revisions?: number }
+/// One thing a companion remembers about the user, with where it came from. A superseded one is an earlier version.
+export type Fact = { id: string; text: string; kind: string; at: string; chat: string; msg?: number; key?: string; chatTitle?: string | null; guessed?: boolean
+ source?: string; sourceText?: string; subject?: string; status?: "active" | "superseded"; supersedes?: string }
+/// A past chat's summary in a companion's memory. legacy: a line from before 2.10, never checked against the chat.
+export type ChatSummary = { chat: string; title: string; at: string; legacy?: boolean; text: string; exists?: boolean }
 export type Mood = MascotState | "sleep"
 export const FALLBACK: Companion = { id: "", name: "Still", face: "", color: "", job: "" }
 // The companion the user is working with, for faces that don't name one.
@@ -43,11 +49,11 @@ export function lookOf(c?: Companion): Look {
 /// The companion's color, used as its accent while you work with it.
 export const hueOf = (c?: Companion) => lookOf(c).color
 
-export function Face({ companion, mood = "idle", size = 56, follow, gesture, gestureAt, className }: { companion?: Companion; mood?: Mood; size?: number; follow?: boolean; gesture?: string; gestureAt?: number; className?: string }) {
+export function Face({ companion, mood = "idle", size = 56, tier, follow, gesture, gestureAt, className }: { companion?: Companion; mood?: Mood; size?: number; tier?: Tier; follow?: boolean; gesture?: string; gestureAt?: number; className?: string }) {
  const fallback = useContext(CompanionContext)
  const c = companion ?? fallback
  const look = useMemo(() => lookOf(c), [c?.look, c?.color, c?.face, c?.id]) // eslint-disable-line react-hooks/exhaustive-deps
- return <Mascot look={look} state={mood === "sleep" ? "idle" : mood} size={size} follow={follow} gesture={gesture} gestureAt={gestureAt}
+ return <Mascot look={look} state={mood === "sleep" ? "idle" : mood} size={size} tier={tier} name={c?.name} follow={follow} gesture={gesture} gestureAt={gestureAt}
   className={className} style={mood === "sleep" ? { filter: "saturate(.4)", opacity: .85 } : undefined} />
 }
 export const Buddy = Face
@@ -71,4 +77,5 @@ export function Space({ companion, team = [], mood, onOpen, onPick }: { companio
  </div>
 }
 /// Opens a companion's profile (App listens), from any of its mascots.
-export const showProfile = (c?: Companion) => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: c.id })) }
+/// A companion's profile, from anywhere: on its General tab, or "model" for their AI settings.
+export const showProfile = (c?: Companion, tab = "general") => { if (c?.id) dispatchEvent(new CustomEvent("still-profile", { detail: { id: c.id, tab } })) }

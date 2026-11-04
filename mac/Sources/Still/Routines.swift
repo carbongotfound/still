@@ -40,7 +40,7 @@ var routineClock: Timer?
 extension Browser {
  static func watchRoutines() {
   guard routineClock == nil else { return }
-  routineClock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in browsers.first { !$0.incognitoWindow }?.runRoutines(Date()) }
+  routineClock = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { _ in browsers.first { !$0.incognito }?.runRoutines(Date()) }
  }
 
  func runRoutines(_ now: Date) {
@@ -48,7 +48,7 @@ extension Browser {
   for c in companions { for i in c.routines.indices where c.routines[i].due(now) {
    c.routines[i].last = Routine.day(now); storeCompanions(); ran = true
    let v = aiView, shown = v.chat // the chat in the sidebar stays; the routine's chat shows in the list and the running tasks
-   runAi(nil, c.routines[i].text, companion: c.id)
+   runAi(nil, c.routines[i].text, companion: c.id, routine: true)
    v.chat = shown
   } }
   if ran { publishAiEverywhere() }

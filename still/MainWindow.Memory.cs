@@ -121,7 +121,7 @@ public partial class MainWindow
  bool AgentTabExpired(BrowserTab t)
  {
   if (!(t.AgentGroup || t.RunChat != null || t.InChat != null) || t.Closed || t.Pinned || t == active || t == Shown || AgentBusy(t)) return false;
-  var chat = (t.InChat ?? t.RunChat) is { } id ? AiChats.FirstOrDefault(c => c.Id == id)?.Updated : null;
+  var chat = (t.InChat ?? t.RunChat) is { } id ? ChatById(id)?.Updated : null;
   var quiet = t.InChat != null && chat is { } updated ? updated : chat is { } u && u > t.LastActive ? u : t.LastActive; // a chat page's own LastActive restarts with Still
   return DateTime.UtcNow - quiet >= AgentTabLifetime;
  }

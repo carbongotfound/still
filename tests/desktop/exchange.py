@@ -1,7 +1,10 @@
-"""Companions message each other: ask_companion waits for the teammate's reply, tell_companion hands work over, and
-list_companions says who's on the team. The one asked answers in its own chat with its own memory, and the chat the user
-is in shows each exchange as a card (who asked whom, the message, Working / Replied / Failed / Stopped, the reply) that
-opens to all of it and to the other side's chat. Stop on a card stops that exchange; stopping a chat stops whoever it
+"""Companions message each other: ask_companion waits for the teammate's reply, tell_companion hands work over in the
+background, and list_companions says who's on the team. The one asked works on a child task of the asking chat, with its
+own role but no memory writes (the asker decides), and is told to name its sources and what it's unsure of. Child tasks
+aren't in history: the user's chat shows each as one row among the steps (R18: from and to faces, "Maya asked Jonah for a
+pitch", Working / Needs you / Done / Failed / Stopped, View) that opens to what was asked and the result, and View opens
+the child in a task view with no message box. A child acts only where everyone up the chain may, and asks in the user's
+chat. A failed or stopped child says what's missing. Stop on a row stops that child; stopping a chat stops whoever it
 asked. Exchanges go at most 3 hops deep and about 10 messages per request, a teammate already in one can't be asked again
 (a loop), and none messages itself. @Name in the message box has the current companion ask that teammate. Team chats
 from before are split into each companion's own chat, so nothing is lost. The # and @ pickers in the message box too.
@@ -24,7 +27,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 RUN = ROOT / "artifacts" / ("exchange-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
@@ -47,6 +50,7 @@ FAKE = textwrap.dedent(r'''
     line = lines[min(n, len(lines) - 1)]
     def say(e): print(json.dumps(e), flush=True)
     say({"type": "system", "subtype": "init", "session_id": args[args.index("--resume") + 1] if "--resume" in args else "%s-%d" % (name, time.time_ns())})
+    if line.get("fail"): print(line["fail"], file=sys.stderr, flush=True); sys.exit(1)
     if line.get("say"): say({"type": "assistant", "message": {"content": [{"type": "text", "text": line["say"]}]}})  # written before its tool calls
     calls = ([{"name": "remember", "arguments": {"fact": line["remember"], "kind": "project"}}] if line.get("remember") else []) + line.get("calls", [])
     for call in line.get("calls", []) if line.get("steps") else []: say({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": call["name"], "name": "mcp__still__" + call["name"], "input": call["arguments"]}]}})
@@ -173,7 +177,7 @@ def press(name):
     """A real key press, as the keyboard sends it."""
     for kind in ("rawKeyDown", "keyUp"):
         rpc(P, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": kind, "key": name, "code": name, "windowsVirtualKeyCode": KEYS[name]})
-    time.sleep(.25)
+    time.sleep(.5 if MAC else .25)  # the Mac queues it as the keyboard does, behind bringing the window forward
 
 
 def box_text():
@@ -198,7 +202,25 @@ def chips():
 
 
 def shown_cards():
-    return json.loads(js(P, "JSON.stringify([...document.querySelectorAll('.chat-view .exchange')].map(e => [e.querySelector('.exchange-who').innerText, e.dataset.status, e.querySelector('.exchange-status').innerText]))") or "[]")
+    """The delegation rows on screen: the summary line, the status and the pill's text."""
+    return json.loads(js(P, "JSON.stringify([...document.querySelectorAll('.chat-view .delegation')].map(e => [e.querySelector('.ai-step-line').innerText, e.dataset.status, e.querySelector('.delegation-pill').innerText]))") or "[]")
+
+
+def tops():
+    """The chats history lists: everything but child tasks."""
+    return [c["Id"] for c in chats() if not c.get("From")]
+
+
+def shown_chat():
+    return next((t for t in rpc(P)["tabs"] if t["Id"] == rpc(P)["activeId"]), {}).get("ChatId")
+
+
+def hit(name):
+    """A real key on whatever has focus: Tab moves on, Enter presses the button."""
+    code, typed = {"Enter": (13, "\r"), "Tab": (9, "")}[name]
+    rpc(P, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": "keyDown" if typed else "rawKeyDown", "key": name, "code": name, "windowsVirtualKeyCode": code, **({"text": typed} if typed else {})})
+    rpc(P, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": "keyUp", "key": name, "code": name, "windowsVirtualKeyCode": code})
+    time.sleep(.5 if MAC else .3)
 
 
 def shot(name):
@@ -230,6 +252,13 @@ OLD_TEAM = {"Id": "oldteam", "Title": "Launch the desk lamp", "Harness": "fake",
                 {"Role": "assistant", "Text": "People ask about glare, warmth and price.", "Who": "maya"},
                 {"Role": "handoff", "Text": "Write a two-line launch pitch.", "Who": "maya", "To": "jonah", "Status": "done"},
                 {"Role": "assistant", "Text": "No glare. Warm light. Fair price.", "Who": "jonah"}]}
+# A chat where Maya asked a teammate who's since been let go.
+GONE = [{"Id": "gonechat", "Title": "When does the lamp ship", "Harness": "fake", "Companion": "maya", "Updated": "2026-10-02T10:00:00Z", "Messages": [
+            {"Role": "user", "Text": "When does the lamp ship?"},
+            {"Role": "ask", "Text": "Check the shipping dates.", "Who": "maya", "To": "gone", "Status": "failed", "Chat": "gonechild", "Title": "shipping dates", "Reply": "Something broke. Still missing: shipping dates."}]},
+        {"Id": "gonechild", "Title": "Maya asked Sam for shipping dates", "Harness": "fake", "Companion": "gone", "From": "gonechat", "Updated": "2026-10-02T10:00:00Z", "Messages": [
+            {"Role": "user", "Text": "Check the shipping dates.", "Who": "maya"}]}]
+JONAH = "**No glare, warm light, fair price.**\n\nSources: [lamp spec](https://example.com/lamp). Not sure: the ship date."
 
 
 def setup(theme="Light"):
@@ -242,7 +271,7 @@ def setup(theme="Light"):
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json"}))
     crew = [{**c, "Crew": {"maya": "research", "jonah": "sales", "nora": "planner", "rosa": "organizer"}.get(c["Id"], "")} for c in CREW]
     crew.append({"Id": "leo", "Name": "Leo", "Job": "A marketer: writes posts and plans campaigns.", "Crew": "marketing"})
-    (PROFILE / "ai" / "chats.json").write_text(json.dumps([OLD_TEAM]))
+    (PROFILE / "ai" / "chats.json").write_text(json.dumps([OLD_TEAM] + GONE))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake", "Theme": theme,
         "Width": 1280, "Height": 860}, "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     return launch(EXE, PROFILE)
@@ -282,9 +311,10 @@ def main():
         # in its own memory; asking itself is refused.
         site = pages()
         send(P, "new", url=site + "/secret", private=True)
-        plan({"Maya": [{"text": "Jonah's pitch: {1}", "calls": [{"name": "list_companions", "arguments": {}}, {"name": "ask_companion", "arguments": {"name": "Jonah", "message": "Write a one-line pitch for a warm desk lamp."}},
+        plan({"Maya": [{"text": "Jonah's pitch: {1}", "calls": [{"name": "list_companions", "arguments": {}}, {"name": "ask_companion", "arguments": {"name": "Jonah", "message": "Write a one-line pitch for a warm desk lamp.", "title": "a pitch."}},
                                                                 {"name": "ask_companion", "arguments": {"name": "Maya", "message": "Hi me."}}]}],
-              "Jonah": [{"text": "**No glare, warm light, fair price.**", "remember": "Pitches lead with comfort", "sleep": 1.5, "calls": [{"name": "list_tabs", "arguments": {}}]}]})
+              "Jonah": [{"text": JONAH, "remember": "Pitches lead with comfort", "sleep": 1.5, "calls": [{"name": "list_tabs", "arguments": {}}, {"name": "recall", "arguments": {"query": "pitch"}}]}]})
+        top, every = tops(), len(chats())
         ask = new_chat("Find me a desk lamp, and get a pitch for it.", companion="maya")
         check(until(lambda: cards(chat(ask)) == [("ask", "maya", "jonah", "working")], 15), "Maya's ask shows in the chat as a card, Working")
         check(until(lambda: [c[1:] for c in shown_cards()] == [["working", "Working"]], 5), "The card says Working on screen")
@@ -293,36 +323,73 @@ def main():
         c, z = chat(ask), asked_by(ask, "jonah")
         team = calls("Maya", "list_companions")[0]["text"]
         check(all(n in team for n in ("Maya", "Jonah", "Nora", "Rosa", "Leo")) and "savvy shopper" in team, f"list_companions names the team and what each does ({team[:160]!r})")
-        check(cards(c) == [("ask", "maya", "jonah", "replied")] and next(m for m in c["Messages"] if m["Role"] == "ask").get("Reply") == "**No glare, warm light, fair price.**", f"The card ends Replied, with Jonah's reply ({cards(c)})")
+        card = next(m for m in c["Messages"] if m["Role"] == "ask")
+        check(cards(c) == [("ask", "maya", "jonah", "replied")] and card.get("Reply") == JONAH, f"The card ends Replied, with Jonah's reply ({cards(c)})")
+        check(card.get("Title") == "a pitch" and z.get("Title") == "Maya asked Jonah for a pitch" and z.get("From") == ask, f"The child task is titled from what was asked for ({card.get('Title')!r}, {z.get('Title')!r})")
+        check(sorted(tops()) == sorted(top + [ask]) and len(chats()) == every + 2, f"History gains one chat for the request; Jonah's work is a child task of it ({len(tops())}, {len(top)}, {len(chats())}, {every})")
         check(said(c) == ["Jonah's pitch: " + calls("Maya", "ask_companion")[0]["text"]] and "No glare, warm light, fair price." in said(c)[0], "Maya gets the reply back and uses it")
-        check(z.get("Companion") == "jonah" and z["Messages"][0] == {"Role": "user", "Text": "Write a one-line pitch for a warm desk lamp.", "Who": "maya"} and said(z) == ["**No glare, warm light, fair price.**"],
-              "Jonah answers in its own chat, where the message shows as Maya's")
+        check("https://example.com/lamp" in said(c)[0] and "Not sure: the ship date" in said(c)[0] and "with their sources" in calls("Maya", "ask_companion")[0]["text"],
+              "Jonah's sources and what it isn't sure of come back to Maya, who's told to keep them")
+        check(z.get("Companion") == "jonah" and z["Messages"][0] == {"Role": "user", "Text": "Write a one-line pitch for a warm desk lamp.", "Who": "maya"} and said(z) == [JONAH],
+              "Jonah answers in the child task, where the message shows as Maya's")
         zp = next(p for p in prompts() if p["name"] == "Jonah" and "one-line pitch" in p["prompt"])
         check("[Still] Maya, your teammate, asks you this" in zp["prompt"] and "Find me a desk lamp" not in zp["prompt"] and "# Sales" in zp["prompt"],
               "Jonah is told Maya asks, in its own role, and sees only what Maya sent")
-        check(any(f["Text"] == "Pitches lead with comfort" for f in facts("jonah")) and not any("comfort" in f["Text"] for f in facts("maya")), "What Jonah remembers stays in Jonah's memory")
+        check("Name the sources you used" in zp["prompt"] and "Don't save anything to memory" in zp["prompt"], "Jonah is asked for its sources and what it's unsure of, and not to save to memory")
+        kept = calls("Jonah", "remember")
+        check(kept and kept[-1]["error"] and "Maya, who decides what's kept" in kept[-1]["text"] and not any("comfort" in f["Text"] for f in facts("jonah") + facts("maya")),
+              f"A child task can't write to memory: the asker decides ({kept[-1]['text'] if kept else None!r})")
+        check(not calls("Jonah", "recall")[-1]["error"], "but it can still recall")
         check(not any(p["name"] in ("Nora", "Rosa", "Leo") for p in prompts()), "Nobody else sees the exchange")
         own = calls("Maya", "ask_companion")[1]
         check(own["error"] and "can't message itself" in own["text"], f"A companion can't message itself ({own['text']!r})")
         tabs = calls("Jonah", "list_tabs")[0]["text"]
         check("Secret plans" not in tabs, "The one asked still never sees a private tab")
-        check([c[1:] for c in shown_cards()] == [["replied", "Replied"]] and "Maya asked Jonah" in shown_cards()[0][0], f"On screen: Maya asked Jonah, Replied ({shown_cards()})")
-        check("No glare, warm light, fair price." in (js(P, "document.querySelector('.exchange-reply').innerText") or ""), "The reply shows on the card")
-        js(P, "document.querySelector('.exchange-head').click()")
-        check(until(lambda: js(P, "!!document.querySelector('.exchange[data-open] .exchange-reply strong')"), 3), "It opens to the whole exchange")
+        check(shown_cards() == [["Maya asked Jonah for a pitch", "replied", "Done"]], f"On screen, one row: Maya asked Jonah for a pitch, Done ({shown_cards()})")
+        row = json.loads(js(P, "JSON.stringify((r => [r.offsetHeight, getComputedStyle(r).paddingTop, getComputedStyle(r).columnGap, r.closest('.ai-turn') && getComputedStyle(r.closest('.ai-steps-group')).borderRadius])(document.querySelector('.chat-view .delegation .ai-steps-row')))"))
+        check(row == [48, "12px", "10px", "12px"], f"The row is a one-line step row: 48px high, 12px padding, 10px gap, 12px radius ({row})")
+        text = js(P, "document.querySelector('.chat-view').innerText") or ""
+        check("[Still]" not in text and "Name the sources" not in text and "Open Jonah" not in text, "No prompt text on screen, and no Open Jonah's chat")
+        js(P, "document.querySelector('.delegation-toggle').click()")
+        check(until(lambda: js(P, "!!document.querySelector('.delegation[data-open] .delegation-result strong')"), 3)
+              and "one-line pitch" in (js(P, "document.querySelector('.delegation-asked').innerText") or ""), "It opens to what was asked and the result")
         shot("ask-replied.png")
-        js(P, "[...document.querySelectorAll('.exchange-actions button')].find(b => b.innerText.includes(\"Open Jonah's chat\")).click()")
-        check(until(lambda: rpc(P).get("tabs") and next((t for t in rpc(P)["tabs"] if t["Id"] == rpc(P)["activeId"]), {}).get("ChatId") == z["Id"], 5), "Open Jonah's chat shows it from Jonah's side")
+        js(P, "document.querySelector('.delegation-view').click()")
+        check(until(lambda: shown_chat() == z["Id"], 5), "View opens Jonah's child task")
         check(until(lambda: "Maya asked" in (js(P, "document.querySelector('.ai-msg.is-teammate')?.innerText") or ""), 3), "where Maya's message says Maya asked")
+        head = js(P, "document.querySelector('.chat-view .task-head')?.innerText") or ""
+        check("Back to Find me a desk lamp" in head and "Done" in head and not js(P, "!!document.querySelector('.chat-view [aria-label=Message]')"), f"The task view: back to Maya's chat, Done, no message box ({head!r})")
         shot("asked-side.png")
+        js(P, "document.querySelector('.task-back').click()")
+        check(until(lambda: shown_chat() == ask, 5), "Back returns to Maya's chat")
+        until(lambda: js(P, "!!document.querySelector('.chat-view .delegation-toggle')"), 5)
+        was = js(P, "document.querySelector('.delegation-toggle').getAttribute('aria-expanded')")
+        js(P, "document.querySelector('.delegation-toggle').focus()")
+        hit("Enter")
+        check(js(P, "document.querySelector('.delegation-toggle').getAttribute('aria-expanded')") != was, "Enter on the focused row opens or closes it")
+        if not MAC:  # Mac WebKit tabs only to text fields unless Full Keyboard Access is on, a system setting
+            hit("Tab")
+            check(js(P, "document.activeElement?.classList.contains('delegation-view')"), "Tab moves to View")
+        js(P, "document.querySelector('.delegation-view').focus()")
+        hit("Enter")
+        check(until(lambda: shown_chat() == z["Id"], 5), "Enter on View opens the child task")
+        send(P, "new")
+        until(lambda: js(P, "!!document.querySelector('.home-rail')"), 10)
+        js(P, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        js(P, "document.querySelector('.home-rail-item[aria-label=Chats]')?.click()")
+        listed = until(lambda: (lambda s: s if (s or "").strip("|") else "")(js(P, "[...document.querySelectorAll('.history-row')].map(r => r.innerText).join('|')")), 5) or ""  # rows can be there before their text is laid out
+        check("Find me a desk lamp" in listed and "asked" not in listed and "Shipping" not in listed, f"Chat History lists Maya's chat, not the child tasks ({listed[:200]!r})")
 
         # Handing over: tell_companion doesn't wait; the card turns Done when Nora finishes. Maya uses Nora's old name.
         plan({"Maya": [{"text": "Nora is checking the reviews.", "calls": [{"name": "tell_companion", "arguments": {"name": "Noon", "message": "Check two reviews of the lamp."}}]}],
               "Nora": [{"text": "Both reviews hold up.", "sleep": 4}]})
         tell = new_chat("Have someone check the reviews.", companion="maya")
         check(settled(tell, 1, 15) and cards(chat(tell)) == [("tell", "maya", "nora", "working")], f"Maya hands it to Nora and finishes without waiting ({cards(chat(tell))})")
+        nora = until(lambda: next((p["prompt"] for p in prompts() if p["name"] == "Nora"), None), 10) or ""
+        check("result goes back to Maya's chat" in nora and asked_by(tell, "nora").get("From") == tell and tell in tops() and asked_by(tell, "nora")["Id"] not in tops(),
+              "Nora works on it as a background child task whose result comes back")
         check(until(lambda: cards(chat(tell)) == [("tell", "maya", "nora", "replied")], 15) and next(m for m in chat(tell)["Messages"] if m["Role"] == "tell").get("Reply") == "Both reviews hold up.", "The card turns Done with Nora's work")
-        check(until(lambda: [c[2] for c in shown_cards()] == ["Done"], 5) and "Maya handed this to Nora" in shown_cards()[0][0], f"On screen: Maya handed this to Nora, Done ({shown_cards()})")
+        check(until(lambda: [c[2] for c in shown_cards()] == ["Done"], 5) and shown_cards()[0][0] == "Maya asked Nora: Check two reviews of the lamp.", f"On screen: Maya asked Nora, Done ({shown_cards()})")
 
         # A chain: Maya asks Jonah, Jonah asks Nora (asking Maya back is a loop), Nora asks Rosa, and Rosa can't go a
         # 4th hop. The user's chat shows every exchange.
@@ -340,6 +407,7 @@ def main():
         c = chat(chain)
         check(cards(c) == [("ask", "maya", "jonah", "replied"), ("ask", "jonah", "nora", "replied"), ("ask", "nora", "rosa", "replied")], f"The user's chat shows every exchange in the chain ({cards(c)})")
         check("Tuesday is free" in said(c)[0], "and Maya's answer carries what came back up the chain")
+        check(chain in tops() and sum(1 for x in chats() if x.get("From")) >= 3 and not any(x["Id"] in tops() for x in chats() if x.get("From")), "Each hop is a child task: none of them is in history")
         shot("chain.png")
 
         # About 10 messages per request: the 11th ask is refused; the user's next message starts a fresh count.
@@ -357,12 +425,16 @@ def main():
         plan({"Maya": [{"text": "Carrying on without it: {0}", "calls": [{"name": "ask_companion", "arguments": {"name": "Jonah", "message": "Research every lamp ever made."}}]}],
               "Jonah": [{"text": "Too late.", "sleep": 30}]})
         stop = new_chat("Get Jonah on a big job.", companion="maya")
-        check(until(lambda: js(P, "!!document.querySelector('.exchange[data-status=working] .exchange-actions button:last-child')") and any("every lamp" in p["prompt"] for p in prompts()), 15),
-              "While Jonah works, the card has Stop")
+        check(until(lambda: js(P, "!!document.querySelector('.delegation[data-status=working] .ai-steps-row .delegation-pill svg')") and any("every lamp" in p["prompt"] for p in prompts()), 15),
+              "While Jonah works, the row says Working, with a spinner")
+        js(P, "document.querySelector('.delegation[data-status=working] .delegation-toggle').click()")
+        check(until(lambda: js(P, "!!document.querySelector('.delegation[data-status=working] .delegation-body button')"), 3), "Opened, it has Stop")
         time.sleep(.5)
         shot("stop.png")
-        js(P, "document.querySelector('.exchange[data-status=working] .exchange-actions button:last-child').click()")
+        js(P, "document.querySelector('.delegation[data-status=working] .delegation-body button').click()")
         check(until(lambda: cards(chat(stop)) == [("ask", "maya", "jonah", "stopped")] and not asked_by(stop, "jonah").get("Running"), 10), "Stop stops Jonah, and the card says Stopped")
+        gone = until(lambda: next((m for m in chat(stop)["Messages"] if m["Role"] == "ask"), {}).get("Reply"), 5) or ""  # the Mac writes it when its poll sees the run end
+        check("Still missing: Research every lamp ever made." in gone and until(lambda: [c[2] for c in shown_cards()] == ["Stopped"], 5), f"The parent says what's missing, and the row says Stopped ({gone!r})")
         check(settled(stop, 1, 15) and "The user stopped Jonah's answer" in said(chat(stop))[0], "Maya is told the user stopped it, and carries on")
         check("Too late." not in json.dumps(asked_by(stop, "jonah")), "Jonah's answer never lands")
 
@@ -375,6 +447,39 @@ def main():
         send(P, "aiStop")
         check(until(lambda: not chat(whole).get("Running") and not asked_by(whole, "rosa").get("Running") and cards(chat(whole)) == [("ask", "maya", "rosa", "stopped")], 20),
               f"Stopping Maya stops Rosa, and the card says Stopped ({chat(whole).get('Running')}, {asked_by(whole, 'rosa').get('Running')}, {cards(chat(whole))}, {rpc(P)['activeId']})")
+
+        # A child that fails: the row says Failed and the parent is told what's missing.
+        plan({"Maya": [{"text": "Leo couldn't: {0}", "calls": [{"name": "ask_companion", "arguments": {"name": "Leo", "message": "Check the shipping dates with the warehouse.", "title": "shipping dates"}}]}],
+              "Leo": [{"fail": "Leo's AI app broke"}]})
+        fail = new_chat("When does it ship?", companion="maya")
+        check(settled(fail, 1, 30) and cards(chat(fail)) == [("ask", "maya", "leo", "failed")], f"Leo's child task fails, and the card says Failed ({cards(chat(fail))})")
+        why = next((m for m in chat(fail)["Messages"] if m["Role"] == "ask"), {}).get("Reply") or ""
+        check("Still missing: shipping dates." in why and "Still missing: shipping dates." in said(chat(fail))[0], f"The parent hears what's missing ({why!r})")
+        check(until(lambda: shown_cards() == [["Maya asked Leo for shipping dates", "failed", "Failed"]], 5), f"On screen: Failed ({shown_cards()})")
+        shot("failed.png")
+
+        # A teammate who's since been let go is "a former teammate".
+        send(P, "chatOpen", id="gonechat")
+        check(until(lambda: shown_cards() == [["Maya asked a former teammate for shipping dates", "failed", "Failed"]], 5), f"A missing companion is a former teammate ({shown_cards()})")
+
+        # A child acts only where everyone up the chain may: Jonah may always click here, Maya has to ask. Jonah's click
+        # asks, in Maya's chat, and goes ahead once allowed. On its own, Jonah clicks without asking.
+        send(P, "permSet", site="127.0.0.1", action="interact", companion="maya", mode="ask")
+        send(P, "permSet", site="127.0.0.1", action="interact", companion="jonah", mode="always")
+        plan({"Maya": [{"text": "Jonah did it: {0}", "calls": [{"name": "ask_companion", "arguments": {"name": "Jonah", "message": "Open the review and click its heading.", "title": "a click"}}]}],
+              "Jonah": [{"text": "Clicked it.", "calls": [{"name": "open_tab", "arguments": {"url": site + "/review"}}, {"name": "read_page", "arguments": {}}, {"name": "click", "arguments": {"selector": "h1"}}]}]})
+        both = new_chat("Have Jonah click the review's heading.", companion="maya")
+        card = until(lambda: js(P, "document.querySelector('.chat-view .approve-card')?.innerText ?? ''"), 30) or ""
+        check(shown_chat() == both and "Jonah wants to do this" in card, f"Jonah's click asks first, in Maya's chat ({card[:80]!r})")
+        check(until(lambda: [c[1:] for c in shown_cards()] == [["needs", "Needs you"]], 5), f"and the row says Needs you ({shown_cards()})")
+        shot("needs-you.png")
+        js(P, "document.querySelector('.chat-view .approve-card [data-approve]').click()")
+        check(settled(both, 1, 30) and calls("Jonah", "click") and not calls("Jonah", "click")[-1]["error"], "Allowed there, Jonah's click goes ahead")
+        plan({"Jonah": [{"text": "Clicked it myself.", "calls": [{"name": "open_tab", "arguments": {"url": site + "/review"}}, {"name": "read_page", "arguments": {}}, {"name": "click", "arguments": {"selector": "h1"}}]}]})
+        alone = new_chat("Click the review's heading.", companion="jonah")
+        check(settled(alone, 1, 30) and not calls("Jonah", "click")[-1]["error"] and not js(P, "!!document.querySelector('.chat-view .approve-card')"), "On its own, Jonah clicks without asking")
+        send(P, "permSet", site="127.0.0.1", action="interact", companion="maya", mode="")
+        send(P, "permSet", site="127.0.0.1", action="interact", companion="jonah", mode="")
 
         # @Jonah in the message box: Nora is told to bring Jonah in, and asks.
         plan({"Nora": [{"text": "Hello."}, {"text": "Read it: the review likes the warm light."}, {"text": "I can only see the one you shared."},

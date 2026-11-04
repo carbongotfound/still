@@ -22,7 +22,11 @@ public partial class MainWindow : Window
  readonly List<DownloadItem> downloads = [];
  readonly DispatcherTimer saveTimer = new() { Interval = TimeSpan.FromMilliseconds(450) };
  readonly DispatcherTimer toastTimer = new() { Interval = TimeSpan.FromSeconds(5) };
- string privateProfile => sharedPrivateProfile;
+ // Each incognito window has its own InPrivate session, so two never share a sign-in; private tabs in a normal window share one.
+ readonly string ownPrivateProfile = "Private" + Guid.NewGuid().ToString("N");
+ string privateProfile => incognito ? ownPrivateProfile : sharedPrivateProfile;
+ internal const string CompanionEngine = "Companion"; // the companion profile's WebView2 profile (Where companions browse)
+ string EngineOf(BrowserTab tab) => tab.Private ? privateProfile : tab.Engine ?? "Default";
  BrowserTab? active;
  bool dark, closing, focusMode;
  string panel = "";
@@ -39,7 +43,8 @@ public partial class MainWindow : Window
   Activated += (_, _) => LastActive = this;
   state = sharedState ??= store.Load();
   StartupMetrics.Mark("session-loaded");
-  if(state.UiVersion==0)state.Welcome=true; // brand-new install: show the welcome setup
+  if(state.UiVersion==0){state.Welcome=true;state.SeenVersion=CurrentVersion.ToString(2);} // brand-new install: the welcome setup, not What's New
+  if(App.IsQa&&Environment.GetEnvironmentVariable("STILL_QA_WHATSNEW")==null)state.SeenVersion=CurrentVersion.ToString(2); // tests see What's New only when they ask
   if(state.UiVersion<2){if(state.UiVersion>0)state.Preferences.Theme="Dark";state.UiVersion=2;} // new installs follow the system
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   if(state.UiVersion<4){state.Preferences.OfferPasswordSave=state.Preferences.OfferPasswordUpdate=true;state.UiVersion=4;} // offering to save logins is on by default, like other browsers
@@ -47,6 +52,7 @@ public partial class MainWindow : Window
   if(state.UiVersion<6){state.Welcome=true;DropUntouchedDefaults(state.Preferences);state.UiVersion=6;} // 1.9: everyone makes their own companion, once
   MoveOldCrew(state.Preferences);
   foreach(var c in state.Preferences.Companions)Equip(c); // hired before the roles came with skills and knowledge files
+  foreach(var c in state.Preferences.Companions)c.Look=Unmarked(c.Look); // Stage 17 took the markings out
   if(!state.Preferences.NamesChecked)FlagOldNames(state.Preferences); // Still's old stock names: ask once whether to keep one
   Width = Math.Clamp(Prefs.Width, MinWidth, Math.Max(MinWidth, SystemParameters.WorkArea.Width - 60));
   Height = Math.Clamp(Prefs.Height, MinHeight, Math.Max(MinHeight, SystemParameters.WorkArea.Height - 60));
@@ -59,7 +65,7 @@ public partial class MainWindow : Window
   WindowState = App.IsQa ? WindowState.Normal : WindowState.Maximized; // open maximized by default (above the taskbar)
   // Test windows open where the test runner says (its own screen), never over the user's work.
   if (App.IsQa && Environment.GetEnvironmentVariable("STILL_QA_POS")?.Split(',') is [var qx, var qy]) { WindowStartupLocation = WindowStartupLocation.Manual; Left = double.Parse(qx); Top = double.Parse(qy); }
-  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); WatchRoutines(); int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
+  SourceInitialized += (_, _) => { var h = new WindowInteropHelper(this).Handle; InitializeFullScreen(); WatchDefaultOutput(); WatchRoutines(); WatchSummaries(); CompanionMemory.NameOf = NameOf; int round = 2; DwmSetWindowAttribute(h, 33, ref round, 4); ApplyTheme(); };
   Loaded += async (_, _) => {
    StartupMetrics.Mark("window-loaded");
    if (!secondary) RestoreOtherWindows();
@@ -88,6 +94,7 @@ public partial class MainWindow : Window
   };
   Closing += (_, _) => {
    closing = true; saveTimer.Stop(); memoryTimer.Stop(); Hide(); // disappear at once; tearing down the pages can take a moment
+   if (incognito) EndIncognito();
    if(IsFullScreen){Prefs.Width=fullScreenRestoreBounds.Width;Prefs.Height=fullScreenRestoreBounds.Height;}
    else if (!secondary && WindowState == WindowState.Normal) { Prefs.Width = ActualWidth; Prefs.Height = ActualHeight; }
    Save(); if (!Unsaved) closedWindows.Add((DateTime.UtcNow, tabs.ToArray()));
@@ -220,10 +227,10 @@ public partial class MainWindow : Window
   AddMenu(menu, "Close other unpinned tabs", async () => { foreach (var other in tabs.Where(t => t != tab && !t.Pinned).ToList()) await CloseTab(other, true); });
   return menu;
  }
- async Task<BrowserTab> NewTab(string url = "", bool isPrivate = false, bool prompt = true)
+ async Task<BrowserTab> NewTab(string url = "", bool isPrivate = false, bool prompt = true, string? engine = null)
  {
   isPrivate |= incognito; // every tab in an incognito window is private
-  var tab = new BrowserTab { Url = url, Private = isPrivate, Title = isPrivate ? "Private tab" : "New tab" };
+  var tab = new BrowserTab { Url = url, Private = isPrivate, Title = isPrivate ? "Private tab" : "New tab", Engine = isPrivate ? null : engine }; // a link from a companion's page stays in its profile
   tabs.Add(tab); await SelectTab(tab);
   if (prompt && url.Length == 0) ShowAddress("");
   SaveLater(); return tab;
@@ -241,8 +248,47 @@ public partial class MainWindow : Window
  BrowserTab ChatTab(string chatId)
  {
   if (tabs.FirstOrDefault(t => t.ChatId == chatId) is { } open) return open;
-  var tab = new BrowserTab { ChatId = chatId, Title = AiChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
+  var tab = new BrowserTab { ChatId = chatId, Title = MyChats.FirstOrDefault(c => c.Id == chatId)?.Title is { Length: > 0 } title ? title : "Chat" };
   tabs.Add(tab); SaveLater(); return tab;
+ }
+ /// A Still app tab: it shows a chat or one of the home's pages, and going from one to another changes it in place.
+ /// In an incognito window it's that window's private tab, and it only ever shows the window's own chats.
+ bool IsAppTab(BrowserTab t) => t.InChat == null && (t.ChatId != null || t.Url.Length == 0 && (!t.Private || incognito));
+ static string Spot(BrowserTab t) => t.ChatId is { } chat ? "chat:" + chat : "home:" + t.Home;
+ /// A place Back or Forward can still go: a home page, or a chat that's still here and not open in another tab.
+ bool CanGo(string spot) => !spot.StartsWith("chat:") || MyChats.Any(c => c.Id == spot[5..]) && !tabs.Any(t => t.ChatId == spot[5..]);
+ /// The app tab in view with nothing else on screen: Back and Forward move through its own places.
+ BrowserTab? AppNav => active is { } a && IsAppTab(a) && Shown?.View == null ? a : null;
+ /// Where a chat or home page opens: the app tab in view, else the one used last, else a new one.
+ async Task<BrowserTab> AppTab() => active is { } a && IsAppTab(a) ? a : tabs.Where(IsAppTab).MaxBy(t => t.LastActive) ?? await NewTab("", false, false);
+ /// Shows a chat ("chat:<id>") or home page ("home:<page>") in an app tab, in place; Back comes back here.
+ async Task Go(BrowserTab tab, string spot, bool remember = true)
+ {
+  if (spot != Spot(tab)) {
+   if (remember) { tab.Back.Add(Spot(tab)); tab.Forward.Clear(); }
+   if (spot.StartsWith("chat:")) { tab.ChatId = spot[5..]; tab.Home = ""; tab.Title = MyChats.FirstOrDefault(c => c.Id == tab.ChatId)?.Title is { Length: > 0 } title ? title : "Chat"; }
+   else { tab.ChatId = null; tab.Home = spot[5..]; tab.Title = tab.Private ? "Private tab" : "New tab"; }
+   tab.PageOpen = false;
+  }
+  await SelectTab(tab); SaveLater();
+ }
+ /// Opens a chat: where it's already open (in any window like this one), else in a new tab when asked, else in place.
+ async Task OpenChat(string id, bool newTab = false)
+ {
+  if (tabs.FirstOrDefault(t => t.ChatId == id) is { } open) { await SelectTab(open); return; }
+  if (!incognito && Windows.FirstOrDefault(w => w != this && !w.incognito && w.tabs.Any(t => t.ChatId == id)) is { } other) { other.Activate(); await other.SelectTab(other.tabs.First(t => t.ChatId == id)); return; }
+  if (newTab) await SelectTab(ChatTab(id)); else await Go(await AppTab(), "chat:" + id);
+ }
+ /// Back (-1) or Forward (1) in the app tab, past chats that were deleted or opened in another tab since.
+ async Task AppStep(int step)
+ {
+  if (AppNav is not { } tab) return;
+  var (from, to) = step < 0 ? (tab.Back, tab.Forward) : (tab.Forward, tab.Back);
+  while (from.Count > 0) {
+   var spot = from[^1]; from.RemoveAt(from.Count - 1);
+   if (CanGo(spot)) { to.Add(Spot(tab)); await Go(tab, spot, false); return; }
+  }
+  ShellPublish();
  }
  async Task SelectTab(BrowserTab tab)
  {
@@ -262,7 +308,7 @@ public partial class MainWindow : Window
   PrivateNote.Visibility = tab.Private ? Visibility.Visible : Visibility.Collapsed;
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
   RenderTabs(); UpdateChrome(); SaveLater();
-  if (tab.ChatId is { } chat) { aiChat = AiChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
+  if (tab.ChatId is { } chat) { aiChat = MyChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
   if (tab.ChatId != null || leaving?.ChatId != null) PublishAi();
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
   if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;LayoutSplit();RestorePageWindow(); if (shown == tab) view.Focus(); }
@@ -325,7 +371,7 @@ public partial class MainWindow : Window
  {
   ClearViewColor();
   var view = new WebView2 {
-   CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = tab.Private ? privateProfile : "Default", IsInPrivateModeEnabled = tab.Private },
+   CreationProperties = new CoreWebView2CreationProperties { UserDataFolder = Path.Combine(App.DataRoot, "WebView"), ProfileName = EngineOf(tab), IsInPrivateModeEnabled = tab.Private },
    DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White,
    Visibility = Shown == tab && panel == "" ? Visibility.Visible : Visibility.Hidden
   };
@@ -333,7 +379,7 @@ public partial class MainWindow : Window
   view.Loaded+=(_,_)=>RestorePageWindow();
   WebHost.UpdateLayout();
   try {
-   var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=tab.Private?privateProfile:"Default";options.IsInPrivateModeEnabled=tab.Private;
+   var environment=await App.BrowserEnvironment;var options=environment.CreateCoreWebView2ControllerOptions();options.ProfileName=EngineOf(tab);options.IsInPrivateModeEnabled=tab.Private;
    await view.EnsureCoreWebView2Async(environment,options); ClearViewColor();
    StartupMetrics.Mark("page-controller");
    if (tab.Closed || tab.View != view || closing) return;
@@ -347,6 +393,8 @@ public partial class MainWindow : Window
    // Alerts, confirms and prompts show inside Still (and AI agents can answer them) instead of a Windows dialog.
    core.Settings.AreDefaultScriptDialogsEnabled = false;
    ApplyProtection(core);
+   // Setup's first task works on a made-up comparison page that ships with Still: an https address agents may open.
+   core.SetVirtualHostNameToFolderMapping(SampleHost, Path.Combine(await AppContent.ShellFolder, "sample"), CoreWebView2HostResourceAccessKind.DenyCors);
    core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
    if (Directory.Exists(Prefs.DownloadFolder)) core.Profile.DefaultDownloadFolderPath = Prefs.DownloadFolder;
    // Black while a page loads (no white flash in the dark theme), then the normal canvas: white unless the page asks for dark, as in Edge.
@@ -450,7 +498,7 @@ public partial class MainWindow : Window
     bool agent = tab.Agent != null && DateTime.UtcNow - tab.AgentActedAt < TimeSpan.FromSeconds(10);
     if (!agent && e.WindowFeatures.HasSize) { await OpenPageWindow(tab, e); return; }
     // A link an AI just clicked opens as another background AI tab, and the AI moves into it.
-    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank", tab.InChat != null) : await NewTab("about:blank", tab.Private, false);
+    var child = agent ? await OpenAgentTab(tab.AgentKey ?? tab.Agent!, "about:blank", tab.InChat != null) : await NewTab("about:blank", tab.Private, false, tab.Engine);
     if (child.View?.CoreWebView2 is { } childCore) e.NewWindow = childCore;
    } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
    finally { deferral.Complete(); }
@@ -606,8 +654,8 @@ public partial class MainWindow : Window
  void CloseWindow(object s, RoutedEventArgs e) => Close();
  void MinimizeWindow(object s, RoutedEventArgs e) => WindowState = WindowState.Minimized;
  void MaximizeWindow(object s, RoutedEventArgs e) => ToggleMaximize();
- void BackClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); }
- void ForwardClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); }
+ async void BackClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoBack: true } c) c.GoBack(); else await AppStep(-1); }
+ async void ForwardClick(object s, RoutedEventArgs e) { if (Shown?.View?.CoreWebView2 is { CanGoForward: true } c) c.GoForward(); else await AppStep(1); }
  async void ReloadClick(object s, RoutedEventArgs e) { if (Shown is not { } tab || tab.Url.Length == 0) return; if (tab.View?.CoreWebView2 is { } c) { if (tab.Loading) c.Stop(); else if (tab.ShowingError) c.Navigate(tab.Url); else { tab.Reader = false; c.Reload(); } } else await EnsureView(tab); }
  void AddressClick(object s, RoutedEventArgs e) => ShowAddress(active?.Url ?? "");
  void BookmarkClick(object s, RoutedEventArgs e) => ToggleBookmark();

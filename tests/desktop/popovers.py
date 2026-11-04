@@ -156,8 +156,8 @@ def popovers(process, layout, theme):
     type_into(process, ".ai-sidebar [aria-label=Message]", "")
     send(process, "aiAdvanced", on=True)
     if until(lambda: js(process, "!!document.querySelector('.ai-sidebar .ai-model')"), 5):
-        menu(process, "Model picker", ".ai-sidebar .ai-model", "[data-slot=select-content]")
-        menu(process, "Effort picker", ".ai-sidebar .ai-pick:not(.ai-model)", "[data-slot=select-content]")
+        menu(process, "Model picker", ".ai-sidebar .ai-model")
+        menu(process, "Effort picker", ".ai-sidebar .ai-pick:not(.ai-model)")
     else:
         check(False, "Advanced shows the model and effort pickers")
     escape(process)
@@ -165,7 +165,7 @@ def popovers(process, layout, theme):
     until(lambda: not js(process, "!!document.querySelector('.ai-sidebar .ai-model')"), 5)
     tip(process, "Page chip", ".ai-sidebar span.chat-chip")
     tip(process, "Remember this chat", ".ai-sidebar .chat-memory [role=switch]")
-    for label in ("AI settings", "Close chat"):
+    for label in ("Model settings", "Close chat"):
         tip(process, label, f".ai-sidebar .ai-head button[aria-label='{label}']")
 
     submit(process, "hello")
@@ -174,7 +174,7 @@ def popovers(process, layout, theme):
     else:
         check(False, "The fake reply arrives")
     mode_menu(process, False)
-    for label in ("Open as a tab", "New chat", "AI settings", "Close chat"):
+    for label in ("Open as a tab", "New chat", "Model settings", "Close chat"):
         tip(process, label, f".ai-sidebar .ai-head button[aria-label='{label}']")
 
     submit(process, "WAIT a moment")

@@ -11,6 +11,7 @@ namespace Still;
 // Automatic updates: check GitHub's latest public release (startup + every 2 hours), download the
 // installer in the background, verify it against GitHub's published SHA-256, then install silently
 // when Still closes, or immediately via "Restart to update". Only the installed copy updates itself.
+// With Update automatically off (Prefs.AutoUpdate), it still checks and shows Update, and downloads only when that's clicked.
 public partial class MainWindow
 {
  const string LatestRelease = "https://api.github.com/repos/carbongotfound/still/releases/latest";
@@ -39,7 +40,7 @@ public partial class MainWindow
   timer.Start();
   _ = Dispatcher.InvokeAsync(async () => { await Task.Delay(TimeSpan.FromSeconds(15)); await CheckForUpdate(); });
   // Install a downloaded update silently when the last window closes.
-  Application.Current.Exit += (_, _) => { if (update?.Installer is { } setup && updateOnExitArmed) RunInstaller(setup, relaunch: false); };
+  Application.Current.Exit += (_, _) => { if (update?.Installer is { } setup && updateOnExitArmed && Prefs.AutoUpdate) RunInstaller(setup, relaunch: false); };
  }
 
  async Task CheckForUpdate()
@@ -56,7 +57,7 @@ public partial class MainWindow
    if (latest <= CurrentVersion) { if (update != null) { update = null; PublishAll(); } return; }
    string version = latest.ToString(3);
    if (update?.Version != version) { update = new UpdateInfo(version, ReleasePage + "tag/" + Uri.EscapeDataString(tag), null); PublishAll(); }
-   if (CanSelfUpdate && update.Installer == null && !updateDownloading) await DownloadUpdate(root, version);
+   if (CanSelfUpdate && (Prefs.AutoUpdate || applyWhenReady) && update.Installer == null && !updateDownloading) await DownloadUpdate(root, version);
   } catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or JsonException or KeyNotFoundException or InvalidOperationException or IOException or UnauthorizedAccessException) { App.Log(ex); }
  }
 

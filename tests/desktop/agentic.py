@@ -70,7 +70,10 @@ REVIEWS = [("Best laptops under $800, tested", "/reviews/best", "We used twelve 
 def results(query):
     q = query.get("q", [""])[0]
     rows = "".join(f'<div class="result"><h2><a class="result__a" href="{path}">{title}</a></h2><a class="result__snippet">{snip}</a></div>' for title, path, snip in REVIEWS)
-    return f"<!doctype html><meta charset=utf-8><title>{q} at Search</title><nav>Search menu</nav><main>{rows}</main>"
+    # Like Google on a first visit, the page sends itself on to a slow address answered with no content, so it stays
+    # put: a lookup must wait that out, and the next lookup must not take that cut-off reload for its own.
+    again = "<script>addEventListener('load', () => setTimeout(() => location.replace(location.href + '&sei=1'), 50))</script>"
+    return f"<!doctype html><meta charset=utf-8><title>{q} at Search</title><nav>Search menu</nav><main>{rows}</main>{again}"
 
 
 def review(path):
@@ -81,6 +84,11 @@ def review(path):
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         url = urllib.parse.urlparse(self.path)
+        if "sei=" in url.query:
+            time.sleep(1.5)
+            self.send_response(204)
+            self.end_headers()
+            return
         body = (store(urllib.parse.parse_qs(url.query)) if url.path == "/laptops"
                 else results(urllib.parse.parse_qs(url.query)) if url.path == "/search"
                 else review(url.path) if url.path.startswith("/reviews/")
@@ -98,6 +106,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 SITE = f"http://127.0.0.1:{SERVER.server_port}"
+# The pill is up with Maya at work: her step line, then her name and time.
+MAYA_AT_WORK = "(c => c?.dataset.state === 'working' && c.innerText.includes('Maya'))(document.querySelector('.page-control'))"
 CSV = "Name,Price,Store\n" + "".join(f"\"{n.replace(chr(34), chr(34) * 2)}\",{p},Pinecone Store\n" for n, p in CHEAP)
 
 # ---- the fake AI app: Still's MCP server, driven by a script ----
@@ -304,8 +314,9 @@ def laptops(process):
     chat = chats().get(f"LAPTOPS {SITE}", {})
     check(page and page["InChat"] == chat.get("Id") and len(strip(process)) == mine + 1, "Its page opens as a background tab of the chat, and your tabs stay as they were")
     check(js(process, "!!document.querySelector('.page-column.is-split .chat-pane') && !!document.querySelector('.page-column.is-split .page-pane')"), "The chat splits to show its page on the right")
-    check(until(lambda: "Maya is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""), 5), "The pill says who's working")
-    check(js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')") == "Take over|Stop", "The pill offers Take over and Stop")
+    check(until(lambda: js(process, MAYA_AT_WORK), 5), "The pill says who's working")
+    buttons = js(process, "[...document.querySelectorAll('.page-control button')].map(b => b.getAttribute('aria-label') || b.innerText.trim()).join('|')")
+    check(buttons == "Show steps|Take over|Stop Maya", "The pill offers its steps, Take over and Stop: " + str(buttons))
     cursor = rpc(process, "eval", tab=page["Id"], world="still", script="(() => { const h = window[Symbol.for('still.cursor')]; return h ? h[Symbol.for('still.cursor')].tag.textContent : '' })()")
     check(cursor == "Maya", "The AI's cursor shows in the page with its name")
     check(rpc(process, "eval", tab=page["Id"], script="document.querySelector('#q').value") == "laptop", "Typing reached the search field")
@@ -314,8 +325,10 @@ def laptops(process):
     capture(process, "split-v01")
     done = until(lambda: js(process, "!!document.querySelector('.chat-pane .file-card')"), 30)
     check(done, "The saved file shows as a card in the chat")
-    saved = next(PROFILE.glob("library/*/laptops-under-800.csv"), None)
-    raw = saved.read_bytes() if saved else b""
+    def csv_bytes():  # the card can show before the file is written out
+        saved = next(PROFILE.glob("library/*/laptops-under-800.csv"), None)
+        return saved.read_bytes() if saved else b""
+    raw = until(lambda: (r := csv_bytes()).decode("utf-8-sig", "replace").count("\n") == 11 and r, 5) or csv_bytes()
     check(raw.startswith(b"\xef\xbb\xbf") and raw.decode("utf-8-sig").count("\n") == 11, "save_file writes the CSV to the Library, with a BOM for Excel")
     check(len(list(PROFILE.glob("library/*/*"))) == 1 and js(process, "document.querySelectorAll('.file-card').length") == 1,
           "Saving the same name again replaces the file and keeps one card")
@@ -329,7 +342,7 @@ def laptops(process):
     send(process, "chatPage", on=False)
     until(lambda: not js(process, "!!document.querySelector('.page-column.is-split')"), 5)
     check("laptops-under-800.csv" in (js(process, "document.querySelector('.chat-info')?.innerText ?? ''") or ""), "The chat's details list its files")
-    check("Took " in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat opened later still says how long it worked")
+    check("Took " not in (js(process, "document.querySelector('.chat-pane')?.innerText ?? ''") or ""), "A finished chat shows no Took line")
     time.sleep(.6)
     capture(process, "done-v01")
     click(process, ".chat-pane .file-card-open")
@@ -400,8 +413,7 @@ def parallel(process):
     click(process, ".page-mine")
     moved = until(lambda: next((t for t in tabs(process) if t["Id"] == a["Id"] and not t["InChat"]), None), 5)
     check(moved and rpc(process)["activeId"] == a["Id"] and len(strip(process)) == before + 1, "Move to my tabs puts Maya's page in your tab strip, in front")
-    check(until(lambda: "Maya is working" in (js(process, "document.querySelector('.page-control')?.innerText ?? ''") or "")
-                and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Maya keeps working there, with the pill and its mark on the tab")
+    check(until(lambda: js(process, MAYA_AT_WORK) and js(process, "document.querySelectorAll('.tab-agent').length") == 1, 5), "Maya keeps working there, with the pill and its mark on the tab")
     time.sleep(.5)
     capture(process, "mine-v01")
     click(process, ".page-stop")
@@ -422,7 +434,7 @@ def lookup(process):
     click(process, ".chat-pane details.ai-look summary")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-look[open] li').length") == 3, 3), "Opening the search row lists its results")
     check(js(process, "!!document.querySelector('.chat-pane .md-table table') && !!document.querySelector('.chat-pane .md-draft button')"), "The answer has a clean table and a draft with its own Copy button")
-    check(js(process, "document.querySelectorAll('.chat-pane .ai-next-step').length") == 3, "It ends with three next steps to pick from")
+    check(js(process, "document.querySelectorAll('.chat-pane .choice-card .ask-option').length") == 3, "It ends with a choice card of three next steps")
     time.sleep(.5)
     capture(process, "lookup-v01")
 

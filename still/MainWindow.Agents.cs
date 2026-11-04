@@ -25,6 +25,12 @@ public partial class MainWindow
   public DateTime Seen;
   public bool Paused; // the user took over: its calls wait until they hand it back
   public string SignIn = ""; // paused on a sign-in page of this site: the user signs in, then hands it back
+  // For the pill: the tool running now and what it works on (a site, a search, a teammate; never what's typed),
+  // the steps done since this stretch of work began, and the last few of them in the past tense.
+  public string Tool = "", Target = "";
+  public int Count;
+  public DateTime Since;
+  public readonly List<string> Recent = new();
   public (string Site, DateTime At) SignedIn; // when the user last handed back after signing in
  }
  static readonly Dictionary<string, Worker> workers = new(StringComparer.OrdinalIgnoreCase);
@@ -39,7 +45,7 @@ public partial class MainWindow
  static string Hue(Companion? c) => c?.Look is { Length: > 0 } look && System.Text.RegularExpressions.Regex.Match(look, "\"color\":\"(#[0-9a-fA-F]{6})\"") is { Success: true } m ? m.Groups[1].Value : c?.Color switch { "sage" => "#5c7a76", "lavender" => "#8f80aa", "apricot" => "#e8a76c", "mint" => "#8fcbbc", "blush" => "#f2a487",
   "periwinkle" => "#bbadea", "berry" => "#ed5a31", _ => "#4f7cf0" };
  /// Who's at work now: seen in the last 2 minutes, or waiting while the user took over.
- static IEnumerable<KeyValuePair<string, Worker>> AtWork() => workers.Where(w => approvedAgents.Contains(w.Value.Name) && (w.Value.Paused || DateTime.UtcNow - w.Value.Seen < TimeSpan.FromMinutes(2)));
+ static IEnumerable<KeyValuePair<string, Worker>> AtWork() => workers.Where(w => approvedAgents.Contains(w.Value.Name) && (w.Value.Paused || w.Value.Tool.Length > 0 || DateTime.UtcNow - w.Value.Seen < TimeSpan.FromMinutes(2)));
  // One question in the agent bar at a time: letting a new agent in, or an action that needs the user's OK (uploads).
  static TaskCompletionSource<bool>? agentApproval;
  static string askClient = "", askText = "";
@@ -47,7 +53,7 @@ public partial class MainWindow
  // Ends an agent's running call early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
  static readonly Dictionary<string, TaskCompletionSource<string>> agentInterrupts = new(StringComparer.OrdinalIgnoreCase);
  static bool agentServerStarted;
- internal static MainWindow Home => LastActive is { closing: false, temporary: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
+ internal static MainWindow Home => LastActive is { closing: false, temporary: false, incognito: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary && !w.incognito) ?? Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
 
  // Any number of agents at once: each connection gets its own pipe instance, and calls run side by side.
  internal static void StartAgentServer(string instance)
@@ -102,7 +108,9 @@ public partial class MainWindow
     case false: return Fail("The user blocked this agent in Still for this session.");
     case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
    }
-   var me = Me(who); me.Seen = DateTime.UtcNow;
+   var me = Me(who);
+   if (DateTime.UtcNow - me.Seen > TimeSpan.FromMinutes(2) && !me.Paused) { me.Since = DateTime.UtcNow; me.Count = 0; me.Recent.Clear(); } // a new stretch of work
+   me.Seen = DateTime.UtcNow;
    // The user took over: wait for them to hand it back, like a person would.
    for (var paused = DateTime.UtcNow.AddSeconds(40); me.Paused && DateTime.UtcNow < paused;) { await Task.Delay(250); me.Seen = DateTime.UtcNow; }
    if (stoppedAgents.TryGetValue(who, out until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
@@ -118,11 +126,22 @@ public partial class MainWindow
    string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
    if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
-   var working = RunTool(who, tool, args, quick);
-   int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
-   var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
-   string result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
-    : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
+   var going = runs.GetValueOrDefault(who);
+   if (going?.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
+   me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
+   string result;
+   try {
+    var working = RunTool(who, tool, args, quick);
+    int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
+    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
+    result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
+     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
+    if (going != null) {
+     if (going.Intent is { } ran) { if (first == working) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; going.Intent = null; } // cut off: uncertain
+     Checkpoint(going, tool, result);
+    }
+    if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
+   } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
    if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who);
    PublishAll();
    return result;
@@ -197,13 +216,15 @@ public partial class MainWindow
   if (agentApproval != null) return new { client = askClient, pending = true, action = "", ask = askText, paused = false };
   string? shown = Shown?.Id;
   var at = AtWork().OrderByDescending(w => agentTabs.GetValueOrDefault(w.Key) == shown).ThenByDescending(w => w.Value.Seen).FirstOrDefault();
-  return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, signIn = me.SignIn, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key } : null;
+  return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, signIn = me.SignIn, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key,
+   tool = me.Tool, target = me.Target, since = me.Since == default ? null : me.Since.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'"), count = me.Count, recent = me.Recent.ToArray() } : null;
  }
  // Take over: the agent stops at once and waits while the user drives, and the tab it works in comes to the front.
  async Task TakeOver(bool on, string key)
  {
   if (workers.GetValueOrDefault(key) is not { } me) return;
   me.Paused = on;
+  TaskState(runs.GetValueOrDefault(key), on ? "paused" : "running");
   if (!on && me.SignIn.Length > 0) { me.SignedIn = (me.SignIn, DateTime.UtcNow); me.SignIn = ""; }
   if (on && agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail(TookOver));
   if (on && agentTabs.GetValueOrDefault(key) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
@@ -226,6 +247,7 @@ public partial class MainWindow
   var me = Me(who);
   if (me.Paused) return;
   me.Paused = true; me.SignIn = site;
+  TaskState(runs.GetValueOrDefault(who), "paused", "site");
   if (!t.Closed) await w.SelectTab(t);
   PublishAll(); w.Toast(me.Label + " needs you to sign in to " + site + ". It never sees your password.");
  }
@@ -468,7 +490,11 @@ public partial class MainWindow
   if (id.Length == 0 && agentTabs.TryGetValue(who, out var last) && FindTab(last) != null) id = last;
   foreach (var w in Windows.Where(w => !w.closing)) {
    var t = id.Length > 0 ? w.tabs.FirstOrDefault(x => x.Id == id) : (w == this ? w.active : null);
-   if (t != null) { if (t.Private) throw new InvalidOperationException("Private tabs are off-limits to agents."); Claim(who, w, t); return (w, t); }
+   if (t != null) {
+    // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
+    if (Incognito(who) ? (t.InChat ?? t.RunChat) != who : t.Private) throw new InvalidOperationException(Incognito(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.");
+    Claim(who, w, t); return (w, t);
+   }
   }
   throw new InvalidOperationException(id.Length > 0 ? "No tab with that id. Call list_tabs." : "There is no active tab.");
  }
@@ -500,7 +526,7 @@ public partial class MainWindow
  }
  /// The window for a chat run's pages: one showing the chat, else one with the chat's tab, else the last used.
  static MainWindow? ChatRunner(string who) => runs.TryGetValue(who, out var run)
-  ? Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
+  ? run.Chat.Ephemeral ? OwnerOf(run.Chat) : Windows.FirstOrDefault(w => !w.closing && w.Showing(run.Chat)) ?? Windows.FirstOrDefault(w => !w.closing && w.tabs.Any(t => t.ChatId == run.Chat.Id)) ?? Home : null;
  // Background (the default for Still's own chat): the page belongs to the chat and shows only beside it, never in the
  // user's tab strip. Otherwise Still's chat opens it as the user's own tab, beside the chat, and other AI apps open it
  // next to the other AI tabs. An AI app's background tabs belong to it ("app:" + who) and show in the running tasks.
@@ -511,7 +537,11 @@ public partial class MainWindow
   string? chat = runs.TryGetValue(who, out var run) ? who : null;
   if (Windows.SelectMany(w => w.tabs).Count(t => !t.Closed && (chat != null ? (t.RunChat ?? t.InChat) == chat : t.AgentGroup && t.AgentKey == who || t.InChat == AppPages + who)) >= AgentTabCap)
    throw new InvalidOperationException($"You already have {AgentTabCap} tabs open. Reuse one with navigate, or close one with close_tab first.");
-  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null };
+  // An incognito chat's pages are private tabs in its own window: the private engine profile, no history, no saved
+  // passwords or cookies. No other agent opens a tab in an incognito window.
+  bool priv = run?.Chat.Ephemeral == true;
+  if (priv ? OwnerOf(run!.Chat) != this : incognito) throw new InvalidOperationException(priv ? "The incognito window closed." : "Agents don't open tabs in an incognito window.");
+  var tab = new BrowserTab { Url = url, Title = Host(url), Agent = Me(who).Name, AgentKey = who, AgentGroup = chat == null && !background, RunChat = background ? null : chat, InChat = background ? chat ?? AppPages + who : null, Private = priv, Engine = !priv && OnCompanion(who) ? CompanionEngine : null };
   if (background) tabs.Add(tab);
   else if (chat != null) tabs.Insert(active != null && tabs.IndexOf(active) is >= 0 and var at ? at + 1 : tabs.Count, tab);
   else {
@@ -538,6 +568,7 @@ public partial class MainWindow
   while (t.Loading && DateTime.UtcNow < until) await Task.Delay(100);
  }
  /// What an agent may open: web pages, and files inside its companion's working folder (a builder tests what it made there).
+ internal const string SampleHost = "sample.still.internal"; // Shell/sample, mapped into every tab
  static string WebUrl(string input, string engine, string folder = "")
  {
   var url = ResolveAddress(input, engine);
@@ -604,9 +635,12 @@ public partial class MainWindow
   bool marked = Prefs.SensitiveSites.Any(s => OnSite(s, site));
   if (action == "interact" && (why.Length > 0 || marked)) { action = "sensitive"; if (why.Length == 0) why = "You marked " + site + " as sensitive."; }
   var run = runs.GetValueOrDefault(who);
-  // Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
-  string mode = PermissionMode(run?.Chat.Companion ?? "", site, action) ?? (run != null ? DefaultPermission(action) : marked ? "ask" : "always"), key = action + " " + site;
-  bool granted = mode == "always" || mode == "chat" && (run?.Chat.Allowed.Contains(key) ?? sessionGrants.Contains(who + " " + key));
+  // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
+  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  var up = run == null ? default : ExchangeOf(run.Chat);
+  string mode = run != null ? Delegation.Strictest(up.Chain.Select(c => PermissionMode(c, site, action) ?? DefaultPermission(action))) : PermissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site;
+  bool granted = mode == "always" || mode == "chat" && (run != null ? up.Root.Allowed.Contains(key) : sessionGrants.Contains(who + " " + key));
+  if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again
   if (run == null) {
    if (granted) return null;
    string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site;
@@ -619,13 +653,18 @@ public partial class MainWindow
   }
   if (granted && action != "sensitive") { if (action == "interact") Audit(run.Chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat"); return null; }
   string answer = await Approve(run, what, site, action, why, countdown: granted);
+  if (answer == "always" && run.Chat.Ephemeral) answer = "chat"; // an incognito chat writes no site rules
   if (answer == "always") SetPermission(site, action, "", "always");
-  if (answer == "chat" && !run.Chat.Allowed.Contains(key)) run.Chat.Allowed.Add(key);
+  if (answer == "chat" && !up.Root.Allowed.Contains(key)) up.Root.Allowed.Add(key);
   Audit(run.Chat, what, site, answer switch {
    "always" => "You always allow this on " + site, "chat" => "You allowed it in this chat", "once" => "You allowed it once",
    "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",
    "timeout" => "No answer in 10 minutes", _ => "You said no" });
   PublishAiEverywhere();
+  if (answer is "always" or "chat" or "once" or "go" or "now" && action == "sensitive") {
+   if (run.Recheck) { run.Recheck = false; foreach (var s in run.Task.Sensitive.Where(s => s.Outcome == null)) s.Outcome = "rechecked"; }
+   run.Intent = new() { What = what, Site = site };
+  }
   return answer switch {
    "always" or "chat" or "once" or "go" or "now" => null,
    "cancel" => Fail("The user cancelled this before it ran. Don't try it again unless they ask."),
@@ -638,9 +677,11 @@ public partial class MainWindow
  {
   var card = new Approval(Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant(), what, site, action, why, countdown ? DateTime.UtcNow.AddSeconds(8) : null, new(TaskCreationOptions.RunContinuationsAsynchronously));
   run.Approvals.Add(card); PublishAiEverywhere();
+  if (!countdown) TaskState(run, "waiting", "approval", what + " on " + site);
   var wait = Task.Delay(countdown ? TimeSpan.FromSeconds(8) : TimeSpan.FromMinutes(10));
   string answer = await Task.WhenAny(card.Answer.Task, wait) == wait ? (countdown ? "go" : "timeout") : await card.Answer.Task;
   run.Approvals.Remove(card); PublishAiEverywhere();
+  if (!countdown && !run.Approvals.Any(a => a.Until == null)) TaskState(run, "running");
   return answer;
  }
  static void Audit(AiChat chat, string what, string site, string result)
@@ -648,7 +689,26 @@ public partial class MainWindow
   chat.Audit.Add(new() { What = what, Site = site, Result = result });
   if (chat.Audit.Count > 300) chat.Audit.RemoveRange(0, chat.Audit.Count - 300);
  }
- static void Did(string who, string action) => Me(who).Action = action.Length > 90 ? action[..90] + "…" : action;
+ static void Did(string who, string action)
+ {
+  var me = Me(who);
+  me.Action = action.Length > 90 ? action[..90] + "…" : action;
+  me.Recent.Add(me.Action); if (me.Recent.Count > 5) me.Recent.RemoveAt(0);
+ }
+ /// What a step works on, for the pill: the search, the teammate (with what it's about) or the site; never typed text.
+ static string TargetOf(string who, string tool, JsonElement args)
+ {
+  if (tool == "web_search") return Clip(S(args, "query").Trim().ReplaceLineEndings(" "), 60);
+  if (tool is "ask_companion" or "tell_companion") {
+   string name = S(args, "name").Trim().TrimStart('@'), title = S(args, "title").Trim().TrimEnd('.').ReplaceLineEndings(" ");
+   if (title.Length > 1 && char.IsLower(title[1])) title = char.ToLowerInvariant(title[0]) + title[1..]; // "Pricing research" reads as "about pricing research"; "SEO audit" stays
+   return name.Length == 0 ? "" : title.Length == 0 ? name : name + " about " + Clip(title, 50);
+  }
+  if (tool is "run_plugin_action" or "get_plugin_tools" or "find_plugins" or "list_connected_plugins") return "";
+  string url = S(args, "url");
+  if (url.Length == 0 && agentTabs.TryGetValue(who, out var id)) url = FindTab(id)?.Url ?? "";
+  return Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? Host(url) : "";
+ }
  /// The AI's cursor: an arrow with its name, in its companion's color, glides to where it's about to click.
  /// It's drawn inside the page (the page's own window covers Still's), clicks pass through it, and it fades on its own.
  static async Task Pointer(string who, BrowserTab t, CoreWebView2 core, double x, double y)
@@ -743,8 +803,19 @@ public partial class MainWindow
    case "offer_routine": return await OfferRoutine(who, args);
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
-   case "remember" or "recall" or "forget" or "update_knowledge": return Remembering(who, tool, args);
+   case "remember" or "recall" or "forget" or "update_knowledge" or "read_knowledge" or "open_memory_source": return Remembering(who, tool, args);
+   case "load_skill": {
+    // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
+    var run = runs.GetValueOrDefault(who);
+    var mine = run == null ? null : Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
+    string id = S(args, "id").Trim().TrimStart('/');
+    if (mine == null || !mine.Skills.Contains(id) || Skill.All.FirstOrDefault(k => k.Id == id) is not { } skill)
+     return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
+    Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();
+    return Reply(new { skill = skill.Name, instructions = skill.Body });
+   }
    case "save_file": {
+    if (Incognito(who)) return Fail(KeepsNothing);
     string name = string.Concat(Path.GetFileName(S(args, "name").Trim()).Split(Path.GetInvalidFileNameChars())).Trim(), content = S(args, "content");
     string ext = Path.GetExtension(name).ToLowerInvariant();
     if (ext is not (".csv" or ".tsv" or ".md" or ".json" or ".txt") || name.Length is < 5 or > 120) return Fail("Name the file with a .csv, .md, .json or .txt ending, like laptops.csv.");
@@ -762,7 +833,7 @@ public partial class MainWindow
     return Reply(new { done = $"{(again ? "Replaced" : "Saved")} {Path.GetFileName(file)} in the user's Library. It shows in the chat as a card they can open, so don't paste its contents in your reply." });
    }
    case "list_tabs":
-    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
+    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => Incognito(who) ? (t.InChat ?? t.RunChat) == who : !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "web_search": return await WebSearch(who, args);
    case "read_url": return await ReadUrl(who, args);
    case "read_attachment": return ReadAttachment(who, S(args, "id"), (int)Math.Max(0, N(args, "offset", 0)));

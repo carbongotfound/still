@@ -50,16 +50,17 @@ extension Browser {
   return engine + escapeData(q)
  }
 
- @MainActor func lookUp(_ url: String, _ script: String, _ args: [String: Any]) async throws -> Any? {
+ /// store: an incognito chat's window's private website data, in a page used once; otherwise the shared hidden page.
+ @MainActor func lookUp(_ url: String, _ script: String, _ args: [String: Any], store: WKWebsiteDataStore? = nil) async throws -> Any? {
   await Lookup.enter()
   defer {
    Lookup.idle = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { _ in Lookup.view?.stopLoading(); Lookup.view = nil }
    Lookup.leave()
   }
   Lookup.idle?.invalidate()
-  let view = Lookup.view ?? {
+  let view = (store == nil ? Lookup.view : nil) ?? {
    let config = WKWebViewConfiguration()
-   config.websiteDataStore = pageStore // the profile's own website data, as in its tabs (never a private tab's)
+   config.websiteDataStore = store ?? pageStore // the profile's own website data, as in its tabs (never a private tab's)
    config.mediaTypesRequiringUserActionForPlayback = .all // never a sound
    config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
    config.preferences.isFraudulentWebsiteWarningEnabled = true
@@ -67,7 +68,7 @@ extension Browser {
    created.navigationDelegate = Lookup.helper
    created.uiDelegate = Lookup.helper
    self.applyBlocking(created)
-   Lookup.view = created
+   if store == nil { Lookup.view = created }
    return created
   }()
   guard let address = URL(string: url) else { throw AgentError("The page didn't load.") }
@@ -86,13 +87,21 @@ extension Browser {
   return try await agentJs(view, script, args)
  }
 
+ /// Where an AI's lookups load: an incognito chat's in its window's private website data.
+ func lookupStore(_ who: String) throws -> WKWebsiteDataStore? {
+  guard let run = runs[who], run.chat.ephemeral else { return onCompanion(who) ? companionStore : nil }
+  guard let owner = ownerOf(run.chat) else { throw AgentError("The incognito window closed.") }
+  return owner.privateStore
+ }
+
  @MainActor func webSearch(_ who: String, _ args: [String: Any]) async throws -> String {
+  let store = try lookupStore(who)
   let q = argText(args, "query").trimmingCharacters(in: .whitespacesAndNewlines)
   if q.isEmpty { return agentFail("Pass what to search for.") }
   let count = Int(min(10, max(1, argNumber(args, "count", 8))))
-  var found = try await lookUp(searchUrl(q), lookupScripts.results, ["count": count]) as? [Any] ?? []
+  var found = try await lookUp(searchUrl(q), lookupScripts.results, ["count": count], store: store) as? [Any] ?? []
   if found.isEmpty && pref("SearchEngine", "Google") != "DuckDuckGo" { // a consent page or a challenge
-   found = try await lookUp("https://html.duckduckgo.com/html/?q=" + escapeData(q), lookupScripts.results, ["count": count]) as? [Any] ?? []
+   found = try await lookUp("https://html.duckduckgo.com/html/?q=" + escapeData(q), lookupScripts.results, ["count": count], store: store) as? [Any] ?? []
   }
   did(who, "Searched “" + clipped(q, 60) + "”")
   if let run = runs[who] { run.chat.messages.append(AiMessage("search", jsonText(["q": q, "results": found]))); publishAiEverywhere() }
@@ -101,7 +110,7 @@ extension Browser {
 
  @MainActor func readUrl(_ who: String, _ args: [String: Any]) async throws -> String {
   let url = try agentWebUrl(argText(args, "url"))
-  let page = try await lookUp(url, lookupScripts.readable, ["offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))]) as? [String: Any] ?? [:]
+  let page = try await lookUp(url, lookupScripts.readable, ["offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))], store: try lookupStore(who)) as? [String: Any] ?? [:]
   let at = (page["url"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? url
   did(who, "Read " + hostName(at))
   if let run = runs[who] { run.chat.messages.append(AiMessage("read", jsonText(["url": at, "title": page["title"] as? String ?? ""]))); publishAiEverywhere() }

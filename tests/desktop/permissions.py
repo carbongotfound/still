@@ -18,7 +18,6 @@ Screenshots: docs/agentic/compare/ (approval-v01, sensitive-v01, countdown-v01, 
 import http.server
 import json
 from pathlib import Path
-import re
 import sys
 import textwrap
 import threading
@@ -251,7 +250,8 @@ def live(process):
     page = lambda: next((t for t in rpc(process)["tabs"] if t.get("Url", "").endswith("/mug")), None)
     on_page = lambda script: rpc(process, "evalTab", id=page()["Id"], script=script)
     control = lambda: js(process, "document.querySelector('.page-control')?.innerText ?? ''") or ""
-    check(until(lambda: page() and "is working" in control(), 180, .3), "Live: Claude opens the shop in front, and the pill says it's in control")
+    working = lambda: js(process, "document.querySelector('.page-control')?.dataset.state === 'working'")
+    check(until(lambda: page() and working(), 180, .3), "Live: Claude opens the shop in front, and the pill says it's in control")
 
     js(process, "document.querySelector('.page-take').click()")
     check(until(lambda: "You're in control" in control(), 5), "Live: Take over mid-run hands you the page")
@@ -260,7 +260,7 @@ def live(process):
     capture(process, "live-takeover-v01")
     time.sleep(3)
     js(process, "document.querySelector('.page-take').click()")
-    check(until(lambda: "is working" in control() or not control(), 5), "Live: Hand back gives Claude the page again")
+    check(until(lambda: working() or not control(), 5), "Live: Hand back gives Claude the page again")
 
     helped = until(lambda: "Help with this page" in (js(process, "document.querySelector('.ask-help')?.innerText ?? ''") or ""), 240, .5)
     check(helped, "Live: the code only you have shows a Help with this page card")
@@ -441,7 +441,7 @@ def crash_resume(process):
     check(offer, "After a crash, Still offers to resume the chat that was working")
     capture(process, "resume-all-v01")
     js(process, "[...document.querySelectorAll('[data-sonner-toast] button')].find(b => b.innerText.trim() === 'Resume all')?.click()")
-    check(until(lambda: any("pick up where you left off" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
+    check(until(lambda: any("Picked up where it stopped" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
     send(process, "aiStop", id=(chat_of("SLOW q") or {}).get("Id", ""))
     return process
 
@@ -487,8 +487,9 @@ def settings(process):
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
     capture(process, "permissions-v01")
     press(process, "Reset all", ".perm-settings")
-    press(process, "Reset now", ".perm-settings")
-    check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 10), "Reset all goes back to the defaults")
+    until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
+    js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
+    check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 15), "Reset all asks, then goes back to the defaults once Undo is gone")
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 

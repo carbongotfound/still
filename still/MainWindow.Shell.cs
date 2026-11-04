@@ -111,7 +111,7 @@ public partial class MainWindow
     // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.
     BrowserTab? Target()=>S("id") is {Length:>0} id?tabs.FirstOrDefault(t=>t.Id==id):active;
     switch(op) {
-     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellPublish();PublishAi();break;
+     case "ready": shellReady=true;StartupMetrics.Mark("shell-ready");ShellSend(new{kind="drafts",data=LoadDrafts()});ShellPublish();PublishAi();if(chatsProblem is { } problem){chatsProblem=null;Toast(problem);}break;
      case "bounds":
       if(contentFullScreen)return; // keep the normal layout bounds for when the video leaves fullscreen
       double ratio=data.TryGetProperty("viewportWidth",out var vp)&&vp.GetDouble()>0?shellView.ActualWidth/vp.GetDouble():1;
@@ -189,9 +189,12 @@ public partial class MainWindow
        case "tracking":if(new[]{"Basic","Balanced","Strict"}.Contains(value)){Prefs.Tracking=value;foreach(var t in tabs)if(t.View?.CoreWebView2 is {} tc)ApplyProtection(tc);}break;
        case "tearOff":Prefs.TabTearOff=value=="true";SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "askInChat":Prefs.AgentsAskInChat=value=="true";SaveLater();break;
+       case "agentProfile":if(value is "regular" or "companion"){Prefs.AgentProfile=value;foreach(var w in Windows)w.ShellPublish();}break;
        case "agents":Prefs.AgentsEnabled=value=="true";if(!Prefs.AgentsEnabled){approvedAgents.Clear();Prefs.ApprovedAgents.Clear();AnswerAgent(false);}SaveLater();foreach(var w in Windows)w.ShellPublish();break;
        case "memory":Prefs.MemorySaver=value=="true";foreach(var w in Windows)w.ApplyMemoryPolicy();break;
        case "sounds":Prefs.Sounds=value=="true";foreach(var w in Windows)w.ShellPublish();break;
+       case "drafts":Prefs.SaveDrafts=value=="true";if(!Prefs.SaveDrafts)DeleteDrafts();foreach(var w in Windows)w.ShellPublish();break;
+       case "autoUpdate":Prefs.AutoUpdate=value=="true";if(Prefs.AutoUpdate&&!App.IsQa)_=CheckForUpdate();foreach(var w in Windows)w.ShellPublish();break;
        case "newTab":if(value is "companion" or "sites"){Prefs.NewTab=value;foreach(var w in Windows)w.ShellPublish();}break;
        case "tabLayout":if(value is "Classic" or "Modern"){Prefs.TabLayout=value;foreach(var w in Windows)w.ShellPublish();}break;
        case "chatTitles":if(value.Length<200&&(value is "" or "off"||value.Contains('/'))){Prefs.ChatTitles=value;foreach(var w in Windows)w.ShellPublish();}break;
@@ -205,12 +208,14 @@ public partial class MainWindow
      case "removeHistory":state.History.RemoveAll(v=>v.Url==S("url"));SaveLater();break;
      case "startup":StartupRegistration.Set(data.GetProperty("enabled").GetBoolean());break;
      case "welcomeDone":state.Welcome=false;SaveLater();PublishAll();break;
+     case "whatsNewSeen":state.SeenVersion=CurrentVersion.ToString(2);SaveLater();PublishAll();break;
      case "welcomeAgain":state.Welcome=true;welcomeTalk=data.TryGetProperty("talk",out var tk)&&tk.ValueKind==JsonValueKind.True;PublishAll();break;
-     case "setupStart" or "setupAnswer" or "setupUndo" or "setupEdit" or "setupEnd":await HandleSetup(op,data);break;
+     case "setupStart" or "setupAnswer" or "setupUndo" or "setupEdit" or "setupHire" or "setupEnd":await HandleSetup(op,data);break;
      case "interests":Prefs.Interests=data.TryGetProperty("list",out var picks)&&picks.ValueKind==JsonValueKind.Array?[..picks.EnumerateArray().Where(x=>x.ValueKind==JsonValueKind.String).Select(x=>x.GetString()!.Trim()).Where(x=>x.Length is > 0 and <= 40).Distinct().Take(12)]:[];SaveLater();PublishAll();break;
      case "defaultBrowser":BrowserRegistration.Register();BrowserRegistration.OpenDefaultAppsSettings();break;
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;
      case "sidebarResize":if(data.TryGetProperty("width",out var p5w)&&p5w.TryGetDouble(out var p5wv)){Prefs.SidebarWidth=Math.Clamp(p5wv,190,360);SaveLater();foreach(var w in Windows)w.ShellPublish();}break;
+     case "clearCompanionData":await ClearCompanionData();break;
      case "clearHistory":state.History.Clear();state.AddressPicks.Clear();Save();Toast("History cleared.");break;
      case "clearCookies":
       var regularCore=await ManagementCore();await regularCore.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllSite);Toast("Cookies and website data cleared.");break;
@@ -242,7 +247,9 @@ public partial class MainWindow
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
-     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "aiAdvanced" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "chatNoMemory" or "skillSave" or "skillDelete" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach":await HandleAi(op,data);break;
+     case "draftSave": SaveDraft(S("key"),data.TryGetProperty("draft",out var draft)?draft:default);break;
+     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiStatus" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResume" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "aiAdvanced" or "aiTier" or "aiTiersReset" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "memoryForgetChat" or "memoryCapture" or "chatSummaries" or "knowledgeReset" or "knowledgeUndo" or "memoryResetAll" or "personalizationClear" or "companionSetupAgain" or "instructionsJoin" or "chatNoMemory" or "aiChatProfile" or "skillSave" or "skillDelete" or "skillReset" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "mediaFetch" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach" or "aiReattach" or "appHome":await HandleAi(op,data);break;
+     case "apiSave" or "apiModels" or "apiKeyRemove" or "apiDelete" or "apiTest":await HandleApi(op,data);break;
      case "pluginKey" or "pluginLink" or "pluginKeyRemove" or "pluginRefresh" or "pluginLogos" or "pluginConnect" or "pluginDisconnect" or "pluginToggle":await HandlePlugins(op,data);break;
      default:await HandleBrowserTool(op,data);break;
     }
@@ -267,16 +274,16 @@ public partial class MainWindow
    string host=active!=null&&Uri.TryCreate(active.Url,UriKind.Absolute,out var uri)?uri.Host:"";
    ShellSend(new{
     kind="state",activeId=active?.Id,sidePanel=SidePanelData(),pinnedExtensions=PinnedExtensionsData(),dark,focusMode,fullScreen=contentFullScreen,appFullScreen=IsFullScreen,panel,profileName=ProfileCatalog.CurrentName(),loginOffer=LoginOfferData(),permission=PermissionData(),update=UpdateData(),incognito,agent=AgentData(),working=AtWork().Select(w=>agentTabs.GetValueOrDefault(w.Key)).Where(id=>id!=null),dialog=PageDialogData(),mcpCommand=Environment.ProcessPath,windows=WindowsData(),secondary,version=CurrentVersion.ToString(3),maximized=WindowState==WindowState.Maximized,zoom=(int)Math.Round((active?.View?.ZoomFactor??1)*100),
-    welcome=state.Welcome&&!secondary&&!incognito,welcomeTalk,
-    preferences=new{theme=Prefs.Theme,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,sounds=Prefs.Sounds,osSoundsOff=OsSoundsOff,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,tabLayout=Prefs.TabLayout,chatTitles=Prefs.ChatTitles,newTab=Prefs.NewTab,interests=Prefs.Interests,sidebarWidth=Prefs.SidebarWidth,startupDisabled=StartupRegistration.DisabledByWindows},
-    tabs=tabs.Select(t=>new{id=t.Id,group=t.Group,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,driverChat=t.AgentKey is{} k&&runs.ContainsKey(k)?k:null,aiGroup=t.AgentGroup,chatId=t.ChatId,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,inUse=t.InUse,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
+    welcome=state.Welcome&&!secondary&&!incognito,welcomeTalk,seenVersion=state.SeenVersion,
+    preferences=new{theme=Prefs.Theme,agentProfile=Prefs.AgentProfile,search=Prefs.SearchEngine,restore=Prefs.RestoreTabs,blocking=Prefs.Blocking,downloads=Prefs.DownloadFolder,tracking=Prefs.Tracking,memory=Prefs.MemorySaver,autofill=Prefs.Autofill,sounds=Prefs.Sounds,osSoundsOff=OsSoundsOff,drafts=Prefs.SaveDrafts,autoUpdate=Prefs.AutoUpdate,startup=StartupRegistration.Enabled,tearOff=Prefs.TabTearOff,agents=Prefs.AgentsEnabled,askInChat=Prefs.AgentsAskInChat,isDefaultBrowser=BrowserRegistration.IsDefault,tabLayout=Prefs.TabLayout,chatTitles=Prefs.ChatTitles,newTab=Prefs.NewTab,interests=Prefs.Interests,sidebarWidth=Prefs.SidebarWidth,startupDisabled=StartupRegistration.DisabledByWindows},
+    tabs=tabs.Select(t=>new{id=t.Id,group=t.Group,title=t.Title,url=t.Url,pinned=t.Pinned,agent=t.Agent,runChat=t.RunChat,engine=t.Private?null:t.Engine??"Default",driverChat=t.AgentKey is{} k&&runs.ContainsKey(k)?k:null,aiGroup=t.AgentGroup,chatId=t.ChatId,home=t.Home,inChat=t.InChat,isPrivate=t.Private,loading=t.Loading,sleeping=(t.View==null&&t.Url.Length>0)||t.View?.CoreWebView2?.IsSuspended==true,blocked=t.Blocked,muted=t.View?.CoreWebView2?.IsMuted==true,inUse=t.InUse,favicon=t.Favicon,secure=t.Secure,certificateError=t.CertificateError}),
     history=(active?.Private==true&&panel=="address"?Enumerable.Empty<Visit>():state.History).Take(panel is "history" or "address"?2000:100).Select(h=>new{title=h.Title,url=h.Url,at=h.At}),
     groups=state.Groups.Where(g=>tabs.Any(t=>t.Group==g.Id)).Select(g=>new{id=g.Id,name=g.Name,color=g.Color,collapsed=g.Collapsed}),
     split=Partner!=null?new{left=splitLeft!.Id,right=splitRight!.Id,ratio=splitRatio}:null,
     picks=(active?.Private==true?Enumerable.Empty<AddressPick>():state.AddressPicks).Select(p=>new{typed=p.Typed,url=p.Url,count=p.Count}),
     bookmarks=state.Bookmarks.Select(h=>new{title=h.Title,url=h.Url,favicon=h.Favicon}),
     downloads=downloads.Select((d,i)=>new{id=i.ToString(),name=Path.GetFileName(d.Path),status=d.Operation.State.ToString(),bytes=d.Operation.BytesReceived,total=d.Operation.TotalBytesToReceive??0,isPrivate=d.Private}).Where(d=>!d.isPrivate||active?.Private==true),
-    canBack=Shown?.View?.CoreWebView2?.CanGoBack==true,canForward=Shown?.View?.CoreWebView2?.CanGoForward==true,
+    canBack=AppNav is{} backTab?backTab.Back.Any(CanGo):Shown?.View?.CoreWebView2?.CanGoBack==true,canForward=AppNav is{} forwardTab?forwardTab.Forward.Any(CanGo):Shown?.View?.CoreWebView2?.CanGoForward==true,
     chatPage=active?.ChatId!=null&&Shown is {} sp?new{id=sp.Id,url=sp.Url,title=sp.Title,loading=sp.Loading,favicon=sp.Favicon}:null,
     siteBlocking=Prefs.Blocking&&!Prefs.UnblockedHosts.Contains(host)
    });

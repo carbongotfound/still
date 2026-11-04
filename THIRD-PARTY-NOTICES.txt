@@ -34,8 +34,10 @@ Fraunces (via @fontsource-variable/fraunces) ... SIL Open Font License 1.1, The 
 ICONS AND MARKS
 Lucide icons (lucide-react) ............... ISC, Lucide Icons and Contributors
 AI app logos .............................. MIT, LobeHub Icons, Copyright 2023 LobeHub
-The Claude, ChatGPT/OpenAI and Grok marks belong to Anthropic, OpenAI and xAI. Still uses
-them only to show which app you're talking to and is not affiliated with or endorsed by them.
+The Claude, ChatGPT/OpenAI, Grok, Gemini, OpenCode, Qwen, GitHub Copilot, DeepSeek and Amp marks
+belong to Anthropic, OpenAI, xAI, Google, the OpenCode project, Alibaba Cloud, GitHub, DeepSeek
+and Amp's makers. Still uses them only to show which app you're talking to and
+is not affiliated with or endorsed by them.
 App logos on the Plugins page and in setup come from Composio's app catalog and belong to
 their owners. Still shows them only to name the app and is not affiliated with or endorsed by them.
 

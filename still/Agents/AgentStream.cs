@@ -13,6 +13,10 @@ public abstract record AgentEvent
  public sealed record Session(string Id) : AgentEvent;
  public sealed record Usage(string Text) : AgentEvent;
  public sealed record Error(string Text) : AgentEvent;
+ /// A line in the chat from Still about the run (a rate limit pause, a model swapped for the default, the step cap).
+ public sealed record Note(string Text) : AgentEvent;
+ /// One API call's tokens and estimated cost (0 without prices), for the provider's monthly total. Job: chats, titles, setup or test.
+ public sealed record Spent(long In, long Out, double Cost, string Job) : AgentEvent;
 }
 
 /// Turns each CLI's JSON lines into AgentEvents. Pure functions, so tests can feed them recorded output.
@@ -69,6 +73,63 @@ public static class AgentStream
     break;
   }
  }
+
+ /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
+ /// tool_result, error and a closing result. Still's tools come as mcp_still_<tool>.
+ public static IEnumerable<AgentEvent> Gemini(JsonNode e)
+ {
+  switch (Str(e["type"])) {
+   case "init" when Str(e["session_id"]) is { Length: > 0 } session: yield return new AgentEvent.Session(session); break;
+   case "message" when Str(e["role"]) == "assistant" && Str(e["content"]) is { Length: > 0 } text: yield return new AgentEvent.Message(text, e["delta"]?.GetValue<bool>() == true ? "" : null); break;
+   case "tool_use": yield return new AgentEvent.ToolCall(Str(e["tool_id"]) ?? "", Bare(Str(e["tool_name"]), "mcp_still_"), e["parameters"]?.DeepClone()); break;
+   case "tool_result": yield return new AgentEvent.ToolResult(Str(e["tool_id"]) ?? "", Str(e["status"]) == "success"); break;
+   case "error" when Str(e["severity"]) == "error": yield return new AgentEvent.Error(Str(e["message"]) ?? "failed"); break;
+   case "result":
+    if (e["stats"] is { } u && Long(u["input_tokens"]) + Long(u["output_tokens"]) > 0)
+     yield return new AgentEvent.Usage($"Last reply: {Tokens(Long(u["input_tokens"]))} in ({Tokens(Long(u["cached"]))} cached), {Tokens(Long(u["output_tokens"]))} out");
+    if (Str(e["status"]) == "error") yield return new AgentEvent.Error(Str(e["error"]?["message"]) ?? "failed");
+    break;
+  }
+ }
+
+ /// OpenCode (`run --format json`, checked with 1.19.5): step_start, text (a whole part), tool_use (once it's done),
+ /// step_finish with tokens, and error. Every event has the sessionID. Still's tools come as still_<tool>.
+ public static IEnumerable<AgentEvent> OpenCode(JsonNode e)
+ {
+  var part = e["part"];
+  switch (Str(e["type"])) {
+   case "step_start" when Str(e["sessionID"]) is { Length: > 0 } session: yield return new AgentEvent.Session(session); break;
+   case "text" when Str(part?["text"]) is { Length: > 0 } text: yield return new AgentEvent.Message(text); break;
+   case "reasoning": yield return new AgentEvent.Thinking(); break;
+   case "tool_use":
+    string id = Str(part?["callID"]) ?? "";
+    yield return new AgentEvent.ToolCall(id, Bare(Str(part?["tool"]), "still_"), part?["state"]?["input"]?.DeepClone());
+    if (Str(part?["state"]?["status"]) is ("completed" or "error") and var status) yield return new AgentEvent.ToolResult(id, status == "completed");
+    break;
+   case "step_finish" when (part?["tokens"]) is { } t && Long(t["input"]) + Long(t["output"]) > 0:
+    long cached = Long(t["cache"]?["read"]);
+    yield return new AgentEvent.Usage($"Last reply: {Tokens(Long(t["input"]) + cached)} in ({Tokens(cached)} cached), {Tokens(Long(t["output"]))} out");
+    break;
+   case "error": yield return new AgentEvent.Error(Str(e["error"]?["data"]?["message"]) ?? Str(e["error"]?["name"]) ?? "failed"); break;
+  }
+ }
+
+ /// DeepSeek Harness (`--profile headless --json`, built from its docs and source, not run live): session first, then text
+ /// and thinking once each step commits, tool_call and tool_result, a final event repeating the answer (skipped), and
+ /// error for a failure outside a turn. Still's tools come as mcp__still__<tool>.
+ public static IEnumerable<AgentEvent> Dsh(JsonNode e)
+ {
+  switch (Str(e["type"])) {
+   case "session" when Str(e["sessionId"]) is { Length: > 0 } session: yield return new AgentEvent.Session(session); break;
+   case "text" when Str(e["text"]) is { Length: > 0 } text: yield return new AgentEvent.Message(text); break;
+   case "thinking": yield return new AgentEvent.Thinking(); break;
+   case "tool_call": yield return new AgentEvent.ToolCall(Str(e["callId"]) ?? "", Bare(Str(e["tool"]), "mcp__still__"), e["input"]?.DeepClone()); break;
+   case "tool_result": yield return new AgentEvent.ToolResult(Str(e["callId"]) ?? "", Str(e["status"]) == "completed"); break;
+   case "error": yield return new AgentEvent.Error(Str(e["message"]) ?? "failed"); break;
+  }
+ }
+
+ static string Bare(string? tool, string prefix) => tool?.StartsWith(prefix, StringComparison.Ordinal) == true ? tool[prefix.Length..] : tool ?? "";
 
  /// A manifest agent's JSON lines, read through its field map. Each map entry is "path" or "path when key=value[,key=value]".
  public static IEnumerable<AgentEvent> Fields(JsonNode e, IReadOnlyDictionary<string, string> map)

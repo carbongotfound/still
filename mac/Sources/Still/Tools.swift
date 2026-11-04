@@ -125,7 +125,7 @@ extension Browser {
           "permissions": sitePermissions.sorted { $0.key < $1.key }.flatMap { site in site.value.sorted { $0.key < $1.key }.map { ["origin": site.key, "kind": $0.key, "state": $0.value] } }])
   case "cookies":
    let isPrivate = active?.isPrivate == true
-   let cookies = (isPrivate ? privateStore : pageStore).httpCookieStore
+   let cookies = (isPrivate ? privateStore : active?.engine == "Companion" ? companionStore : pageStore).httpCookieStore // the site's cookies in this tab's profile
    cookies.getAllCookies { found in
     self.cookieInventory = [:]
     var rows: [[String: Any]] = []
@@ -549,6 +549,8 @@ var currentVersion: String {
  #endif
  return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 }
+/// The release line, "2.10" for 2.10.3: What's New is per release.
+var releaseLine: String { currentVersion.split(separator: ".").prefix(2).joined(separator: ".") }
 /// "v1.2.3" → [1, 2, 3], padded to three parts.
 func versionParts(_ text: String) -> [Int]? {
  let parts = text.trimmingCharacters(in: CharacterSet(charactersIn: "vV")).split(separator: ".").map { Int($0) }
