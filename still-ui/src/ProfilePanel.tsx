@@ -15,6 +15,7 @@ import { FileCard } from "./Files"
 import { LIBRARY, ROLE_TEXT, SHARE_KIND, fromPremade, premadeOf } from "./crew"
 import { SkillEditor, resetSkill } from "./Home"
 import { deleteChat, destroy, fire } from "./Undo"
+import { useDraft } from "./drafts"
 import { generate } from "./generate"
 import { lookKey, surprise } from "./look"
 import { andList } from "./Plugins"
@@ -196,7 +197,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
        <Switch checked={r.on} aria-label={`Turn ${r.on ? "off" : "on"}: ${r.text}`} onCheckedChange={v => save({ ...c, routines: routines.map(x => x.id === r.id ? { ...x, on: v } : x) })} />
        <Button variant="ghost" size="icon-xs" aria-label={"Delete: " + r.text} onClick={() => save({ ...c, routines: routines.filter(x => x.id !== r.id) })}><Trash2 /></Button>
       </li>)}</ul>}
-      {routines.length < 20 && <RoutineForm who={c.name} onAdd={r => save({ ...c, routines: [...routines, r] })} />}
+      {routines.length < 20 && <RoutineForm id={c.id} who={c.name} onAdd={r => save({ ...c, routines: [...routines, r] })} />}
      </TabsContent>
      <TabsContent value="files">
       <section className="profile-section"><h4>Working folder</h4>
@@ -253,10 +254,12 @@ function Empty({ text, action, onAction }: { text: string; action: string; onAct
  return <div className="profile-empty"><p>{text}</p><Button size="sm" variant="outline" onClick={onAction}>{action}</Button></div>
 }
 
-function RoutineForm({ who, onAdd }: { who: string; onAdd: (r: Routine) => void }) {
+function RoutineForm({ id, who, onAdd }: { id: string; who: string; onAdd: (r: Routine) => void }) {
  const [text, setText] = useState(""), [time, setTime] = useState("09:00"), [days, setDays] = useState(WEEKDAYS)
- return <form className="profile-routine" onSubmit={e => { e.preventDefault(); if (!text.trim() || !days.length) return; onAdd({ id: newId(), text: text.trim(), time, days, on: true }); setText("") }}>
-  <textarea rows={2} maxLength={2000} aria-label="What to do" placeholder={`What should ${who || "they"} do? For example: "Every morning, sum up my unread email in five bullets."`} value={text} onChange={e => setText(e.target.value)} />
+ const kept = useDraft<HTMLTextAreaElement>("routine." + id) // kept as a draft until the routine is added
+ return <form className="profile-routine" onSubmit={e => { e.preventDefault(); if (!text.trim() || !days.length) return; onAdd({ id: newId(), text: text.trim(), time, days, on: true }); kept.done(); setText("") }}>
+  {kept.hint}
+  <textarea ref={kept.ref} {...kept.props} rows={2} maxLength={2000} aria-label="What to do" placeholder={`What should ${who || "they"} do? For example: "Every morning, sum up my unread email in five bullets."`} value={text} onChange={e => setText(e.target.value)} />
   <div className="profile-routine-row">
    <div className="profile-days" role="group" aria-label="Days">{DAYS.map((d, i) => <button type="button" key={i} aria-pressed={days.includes(i)} aria-label={DAY_NAMES[i]} onClick={() => setDays(days.includes(i) ? days.filter(x => x !== i) : [...days, i].sort())}>{d}</button>)}</div>
    <Input type="time" aria-label="Time" value={time} required onChange={e => setTime(e.target.value)} />

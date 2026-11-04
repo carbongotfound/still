@@ -216,6 +216,33 @@ public partial class MainWindow
 
  static List<AiChat>? aiChats;
  internal static string AiFolder => Path.Combine(App.DataRoot, "ai");
+ // Drafts: what was typed in a message box and not sent, a file per box in ai/drafts (still-ui drafts.tsx), so it's back
+ // after a refresh, a crash or a restart. Never from an incognito window, none with Settings > Save drafts off, and one
+ // not touched for 7 days goes.
+ static string DraftsFolder => Path.Combine(AiFolder, "drafts");
+ [GeneratedRegex(@"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")] private static partial Regex DraftKey();
+ void SaveDraft(string key, JsonElement draft)
+ {
+  if (incognito || !Prefs.SaveDrafts || !DraftKey().IsMatch(key) || key.StartsWith("private.") || key.StartsWith("window.")) return;
+  var path = Path.Combine(DraftsFolder, key + ".json");
+  try {
+   if (draft.ValueKind != JsonValueKind.Object) { if (File.Exists(path)) File.Delete(path); return; }
+   var json = draft.GetRawText(); if (json.Length > 2_000_000) return;
+   Directory.CreateDirectory(DraftsFolder);
+   File.WriteAllText(path + ".tmp", json); File.Move(path + ".tmp", path, true);
+  } catch (Exception ex) { App.Log(ex); }
+ }
+ Dictionary<string, JsonElement> LoadDrafts()
+ {
+  var all = new Dictionary<string, JsonElement>();
+  if (incognito || !Prefs.SaveDrafts || !Directory.Exists(DraftsFolder)) return all;
+  foreach (var f in Directory.GetFiles(DraftsFolder, "*.json")) try {
+   if (File.GetLastWriteTimeUtc(f) < DateTime.UtcNow.AddDays(-7)) { File.Delete(f); continue; }
+   if (Path.GetFileNameWithoutExtension(f) is var key && DraftKey().IsMatch(key)) { using var doc = JsonDocument.Parse(File.ReadAllText(f)); if (doc.RootElement.ValueKind == JsonValueKind.Object) all[key] = doc.RootElement.Clone(); }
+  } catch (Exception ex) { App.Log(ex); }
+  return all;
+ }
+ static void DeleteDrafts() { try { if (Directory.Exists(DraftsFolder)) Directory.Delete(DraftsFolder, true); } catch (Exception ex) { App.Log(ex); } }
  // An incognito window's chats live in the window, never in chats.json. Their files (attachments, the AI app's folder,
  // logs) live in ai/incognito/<window>, deleted when the window closes and swept at the next start after a crash.
  readonly List<AiChat> privateChats = [];
@@ -505,6 +532,8 @@ public partial class MainWindow
  {
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
   bool B(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
+  // Whether Still took a message from a box: its draft goes once it did, and stays (the text back in the box) if not.
+  void Sent(bool ok, string error = "") { if (S("draft") is { Length: > 0 } box) ShellSend(new { kind = "sent", draft = box, ok, error }); }
   string harness = aiChat?.Harness ?? Prefs.AiHarness;
   switch (op) {
    // One list holds every AI's models: picking another AI's model moves the chat to it.
@@ -554,7 +583,7 @@ public partial class MainWindow
     await ResumeTask(resumed); break;
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
    case "aiUnqueue" when ShownChat is { } unq && runs.GetValueOrDefault(unq.Id) is { } unqueued: unqueued.Queue.Clear(); break;
-   case "aiSend" when SetUpAgain().IsMatch(S("text")) && !incognito: state.Welcome = true; welcomeTalk = true; PublishAll(); break; // "set me up again" reopens setup's interview
+   case "aiSend" when SetUpAgain().IsMatch(S("text")) && !incognito: Sent(true); state.Welcome = true; welcomeTalk = true; PublishAll(); break; // "set me up again" reopens setup's interview
    case "aiSend" when S("text").Trim() is { Length: > 0 and <= 20000 } text: {
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
     // A chat that's still working takes it as a follow-up for when it finishes.
@@ -568,10 +597,13 @@ public partial class MainWindow
     var files = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("files", out var fileIds) && fileIds.ValueKind == JsonValueKind.Array
      ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
     if (files.Count > 0) asked += FilesNote(files);
-    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(files.Count > 0 ? text + FilesNote(files) : text); break; }
+    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(files.Count > 0 ? text + FilesNote(files) : text); Sent(true); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    await RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
+    var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
+    Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
+    await run;
     break; }
+   case "aiSend": Sent(false, S("text").Trim().Length > 20000 ? "Messages can be up to 20,000 characters. Yours is still in the box." : "Write a message first."); break;
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Setup: "pending" } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0)
     && !AiChats.Any(c => c.Companion == fresh.Id && c.From == null && !c.Routine && (kickoffs.Contains(c.Id) || c.Messages.Any(m => m.Role == "user"))): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.

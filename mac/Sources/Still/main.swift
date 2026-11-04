@@ -81,6 +81,22 @@ final class ShellScheme: NSObject, WKURLSchemeHandler {
 
 final class FlippedView: NSView { override var isFlipped: Bool { true } }
 
+/// The interface. Edit > Undo and Redo take Still's own steps in its text boxes (still-ui drafts.tsx), as Cmd+Z does there;
+/// anywhere else they're WebKit's.
+final class ShellView: WKWebView {
+ @objc func undo(_ sender: Any?) { step(-1) }
+ @objc func redo(_ sender: Any?) { step(1) }
+ private func step(_ by: Int) {
+  evaluateJavaScript("window.__stillHistory?.(\(by)) === true") { [weak self] done, _ in
+   guard done as? Bool != true, let undo = self?.undoManager else { return }
+   if by < 0 { if undo.canUndo { undo.undo() } } else if undo.canRedo { undo.redo() }
+  }
+ }
+ override func validateUserInterfaceItem(_ item: NSValidatedUserInterfaceItem) -> Bool {
+  item.action == #selector(undo(_:)) || item.action == #selector(redo(_:)) ? true : super.validateUserInterfaceItem(item)
+ }
+}
+
 /// A page. Spots the interface keeps open over it (pageHoles: the AI's glow and its controls) show the shell through and take its clicks.
 final class PageView: WKWebView {
  var holes: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])? // in points, from the page's top left
@@ -233,7 +249,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   config.userContentController.add(self, name: "still")
   config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
   config.userContentController.addUserScript(WKUserScript(source: macStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
-  shell = WKWebView(frame: root.bounds, configuration: config)
+  shell = ShellView(frame: root.bounds, configuration: config)
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
   shell.setValue(false, forKey: "drawsBackground") // until the interface paints, the window's own color shows, not WebKit's white
@@ -292,7 +308,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "theme": pref("Theme", "System"), "search": pref("SearchEngine", "Google"),
    "restore": pref("RestoreTabs", true), "blocking": pref("Blocking", true), "downloads": downloadFolder.path,
    "tracking": pref("Tracking", "Balanced"), "memory": pref("MemorySaver", true), "autofill": pref("Autofill", true),
-   "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
+   "drafts": pref("SaveDrafts", true), "sounds": pref("Sounds", true), "osSoundsOff": UserDefaults.standard.object(forKey: "com.apple.sound.uiaudio.enabled") as? Int == 0, // "Play user interface sound effects" off
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
    "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "agentProfile": pref("AgentProfile", "regular"), "companionSession": Profiles.companionSession, "isDefaultBrowser": isDefaultBrowser,
    "tabLayout": pref("TabLayout", "Classic"), "chatTitles": pref("ChatTitles", ""), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
@@ -370,6 +386,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   switch op {
   case "ready":
    ready = true
+   send(["kind": "drafts", "data": loadDrafts()]) // before the state, so the message boxes find them when they show
    publish() // the interface draws nothing until its first state
    shell.evaluateJavaScript("document.documentElement.classList.toggle('mac-fullscreen', \(window.styleMask.contains(.fullScreen)))")
    publishAi()
@@ -469,6 +486,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, cookies: data["cookies"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
+  case "draftSave": saveDraft(data["key"] as? String ?? "", data["draft"])
   default: if !handleAi(op, data) && !handleAgentOps(op, data) && !handleTools(op, data) && !handlePlugins(op, data) && !handleApi(op, data) { toast(unavailable) }
   }
  }
@@ -483,6 +501,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "memory": prefs["MemorySaver"] = value == "true"
   case "autofill": prefs["Autofill"] = value == "true"
   case "sounds": prefs["Sounds"] = value == "true"
+  case "drafts": prefs["SaveDrafts"] = value == "true"; if value != "true" { deleteDrafts() }
   case "tearOff": prefs["TabTearOff"] = value == "true"
   case "newTab": if ["companion", "sites"].contains(value) { prefs["NewTab"] = value }
   case "tabLayout": if ["Classic", "Modern"].contains(value) { prefs["TabLayout"] = value; for browser in browsers { browser.placeTrafficLights(); browser.schedulePublish() } }

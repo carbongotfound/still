@@ -678,6 +678,34 @@ func waitSetupProcess(_ p: Spawned, _ each: @escaping (String) -> Void) async {
  publishAiEverywhere()
 }
 
+// Drafts: what was typed in a message box and not sent, a file per box in ai/drafts (still-ui drafts.tsx), so it's back
+// after a refresh, a crash or a restart. Never from an incognito window, none with Settings > Save drafts off, and one
+// not touched for 7 days goes.
+var draftsFolder: String { (aiFolder as NSString).appendingPathComponent("drafts") }
+func draftKeyOK(_ key: String) -> Bool { key.range(of: #"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$"#, options: .regularExpression) != nil && !key.hasPrefix("private.") && !key.hasPrefix("window.") }
+func deleteDrafts() { try? FileManager.default.removeItem(atPath: draftsFolder) }
+
+extension Browser {
+ func saveDraft(_ key: String, _ draft: Any?) {
+  guard !incognito, pref("SaveDrafts", true), draftKeyOK(key) else { return }
+  let path = (draftsFolder as NSString).appendingPathComponent(key + ".json")
+  guard let draft = draft as? [String: Any] else { try? FileManager.default.removeItem(atPath: path); return }
+  guard let data = try? JSONSerialization.data(withJSONObject: draft), data.count <= 2_000_000 else { return }
+  try? FileManager.default.createDirectory(atPath: draftsFolder, withIntermediateDirectories: true)
+  try? data.write(to: URL(fileURLWithPath: path), options: .atomic)
+ }
+ func loadDrafts() -> [String: Any] {
+  guard !incognito, pref("SaveDrafts", true), let names = try? FileManager.default.contentsOfDirectory(atPath: draftsFolder) else { return [:] }
+  var all: [String: Any] = [:]
+  for name in names where name.hasSuffix(".json") {
+   let path = (draftsFolder as NSString).appendingPathComponent(name), key = String(name.dropLast(5))
+   if let modified = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date, modified < Date().addingTimeInterval(-7 * 86400) { try? FileManager.default.removeItem(atPath: path); continue }
+   if draftKeyOK(key), let data = FileManager.default.contents(atPath: path), let d = try? JSONSerialization.jsonObject(with: data) as? [String: Any] { all[key] = d }
+  }
+  return all
+ }
+}
+
 extension Browser {
  var aiView: AiView {
   if let view = aiViews[ObjectIdentifier(self)] { return view }
@@ -850,6 +878,8 @@ extension Browser {
  func handleAi(_ op: String, _ data: [String: Any]) -> Bool {
   func s(_ k: String) -> String { data[k] as? String ?? "" }
   func b(_ k: String) -> Bool { AgentStream.isTrue(data[k]) }
+  // Whether Still took a message from a box: its draft goes once it did, and stays (the text back in the box) if not.
+  func sent(_ ok: Bool, _ error: String = "") { if !s("draft").isEmpty { send(["kind": "sent", "draft": s("draft"), "ok": ok, "error": error]) } }
   let v = aiView
   var harness = v.chat?.harness ?? pref("AiHarness", "")
   switch op {
@@ -934,9 +964,9 @@ extension Browser {
   case "aiNow": if let now = shownChat, let r = runs[now.id], !r.queue.isEmpty { stopRun(r) } // what's queued runs right away
   case "aiUnqueue": if let c = shownChat { runs[c.id]?.queue.removeAll() }
   case "aiSend":
-   if setUpAgainAsked(s("text")) && !incognito { welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
+   if setUpAgainAsked(s("text")) && !incognito { sent(true); welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
    var text = tidy(s("text"))
-   guard (1...20000).contains(text.count) else { break }
+   guard (1...20000).contains(text.count) else { sent(false, text.count > 20000 ? "Messages can be up to 20,000 characters. Yours is still in the box." : "Write a message first."); break }
    // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
    // A chat that's still working takes it as a follow-up for when it finishes.
    let target = active?.chatId.map { id in myChats.first { $0.id == id } } ?? (b("home") ? nil : v.chat)
@@ -948,9 +978,10 @@ extension Browser {
    // Files from the box: the message names them, and the AI reads each with read_attachment.
    var seenFiles = Set<String>()
    let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
-   if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); break }
+   if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); sent(true); break }
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
+   sent(true) // the chat has the message now (or holds it until an AI app is set up)
   case "aiKickoff": // a new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup
    guard !incognito, let fresh = companions.first(where: { $0.id == s("companion") }), fresh.setup == "pending", !(fresh.ai.isEmpty && pref("AiHarness", "").isEmpty),
          !aiChats.contains(where: { c in c.companion == fresh.id && c.from == nil && !c.routine && (kickoffs.contains(c.id) || c.messages.contains { $0.role == "user" }) }) else {
