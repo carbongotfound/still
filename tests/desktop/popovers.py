@@ -151,6 +151,7 @@ def popovers(process, layout, theme):
     box = menu(process, "Add a skill or a tab menu", ".ai-sidebar .composer-add")
     if box:
         above(process, "Add a skill or a tab menu", box, "l")
+    escape(process)  # the + menu closes first, as it does when you click back into the box
     type_into(process, ".ai-sidebar [aria-label=Message]", "/")
     inside(process, "Skill picker (/)", ".ai-sidebar .skill-menu")
     type_into(process, ".ai-sidebar [aria-label=Message]", "")

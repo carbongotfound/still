@@ -17,7 +17,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, js, launch, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("tabkeep-" + uuid.uuid4().hex[:8])
@@ -74,7 +74,7 @@ chats = [{"Id": f"chat{i}", "Title": f"Chat {i}", "Harness": "claude", "Started"
           "Messages": [{"Role": "user" if k % 2 == 0 else "assistant", "Text": f"Line {k} of chat {i}. " * 12} for k in range(40)]} for i in (1, 2)]
 (PROFILE / "ai").mkdir(parents=True)
 (PROFILE / "ai" / "chats.json").write_text(json.dumps(chats))
-(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AiHarness": "claude", "Width": 1280, "Height": 800},
+(PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AiHarness": "claude", "Width": 1280, "Height": 800, "AgentsEnabled": True, "Companions": CREW},  # with no companion New Tab offers Create your companion, not a box
     "Tabs": [{"Id": "w1", "Title": "Page /a", "Url": BASE + "/a"}, {"Id": "w2", "Title": "Page /b", "Url": BASE + "/b"}], "ActiveId": "w1"}))
 process = launch(EXE, PROFILE)
 try:
