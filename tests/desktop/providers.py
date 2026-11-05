@@ -116,7 +116,7 @@ try:
     reply = until(lambda: (t := text(process)) and "Fake reply 1" in t and t, 30)
     check(reply, "A run streams its reply into the chat")
     check(reply and "keys: none" in reply, "API keys never reach the agent")
-    check(reply and "Looked at open tabs" in reply, "Tool calls show as steps")
+    check(reply and "Looking at open tabs" in reply, "Tool calls show as steps (this agent reports no results, so a step never says it finished)")
     check(reply and "Your Fake agent plan" not in reply, "A custom AI gets no plan line (only Claude, ChatGPT and Grok come with one)")
 
     # Resume: the next message continues the agent's session.

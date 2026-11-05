@@ -220,6 +220,12 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
    view.scrollWheel(with: event)
    return true
   }
+  if kind == "mouseMoved", (p["buttons"] as? NSNumber)?.intValue == 1 { // a drag: the press went straight to the view, so its moves do too
+   guard let drag = NSEvent.mouseEvent(with: .leftMouseDragged, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+    windowNumber: b.window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1) else { return false }
+   view.mouseDragged(with: drag)
+   return true
+  }
   if kind == "mouseMoved" { // through the app's own event queue and tracking areas, as a real move arrives (the cursor stays put)
    let screen = CGPoint(x: b.window.frame.minX + at.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - b.window.frame.minY - at.y)
    guard let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: screen, mouseButton: .left) else { return false }
