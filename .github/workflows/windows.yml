@@ -1,0 +1,62 @@
+name: Windows
+
+on:
+  push:
+    branches: [main]
+    paths: ["still/**", "installer/**", "launcher/**", ".github/workflows/windows.yml"]
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag to build and attach again (empty builds main and attaches nothing)
+        required: false
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+          ref: ${{ inputs.tag || github.ref }}
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+      - name: Launcher
+        shell: cmd
+        run: |
+          for /f "usebackq delims=" %%i in (`"%ProgramFiles(x86)%\Microsoft Visual Studio\Installer\vswhere.exe" -latest -property installationPath`) do call "%%i\VC\Auxiliary\Build\vcvars64.bat"
+          cd launcher
+          cl /nologo /O1 /MT /W3 StillOpen.c /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib shlwapi.lib advapi32.lib
+      - name: App
+        run: dotnet publish still/Still.csproj -c Release -r win-x64 --self-contained true -p:DebugType=None -o artifacts/Still -nologo
+      - name: Installer
+        shell: pwsh
+        run: |
+          # Inno Setup 7.1.0 and Microsoft's WebView2 bootstrapper, each checked before use.
+          Invoke-WebRequest https://github.com/jrsoftware/issrc/releases/download/is-7_1_0/innosetup-7.1.0-x64.exe -OutFile "$env:RUNNER_TEMP\inno.exe"
+          if ((Get-FileHash "$env:RUNNER_TEMP\inno.exe" -Algorithm SHA256).Hash -ne "0362A383ED217D4C4239B5933866DD96D3EB2102737DA92F80F6057A4B40DF2F") { throw "Inno Setup download doesn't match" }
+          Start-Process "$env:RUNNER_TEMP\inno.exe" -ArgumentList "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/SP-", "/DIR=$env:RUNNER_TEMP\Inno7" -Wait
+          New-Item -ItemType Directory -Force tools | Out-Null
+          Invoke-WebRequest "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile tools\MicrosoftEdgeWebview2Setup.exe
+          $sig = Get-AuthenticodeSignature tools\MicrosoftEdgeWebview2Setup.exe
+          if ($sig.Status -ne "Valid" -or $sig.SignerCertificate.Subject -notmatch "O=Microsoft Corporation") { throw "WebView2 bootstrapper signature: $($sig.Status) $($sig.SignerCertificate.Subject)" }
+          $version = [regex]::Match((Get-Content still\Still.csproj -Raw), "<Version>(.+?)</Version>").Groups[1].Value
+          & "$env:RUNNER_TEMP\Inno7\ISCC.exe" /Q "/DAppVersion=$version" "/DAppExe=$PWD\artifacts\Still\Still.exe" "/DLauncherExe=$PWD\launcher\StillOpen.exe" "/DOutputRoot=$PWD\artifacts" "/DBootstrapper=$PWD\tools\MicrosoftEdgeWebview2Setup.exe" installer\Still.iss
+          if ($LASTEXITCODE) { throw "ISCC failed" }
+          Copy-Item "artifacts\Still-Setup-$version-x64.exe" artifacts\Still-Setup-x64.exe
+          Get-FileHash artifacts\Still-Setup-x64.exe -Algorithm SHA256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Still-windows
+          path: artifacts/Still-Setup-x64.exe
+      - name: Attach to the release
+        if: github.event_name == 'release' || inputs.tag != ''
+        run: gh release upload "$env:TAG" artifacts/Still-Setup-x64.exe --clobber --repo "$env:GITHUB_REPOSITORY"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}

@@ -126,14 +126,19 @@ claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" 
 2. Still isn't code-signed yet, so SmartScreen may warn the first time. Choose **More info > Run anyway**.
 3. Setup walks you through connecting your model, making your first companion and giving it a task.
 
-Still updates itself after that.
-
 ### macOS
 
 1. Download [**Still-mac.dmg**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg), open it and drag **Still** to **Applications**. It runs natively on Apple silicon and Intel.
 2. Still isn't notarized yet, so the first time, right-click Still and choose **Open**. On macOS 15, open it once, then choose **Open Anyway** in **System Settings > Privacy & Security**.
 
 <p align="center"><img src="docs/screenshots/home-mac.webp" alt="Still on macOS: the same new tab page, with Research Maya and the team" width="640"></p>
+
+### Updates
+
+Still updates itself on Windows and the Mac. It checks for a new version when it opens and every two hours. With **Update automatically** on (the default, in **Settings > About > Updates**), the new version downloads in the background and installs the next time you close Still, or right away from **Update** in the toolbar. Turn it off and Still tells you a new version is out, then waits for you to click **Update**. **Check for updates** in the same place looks right away.
+
+- **Windows** checks the installer's SHA-256 before it runs it.
+- **Mac** updates come through [Sparkle](https://sparkle-project.org) and install only if they're signed with Still's own key. Still 2.10.0 and earlier on the Mac show **Update** and open the download page; download 2.10.1 once and it updates itself from then on.
 
 ### Requirements
 
