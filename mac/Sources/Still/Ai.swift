@@ -333,7 +333,32 @@ func official(_ cli: AgentAdapter, _ url: String) -> Bool {
 }
 
 /// A step in the chat. A new companion's first chat opens with its own words: no step shows before its hello.
-func chatStep(_ chat: AiChat, _ label: String) { if !label.isEmpty && !(kickoffs.contains(chat.id) && !chat.messages.contains { $0.role == "assistant" }) { chat.messages.append(AiMessage("tool", label)) } }
+@discardableResult func chatStep(_ chat: AiChat, _ label: String) -> AiMessage? {
+ if label.isEmpty || (kickoffs.contains(chat.id) && !chat.messages.contains { $0.role == "assistant" }) { return nil }
+ let step = AiMessage("tool", label)
+ chat.messages.append(step)
+ return step
+}
+// A step only says it happened once its result says so: how each label reads while it runs and when it fails.
+let stepWords: [(done: String, doing: String, failed: String)] = [
+ ("Read", "Reading", "Didn't read"), ("Looked", "Looking", "Didn't look"), ("Took", "Taking", "Didn't take"), ("Opened", "Opening", "Didn't open"), ("Went", "Going", "Didn't go"),
+ ("Clicked", "Clicking", "Didn't click"), ("Typed", "Typing", "Didn't type"), ("Scrolled", "Scrolling", "Didn't scroll"), ("Waited", "Waiting", "Stopped waiting"), ("Reloaded", "Reloading", "Didn't reload"),
+ ("Switched", "Switching", "Didn't switch"), ("Closed", "Closing", "Didn't close"), ("Saved", "Saving", "Didn't save"), ("Pressed", "Pressing", "Didn't press"), ("Answered", "Answering", "Didn't answer"),
+ ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed")]
+func says(_ text: String, _ word: String) -> Bool { text == word || text.hasPrefix(word + " ") }
+func doing(_ label: String) -> String {
+ for w in stepWords where says(label, w.done) { return w.doing + label.dropFirst(w.done.count) }
+ return label
+}
+func endStep(_ step: AiMessage, _ ok: Bool) {
+ step.status = ok ? nil : "failed"
+ for w in stepWords where says(step.text, w.doing) { step.text = (ok ? w.done : w.failed) + step.text.dropFirst(w.doing.count); return }
+ if !ok { step.text = "Didn't finish " + step.text } // a tool with no words of its own shows its name, which claims nothing
+}
+/// The run was cut off with steps still going. Each may or may not have happened, so it says neither.
+func stopSteps(_ chat: AiChat) {
+ for m in chat.messages where m.role == "tool" && m.status == "working" { m.text = "Stopped " + m.text.prefix(1).lowercased() + m.text.dropFirst(); m.status = "failed" }
+}
 
 /// A kickoff chat's title: the companion's first line for now, then the title model's, the way other chats are named
 /// from the user's first message.
@@ -408,7 +433,7 @@ func joinSection(_ text: String) -> String? {
  let end = text.range(of: "\n## ", range: text.index(at.lowerBound, offsetBy: 5)..<text.endIndex).map { text.index(after: $0.lowerBound) } ?? text.endIndex
  return String(text[at.lowerBound..<end])
 }
-var memorySteps: [String: AiMessage] = [:] // a memory tool's step, until its result says whether it worked
+var runningSteps: [String: AiMessage] = [:] // by chat and tool call, until the result says whether it worked
 /// One step of a run, shown in the chat. Returns true when the AI said something.
 func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
  switch e {
@@ -416,17 +441,16 @@ func applyEvent(_ chat: AiChat, _ cli: AgentAdapter, _ e: AgentEvent) -> Bool {
   if let join, let last = chat.messages.last, last.role == "assistant", last.who == nil { last.text += join + text } else { chat.messages.append(AiMessage("assistant", text)) }
   return true
  case .toolCall(let id, let name, let args):
-  chatStep(chat, toolLabel(name, args))
-  if ["remember", "forget", "update_knowledge"].contains(name.replacingOccurrences(of: "mcp__still__", with: "").replacingOccurrences(of: "still__", with: "")), let step = chat.messages.last, step.role == "tool" { memorySteps[id] = step }
- case .toolResult(let id, false):
-  if let failed = memorySteps.removeValue(forKey: id) { failed.text = failed.text == "Saved to memory" ? "Didn't save to memory" : failed.text == "Removed from memory" ? "Nothing removed from memory" : "Didn't update a knowledge file" }
+  if let step = chatStep(chat, doing(toolLabel(name, args))) { step.status = "working"; runningSteps[chat.id + id] = step }
+ case .toolResult(let id, let ok):
+  if let step = runningSteps.removeValue(forKey: chat.id + id) { endStep(step, ok) }
  case .session(let id) where chat.session == nil || !chat.started: chat.session = chat.session ?? id; chat.started = true; saveAiChats(chat) // on disk now: a crash mid-run doesn't lose it
  case .session: break
  case .usage(let text): aiUsage[cli.id] = text
  case .error(let text): chat.error = "\(cli.name): " + text
  case .note(let text): chat.messages.append(AiMessage("note", text))
  case .spent(let i, let o, let c, let job): spend(cli, i, o, c, job)
- case .thinking, .toolResult: break
+ case .thinking: break
  }
  return false
 }
@@ -1382,6 +1406,7 @@ extension Browser {
   let from = chat.messages.count
   func finish() {
    if let run, !run.cancelled, run.exitCode != 0 { run.saveLog(request.folder, chat.id) }
+   if stopped || (run?.exitCode ?? 1) != 0 || !chat.error.isEmpty { stopSteps(chat) }
    if runs[chat.id] === me {
     runs[chat.id] = nil
     for browser in browsers { browser.releaseAgentTabs(chat.id) }

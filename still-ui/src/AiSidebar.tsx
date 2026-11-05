@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -85,9 +85,9 @@ const MoreAgents = ({ open, count, onClick }: { open: boolean; count?: number; o
  <span>More agents</span>{!!count && <small>{count}</small>}<ChevronDown /></button>
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
-// Each step's icon, from how its label starts.
-const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Used|Loaded) skill/, BookOpen], [/^(Read|Looked)/, Eye], [/^Clicked/, MousePointer2], [/^Typed/, Keyboard],
- [/^Scrolled/, MoveVertical], [/^Saved/, Save], [/^Took a screenshot/, Camera], [/^(Opened|Went|Reloaded|Switched|Closed|Waited)/, Globe]]
+// Each step's icon, from how its label starts: while it runs, once it's done, or if it didn't happen.
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Didn't|Nothing|Stopped) /, Ban], [/^(Used|Loaded) skill/, BookOpen], [/^(Read|Look)/, Eye], [/^Click/, MousePointer2], [/^Typ/, Keyboard],
+ [/^Scroll/, MoveVertical], [/^Sav/, Save], [/^(Took|Taking) a screenshot/, Camera], [/^(Open|Went|Going|Reload|Switch|Clos|Wait)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 // A step reads as its verb in bold and what it acted on, muted. An address shows as its site; the full one is on hover.
 function Step({ step }: { step: string }) {
@@ -677,10 +677,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
- const items: (Message | { role: "steps"; steps: string[]; who?: string | null })[] = []
+ const items: (Message | { role: "steps"; steps: Message[]; who?: string | null })[] = []
  for (const m of messages) {
   const prev = items[items.length - 1]
-  if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m.text); else items.push({ role: "steps", steps: [m.text], who: m.who }) }
+  if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m); else items.push({ role: "steps", steps: [m], who: m.who }) }
   else items.push(m)
  }
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
@@ -725,12 +725,13 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    </div>)}
    {items.map((m, i) => {
     if ("steps" in m) {
-     // One row: the latest step and how many came before it. More than one step opens into the full list.
-     const live = busy && i === items.length - 1, latest = m.steps[m.steps.length - 1], Icon = stepIcon(latest), more = m.steps.length - 1
+     // One row: the latest step (once it's over, the one that didn't work) and how many came before it. More than one step
+     // opens into the full list. The tick means every step worked: a step with a status didn't, or never said.
+     const live = busy && i === items.length - 1, failed = live ? undefined : m.steps.findLast(s => s.status === "failed"), latest = (failed ?? m.steps[m.steps.length - 1]).text, Icon = stepIcon(latest), more = m.steps.length - 1
      const row = <><span className="ai-step-icon"><Icon /></span><span className="ai-step-text"><Step step={latest} />{more > 0 && <small>+ {more} more</small>}</span>
-      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : <Check className="ai-steps-state is-done" aria-label="Done" />}</>
+      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : failed ? <X className="ai-steps-state is-failed" aria-label="Didn't finish" /> : !m.steps.some(s => s.status) && <Check className="ai-steps-state is-done" aria-label="Done" />}</>
      return <div key={i} className={turn(i)}>{face(i)}{more ? <details className="ai-steps-group"><summary>{row}<ChevronDown className="ai-steps-chevron" /></summary>
-      <ol>{m.steps.map((s, j) => { const StepIcon = stepIcon(s); return <li key={j}><span className="ai-step-icon"><StepIcon /></span><Step step={s} /></li> })}</ol></details>
+      <ol>{m.steps.map((s, j) => { const StepIcon = stepIcon(s.text); return <li key={j}><span className="ai-step-icon"><StepIcon /></span><Step step={s.text} /></li> })}</ol></details>
       : <div className="ai-steps-group is-single"><div className="ai-steps-row">{row}</div></div>}</div>
     }
     if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>

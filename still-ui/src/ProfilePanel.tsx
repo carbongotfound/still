@@ -73,7 +73,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
   const go = () => send("companionSave", { ...next })
   if (later) typing.current = window.setTimeout(go, 500); else go()
  }
- const premade = premadeOf(c), only = (ai.companions?.length ?? 0) <= 1, label = c.name.trim() || "they"
+ const premade = premadeOf(c), only = (ai.companions?.length ?? 0) <= 1, label = c.name.trim() || "your companion"
  const harness = ai.harnesses.find(h => h.id === (c.ai || ai.harness))
  // Runs on lists only what can run now: apps that are logged in (or can't say, like GitHub Copilot) and API providers that are ready.
  const usable = ai.harnesses.filter(h => h.installed && (h.status === "ready" || (!h.status && !h.api && ai.checked))), current = usable.find(h => h.id === harness?.id)
@@ -135,7 +135,7 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
       <label className="profile-field"><span>Role <small>Optional. Shows before the name, like {(c.role?.trim() || premade?.role || "Researcher") + " " + (c.name.trim() || "Maya")}.</small></span>
        <Input maxLength={30} value={c.role ?? ""} placeholder={premade?.role ?? "For example: Researcher"} onChange={e => save({ ...c, role: e.target.value }, true)} /></label>
       <label className="profile-field"><span>{premade ? `What ${label} does for you` : "Instructions"}</span>
-       <textarea rows={premade ? 3 : 6} maxLength={1000} value={c.job} placeholder={`What ${c.name.trim() || "they"} does for you inside Still. For example: "Find me the best price before I buy anything, and show me where."`} onChange={e => { save({ ...c, job: e.target.value }, true); setMade(null) }} /></label>
+       <textarea rows={premade ? 3 : 6} maxLength={1000} value={c.job} placeholder={`What ${label} does for you inside Still. For example: "Find me the best price before I buy anything, and show me where."`} onChange={e => { save({ ...c, job: e.target.value }, true); setMade(null) }} /></label>
       {draft && <div className="profile-suggest"><Button size="sm" variant="outline" disabled={!c.job.trim() && !c.role?.trim()} onClick={suggest}><Sparkles />Suggest instructions and skills</Button>
        <p className="profile-note">{made ? `Added ${made.length} skills from Still's library: ${andList(made)}. Change anything before you hire.` : "Write what they're for, then Still drafts how they work and picks skills to match."}</p></div>}
       <div className="profile-field"><span>Personality</span>

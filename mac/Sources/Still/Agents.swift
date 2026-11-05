@@ -955,10 +955,10 @@ extension Browser {
     tab.agentActedAt = Date() // a pop-up or file picker it opens belongs to the agent
     try await mouseClick(view, x, y, o)
     await waitLoaded(tab, 8)
-    // The chat's step only had the element's number from the AI's call ("Clicked element 7"): name what it was. The AI
+    // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
-    let numbered = "Clicked element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
-    if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicked “" + label + "”" }
+    let numbered = "Clicking element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
+    if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicking “" + label + "”" }
     did(who, "Clicked '" + label + "'"); return agentOk(outcome(who, tab, before, "Clicked \"" + label + "\""))
    case "type":
     let (_, tab, view) = try await agentPage(who, args)

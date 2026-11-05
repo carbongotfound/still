@@ -891,10 +891,10 @@ public partial class MainWindow
     t.AgentActedAt = DateTime.UtcNow;
     await MouseClick(core, x, y);
     await WaitLoaded(t, 8000);
-    // The chat's step only had the element's number from the AI's call ("Clicked element 7"): name what it was. The AI
+    // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
-    string numbered = "Clicked element " + (args.TryGetProperty("id", out var raw) ? raw.ValueKind == JsonValueKind.String ? raw.GetString() : raw.GetRawText() : "");
-    if (label.Length > 0 && runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m.Role == "tool" && m.Text == numbered) is { } step) step.Text = "Clicked “" + label + "”";
+    string numbered = "Clicking element " + (args.TryGetProperty("id", out var raw) ? raw.ValueKind == JsonValueKind.String ? raw.GetString() : raw.GetRawText() : "");
+    if (label.Length > 0 && runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m.Role == "tool" && m.Text == numbered) is { } step) step.Text = "Clicking “" + label + "”";
     Did(who, "Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
    }
    case "type": {

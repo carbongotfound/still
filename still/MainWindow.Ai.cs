@@ -14,6 +14,7 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public List<AiFile>? Files { get; set; }
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
+ // A step's Status: working or failed, and none once it worked.
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Who { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? To { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Status { get; set; }
@@ -1143,6 +1144,7 @@ public partial class MainWindow
   finally {
    if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
    string ended = stopped ? "completed" : run == null || run.ExitCode != 0 || chat.Error.Length > 0 ? "failed" : "completed"; // before Dispose, which takes the exit code with it
+   if (stopped || ended == "failed") StopSteps(chat);
    run?.Dispose();
    if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false; }
    // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
@@ -1441,7 +1443,28 @@ public partial class MainWindow
  }
 
  /// A step in the chat. A new companion's first chat opens with its own words: no step shows before its hello.
- static void Step(AiChat chat, string label) { if (label.Length > 0 && !(kickoffs.Contains(chat.Id) && !chat.Messages.Any(m => m.Role == "assistant"))) chat.Messages.Add(new() { Role = "tool", Text = label }); }
+ static AiMessage? Step(AiChat chat, string label)
+ {
+  if (label.Length == 0 || (kickoffs.Contains(chat.Id) && !chat.Messages.Any(m => m.Role == "assistant"))) return null;
+  chat.Messages.Add(new() { Role = "tool", Text = label });
+  return chat.Messages[^1];
+ }
+ // A step only says it happened once its result says so: how each label reads while it runs and when it fails.
+ static readonly (string Done, string Doing, string Failed)[] StepWords = [
+  ("Read", "Reading", "Didn't read"), ("Looked", "Looking", "Didn't look"), ("Took", "Taking", "Didn't take"), ("Opened", "Opening", "Didn't open"), ("Went", "Going", "Didn't go"),
+  ("Clicked", "Clicking", "Didn't click"), ("Typed", "Typing", "Didn't type"), ("Scrolled", "Scrolling", "Didn't scroll"), ("Waited", "Waiting", "Stopped waiting"), ("Reloaded", "Reloading", "Didn't reload"),
+  ("Switched", "Switching", "Didn't switch"), ("Closed", "Closing", "Didn't close"), ("Saved", "Saving", "Didn't save"), ("Pressed", "Pressing", "Didn't press"), ("Answered", "Answering", "Didn't answer"),
+  ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed")];
+ static bool Says(string text, string word) => text == word || text.StartsWith(word + " ", StringComparison.Ordinal);
+ static string Doing(string label) { foreach (var w in StepWords) if (Says(label, w.Done)) return w.Doing + label[w.Done.Length..]; return label; }
+ static void EndStep(AiMessage step, bool ok)
+ {
+  step.Status = ok ? null : "failed";
+  foreach (var w in StepWords) if (Says(step.Text, w.Doing)) { step.Text = (ok ? w.Done : w.Failed) + step.Text[w.Doing.Length..]; return; }
+  if (!ok) step.Text = "Didn't finish " + step.Text; // a tool with no words of its own shows its name, which claims nothing
+ }
+ /// The run was cut off with steps still going. Each may or may not have happened, so it says neither.
+ static void StopSteps(AiChat chat) { foreach (var m in chat.Messages) if (m is { Role: "tool", Status: "working" }) { m.Text = "Stopped " + char.ToLowerInvariant(m.Text[0]) + m.Text[1..]; m.Status = "failed"; } }
 
  /// ask_user: the question shows in the chat with its options, and the AI waits (up to 10 minutes) for the answer.
  static async Task<string> AskInChat(string who, JsonElement args)
@@ -1534,15 +1557,15 @@ public partial class MainWindow
   return Reply(new { added = true, routine = $"{Days(days)} at {time}" });
  }
 
- static readonly Dictionary<string, AiMessage> memorySteps = []; // a memory tool's step, until its result says whether it worked
+ static readonly Dictionary<string, AiMessage> runningSteps = []; // by chat and tool call, until the result says whether it worked
  /// One step of a run, shown in the chat. Returns true when the AI said something.
  bool ApplyEvent(AiChat chat, AgentAdapter cli, AgentEvent e)
  {
   switch (e) {
    case AgentEvent.Message { Join: { } join } m when chat.Messages.LastOrDefault() is { Role: "assistant" } last && last.Who == null: last.Text += join + m.Text; return true;
    case AgentEvent.Message m: chat.Messages.Add(new() { Role = "assistant", Text = m.Text }); return true;
-   case AgentEvent.ToolCall t: Step(chat, ToolLabel(t.Name, t.Args)); if (t.Name.Replace("mcp__still__", "").Replace("still__", "") is "remember" or "forget" or "update_knowledge" && chat.Messages.LastOrDefault() is { Role: "tool" } step) memorySteps[t.Id] = step; break;
-   case AgentEvent.ToolResult { Ok: false } r when memorySteps.Remove(r.Id, out var failed): failed.Text = failed.Text switch { "Saved to memory" => "Didn't save to memory", "Removed from memory" => "Nothing removed from memory", _ => "Didn't update a knowledge file" }; break;
+   case AgentEvent.ToolCall t: if (Step(chat, Doing(ToolLabel(t.Name, t.Args))) is { } step) { step.Status = "working"; runningSteps[chat.Id + t.Id] = step; } break;
+   case AgentEvent.ToolResult r when runningSteps.Remove(chat.Id + r.Id, out var done): EndStep(done, r.Ok); break;
    case AgentEvent.Session session when !chat.Started || chat.Session == null: chat.Session ??= session.Id; chat.Started = true; SaveAiChats(); break;
    case AgentEvent.Usage u: aiUsage[cli.Id] = u.Text; break;
    case AgentEvent.Error error: chat.Error = $"{cli.Name}: " + error.Text; break;

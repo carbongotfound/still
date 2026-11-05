@@ -150,6 +150,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs.
 - ✅ **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`).
 - ✅ **Permission layer**: every call is read, navigate, interact or sensitive; rules per site and companion: always, once per chat, or every time.
+- ✅ **Step labels tell the truth**: a step in the chat reads as going while it runs (Clicking “Reserve”, with a spinner, including while a permission card is open). It says it happened only once its result says so (Clicked “Reserve”), and the row gets a tick only when every step in it worked. After Deny or any failed step it says so (Didn't click “Reserve”) with an X and no tick. Stop or a failed run leaves Stopped clicking “Reserve”, since a step cut off may or may not have happened (`MainWindow.Ai.cs` `StepWords`, `Ai.swift` `stepWords`, `AiSidebar.tsx`, `tests/desktop/stepstate.py`).
 - ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first.
 - ✅ **Sensitive sites**: every click or keystroke on a listed site counts as sensitive (Preferences `SensitiveSites`).
 - ✅ **AI permissions page**: defaults, rules per site and companion, sensitive sites, reset all (`Permissions.tsx`).
@@ -318,6 +319,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Started on another profile folder (`--profile`, as tests do), the Mac installs an update but doesn't reopen Still, since reopening would open the Default profile. Mac QA builds don't run Sparkle.
 - Chat titles is tested with a fake agent; a live title run (Claude) and the Mac build haven't been checked.
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.
+- A custom agent manifest with `jsonl` output reports tool calls but not results, so its steps keep the running wording after the run (Reading the page), with no tick.
 - Gemini's, OpenCode's, Qwen's, GitHub Copilot's, DeepSeek's and Amp's logos are path data from LobeHub Icons (MIT); the makers' own brand rules weren't checked.
 - Model settings' states come from each app's own files or status command, checked with fake apps only. GitHub Copilot and DeepSeek Harness can't say if they're signed in, so they're always Installed with Set up, and Runs on counts them as ready; Qwen Code signed in with an API key shows Installed. Set up's Sign in with your plan and Add's Install it for me weren't clicked for real apps.
 - Undo is held by the interface for 6 seconds: closing Still in that time keeps the item. Deleting a profile has no Undo.

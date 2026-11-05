@@ -21,7 +21,7 @@ clean() {
 
 printf '%-12s %-6s %5s %5s  %s\n' suite result pass fail log
 failed=0
-for suite in ${*:-mascots polish tab_tools tabs memory companions popovers permissions agentic welcome agents providers}; do
+for suite in ${*:-mascots polish tab_tools tabs memory companions popovers permissions stepstate agentic welcome agents providers}; do
  clean
  "$python" "tests/desktop/$suite.py" "$exe" > "$logs/$suite.log" 2>&1
  code=$?
