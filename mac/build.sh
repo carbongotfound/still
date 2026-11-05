@@ -18,8 +18,11 @@ xcodebuild -scheme Still -configuration Release -destination "generic/platform=m
 bin=$out/dd/Build/Products/Release/Still
 
 rm -rf "$app" "$out/Still.iconset"
-mkdir -p "$app/Contents/MacOS" "$resources"
+mkdir -p "$app/Contents/MacOS" "$app/Contents/Frameworks" "$resources"
 cp "$bin" "$app/Contents/MacOS/Still"
+# Sparkle, the updater: its framework (with its installer and helper apps) goes in Frameworks, where the app looks for it.
+ditto "$out/dd/Build/Products/Release/Sparkle.framework" "$app/Contents/Frameworks/Sparkle.framework"
+otool -l "$app/Contents/MacOS/Still" | grep -q "@executable_path/../Frameworks" || install_name_tool -add_rpath @executable_path/../Frameworks "$app/Contents/MacOS/Still"
 cp -R "$repo/still/Shell" "$resources/Shell"
 cp "$repo/still/Assets/Readability.js" "$repo/still/Assets/LoginObserver.js" "$resources/"
 cp -R "$repo/still/Assets/roles" "$resources/roles"
@@ -67,6 +70,11 @@ cat > "$app/Contents/Info.plist" <<PLIST
  <key>LSApplicationCategoryType</key><string>public.app-category.productivity</string>
  <key>NSHighResolutionCapable</key><true/>
  <key>NSSupportsAutomaticGraphicsSwitching</key><true/>
+ <key>SUFeedURL</key><string>https://github.com/carbongotfound/still/releases/latest/download/appcast.xml</string>
+ <key>SUPublicEDKey</key><string>egV3LKSaF1DAgZRrNAKlXY2XeXA68G8SbBGOd/W1rzU=</string>
+ <key>SUEnableAutomaticChecks</key><false/>
+ <key>SUAllowsAutomaticUpdates</key><true/>
+ <key>SUAutomaticallyUpdate</key><true/>
  <key>NSAppTransportSecurity</key><dict><key>NSAllowsArbitraryLoadsInWebContent</key><true/></dict>
  <key>NSCameraUsageDescription</key><string>Websites you allow can use your camera, for example for video calls.</string>
  <key>NSMicrophoneUsageDescription</key><string>Websites you allow can use your microphone, for example for calls.</string>
@@ -90,7 +98,8 @@ cat > "$app/Contents/Info.plist" <<PLIST
 </plist>
 PLIST
 
-# Ad-hoc signed: macOS asks once on first launch (right-click > Open). See mac/README.md.
+# Ad-hoc signed: macOS asks once on first launch (right-click > Open). See mac/README.md. Sparkle accepts an ad-hoc signed
+# update when its EdDSA signature matches SUPublicEDKey above; the release workflow signs Still-mac.zip and writes appcast.xml.
 codesign --force --deep --sign - "$app"
 if [ "$out" = build/qa ]; then echo "Built $app ($version, QA)"; exit 0; fi
 

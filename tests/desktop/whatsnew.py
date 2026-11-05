@@ -1,6 +1,6 @@
 """What's New: after an update to a release with highlights (2.10), the first start shows a short popup of them, each
 with a title, a line and a screenshot, moved through by arrows, dots or the keyboard, with See everything and Close.
-It shows once per release: closed, it stays away on the next start, and Settings > About opens it again. A new
+It shows once per release, over a web page too: closed, it stays away on the next start, and Settings > About opens it again. A new
 install doesn't get it (setup comes first), and a release without highlights shows nothing.
 
 STILL_QA_VERSION stands in for the update; QA builds only show What's New with STILL_QA_WHATSNEW set.
@@ -22,6 +22,7 @@ EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("whatsnew-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 FRESH = RUN / "fresh"
+WEB = RUN / "web"
 RESULT = {"checks": []}
 NOTES = json.loads((ROOT / "still-ui" / "src" / "whatsnew.json").read_text(encoding="utf-8"))["2.10"]
 POPUP = ".whatsnew"
@@ -129,6 +130,17 @@ def main():
         check(until(lambda: not shown(p), 3) and saved().get("SeenVersion") == "2.10", "Closing it again changes nothing")
         errors = rpc(p).get("shellErrors") or js(p, "window.__shellErrors")
         check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
+    finally:
+        rpc(p, "quit")
+    time.sleep(1)
+
+    # Updated with a web page open: the popup lifts the interface above the page, like any dialog (2.10.1 fix).
+    WEB.mkdir()
+    (WEB / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "SeenVersion": "2.0", "ActiveId": "w1",
+        "Tabs": [{"Id": "w1", "Title": "Blank", "Url": "about:blank"}], "Preferences": {"AgentsEnabled": True, "Companions": CREW}}))
+    p = launch(EXE, WEB, env("2.10.0"))
+    try:
+        check(until(lambda: shown(p), 10) and until(lambda: rpc(p)["overlay"] is True, 5), f"Over a web page it shows too, above the page (overlay {rpc(p)['overlay']})")
     finally:
         rpc(p, "quit")
     time.sleep(1)

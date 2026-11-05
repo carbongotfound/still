@@ -312,7 +312,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    "startup": startupEnabled, "startupDisabled": startupDisabled, "tearOff": pref("TabTearOff", false),
    "agents": pref("AgentsEnabled", false), "askInChat": pref("AgentsAskInChat", true), "agentProfile": pref("AgentProfile", "regular"), "companionSession": Profiles.companionSession, "isDefaultBrowser": isDefaultBrowser,
    "tabLayout": pref("TabLayout", "Classic"), "chatTitles": pref("ChatTitles", ""), "newTab": pref("NewTab", "companion"), "interests": pref("Interests", [String]()),
-   "sidebarWidth": pref("SidebarWidth", 248.0)
+   "sidebarWidth": pref("SidebarWidth", 248.0), "autoUpdate": pref("AutoUpdate", true)
   ]
   let tabList: [[String: Any]] = tabs.map { tab in
    var row: [String: Any] = [
@@ -510,6 +510,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if value != "true" { approvedAgents.removeAll(); prefs["ApprovedAgents"] = [String](); answerAgent(false) } // off = every agent asks again
   case "askInChat": prefs["AgentsAskInChat"] = value == "true"
   case "agentProfile": if ["regular", "companion"].contains(value) { prefs["AgentProfile"] = value }
+  case "autoUpdate": prefs["AutoUpdate"] = value == "true"; if value == "true" && Updater.shared.started { checkForUpdate() } // on: checks at once
   case "chatTitles": if value.count < 200 && (value.isEmpty || value == "off" || value.contains("/")) { prefs["ChatTitles"] = value }
   default: toast(unavailable); return
   }

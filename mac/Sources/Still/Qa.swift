@@ -165,7 +165,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   qaSystemTheme = text("value") == "Light" ? "Light" : "Dark"
   for browser in browsers { browser.applyTheme(); browser.schedulePublish() }
   done(["ok": true])
- case "checkUpdate": done(["update": NSNull(), "installer": NSNull(), "exists": false]) // no updater on Mac yet
+ case "checkUpdate": done(["update": NSNull(), "installer": NSNull(), "exists": false]) // QA builds don't run Sparkle
  case "windowAt":
   let x = (request["x"] as? NSNumber)?.doubleValue ?? 0, y = (request["y"] as? NSNumber)?.doubleValue ?? 0
   let point = NSPoint(x: x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - y)

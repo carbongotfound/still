@@ -476,8 +476,13 @@ final class ChatGptAdapter: AgentAdapter {
   // TOML literal strings ('...') need no escaping but can't hold an apostrophe.
   if (r.mcp + [stillExecutable]).contains(where: { $0.contains("'") }) { throw AgentError("ChatGPT can't run Still from a folder whose name has an apostrophe.") }
   func quoted(_ value: String) -> String { "'" + value + "'" }
-  var args = ["exec"] + (r.resume ? ["resume"] : []) + (r.forget ? ["--ephemeral"] : []) + ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
-   "-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + r.mcp.map(quoted).joined(separator: ",") + "]"]
+  // In steps: as one expression, older Swift compilers time out type-checking it.
+  var args: [String] = ["exec"]
+  if r.resume { args.append("resume") }
+  if r.forget { args.append("--ephemeral") }
+  args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660"] // ask_user waits for the user
+  let servers: String = r.mcp.map(quoted).joined(separator: ",")
+  args += ["-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + servers + "]"]
   if !r.model.isEmpty { args += ["-c", "model=" + quoted(r.model)] }
   if !r.effort.isEmpty { args += ["-c", "model_reasoning_effort=" + quoted(r.effort)] }
   if r.resume, let session = r.session { args.append(session) }

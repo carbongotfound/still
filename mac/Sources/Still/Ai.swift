@@ -1342,8 +1342,9 @@ extension Browser {
   let work = !chat.ephemeral && cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
   // Memory goes in when a session starts: what fits this message and the chat so far (a vague "carry on" finds the chat's
   // own summary). Later turns hear what changed since, once.
-  let query = shown + "\n" + chat.messages.filter { $0.role == "user" || $0.role == "assistant" }.suffix(4).map { CompanionMemory.clip($0.text, 500) }.joined(separator: "\n")
-   + (who.flatMap { w in CompanionMemory.summaries(w.id).list.first { $0.chat == chat.id } }.map { "\n" + CompanionMemory.summaryText($0) } ?? "")
+  let recent: String = chat.messages.filter { $0.role == "user" || $0.role == "assistant" }.suffix(4).map { CompanionMemory.clip($0.text, 500) }.joined(separator: "\n")
+  let ownSummary: String = who.flatMap { w in CompanionMemory.summaries(w.id).list.first { $0.chat == chat.id } }.map { "\n" + CompanionMemory.summaryText($0) } ?? ""
+  let query: String = shown + "\n" + recent + ownSummary // in steps: as one expression, older Swift compilers time out on it
   let memory = who == nil || chat.started ? "" : CompanionMemory.brief(who!.id, query, touch: !chat.ephemeral)
   let changed = who != nil && chat.started ? CompanionMemory.changesFor(who!.id, chat.id, &chat.seenChange) : ""
   if !chat.started { chat.seenChange = CompanionMemory.seq }

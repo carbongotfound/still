@@ -1,6 +1,7 @@
-"""Settings > About > Update automatically (Windows), on by default. Off, Still still finds a new version and shows
-Update, but downloads nothing until it's clicked, and the About text says so. The choice is kept through a restart,
-and Settings search finds it. The Mac has no automatic install, so it has no such switch.
+"""Settings > About > Updates: Update automatically, on by default, and Check for updates, on Windows and the Mac
+(Sparkle installs there). Off, Still still finds a new version and shows Update, but downloads nothing until it's
+clicked, and the About text says so. The choice is kept through a restart, and Settings search finds it.
+Mac QA builds don't run Sparkle, so the checks that ask the updater (the checkUpdate QA call) are Windows only.
 
 STILL_QA_VERSION stands in for an old version, so GitHub's latest release counts as new (one request to GitHub's API).
 The test never turns the switch on while an update is known: that would download the real installer.
@@ -64,41 +65,38 @@ def start():
     return p
 
 
-def mac():
-    p = start()
-    try:
-        check(about(p), "Settings opens on About")
-        check(switch(p) is None, "The Mac has no Update automatically switch")
-        check("shows you where to download" in text(p), "and About says where updates come from")
-        found = search(p, "auto update")
-        check("Update automatically" not in found, f"and search doesn't offer it ({found})")
-    finally:
-        quit(p)
-
-
-def windows():
+def run():
     p = start()
     try:
         check(about(p), "Settings opens on About")
         check(switch(p) == "true", "Update automatically is on by default")
         check("updates itself automatically" in text(p), "and About says Still updates itself")
+        check(js(p, "document.querySelector('#set-checkUpdates button')?.innerText.trim()") == "Check", "Updates has Check for updates")
         js(p, f"document.querySelector('{SWITCH}').click()")
         check(until(lambda: switch(p) == "false", 3), "Clicking it turns it off")
         check(until(lambda: "Automatic updates are off" in text(p), 3), f"About says updates are off ({text(p)[-160:]!r})")
-        send(p, "openPanel", name="")
-        time.sleep(.5)
-        r = rpc(p, "checkUpdate")
-        update = r.get("update") or {}
-        check(update.get("version"), f"With it off, Still still finds the newer version on GitHub ({update})")
-        check(not r.get("installer") and not r.get("exists") and not update.get("downloading"), f"but downloads nothing ({r})")
-        time.sleep(2)
-        r = rpc(p, "checkUpdate")
-        check(not r.get("installer") and not (r.get("update") or {}).get("downloading"), "and still nothing two seconds later")
-        pill = until(lambda: js(p, "document.querySelector('.update-pill')?.innerText.trim()"), 5)
-        check(pill == "Update", f"The toolbar shows Update ({pill!r})")
+        if not MAC:
+            windows_check(p)
     finally:
         quit(p)
+    after_restart()
 
+
+def windows_check(p):
+    send(p, "openPanel", name="")
+    time.sleep(.5)
+    r = rpc(p, "checkUpdate")
+    update = r.get("update") or {}
+    check(update.get("version"), f"With it off, Still still finds the newer version on GitHub ({update})")
+    check(not r.get("installer") and not r.get("exists") and not update.get("downloading"), f"but downloads nothing ({r})")
+    time.sleep(2)
+    r = rpc(p, "checkUpdate")
+    check(not r.get("installer") and not (r.get("update") or {}).get("downloading"), "and still nothing two seconds later")
+    pill = until(lambda: js(p, "document.querySelector('.update-pill')?.innerText.trim()"), 5)
+    check(pill == "Update", f"The toolbar shows Update ({pill!r})")
+
+
+def after_restart():
     saved = json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get("AutoUpdate")
     check(saved is False, f"The choice is saved ({saved})")
     p = start()
@@ -121,7 +119,7 @@ def main():
     PROFILE.mkdir(parents=True)
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Width": 1280, "Height": 860},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
-    mac() if MAC else windows()
+    run()
     print(f"{'PASSED' if all(results) else 'FAILED'} {sum(results)}/{len(results)} -> {RUN}")
     sys.exit(0 if all(results) else 1)
 

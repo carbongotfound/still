@@ -3,6 +3,7 @@
 import AppKit
 import ImageIO
 import ServiceManagement
+import Sparkle
 import WebKit
 
 extension Browser {
@@ -64,7 +65,11 @@ extension Browser {
   case "startup": setStartup(flag("enabled"))
   case "startupSettings": if #available(macOS 13.0, *) { SMAppService.openSystemSettingsLoginItems() }
   case "checkUpdate": checkForUpdate(manual: true)
-  case "openUpdate", "releaseNotes": if let url = availableUpdate?.url { newTab(url, prompt: false) }
+  case "openUpdate":
+   if let install = Updater.shared.installNow { install() } // installs it and reopens Still
+   else if Updater.shared.started { Updater.shared.controller.updater.checkForUpdates() } // Sparkle's window: what's new, and Install
+   else if let url = availableUpdate?.url { newTab(url, prompt: false) } // QA builds don't run Sparkle
+  case "releaseNotes": if let url = availableUpdate?.url { newTab(url, prompt: false) }
   case "refreshTools": publishBrowserTools(text("name"))
   case "sitePermission", "sitePermissionsReset":
    guard let tab = active, let origin = URL(string: tab.url).flatMap(authority) else { break }
@@ -336,10 +341,11 @@ extension Browser {
   picker.beginSheetModal(for: window) { result in request.finish(result == .OK ? picker.urls : nil) }
  }
 
- // MARK: Updates: GitHub's latest public release, at startup and every 2 hours. Updating is a download from the release page.
+ // MARK: Updates: GitHub's latest public release, at startup and every 2 hours. Sparkle installs it (see Updater below).
 
  func startUpdateChecks() {
   guard !isQa else { return }
+  Updater.shared.start()
   Timer.scheduledTimer(withTimeInterval: 7200, repeats: true) { [weak self] _ in self?.checkForUpdate() }
   DispatchQueue.main.asyncAfter(deadline: .now() + 15) { [weak self] in self?.checkForUpdate() }
  }
@@ -354,6 +360,7 @@ extension Browser {
      else if availableUpdate?.version != latest.map(String.init).joined(separator: ".") {
       availableUpdate = (latest.map(String.init).joined(separator: "."), "https://github.com/carbongotfound/still/releases/tag/" + (tag.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? tag))
      }
+     if availableUpdate != nil && self.pref("AutoUpdate", true) { Updater.shared.fetch() }
      publishEverywhere()
     }
     if manual && availableUpdate == nil { self.toast("Still is up to date.") }
@@ -361,8 +368,8 @@ extension Browser {
   }.resume()
  }
  func updateData() -> [String: Any]? {
-  guard let update = availableUpdate else { return nil }
-  return ["version": update.version, "current": currentVersion, "ready": false, "progress": 0, "busy": false, "selfUpdate": false, "downloading": false]
+  guard let update = availableUpdate, !Updater.shared.fetching else { return nil } // the pill waits until Sparkle has it ready
+  return ["version": update.version, "current": currentVersion, "ready": Updater.shared.installNow != nil, "progress": 0, "busy": false, "selfUpdate": Updater.shared.started, "downloading": false]
  }
 
  // MARK: Open at login (macOS 13 and later)
@@ -543,6 +550,33 @@ final class ImportBatch {
 }
 
 var availableUpdate: (version: String, url: String)?
+
+/// Sparkle (sparkle-project.org) installs updates: it reads the latest release's appcast.xml, downloads Still-mac.zip, checks
+/// its EdDSA signature against SUPublicEDKey in Info.plist and swaps the app. Still's GitHub check above says when to look.
+/// With Update automatically on it fetches in the background and installs when Still quits, or now from the Update pill;
+/// with it off the pill opens Sparkle's own window.
+final class Updater: NSObject, SPUUpdaterDelegate {
+ static let shared = Updater()
+ private(set) lazy var controller = SPUStandardUpdaterController(startingUpdater: false, updaterDelegate: self, userDriverDelegate: nil)
+ private(set) var started = false
+ private(set) var fetching = false
+ private(set) var installNow: (() -> Void)?
+ func start() { if !started { controller.startUpdater(); started = true } }
+ func fetch() {
+  guard started, installNow == nil, !fetching, controller.updater.canCheckForUpdates else { return }
+  fetching = true
+  controller.updater.checkForUpdatesInBackground()
+ }
+ func updater(_ updater: SPUUpdater, willInstallUpdateOnQuit item: SUAppcastItem, immediateInstallationBlock immediateInstallHandler: @escaping () -> Void) -> Bool {
+  installNow = immediateInstallHandler; fetching = false; publishEverywhere()
+  return true // Still offers it on the Update pill; Sparkle installs it anyway when Still quits
+ }
+ func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: Error?) {
+  if fetching { fetching = false; publishEverywhere() } // nothing to fetch, or it failed: the pill shows, and opens Sparkle's window
+ }
+ /// Started on another profile folder (tests): reopening would open the Default profile instead, so it doesn't.
+ func updaterShouldRelaunchApplication(_ updater: SPUUpdater) -> Bool { argAfter("--profile") == nil && argAfter("--profiles-root") == nil }
+}
 var currentVersion: String {
  #if STILL_QA
  if let fake = ProcessInfo.processInfo.environment["STILL_QA_VERSION"] { return fake }
