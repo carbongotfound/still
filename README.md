@@ -120,6 +120,8 @@ claude mcp add still -- "C:\Users\<you>\AppData\Local\Programs\Still\Still.exe" 
 
 ## Install
 
+Windows releases aren't signed yet. Where that stands, who approves releases and what Still sends over the network: [Code signing policy](#code-signing-policy).
+
 ### Windows
 
 1. Download [**Still-Setup-x64.exe**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) and run it. No admin rights needed.
@@ -149,11 +151,43 @@ Still updates itself on Windows and the Mac. It checks for a new version when it
 
 ## Privacy
 
-- **No telemetry.** No Still account, no analytics. The only request Still makes on its own is a check of GitHub for a newer release.
+- **No telemetry.** No Still account, no analytics. What Still sends over the network is listed under [Code signing policy](#code-signing-policy).
 - **Agents never see private tabs, saved passwords or cookies.** When a companion reaches a sign-in page it pauses and asks you to sign in, then carries on.
 - **Private tabs never save passwords, history or form data.**
 - **Your data stays local** in `%LOCALAPPDATA%\Still` on Windows and `~/Library/Application Support/Still` on the Mac.
 - **Plugins are opt-in.** Still talks to Composio only after you paste your own key.
+
+## Code signing policy
+
+**Status:** Applied to SignPath Foundation for free code signing of Windows builds; approval pending. Windows releases are not signed yet.
+
+<!-- Use this line once SignPath Foundation approves the application: Free code signing provided by SignPath.io, certificate by SignPath Foundation -->
+
+**Team roles**
+
+- Committers and reviewers: [carbongotfound](https://github.com/carbongotfound)
+- Approvers: [carbongotfound](https://github.com/carbongotfound)
+
+**Privacy**
+
+Still has no account, no analytics and no server of its own. It does use the network, and some of that happens without you asking.
+
+On its own:
+
+- **Update check.** When Still opens and every two hours, it asks GitHub (`api.github.com`) for the latest release, with Still's version in the request. There's no setting to turn this check off.
+- **Update downloads.** With **Update automatically** on (the default), a new version downloads from GitHub's release files without asking. Turn it off in **Settings > About > Updates** and nothing downloads until you click **Update**.
+- **Safe-browsing checks.** Still turns on the browser engine's protection for the pages it opens: SmartScreen in WebView2 on Windows and WebKit's fraudulent website warning on the Mac. There's no setting to turn them off. Microsoft's and Apple's policies cover what those checks send.
+- **Video thumbnails.** When a reply has a YouTube link on a line of its own, Still fetches the thumbnail from `i.ytimg.com`, without cookies. Other images in a reply load only after you click **Show image**.
+
+When you or a companion ask for it:
+
+- **Websites.** Pages you and your companions open talk to those sites, as in any browser. Companions can also search and read pages in a hidden page. Searches use your search engine, then DuckDuckGo if that finds nothing.
+- **The AI apps and APIs you connect.** What you give a companion goes to the AI you picked: your messages and files, the pages it reads and what it remembers about you. Each AI app is its own program, with its own network use and its own maker's policy. **Install it for me** downloads the app from its maker or from npm. A Compatible API gets these requests, with your key, at the address you enter.
+- **Composio plugins.** Off until you paste your own Composio key. After that, Still fetches Composio's app catalog and logos, and the plugin actions you and your companions run go to Composio and on to the app you connected.
+- **WebView2 Runtime, on Windows.** If it's missing, Setup asks first, then downloads it from Microsoft. Microsoft updates it from then on.
+- **Extensions, on Windows.** Adding one from the Chrome Web Store downloads it from Google. Extensions then use the network however they're written to.
+
+Policies for these services: [GitHub](https://docs.github.com/en/site-policy/privacy-policies/github-general-privacy-statement), [Microsoft](https://www.microsoft.com/privacy/privacystatement), [Apple](https://www.apple.com/legal/privacy/), [Google](https://policies.google.com/privacy), [Composio](https://composio.dev/privacy), and the policy of whichever AI you connect.
 
 ## Build from source
 
