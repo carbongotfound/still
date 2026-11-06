@@ -148,6 +148,7 @@ final class Tab: NSObject {
  var agent: String? // the AI working in this tab right now (bot icon)
  var aiGroup = false // opened by an AI: shown together in the AI group
  var agentActedAt = Date.distantPast
+ var downloadAt = Date.distantPast, loadFailedAt = Date.distantPast // what an agent's click or navigate led to
  var dialog: PageDialog? // an alert/confirm/prompt the page is paused on
  var agentUpload: AgentUpload? // a file picker an AI's click opened, waiting for upload_file
  var uploadFiles: [URL]? // files upload_file is handing to the next file picker
@@ -1041,7 +1042,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
   if view === shell { decisionHandler(action.request.url?.scheme == "still" ? .allow : .cancel); return }
-  if action.shouldPerformDownload { decisionHandler(.download); return }
+  if action.shouldPerformDownload { tabs.first { $0.view === view }?.downloadAt = Date(); decisionHandler(.download); return }
   if let url = action.request.url, let scheme = url.scheme?.lowercased(), !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
    // mailto:, facetime:, zoommtg: and other app links open only from a click.
    if action.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
@@ -1067,6 +1068,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
+  if !response.canShowMIMEType { tabs.first { $0.view === view }?.downloadAt = Date() }
   decisionHandler(response.canShowMIMEType ? .allow : .download)
  }
 
@@ -1095,7 +1097,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func webView(_ view: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
   let code = (error as NSError).code
-  if view !== shell && code != NSURLErrorCancelled && code != 102 { toast("Couldn't open that page: \(error.localizedDescription)") }
+  if view !== shell && code != NSURLErrorCancelled && code != 102 { tabs.first { $0.view === view }?.loadFailedAt = Date(); toast("Couldn't open that page: \(error.localizedDescription)") }
  }
 
  func webViewWebContentProcessDidTerminate(_ view: WKWebView) {

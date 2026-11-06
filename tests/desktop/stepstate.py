@@ -111,6 +111,16 @@ def main():
         r = until(lambda: (x := row(p)) and x["tick"] and x, 15)
         check(r and r["line"] == "Clicked “Press me”" and not r["failed"], f"Only now it says Clicked, with a tick ({r})")
 
+        # Allowed, and the click reaches the button, which does nothing: no Clicked and no tick.
+        send(p, "aiNew")
+        send(p, "aiSend", text="Allow this\n" + click.replace("Press me", "Do nothing"))
+        check(until(lambda: card(p), 30), "The card is open for a button that does nothing")
+        check(press(p, "Allow once"), "Allow once is pressed")
+        idle(p)
+        r = until(lambda: (x := row(p)) and x["failed"] and x, 15)
+        check(r and r["line"] == "No change after clicking “Do nothing”" and not r["tick"], f"A click that changed nothing says so, with no tick ({r})")
+        check("Clicked “Do nothing”" not in text(p), "and nothing says Clicked")
+
         # Make your own, before a name is typed.
         send(p, "new")
         until(lambda: js(p, "!!document.querySelector('.mate-switch-more[aria-label=\"Hire a companion\"]')"), 10)

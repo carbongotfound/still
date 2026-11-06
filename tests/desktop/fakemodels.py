@@ -76,7 +76,7 @@ class Fake:
                 if self.path == "/_requests":
                     return self.json(200, fake.requests)
                 if self.path.startswith("/page"):  # a page with a button, for approval cards
-                    data = b"<!doctype html><title>Fake shop</title><button onclick=\"document.title='Pressed'\">Press me</button>"
+                    data = b"<!doctype html><title>Fake shop</title><button onclick=\"document.title='Pressed'\">Press me</button><button>Do nothing</button>"
                     self.send_response(200)
                     self.send_header("Content-Type", "text/html")
                     self.send_header("Content-Length", str(len(data)))

@@ -137,7 +137,7 @@ public partial class MainWindow
     result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
      : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
     if (going != null) {
-     if (going.Intent is { } ran) { if (first == working) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; going.Intent = null; } // cut off: uncertain
+     if (going.Intent is { } ran) { if (first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; going.Intent = null; } // cut off, or no sign it worked: uncertain
      Checkpoint(going, tool, result);
     }
     if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
@@ -337,6 +337,48 @@ public partial class MainWindow
   const missing = o => ({ error: o.id ? 'gone' : 'notfound' });
   // A fingerprint of a field's text, to tell whether typing changed it.
   const sig = e => { const s = !e ? '' : e.isContentEditable ? e.innerText : String(e.value ?? ''); let h = 0; for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0; return s.length + ':' + h; };
+  // Where a click at this point lands, through open shadow roots and same-origin frames.
+  const deepAt = (x, y) => {
+   let at = document.elementFromPoint(x, y);
+   for (; at;) {
+    const inner = at.shadowRoot?.elementFromPoint(x, y);
+    if (inner && inner !== at) { at = inner; continue; }
+    if (!/^i?frame$/.test(at.localName)) return at;
+    let d = null; try { d = at.contentDocument; } catch {}
+    if (!d) return at;
+    const r = at.getBoundingClientRect(); x -= r.left + at.clientLeft; y -= r.top + at.clientTop;
+    const next = d.elementFromPoint(x, y); if (!next) return at;
+    at = next;
+   }
+   return null;
+  };
+  // What an action did: a watcher set up before it, kept on the window between calls. No watcher later means a new document.
+  const WATCH = Symbol.for('still.watch');
+  const stateOf = e => !e ? '' : JSON.stringify([e.checked, e.value, e.open, e.selectedIndex, e.control?.checked, e.control?.value]);
+  const typable = e => !!e && (e.isContentEditable || e.localName === 'textarea' || e.localName === 'select' || e.localName === 'input' && !/^(button|submit|reset|image|checkbox|radio|file|color|range)$/.test(e.type));
+  const watch = (e, hit) => {
+   window[WATCH]?.stop();
+   const d = e ? e.ownerDocument : document, at = new Set([window, d.defaultView, e?.getRootNode?.()].filter(Boolean));
+   const W = { e, n: 0, got: false, reached: false, pressed: false, keyed: false, missed: '', submitted: false, invalid: '' };
+   const hits = ev => { const path = ev.composedPath(); return !e || path.includes(e) || !!hit && path.includes(hit); };
+   const ours = m => m.type === 'attributes' ? /^data-still-/.test(m.attributeName) : m.type === 'childList' && [...m.addedNodes, ...m.removedNodes].every(x => x.localName === 'still-cursor'); // the AI's cursor and read_page's ids
+   const seen = new MutationObserver(list => { for (const m of list) if (!ours(m)) W.n++; });
+   for (const x of new Set([document, d])) seen.observe(x, { subtree: true, childList: true, attributes: true, characterData: true });
+   const on = {
+    mousedown: ev => { W.got = true; if (hits(ev)) W.pressed = true; },
+    click: ev => { W.got = true; if (hits(ev)) W.reached = true; else if (!W.reached) W.missed = line(ev.composedPath()[0]); },
+    keydown: () => { W.got = W.keyed = true; },
+    pointerdown: () => { W.got = true; }, mouseup: () => { W.got = true; }, keypress: () => { W.got = true; }, keyup: () => { W.got = true; },
+    submit: () => { W.submitted = true; },
+    invalid: ev => { if (!W.invalid) W.invalid = (label(ev.target) || kind(ev.target)) + ': ' + ev.target.validationMessage; },
+   };
+   for (const x of at) for (const t in on) x.addEventListener(t, on[t], true);
+   W.stop = () => { seen.disconnect(); clearTimeout(W.timer); for (const x of at) for (const t in on) x.removeEventListener(t, on[t], true); if (window[WATCH] === W) delete window[WATCH]; };
+   W.timer = setTimeout(W.stop, 30000);
+   W.mark = () => { W.n = 0; W.url = location.href; W.state = stateOf(e); W.active = deepActive(); W.sig = sig(W.active); W.x = scrollX; W.y = scrollY; W.sel = String(getSelection()); };
+   W.mark();
+   return window[WATCH] = W;
+  };
  """;
 
  // read_page: header, then one line per control near the visible area (or all of them), then a page of the text.
@@ -374,14 +416,42 @@ public partial class MainWindow
  """;
  const string ClickJs = """
   const e = target(o); if (!e) return missing(o);
+  if (e.matches(':disabled') || e.closest('[aria-disabled="true"]')) return { error: 'disabled', label: label(e) || kind(e) };
   e.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
-  const b = box(e); if (!b.w && !b.h) return { error: 'hidden' };
+  const b = box(e); if ((!b.w && !b.h) || !e.getClientRects().length || view(e).getComputedStyle(e).visibility === 'hidden') return { error: 'hidden' };
+  // A page out of view still lays out: its window has to have a size and the middle of the element has to be inside it.
+  if (!innerWidth || !innerHeight) return { error: 'noview' };
   const x = b.x + b.w / 2, y = b.y + b.h / 2;
-  if (e.ownerDocument === document) {
-   const top = document.elementFromPoint(x, y);
-   if (top && !inside(top, e) && !inside(e, top) && top.closest('label')?.control !== e) return { error: 'covered', by: line(top.closest(Q) || top) };
-  }
+  if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) return { error: 'offscreen' };
+  const top = deepAt(x, y);
+  if (!top) return { error: 'offscreen' };
+  if (!inside(top, e) && !inside(e, top) && top.closest('label')?.control !== e) return { error: 'covered', by: line(top.closest(Q) || top) };
+  if (!o.again) watch(e, top);
   return { x, y, label: label(e) || kind(e) };
+ """;
+ // Key presses: a watcher on whatever has focus. MarkJs: the point to measure from, after the mouse has moved over the element.
+ const string WatchJs = """
+  watch(deepActive(), null); return true;
+ """;
+ const string MarkJs = """
+  window[WATCH]?.mark(); return true;
+ """;
+ const string GotJs = """
+  const W = window[WATCH]; return !W || W.got || W.n > 0;
+ """;
+ const string SeenJs = """
+  const W = window[WATCH]; if (!W) return { gone: true };
+  const a = deepActive(), changed = [];
+  if (location.href !== W.url) changed.push('url');
+  if (W.n) changed.push('page');
+  if (W.e && !W.e.isConnected) changed.push('removed');
+  if (stateOf(W.e) !== W.state) changed.push('state');
+  if (scrollX !== W.x || scrollY !== W.y) changed.push('scroll');
+  if (o.key ? a !== W.active || sig(a) !== W.sig || String(getSelection()) !== W.sel : typable(a) && (a !== W.active || a === W.e)) changed.push('focus');
+  if (W.e?.closest?.('a[download]') && W.reached) changed.push('download');
+  const out = { reached: W.reached, pressed: W.pressed, keyed: W.keyed, missed: W.missed, submitted: W.submitted, invalid: W.invalid, changed };
+  if (o.last) W.stop();
+  return out;
  """;
  // type: focuses the field and selects what's in it (so typing replaces it), or picks a dropdown option.
  const string FocusJs = """
@@ -418,7 +488,9 @@ public partial class MainWindow
   let el = null;
   if (o.id || o.selector) { el = target(o); if (!el) return missing(o); if (!o.direction) { el.scrollIntoView({ block: 'center', behavior: 'instant' }); return { done: 'Scrolled to "' + (label(el) || kind(el)) + '"' }; } }
   const sc = scroller(el || document.elementFromPoint(innerWidth / 2, innerHeight / 2) || document.body);
+  const from = sc.scrollTop;
   sc.scrollBy({ top: (o.direction === 'up' ? -1 : 1) * (o.amount || Math.round(innerHeight * .8)), behavior: 'instant' });
+  if (sc.scrollTop === from) return { error: 'noscroll' };
   const max = sc.scrollHeight - sc.clientHeight;
   return { done: 'Scrolled ' + (o.direction === 'up' ? 'up' : 'down'), at: max > 0 ? Math.round(sc.scrollTop / max * 100) + '%' : 'no scrolling here' };
  """;
@@ -455,11 +527,15 @@ public partial class MainWindow
   string json = await core.RunAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
   using var doc = JsonDocument.Parse(json);
   var r = doc.RootElement.Clone();
-  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new PageMiss(err.GetString() is "gone" or "notfound" or "hidden" or "covered", err.GetString() switch {
+  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new PageMiss(err.GetString() is "gone" or "notfound" or "hidden" or "covered" or "disabled" or "offscreen", err.GetString() switch {
    "gone" => "That element isn't on the page anymore (the page changed or it's a new page). Call read_page or find for current ids.",
    "notfound" => "Couldn't find that element on the page. Call read_page or find.",
    "hidden" => "That element is hidden right now (maybe in a closed menu). Open what contains it first, or call read_page.",
    "covered" => "Something is on top of that element: " + Str(r, "by") + ". Close or click that first (often a cookie banner or pop-up).",
+   "disabled" => "\"" + Str(r, "label") + "\" is disabled right now, so nothing was clicked. Do what it's waiting for first (often a required field).",
+   "offscreen" => "That element is outside the visible page and scrolling didn't bring it in, so nothing was clicked. Call read_page.",
+   "noview" => "This page has no size right now, so nothing was clicked. Call read_page, or ask the user to bring its tab to the front.",
+   "noscroll" => "Nothing scrolled: it's already at the end, or there's nothing to scroll here.",
    "nofocus" => "No field is focused. Pass the field's id.",
    "nooption" => "That dropdown has no matching option. Options: " + Str(r, "options"),
    "empty" => "Pass the text to look for.",
@@ -765,8 +841,69 @@ public partial class MainWindow
  };
  static async Task MouseClick(CoreWebView2 core, double x, double y)
  {
-  foreach (var type in new[] { "mouseMoved", "mousePressed", "mouseReleased" })
+  foreach (var type in new[] { "mouseMoved", "mousePressed", "mouseReleased" }) {
+   if (type == "mousePressed") await Js(core, MarkJs, new { }); // what hovering changed doesn't count as the click's doing
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = type == "mouseMoved" ? "none" : "left", clickCount = type == "mouseMoved" ? 0 : 1 }));
+  }
+ }
+ /// Sends input and makes sure the page got it. A page that has just loaded out of view can drop input without a word;
+ /// nothing reached it, so sending it again can't do anything twice.
+ static async Task Deliver(CoreWebView2 core, Func<Task> send)
+ {
+  for (int tries = 0; tries < 8; tries++) {
+   await send();
+   for (int i = 0; i < 4; i++) {
+    if ((await Js(core, GotJs, new { })).ValueKind != JsonValueKind.False) return;
+    await Task.Delay(50);
+   }
+   await Task.Delay(250);
+  }
+ }
+ /// A step that ran but can't say it worked: how its chat row reads, in place of the tool's usual words. It ends with no tick.
+ static string Unverified(string who, string doingWord, string words, string message)
+ {
+  if (runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m is { Role: "tool", Status: "working" } && Says(m.Text, doingWord)) is { } step) { step.Text = words; step.Status = "failed"; }
+  return JsonSerializer.Serialize(new { ok = false, error = message, unverified = true });
+ }
+ const string CheckFirst = "It may still be working: call read_page to check before trying again, and don't repeat a purchase, send or delete without checking. A canvas or video can change without Still seeing it, so take a screenshot there.";
+ /// Did the action work? Its watcher says whether the event reached the element and what changed after. Null means it went
+ /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
+ /// ponytail: a page that changes by itself (a clock, a carousel) reads as changed. The event still had to reach the element.
+ static async Task<string?> Verdict(string who, BrowserTab t, CoreWebView2 core, string tabBefore, string urlBefore, string key, string name)
+ {
+  DateTime from = DateTime.UtcNow.AddSeconds(-1), started = DateTime.UtcNow;
+  bool Moved() => t.Closed || t.Url != urlBefore || agentTabs.GetValueOrDefault(who) != tabBefore || t.DownloadStartedAt > from;
+  JsonElement seen = default;
+  string[] changed = [];
+  bool Flag(string f) => seen.ValueKind == JsonValueKind.Object && seen.TryGetProperty(f, out var v) && v.ValueKind == JsonValueKind.True;
+  for (;;) {
+   var now = await Js(core, SeenJs, new { key });
+   if (now.ValueKind != JsonValueKind.Object) { if (t.Loading || Moved()) { await WaitLoaded(t, 8000); return null; } }
+   else if (now.TryGetProperty("gone", out _)) { await WaitLoaded(t, 8000); break; } // a new document: it navigated
+   else {
+    seen = now;
+    changed = [.. now.GetProperty("changed").EnumerateArray().Select(c => c.GetString() ?? "")];
+    if (Str(now, "invalid").Length > 0 && !Flag("submitted")) break;
+    if (key.Length == 0 && Str(now, "missed").Length > 0 && !Flag("pressed")) break; // it landed on something else
+   }
+   if (Moved() || changed.Length > 0 && !t.Loading) break;
+   double waited = (DateTime.UtcNow - started).TotalMilliseconds;
+   if (waited > (t.Loading ? 8000 : Flag("submitted") ? 5000 : key.Length > 0 ? (key.Contains("Enter", StringComparison.OrdinalIgnoreCase) ? 2000 : 1200) : Flag("reached") || Flag("pressed") ? 2000 : 800)) break;
+   await Task.Delay(100);
+  }
+  if (t.Loading) await WaitLoaded(t, 8000);
+  if (!t.Closed) try { await Js(core, SeenJs, new { key, last = true }); } catch (InvalidOperationException) { }
+  bool moved = Moved() || seen.ValueKind == JsonValueKind.Object && changed.Contains("url");
+  string invalid = Str(seen, "invalid"), action = key.Length > 0 ? "pressing " + key : "clicking “" + name + "”", doing = key.Length > 0 ? "Pressing" : "Clicking";
+  if (key.Length == 0 && Str(seen, "missed") is { Length: > 0 } missed && !Flag("pressed")) return Fail($"The click didn't reach \"{name}\": it landed on {missed}. Call read_page to see the page now.");
+  if (invalid.Length > 0 && !Flag("submitted") && !moved) return Unverified(who, doing, "Form not sent after " + action, $"The form wasn't sent: {invalid}. Fix that field first.");
+  if (moved || seen.ValueKind != JsonValueKind.Object) return null;
+  if (changed.Length > 0 && (key.Length > 0 || Flag("reached") || Flag("pressed"))) return null;
+  if (Flag("submitted")) return Unverified(who, doing, "No change after " + action, $"The form went out, but the page didn't change in 5 seconds, so Still can't say it worked. {CheckFirst}");
+  if (key.Length > 0) return Flag("keyed") ? Unverified(who, doing, "No change after " + action, $"Pressed {key}, but nothing on the page changed, so Still can't say it did anything. {CheckFirst}")
+   : Fail($"The page didn't get the {key} key. Click the field first, or call read_page.");
+  return Flag("reached") ? Unverified(who, doing, "No change after " + action, $"Clicked \"{name}\", but nothing on the page changed in 2 seconds, so Still can't say it worked. {CheckFirst}")
+   : Fail($"The click didn't reach \"{name}\", so nothing was clicked. Call read_page to see the page now.");
  }
  /// Types text one key at a time; a new line is Enter where the field has lines.
  static async Task TypeKeys(CoreWebView2 core, string text, bool multiline, Worker me)
@@ -844,6 +981,7 @@ public partial class MainWindow
    }
    case "navigate": {
     var (w, t, core) = await AgentPage(who, args); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); await WaitLoaded(t);
+    if (t.ShowingError) return Fail("That page didn't load: " + Host(S(args, "url")) + ". Check the address, or try again.");
     Did(who, "Went to " + Host(t.Url)); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
    }
    case "switch_tab": {
@@ -889,12 +1027,13 @@ public partial class MainWindow
     string label = Str(hit, "label"), before = agentTabs.GetValueOrDefault(who) ?? "";
     await Pointer(who, t, core, x, y);
     t.AgentActedAt = DateTime.UtcNow;
-    await MouseClick(core, x, y);
-    await WaitLoaded(t, 8000);
+    string urlBefore = t.Url;
+    await Deliver(core, () => MouseClick(core, x, y));
     // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
     string numbered = "Clicking element " + (args.TryGetProperty("id", out var raw) ? raw.ValueKind == JsonValueKind.String ? raw.GetString() : raw.GetRawText() : "");
     if (label.Length > 0 && runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m.Role == "tool" && m.Text == numbered) is { } step) step.Text = "Clicking “" + label + "”";
+    if (await Verdict(who, t, core, before, urlBefore, "", label) is { } missed) return missed;
     Did(who, "Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
    }
    case "type": {
@@ -920,16 +1059,21 @@ public partial class MainWindow
      if (await Unchanged()) return Fail("Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
     }
     else if (!B(args, "append")) await PressKey(core, "Backspace");
-    if (B(args, "submit")) await PressKey(core, "Enter");
-    await WaitLoaded(t, B(args, "submit") ? 8000 : 0);
     string field = Str(focus, "label");
+    if (B(args, "submit")) {
+     string urlBefore = t.Url;
+     await Js(core, WatchJs, new { }); await Deliver(core, () => PressKey(core, "Enter"));
+     if (await Verdict(who, t, core, before, urlBefore, "Enter", field) is { } unsent) return unsent;
+    }
     Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
    }
    case "press_key": {
     var (w, t, core) = await AgentPage(who, args);
     string before = agentTabs.GetValueOrDefault(who) ?? "";
     t.AgentActedAt = DateTime.UtcNow;
-    await PressKey(core, S(args, "key")); await WaitLoaded(t, 8000);
+    string urlBefore = t.Url;
+    await Js(core, WatchJs, new { }); await Deliver(core, () => PressKey(core, S(args, "key")));
+    if (await Verdict(who, t, core, before, urlBefore, S(args, "key"), "") is { } nothing) return nothing;
     Did(who, "Pressed " + S(args, "key")); return Reply(Outcome(who, t, before, "Pressed " + S(args, "key")));
    }
    case "scroll": {

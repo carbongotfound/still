@@ -351,6 +351,7 @@ func doing(_ label: String) -> String {
  return label
 }
 func endStep(_ step: AiMessage, _ ok: Bool) {
+ if step.status == "failed" { return } // the tool has already said how it went (see unverified)
  step.status = ok ? nil : "failed"
  for w in stepWords where says(step.text, w.doing) { step.text = (ok ? w.done : w.failed) + step.text.dropFirst(w.doing.count); return }
  if !ok { step.text = "Didn't finish " + step.text } // a tool with no words of its own shows its name, which claims nothing

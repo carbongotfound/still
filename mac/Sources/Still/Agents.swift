@@ -179,7 +179,7 @@ enum Raced { case done(String?), interrupted(String), late }
 // The page scripts come straight from the Windows app (mac/build.sh copies them), so both stay in step.
 let agentScripts: [String: String] = {
  var scripts: [String: String] = [:]
- for name in ["Page", "Snapshot", "Find", "Click", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
+ for name in ["Page", "Snapshot", "Find", "Click", "Watch", "Mark", "Seen", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
   scripts[name] = (try? String(contentsOf: resources.appendingPathComponent("agent-\(name).js"), encoding: .utf8)) ?? ""
  }
  return scripts
@@ -210,6 +210,10 @@ func scriptError(_ code: String, _ reply: [String: Any]) -> String {
  case "notfound": return "Couldn't find that element on the page. Call read_page or find."
  case "hidden": return "That element is hidden right now (maybe in a closed menu). Open what contains it first, or call read_page."
  case "covered": return "Something is on top of that element: " + (reply["by"] as? String ?? "") + ". Close or click that first (often a cookie banner or pop-up)."
+ case "disabled": return "\"" + (reply["label"] as? String ?? "") + "\" is disabled right now, so nothing was clicked. Do what it's waiting for first (often a required field)."
+ case "offscreen": return "That element is outside the visible page and scrolling didn't bring it in, so nothing was clicked. Call read_page."
+ case "noview": return "This page has no size right now, so nothing was clicked. Call read_page, or ask the user to bring its tab to the front."
+ case "noscroll": return "Nothing scrolled: it's already at the end, or there's nothing to scroll here."
  case "nofocus": return "No field is focused. Pass the field's id."
  case "nooption": return "That dropdown has no matching option. Options: " + (reply["options"] as? String ?? "")
  case "empty": return "Pass the text to look for."
@@ -224,7 +228,7 @@ func scriptError(_ code: String, _ reply: [String: Any]) -> String {
  let result: Any
  do { result = try await withCheckedThrowingContinuation { done in view.evaluateJavaScript(source, in: nil, in: stillWorld) { done.resume(with: $0) } } }
  catch { throw AgentError("The page's script failed: " + error.localizedDescription) }
- if let reply = result as? [String: Any], let code = reply["error"] as? String { throw PageMiss(missed: ["gone", "notfound", "hidden", "covered"].contains(code), message: scriptError(code, reply)) }
+ if let reply = result as? [String: Any], let code = reply["error"] as? String { throw PageMiss(missed: ["gone", "notfound", "hidden", "covered", "disabled", "offscreen"].contains(code), message: scriptError(code, reply)) }
  return result is NSNull ? nil : result
 }
 /// Pages re-render under the AI: when the element is missing, wait for the page to settle and try once more.
@@ -268,7 +272,7 @@ for (const d of [document, ...frames()]) { const w = d.defaultView; if (w && !P.
 P.got = false;
 return true;
 """#
-let agentProbeRead = "return !!(window.__stillProbe && window.__stillProbe.got);"
+let agentProbeRead = "return !window.__stillProbe || window.__stillProbe.got;" // no probe: a new document, so the page took it and moved on
 /// Arms the probe, sends the events, and says whether the page got them.
 @MainActor func trusted(_ view: WKWebView, _ send: () -> Bool) async -> Bool {
  guard (try? await agentJs(view, agentProbeArm, [:])) != nil, send() else { return false }
@@ -279,11 +283,11 @@ let agentProbeRead = "return !!(window.__stillProbe && window.__stillProbe.got);
  return false
 }
 /// Mouse events at a point in the page (CSS pixels from its top left).
-@MainActor func sendClick(_ view: WKWebView, _ x: Double, _ y: Double) -> Bool {
+@MainActor func sendClick(_ view: WKWebView, _ x: Double, _ y: Double, moveOnly: Bool = false) -> Bool {
  guard let window = view.window else { return false }
  let zoom = Double(view.pageZoom)
  let at = view.convert(NSPoint(x: x * zoom, y: view.isFlipped ? y * zoom : Double(view.bounds.height) - y * zoom), to: nil)
- for type in [NSEvent.EventType.mouseMoved, .leftMouseDown, .leftMouseUp] {
+ for type in moveOnly ? [NSEvent.EventType.mouseMoved] : [.leftMouseDown, .leftMouseUp] {
   guard let event = NSEvent.mouseEvent(with: type, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                        context: nil, eventNumber: 0, clickCount: type == .mouseMoved ? 0 : 1, pressure: type == .leftMouseDown ? 1 : 0) else { return false }
   switch type {
@@ -296,8 +300,53 @@ let agentProbeRead = "return !!(window.__stillProbe && window.__stillProbe.got);
 }
 /// Clicks like a real mouse; if the page didn't get it, the same click is played by script on the element.
 @MainActor func mouseClick(_ view: WKWebView, _ x: Double, _ y: Double, _ o: [String: Any]) async throws {
+ _ = sendClick(view, x, y, moveOnly: true)
+ _ = try? await agentJs(view, agentScripts["Mark"] ?? "", [:]) // what hovering changed doesn't count as the click's doing
  if await trusted(view, { sendClick(view, x, y) }) { return }
- _ = try await agentJs(view, "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail, o)
+ var again = o; again["again"] = true // the watcher set up before stays
+ _ = try await agentJs(view, "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail, again)
+}
+/// A step that ran but can't say it worked: how its chat row reads, in place of the tool's usual words. It ends with no tick.
+@MainActor func unverified(_ who: String, _ doingWord: String, _ words: String, _ message: String) -> String {
+ if let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.status == "working" && says($0.text, doingWord) }) { step.text = words; step.status = "failed" }
+ return jsonText(["ok": false, "error": message, "unverified": true])
+}
+let checkFirst = "It may still be working: call read_page to check before trying again, and don't repeat a purchase, send or delete without checking. A canvas or video can change without Still seeing it, so take a screenshot there."
+/// Did the action work? Its watcher says whether the event reached the element and what changed after. Nil means it went
+/// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
+/// ponytail: a page that changes by itself (a clock, a carousel) reads as changed. The event still had to reach the element.
+@MainActor func verdict(_ who: String, _ tab: Tab, _ view: WKWebView, _ tabBefore: String, _ urlBefore: String, _ key: String, _ name: String) async -> String? {
+ let started = Date(), from = Date().addingTimeInterval(-1)
+ func moved() -> Bool { tab.closed || tab.url != urlBefore || (agentTabs[who] ?? "") != tabBefore || tab.downloadAt > from }
+ var seen: [String: Any]?, changed: [String] = []
+ func flag(_ f: String) -> Bool { seen?[f] as? Bool == true }
+ func words(_ f: String) -> String { seen?[f] as? String ?? "" }
+ while true {
+  if let now = (try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key])) as? [String: Any] {
+   if now["gone"] != nil { await waitLoaded(tab, 8); break } // a new document: it navigated
+   seen = now; changed = now["changed"] as? [String] ?? []
+   if !words("invalid").isEmpty && !flag("submitted") { break }
+   if key.isEmpty && !words("missed").isEmpty && !flag("pressed") { break } // it landed on something else
+  } else if view.isLoading || moved() { await waitLoaded(tab, 8); return nil }
+  if moved() || (!changed.isEmpty && !view.isLoading) { break }
+  let limit: Double = view.isLoading ? 8 : flag("submitted") ? 5 : !key.isEmpty ? (key.lowercased().contains("enter") ? 2 : 1.2) : flag("reached") || flag("pressed") ? 2 : 0.8
+  if Date().timeIntervalSince(started) > limit { break }
+  try? await Task.sleep(nanoseconds: 100_000_000)
+ }
+ if view.isLoading { await waitLoaded(tab, 8) }
+ if !tab.closed { _ = try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key, "last": true]) }
+ let wentOn = moved() || changed.contains("url"), action = key.isEmpty ? "clicking “" + name + "”" : "pressing " + key, doingWord = key.isEmpty ? "Clicking" : "Pressing"
+ if key.isEmpty && !words("missed").isEmpty && !flag("pressed") { return agentFail("The click didn't reach \"\(name)\": it landed on \(words("missed")). Call read_page to see the page now.") }
+ if !words("invalid").isEmpty && !flag("submitted") && !wentOn { return unverified(who, doingWord, "Form not sent after " + action, "The form wasn't sent: \(words("invalid")). Fix that field first.") }
+ if wentOn || seen == nil { return nil }
+ if !changed.isEmpty && (!key.isEmpty || flag("reached") || flag("pressed")) { return nil }
+ if flag("submitted") { return unverified(who, doingWord, "No change after " + action, "The form went out, but the page didn't change in 5 seconds, so Still can't say it worked. " + checkFirst) }
+ if !key.isEmpty {
+  return flag("keyed") ? unverified(who, doingWord, "No change after " + action, "Pressed \(key), but nothing on the page changed, so Still can't say it did anything. " + checkFirst)
+   : agentFail("The page didn't get the \(key) key. Click the field first, or call read_page.")
+ }
+ return flag("reached") ? unverified(who, doingWord, "No change after " + action, "Clicked \"\(name)\", but nothing on the page changed in 2 seconds, so Still can't say it worked. " + checkFirst)
+  : agentFail("The click didn't reach \"\(name)\", so nothing was clicked. Call read_page to see the page now.")
 }
 // The Mac's key codes and characters for named keys; letters and digits by their place on the ANSI keyboard.
 let macKeys: [String: (keyCode: UInt16, text: String)] = [
@@ -552,7 +601,7 @@ extension Browser {
   case .late: result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
   }
   if let going {
-   if let ran = going.intent { if case .done = raced { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off: uncertain
+   if let ran = going.intent { if case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off, or no sign it worked: uncertain
    checkpoint(going, tool, result)
   }
   if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
@@ -899,7 +948,9 @@ extension Browser {
    case "navigate":
     let (_, tab, view) = try await agentPage(who, args)
     guard let address = URL(string: try agentWebUrl(argText(args, "url"))) else { return agentFail("Agents can only open http and https pages.") }
+    let asked = Date()
     view.load(URLRequest(url: address)); await waitLoaded(tab)
+    if tab.loadFailedAt > asked { return agentFail("That page didn't load: " + hostName(address.absoluteString) + ". Check the address, or try again.") }
     did(who, "Went to " + hostName(tab.url)); return agentOk(["tabId": tab.id, "title": tab.title, "url": tab.url])
    case "switch_tab":
     let (browser, tab) = try agentTab(who, args)
@@ -953,12 +1004,13 @@ extension Browser {
     let label = hit["label"] as? String ?? "", before = agentTabs[who] ?? ""
     await pointer(who, tab, view, x, y)
     tab.agentActedAt = Date() // a pop-up or file picker it opens belongs to the agent
+    let urlBefore = tab.url
     try await mouseClick(view, x, y, o)
-    await waitLoaded(tab, 8)
     // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
     let numbered = "Clicking element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
     if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicking “" + label + "”" }
+    if let missed = await verdict(who, tab, view, before, urlBefore, "", label) { return missed }
     did(who, "Clicked '" + label + "'"); return agentOk(outcome(who, tab, before, "Clicked \"" + label + "\""))
    case "type":
     let (_, tab, view) = try await agentPage(who, args)
@@ -985,15 +1037,19 @@ extension Browser {
      if text.count <= 4000, await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who)) }
      if await unchanged() { return agentFail("Typed, but \"" + field + "\" didn't change. Click it first, then type without an id, or use press_key.") }
     } else if !append { try await pressKey(view, "Backspace") }
-    if submit { try await pressKey(view, "Enter") }
-    await waitLoaded(tab, submit ? 8 : 0)
+    if submit {
+     let urlBefore = tab.url
+     _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, "Enter")
+     if let unsent = await verdict(who, tab, view, before, urlBefore, "Enter", field) { return unsent }
+    }
     did(who, "Typed into " + field)
     return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "")))
    case "press_key":
     let (_, tab, view) = try await agentPage(who, args)
-    let before = agentTabs[who] ?? ""
+    let before = agentTabs[who] ?? "", urlBefore = tab.url
     tab.agentActedAt = Date()
-    try await pressKey(view, argText(args, "key")); await waitLoaded(tab, 8)
+    _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, argText(args, "key"))
+    if let nothing = await verdict(who, tab, view, before, urlBefore, argText(args, "key"), "") { return nothing }
     did(who, "Pressed " + argText(args, "key")); return agentOk(outcome(who, tab, before, "Pressed " + argText(args, "key")))
    case "scroll":
     let (_, _, view) = try await agentPage(who, args)

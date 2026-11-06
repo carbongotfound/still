@@ -1459,6 +1459,7 @@ public partial class MainWindow
  static string Doing(string label) { foreach (var w in StepWords) if (Says(label, w.Done)) return w.Doing + label[w.Done.Length..]; return label; }
  static void EndStep(AiMessage step, bool ok)
  {
+  if (step.Status == "failed") return; // the tool has already said how it went (see Unverified)
   step.Status = ok ? null : "failed";
   foreach (var w in StepWords) if (Says(step.Text, w.Doing)) { step.Text = (ok ? w.Done : w.Failed) + step.Text[w.Doing.Length..]; return; }
   if (!ok) step.Text = "Didn't finish " + step.Text; // a tool with no words of its own shows its name, which claims nothing
