@@ -26,7 +26,7 @@ import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean; billing?: string }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
@@ -119,7 +119,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
   // Signed out, or installed with no way to tell (GitHub Copilot) and signed in from a terminal.
   const setUp = s === "signedOut" || (s === "" && !!h.terminalSignIn)
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Logged in"}</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : h.billing ? "Ready" : "Logged in"}</span><Check aria-hidden /></>
    : s === "needsKey" ? "API provider · Needs a key"
    : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
@@ -146,6 +146,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
      <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button></div>
     </>}
    </div>}
+   {!!h.billing && <p className="byo-gaps byo-billing">{h.billing}</p>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {open && s === "missing" && <div className="byo-how">
     <p>Run this in {SHELL}, then come back:</p>
@@ -769,7 +770,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
-    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && !provider.api && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.billing || (provider.maker && !provider.api && "Your " + provider.name + " plan"), ai.usage].filter(Boolean).join(" · ")}</p>}
    </div></>}
   </div></div>}
  </section>

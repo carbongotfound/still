@@ -1,4 +1,4 @@
-// The AI agent apps Still drives headless, signed in with the user's own plan (ported from Agents/AgentAdapter.cs and
+// The AI agent apps Still drives headless (ported from Agents/AgentAdapter.cs and
 // Agents/AgentStream.cs). Still never reads their login; it only asks each app whether it is signed in. Every run goes
 // through Still's MCP server and nothing else.
 import Darwin
@@ -99,6 +99,10 @@ class AgentAdapter {
  var env: [String: String] { [:] }
  /// What it can't do that the others can, said plainly in AI settings.
  var gaps: [String] { [] }
+ /// Login settings from the user's environment that this app keeps. Every other app loses them (apiKeys).
+ var kept: [String] { [] }
+ /// Set when its runs bill something other than the app's own sign-in: what its card says about that.
+ var billing: String { "" }
 
  /// Signed in? nil when the app can't say. Uses none of the user's AI usage.
  func detect(_ exe: String) async -> Bool? { nil }
@@ -111,7 +115,7 @@ class AgentAdapter {
 
  func start(_ exe: String, _ r: RunRequest) async throws -> AgentRun { try await CliRun.start(self, exe, r) }
 
- // Keys that would bill an API account instead of the user's plan. The app's own sign-in is used instead.
+ // Keys that would bill an API account instead of the app's own sign-in. Removed from every app except what it keeps (kept), and Still never sets one.
  static let apiKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
   "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"]
 
@@ -122,14 +126,19 @@ class AgentAdapter {
   env["PATH"] = cliDirs().joined(separator: ":")
   return env
  }
+ static func environment(keeping kept: [String]) -> [String: String] {
+  var env = environment
+  for key in kept { env[key] = ProcessInfo.processInfo.environment[key] }
+  return env
+ }
 
  /// Runs the app briefly and returns what it printed (stdout, then stderr), or nil if it didn't finish in time.
  static func output(_ exe: String, _ folder: String, _ args: [String]) async -> String? {
   await printed(exe, folder, args).map { $0[0] + "\n" + $0[1] }
  }
- static func printed(_ exe: String, _ folder: String, _ args: [String], seconds: Double = 20) async -> [String]? {
+ static func printed(_ exe: String, _ folder: String, _ args: [String], seconds: Double = 20, keep: [String] = []) async -> [String]? {
   try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
-  guard let p = try? Spawned(exe, args, folder: folder, environment: environment) else { return nil }
+  guard let p = try? Spawned(exe, args, folder: folder, environment: environment(keeping: keep)) else { return nil }
   try? p.input.close()
   return await withCheckedContinuation { done in
    DispatchQueue.global().async {
@@ -403,9 +412,30 @@ final class ClaudeAdapter: AgentAdapter {
  override var forgets: Bool { true } // --no-session-persistence
  override var namesSession: Bool { true }
  static let levels = ["low", "medium", "high", "xhigh", "max"]
+ // Claude Code's own login methods stay available: products that run it may not remove or restrict them.
+ override var kept: [String] { ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"] }
+ private var bills = ""
+ override var billing: String { bills }
  override func detect(_ exe: String) async -> Bool? {
-  guard let printed = await AgentAdapter.printed(exe, aiFolder, ["auth", "status"]) else { return nil }
-  return (jsonObject(printed[0].trimmingCharacters(in: .whitespacesAndNewlines))?["loggedIn"] as? Bool) ?? false
+  // The setting sources a run uses: with its default ones, a login in the user's settings file reads as signed in and the run then says it isn't.
+  guard let printed = await AgentAdapter.printed(exe, aiFolder, ["--setting-sources", "project,local", "auth", "status"], keep: kept) else { bills = ""; return nil }
+  let status = jsonObject(printed[0].trimmingCharacters(in: .whitespacesAndNewlines))
+  bills = Self.whoBills(status?["apiProvider"] as? String, status?["authMethod"] as? String, status?["apiKeySource"] as? String)
+  return (status?["loggedIn"] as? Bool) ?? false
+ }
+ /// From what `claude auth status` says. "" = Claude's own sign-in. An auth token reads the same there as a subscription
+ /// token, so this also looks whether that variable is set, never at its value.
+ static func whoBills(_ provider: String?, _ method: String?, _ keySource: String?) -> String {
+  switch (provider, method) {
+  case ("bedrock", _): return "Using Amazon Bedrock from your environment. Your AWS account is billed."
+  case ("vertex", _): return "Using Google Cloud from your environment. Your Google Cloud account is billed."
+  case ("foundry", _): return "Using Microsoft Foundry from your environment. Your Azure account is billed."
+  case (_, "third_party"): return "Using a cloud provider from your environment. Your account there is billed."
+  case (_, "api_key"): return keySource == "ANTHROPIC_API_KEY" ? "Using an API key from your environment. Your API account is billed." : "Using an API key. Your API account is billed."
+  case (_, "api_key_helper"): return "Using an API key. Your API account is billed."
+  case (_, "oauth_token"): return ProcessInfo.processInfo.environment["ANTHROPIC_AUTH_TOKEN"]?.isEmpty == false ? "Using an auth token from your environment. The account it belongs to is billed." : ""
+  default: return ""
+  }
  }
  override func models(_ exe: String) async -> [AgentModel] {
   [("", "Default"), ("fable", "Fable"), ("opus", "Opus"), ("sonnet", "Sonnet"), ("haiku", "Haiku")].map { AgentModel(id: $0.0, name: $0.1, efforts: Self.levels) }
@@ -817,7 +847,7 @@ final class CliRun: AgentRun {
  static func start(_ adapter: AgentAdapter, _ exe: String, _ r: RunRequest) async throws -> AgentRun {
   try FileManager.default.createDirectory(atPath: r.folder, withIntermediateDirectories: true)
   let args = try await adapter.args(exe, r)
-  let run = CliRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment.merging(adapter.env) { $1 }))
+  let run = CliRun(adapter, try Spawned(exe, args, folder: r.folder, environment: AgentAdapter.environment(keeping: adapter.kept).merging(adapter.env) { $1 }))
   DispatchQueue.main.async { launched += 1 }
   // Written from the side, so a big prompt never blocks Still while the app is slow to read it.
   let prompt = adapter.promptOnStdin ? Data(r.prompt.utf8) : Data(), input = run.process.input
@@ -1040,7 +1070,7 @@ let loginPath: String = {
 /// Where AI apps get installed, re-read each time so a fresh install is found without restarting Still.
 func cliDirs() -> [String] {
  let home = NSHomeDirectory()
- var dirs = loginPath.split(separator: ":").map(String.init) + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+ var dirs = (qaEnv("STILL_QA_CLIS").map { [$0] } ?? []) + loginPath.split(separator: ":").map(String.init) + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
  dirs += ["\(home)/.local/bin", "\(home)/.grok/bin", "\(home)/.claude/local", "\(home)/.npm-global/bin", "\(home)/.bun/bin", "\(home)/.volta/bin",
           "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
  let nvm = "\(home)/.nvm/versions/node"

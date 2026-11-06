@@ -86,7 +86,7 @@ Deleting a chat, a companion, a memory, a key or your history asks first and say
 
 ## Supported AI apps
 
-Still runs the AI's own app in the background, signed in to your plan. It never asks for a key for these, never reads the app's login, and strips API-key settings from each run so nothing gets billed to an API account.
+Still runs the AI's own app in the background. It never asks for a key for these and never reads the app's login. Claude Code keeps its own sign-in and any API key, auth token or cloud provider set in your environment; when one of those is in use, Claude's card in **Settings > Models** says so, because that account gets billed. For the other apps, Still strips API-key settings from each run, so nothing gets billed to an API account.
 
 | AI | What Still runs | How it connects |
 |---|---|---|

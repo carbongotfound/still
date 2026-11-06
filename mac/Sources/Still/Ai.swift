@@ -326,6 +326,12 @@ func stopRun(_ r: ChatRun) {
 func lostSession(_ line: String) -> Bool {
  line.contains("No conversation found") || line.contains("Failed to restore session") || line.contains("Error resuming session") || line.contains("Invalid session identifier") || line.contains("Session not found")
 }
+/// A sign-in error, unless a key, token or provider from the environment was refused: it would still win after signing in, so its error stays on screen.
+@MainActor func needsSignIn(_ cli: AgentAdapter, _ error: String) async -> Bool {
+ guard signedOut(error) else { return false }
+ await checkAi(cli)
+ return cli.billing.isEmpty
+}
 func signedOut(_ text: String) -> Bool { text.range(of: #"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials"#, options: [.regularExpression, .caseInsensitive]) != nil }
 func official(_ cli: AgentAdapter, _ url: String) -> Bool {
  guard let u = URL(string: url), u.scheme == "https", let host = u.host else { return false }
@@ -1247,7 +1253,7 @@ extension Browser {
   aiStatus[cli.id] = "signingIn"; aiSignInUrl = ""; aiSignInCode = ""; aiView.error = ""; aiSetupCancelled = false; aiView.open = true; publishAiEverywhere()
   do {
    try FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
-   let p = try Spawned(exe, cli.signIn, folder: aiFolder, environment: AgentAdapter.environment) // stdin stays open: some apps wait on it
+   let p = try Spawned(exe, cli.signIn, folder: aiFolder, environment: AgentAdapter.environment(keeping: cli.kept)) // stdin stays open: some apps wait on it
    aiSetupProcess = p
    await waitSetupProcess(p) { [self] raw in
     let line = raw.replacingOccurrences(of: #"\x1b\[[0-9;?]*[A-Za-z]"#, with: "", options: .regularExpression)
@@ -1464,7 +1470,7 @@ extension Browser {
    else if started.exitCode != 0 && !said && !stopped && chat.error.isEmpty { chat.error = "\(cli.app) stopped: " + (started.errors.last { !tidy($0).isEmpty } ?? "exit code \(started.exitCode)") }
   } catch { chat.error = "\(cli.app) failed: \(error.localizedDescription)" }
   finish()
-  if !said && signedOut(chat.error) {
+  if !said, await needsSignIn(cli, chat.error) {
    // Signed out: sign in right here, then the message runs again by itself.
    chat.error = ""; aiStatus[cli.id] = "signedOut"; aiView.pending = shown; aiView.chat = chat
    taskState(me, "waiting", "signin")
@@ -1549,7 +1555,7 @@ extension Browser {
    "checked": aiChecked,
    "harnesses": aiClis.map { c -> [String: Any] in ["id": c.id, "name": c.name, "app": c.app, "maker": c.maker, "installed": findCli(c.command) != nil, "status": aiStatus[c.id] ?? "",
     "installer": c.installer, "installCommand": c.installCommand, "site": c.site, "secondary": c.secondary, "compatible": c.compatible, "forgets": c.forgets,
-    "gaps": c.gaps, "terminalSignIn": c.terminalSignIn, "api": c is ApiAdapter] },
+    "gaps": c.gaps, "terminalSignIn": c.terminalSignIn, "api": c is ApiAdapter, "billing": c.billing] },
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),

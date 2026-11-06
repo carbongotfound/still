@@ -108,7 +108,7 @@ public partial class MainWindow
     case AgentEvent.Spent spent: Spend(cli, spent); break;
    }
    s.Started = s.Session != null;
-   if (said.Length == 0) s.Error = run.Errors.LastOrDefault(l => l.Trim().Length > 0) is { } why && SignedOutError().IsMatch(why) ? $"{cli.Name} isn't signed in." : $"{cli.App} didn't answer.";
+   if (said.Length == 0) s.Error = run.Errors.LastOrDefault(l => l.Trim().Length > 0) is { } why && await NeedsSignIn(cli, why) ? $"{cli.Name} isn't signed in." : $"{cli.App} didn't answer.";
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception) { s.Error = $"{cli.App} didn't answer."; App.Log(ex); }
   finally {
    run?.Dispose();

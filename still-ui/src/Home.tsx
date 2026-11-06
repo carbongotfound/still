@@ -125,7 +125,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
     <div className="mate-info">
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
-    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
+    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && !h.billing && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
     <div className="mate-acts"><button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
      <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => fire(send, c, (ai.companions?.length ?? 0) <= 1)}><UserX />Fire</button></div>
