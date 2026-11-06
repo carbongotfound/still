@@ -18,8 +18,8 @@ public sealed record RunRequest(string Prompt, string Model, string Effort, stri
  public string PromptFile => Path.Combine(Folder, "prompt-" + (Session ?? "run") + ".txt");
 }
 
-/// An AI agent app on the user's PC that Still drives headless, signed in with the user's own plan. Still never reads its
-/// login; it only asks the app whether it is signed in. Every run goes through Still's MCP server and nothing else.
+/// An AI agent app on the user's PC that Still drives headless. Still never reads its login; it only asks the app whether
+/// it is signed in. Every run goes through Still's MCP server and nothing else.
 public abstract class AgentAdapter
 {
  public required string Id { get; init; }        // "claude", "grok", "chatgpt" or a manifest's id
@@ -53,18 +53,22 @@ public abstract class AgentAdapter
  public virtual IReadOnlyDictionary<string, string> Env { get; } = new Dictionary<string, string>();
  /// What it can't do the way the others can, said on its card instead of hidden.
  public virtual string[] Gaps => [];
+ /// Login settings from the user's environment that this app keeps. Every other app loses them (ApiKeys).
+ public virtual string[] Kept => [];
+ /// Set when its runs bill something other than the app's own sign-in: what its card says about that.
+ public virtual string Billing => "";
 
  public virtual Task<AgentRun> Start(string exe, RunRequest r) => CliRun.Start(this, exe, r);
 
- // Keys that would bill an API account instead of the user's plan. The app's own sign-in is used instead.
+ // Keys that would bill an API account instead of the app's own sign-in. Removed from every app except what it keeps (Kept), and Still never sets one.
  static readonly string[] ApiKeys = ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_BASE_URL", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX",
   "OPENAI_API_KEY", "OPENAI_BASE_URL", "CODEX_API_KEY", "XAI_API_KEY", "GROK_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "GOOGLE_GEMINI_BASE_URL", "GOOGLE_GENAI_USE_VERTEXAI"];
  internal static bool Stripped(string key) => ApiKeys.Contains(key, StringComparer.OrdinalIgnoreCase);
 
- public static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args, IReadOnlyDictionary<string, string>? env = null)
+ public static ProcessStartInfo Launch(string exe, string folder, IEnumerable<string> args, IReadOnlyDictionary<string, string>? env = null, string[]? keep = null)
  {
   var start = new ProcessStartInfo { WorkingDirectory = folder, UseShellExecute = false, CreateNoWindow = true };
-  foreach (var key in ApiKeys) start.Environment.Remove(key);
+  foreach (var key in ApiKeys.Except(keep ?? [])) start.Environment.Remove(key);
   foreach (var (key, value) in env ?? new Dictionary<string, string>()) if (!Stripped(key)) start.Environment[key] = value;
   if (exe.EndsWith(".exe", StringComparison.OrdinalIgnoreCase)) { start.FileName = exe; foreach (var a in args) start.ArgumentList.Add(a); return start; }
   // npm installs .cmd launchers, which only cmd.exe runs. Every argument is Still's own (paths, flags, ids).
@@ -74,11 +78,11 @@ public abstract class AgentAdapter
  }
 
  /// Runs the app briefly and returns what it printed (stdout, then stderr), or null if it didn't finish in time.
- protected static async Task<string?> Output(string exe, string folder, params string[] args) => await Printed(exe, folder, args) is { } p ? p[0] + "\n" + p[1] : null;
- protected static async Task<string[]?> Printed(string exe, string folder, params string[] args)
+ protected async Task<string?> Output(string exe, string folder, params string[] args) => await Printed(exe, folder, args) is { } p ? p[0] + "\n" + p[1] : null;
+ protected async Task<string[]?> Printed(string exe, string folder, params string[] args)
  {
   Directory.CreateDirectory(folder);
-  var start = Launch(exe, folder, args);
+  var start = Launch(exe, folder, args, keep: Kept);
   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
   start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
   using var p = Process.Start(start)!;
@@ -94,12 +98,35 @@ sealed class ClaudeAdapter : AgentAdapter
  public override bool NamesSession => true;
  public override bool Forgets => true; // --no-session-persistence
  static readonly string[] Levels = ["low", "medium", "high", "xhigh", "max"];
+ // Claude Code's own login methods stay available: products that run it may not remove or restrict them.
+ public override string[] Kept => ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN", "CLAUDE_CODE_USE_BEDROCK", "CLAUDE_CODE_USE_VERTEX"];
+ string billing = "";
+ public override string Billing => billing;
  public override async Task<bool?> Detect(string exe)
  {
-  var printed = await Printed(exe, MainWindow.AiFolder, "auth", "status");
-  try { return printed == null ? null : JsonNode.Parse(printed[0])?["loggedIn"]?.GetValue<bool>() ?? false; }
+  // The setting sources a run uses: with its default ones, a login in the user's settings file reads as signed in and the run then says it isn't.
+  var printed = await Printed(exe, MainWindow.AiFolder, "--setting-sources", "project,local", "auth", "status");
+  billing = "";
+  try {
+   if (printed == null) return null;
+   var status = JsonNode.Parse(printed[0]);
+   billing = WhoBills(status?["apiProvider"]?.GetValue<string>(), status?["authMethod"]?.GetValue<string>(), status?["apiKeySource"]?.GetValue<string>());
+   return status?["loggedIn"]?.GetValue<bool>() ?? false;
+  }
   catch (Exception ex) when (ex is JsonException or ArgumentException) { return false; }
  }
+ /// From what `claude auth status` says. "" = Claude's own sign-in. An auth token reads the same there as a subscription
+ /// token, so this also looks whether that variable is set, never at its value.
+ static string WhoBills(string? provider, string? method, string? keySource) => (provider, method) switch {
+  ("bedrock", _) => "Using Amazon Bedrock from your environment. Your AWS account is billed.",
+  ("vertex", _) => "Using Google Cloud from your environment. Your Google Cloud account is billed.",
+  ("foundry", _) => "Using Microsoft Foundry from your environment. Your Azure account is billed.",
+  (_, "third_party") => "Using a cloud provider from your environment. Your account there is billed.",
+  (_, "api_key") when keySource == "ANTHROPIC_API_KEY" => "Using an API key from your environment. Your API account is billed.",
+  (_, "api_key" or "api_key_helper") => "Using an API key. Your API account is billed.",
+  (_, "oauth_token") when Environment.GetEnvironmentVariable("ANTHROPIC_AUTH_TOKEN") is { Length: > 0 } => "Using an auth token from your environment. The account it belongs to is billed.",
+  _ => "",
+ };
  public override Task<AgentModel[]> Models(string exe) => Task.FromResult<AgentModel[]>([new("", "Default", Levels), new("fable", "Fable", Levels),
   new("opus", "Opus", Levels), new("sonnet", "Sonnet", Levels), new("haiku", "Haiku", Levels)]);
  public override Task<List<string>> Args(string exe, RunRequest r)
@@ -534,7 +561,7 @@ public sealed class CliRun : AgentRun
  public static async Task<AgentRun> Start(AgentAdapter adapter, string exe, RunRequest r)
  {
   Directory.CreateDirectory(r.Folder);
-  var start = AgentAdapter.Launch(exe, r.Folder, await adapter.Args(exe, r), adapter.Env);
+  var start = AgentAdapter.Launch(exe, r.Folder, await adapter.Args(exe, r), adapter.Env, adapter.Kept);
   start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
   start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
   var run = new CliRun(adapter, Process.Start(start) ?? throw new InvalidOperationException("couldn't start it."));

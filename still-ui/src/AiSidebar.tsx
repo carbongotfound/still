@@ -26,7 +26,7 @@ import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
 import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
-type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean }
+type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean; billing?: string }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
@@ -119,11 +119,11 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
   // Signed out, or installed with no way to tell (GitHub Copilot) and signed in from a terminal.
   const setUp = s === "signedOut" || (s === "" && !!h.terminalSignIn)
   const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
-   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : "Logged in"}</span><Check aria-hidden /></>
+   : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : h.billing ? "Ready" : "Logged in"}</span><Check aria-hidden /></>
    : s === "needsKey" ? "API provider · Needs a key"
    : s === "badKey" ? "API provider · Key not accepted"
    : s === "missing" ? "Not installed"
-   : s === "signedOut" && !send ? "Installed · Sign in with your plan" : "Installed"
+   : s === "signedOut" && !send ? "Installed · Sign in" : "Installed"
   return <div key={h.id} className="byo-row" data-chosen={chosen || undefined} data-status={s || undefined}>
    <button className="byo-main" onClick={() => onPick(h.id)} aria-pressed={chosen}>
     <span className="byo-tile" aria-hidden><AiLogo id={h.api ? h.name : h.id} size={22} /></span>
@@ -135,17 +135,18 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    {s === "missing" && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Add<ChevronDown /></Button>}
    {open && setUp && <div className="byo-how">
     {h.terminalSignIn ? <>
-     <p>{h.app} signs in from a terminal. Run this in {SHELL}, sign in with your plan in the browser it opens, then come back:</p>
+     <p>{h.app} signs in from a terminal. Run this in {SHELL}, finish signing in in the browser it opens, then come back:</p>
      <code className="byo-cmd">{h.terminalSignIn}</code>
      <div className="ai-row">
       <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
       {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
      </div>
     </> : send && <>
-     <p>{h.app} is installed. Sign in with your {h.maker} plan in the browser it opens, then come back.</p>
-     <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>Sign in with your plan</Button></div>
+     <p>{h.app} is installed. Sign in with {h.maker || "your account"} in the browser it opens, then come back.</p>
+     <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>{h.maker ? `Sign in with ${h.maker}` : "Sign in"}</Button></div>
     </>}
    </div>}
+   {!!h.billing && <p className="byo-gaps byo-billing">{h.billing}</p>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {open && s === "missing" && <div className="byo-how">
     <p>Run this in {SHELL}, then come back:</p>
@@ -218,7 +219,7 @@ function ModelPicker({ ai, send, disabled }: { ai: AiState; send: Send; disabled
 // Who you work with and how hard they think: Quick (the quickest model, thinking little), Everyday (the AI app's own
 // defaults) or Thorough (the strongest model, thinking hard). Advanced swaps the modes for the model and effort pickers.
 const MODES: [Mode, string, LucideIcon, string][] = [
- ["efficient", "Quick", Rabbit, "Fast answers that go easy on your plan"],
+ ["efficient", "Quick", Rabbit, "Fast answers that use less"],
  ["default", "Everyday", Coffee, "Your AI app's usual setup, right for most things"],
  ["expert", "Thorough", Brain, "Its strongest model, taking its time on hard jobs"],
 ]
@@ -280,7 +281,7 @@ export function TierSettings({ ai, send, only }: { ai: AiState; send: Send; only
       <Select value={effort} disabled={!model?.efforts.length} onValueChange={v => send("aiTier", { harness: h.id, tier: t, model: tier.model, effort: v === "default" ? "" : v })}>
        <SelectTrigger size="sm" aria-label={`${h.name} ${label} effort`}><SelectValue /></SelectTrigger>
        <SelectContent><SelectItem value="default">Default effort</SelectItem>{model?.efforts.map(e => <SelectItem key={e} value={e}>{effortName(e)} effort</SelectItem>)}</SelectContent></Select>
-      {tier.failed && <small className="tier-failed">Not on your plan, so chats ran on the default model.</small>}
+      {tier.failed && <small className="tier-failed">Not available on your account, so chats ran on the default model.</small>}
      </div>
     })}
    </div>
@@ -591,7 +592,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
  if (!current) return <div className="ai-pane ai-center">
   <Face size={64} />
   <h3>Pick your model</h3>
-  <p>Still runs on the AI you already pay for, through its own app on this computer. No API key needed, no credits, no extra plan. Your chats go only to your AI provider.</p>
+  <p>Still works through an AI app on this computer, or an API you add. Your chats go only to your AI provider.</p>
   <AiPicker ai={ai} send={send} onPick={id => send("aiHarness", { harness: id })} />
   {pending}
  </div>
@@ -604,7 +605,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
-   <p>{current.name} needs {current.maker}'s app on this {MAC ? "Mac" : "PC"}. Run this in {SHELL}, then sign in with your plan.</p>
+   <p>{current.name} needs {current.maker}'s app on this {MAC ? "Mac" : "PC"}. Run this in {SHELL}, then sign in.</p>
    <code className="byo-cmd">{current.installCommand}</code>
    {current.installer && <>
     <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>
@@ -769,7 +770,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
     {!ai.incognito && chat && <ProfileChip chat={chat} busy={busy} send={send} />}
-    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.maker && !provider.api && "Your " + provider.name + " plan", ai.usage].filter(Boolean).join(" · ")}</p>}
+    {mode === "panel" && provider && (provider.maker || ai.usage) && <p className="ai-usage"><Gauge />{[provider.billing || (provider.maker && !provider.api && "Your " + provider.name + " plan"), ai.usage].filter(Boolean).join(" · ")}</p>}
    </div></>}
   </div></div>}
  </section>

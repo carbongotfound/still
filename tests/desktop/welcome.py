@@ -1,7 +1,7 @@
 """Setup on a fresh profile in four steps, the tour, Run setup again, "Set me up again", and the look editor.
 
 A fresh profile starts with the intro (skipped with Space) and no companions. Then four steps, walked like a person
-would: Welcome (the headline, Create your companion and Just browse for now); Connect (the AI app you already use: two
+would: Welcome (the headline, Create your companion and Just browse for now); Connect (an AI app on this computer: two
 made-up apps show Sign in, which waits for a click, and Install and sign in with no installer, then the fake one is
 ready; How this works);
 Create (a name, a starting look, Surprise me, Customize, what to help with and a reply length, then the instructions to
@@ -519,7 +519,7 @@ def setup(process):
     try:
         time.sleep(2.5)
         said = talk_text(process)
-        check("a companion that works in your tabs with you" in said and "signed in with your own plan" in said, "It says what Still is, and that it runs on the AI app you already use")
+        check("a companion that works in your tabs with you" in said and "It works with an AI app on your computer" in said, "It says what Still is, and that it works with an AI app on the computer")
         check(js(process, "document.querySelectorAll('.ob-companion .mascot').length") == 1, "One neutral companion")
         check(foot(process) == ["Just browse for now", "Create your companion"], f"Create your companion, and Just browse for now ({foot(process)})")
         copy_ok(process, "welcome", copy)
@@ -590,7 +590,7 @@ def connect(process, copy):
     check("Install and sign in" in card(process) and rpc(process).get("aiCalls") == calls, "Check again looks again and stays put")
     rpc(process, "capture", name="connect-missing.png")
     pick_ai(process, "Signed-out agent")
-    check(until(lambda: card(process).startswith("Sign in"), 8) and "Signed-out agent is installed. Sign in once with your plan." in card(process) and buttons() == ["Sign in"],
+    check(until(lambda: card(process).startswith("Sign in"), 8) and "Signed-out agent is installed. Sign in once." in card(process) and buttons() == ["Sign in"],
           f"Installed but signed out: Sign in ({card(process)!r})")
     time.sleep(3)
     check(card(process).startswith("Sign in") and not (BIN / "logins.txt").exists(), f"Picking it doesn't start its sign-in ({card(process)!r})")
@@ -600,12 +600,12 @@ def connect(process, copy):
     check(until(lambda: "didn't finish" in card(process), 10) and buttons() == ["Sign in", "Retry"],
           f"A sign-in that doesn't finish stays here, with Retry ({card(process)!r}, {buttons()})")
     pick_ai(process, "Fake agent")
-    check(until(lambda: "Fake agent is ready, signed in with your plan." in card(process), 10) and foot(process)[-1] == "Continue", "Ready: a check, and Continue")
+    check(until(lambda: "Fake agent is ready, signed in." in card(process), 10) and foot(process)[-1] == "Continue", "Ready: a check, and Continue")
     check(not js(process, "document.querySelector('.ob-how')?.open"), "How this works starts closed")
     click(process, ".ob-how summary")
     time.sleep(.5)
     how = js(process, "document.querySelector('.ob-how')?.innerText ?? ''") or ""
-    check("counts toward your" in how and "Still doesn't add a plan of its own" in how and "Still keeps your chats and your companion's memory on this computer" in how
+    check("counts the same as using" in how and "Still doesn't charge anything of its own" in how and "Still keeps your chats and your companion's memory on this computer" in how
           and "Your companion asks you before buying anything, sending messages or posts, or deleting things. Private tabs, passwords and cookies are never available." in how,
           "How this works: what it uses, where data goes, and what the companion asks first")
     rpc(process, "capture", name="connect-ready.png")

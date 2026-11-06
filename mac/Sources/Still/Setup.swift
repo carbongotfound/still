@@ -1,4 +1,4 @@
-// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
+// "Set it up with <name>": an interview run by the user's own AI app (small messages) that follows up on
 // what they say until it knows them, then sets Still up around them (setup.md): settings, companions from Still's
 // library to hire (suggested only: each needs the user's Hire), what each companion focuses on and remembers, and starter
 // routines, off. Every change keeps an undo, and the
@@ -122,7 +122,11 @@ extension Browser {
    limit.cancel()
    s.started = s.session != nil
    if run.cancelled { s.error = "\(cli.app) didn't answer." }
-   else if said.isEmpty { s.error = run.errors.last(where: { !tidy($0).isEmpty }).map(signedOut) == true ? "\(cli.name) isn't signed in." : "\(cli.app) didn't answer." }
+   else if said.isEmpty {
+    var out = false
+    if let why = run.errors.last(where: { !tidy($0).isEmpty }) { out = await needsSignIn(cli, why) }
+    s.error = out ? "\(cli.name) isn't signed in." : "\(cli.app) didn't answer."
+   }
   } catch { s.error = "\(cli.app) didn't answer."; NSLog("Still: setup: \(error)") }
   if let r = request { try? FileManager.default.removeItem(atPath: r.promptFile) }
   if setupTalk !== s { return } // the user left setup meanwhile

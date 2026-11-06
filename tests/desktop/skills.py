@@ -480,7 +480,7 @@ def main():
         check(not any(REFUSED[:30] in m["Text"] for m in msgs), "The refusal doesn't stay in the chat")
         check(sum(1 for m in msgs if m["Role"] == "user" and m["Text"] == "HI again") == 1, "and the message shows once")
         note = next((m["Text"] for m in msgs if m["Role"] == "note" and "isn't available" in m["Text"]), "")
-        check(note.startswith("notonplan isn't available on your Fake agent plan") and "Settings → Models" in note, "The chat says it ran on the default model: " + note[:90])
+        check(note.startswith("notonplan isn't available on your Fake agent account") and "Settings → Models" in note, "The chat says it ran on the default model: " + note[:90])
         check(msgs and msgs[-1]["Role"] == "assistant" and msgs[-1]["Text"] == "Okay.", "and the answer follows")
 
         # Settings → Models: the tiers, with Advanced off; Reset puts the defaults back.

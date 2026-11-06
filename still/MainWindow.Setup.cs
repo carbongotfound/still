@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Still;
 
-/// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
+/// "Set it up with <name>": an interview run by the user's own AI app (small messages) that follows up on
 /// what they say until it knows them, then sets Still up around them (Assets/setup.md): settings, companions from Still's
 /// library to hire (suggested only: each needs the user's Hire), what each companion focuses on and remembers, and starter
 /// routines, off. Every change keeps an undo, and the
@@ -108,7 +108,7 @@ public partial class MainWindow
     case AgentEvent.Spent spent: Spend(cli, spent); break;
    }
    s.Started = s.Session != null;
-   if (said.Length == 0) s.Error = run.Errors.LastOrDefault(l => l.Trim().Length > 0) is { } why && SignedOutError().IsMatch(why) ? $"{cli.Name} isn't signed in." : $"{cli.App} didn't answer.";
+   if (said.Length == 0) s.Error = run.Errors.LastOrDefault(l => l.Trim().Length > 0) is { } why && await NeedsSignIn(cli, why) ? $"{cli.Name} isn't signed in." : $"{cli.App} didn't answer.";
   } catch (Exception ex) when (ex is IOException or InvalidOperationException or OperationCanceledException or System.ComponentModel.Win32Exception) { s.Error = $"{cli.App} didn't answer."; App.Log(ex); }
   finally {
    run?.Dispose();

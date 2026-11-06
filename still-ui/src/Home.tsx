@@ -118,14 +118,14 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
  }, [send])
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
-  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
+  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
     <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={112} follow /><Pencil className="mate-edit" /></button>
     <div className="mate-info">
     <h3>{c.name}</h3>
     <p>{c.job || "No job yet. Tell them what they're good at."}</p>
-    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
+    <span className="mate-badge">{h ? <><AiLogo id={h.id} size={14} />{h.name}{h.maker && !h.billing && ` · Your ${h.name} plan`}</> : "Pick your AI"}</span>
     {(() => { const known = c.memory?.filter(f => f.kind !== "chat").length ?? 0; return <button className="mate-memory" onClick={() => onMemory(c.id)}><Brain />{known ? `Remembers ${known} ${known === 1 ? "thing" : "things"}` : "What they remember"}</button> })()}
     <div className="mate-acts"><button className="mate-chat" onClick={() => onChat(c.id)}>Say hi</button>
      <button className="mate-fire" aria-label={`Fire ${c.name}`} onClick={() => fire(send, c, (ai.companions?.length ?? 0) <= 1)}><UserX />Fire</button></div>

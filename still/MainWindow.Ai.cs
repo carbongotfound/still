@@ -489,7 +489,7 @@ public partial class MainWindow
  {
   if (name.Length == 0) return ""; // an API provider: Still runs it itself
   string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-  var dirs = $"{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User)};{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine)};{Environment.GetEnvironmentVariable("PATH")}"
+  var dirs = $"{(App.IsQa ? Environment.GetEnvironmentVariable("STILL_QA_CLIS") : "")};{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.User)};{Environment.GetEnvironmentVariable("PATH", EnvironmentVariableTarget.Machine)};{Environment.GetEnvironmentVariable("PATH")}"
    .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
    .Concat([Path.Combine(home, ".local", "bin"), Path.Combine(home, ".grok", "bin"), Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "npm"),
     Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "OpenAI", "Codex", "bin")]);
@@ -507,7 +507,7 @@ public partial class MainWindow
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), @checked = aiChecked,
-  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter }),
+  harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
@@ -1129,7 +1129,7 @@ public partial class MainWindow
     int cut = shown.Length > 0 ? chat.Messages.FindLastIndex(m => m.Role == "user") : from; // the message comes again, with its steps
     chat.Messages.RemoveRange(cut, chat.Messages.Count - cut);
     tierFailed.Add(cli.Id + ":" + (who?.Mode is "efficient" or "expert" ? who.Mode : "default"));
-    onDefault[chat.Id] = $"{ModelName(cli.Id, model)} isn't available on your {cli.Name} plan, so this ran on {cli.Name}'s default model. You can pick another in Settings → Models.";
+    onDefault[chat.Id] = $"{ModelName(cli.Id, model)} isn't available on your {cli.Name} account, so this ran on {cli.Name}'s default model. You can pick another in Settings → Models.";
     chat.Session = null; chat.Started = false; chat.Error = "";
     runs.Remove(chat.Id); run.Dispose(); run = null;
     me.Task.State = "interrupted"; // the run on the default model carries on this task
@@ -1154,7 +1154,7 @@ public partial class MainWindow
    chat.Updated = DateTime.UtcNow; chat.Unread = !Windows.Any(w => w.Showing(chat)); SaveAiChats();
    try { if (promptFile.Length > 0) File.Delete(promptFile); } catch (IOException) { }
   }
-  if (!said && SignedOutError().IsMatch(chat.Error)) {
+  if (!said && await NeedsSignIn(cli, chat.Error)) {
    // Signed out: sign in right here, then the message runs again by itself.
    chat.Error = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text; aiChat = chat;
    TaskState(me, "waiting", "signin");
@@ -1170,6 +1170,13 @@ public partial class MainWindow
  static bool LostSession(string line) => line.Contains("No conversation found") || line.Contains("Failed to restore session") || line.Contains("Error resuming session")
   || line.Contains("Invalid session identifier") || line.Contains("Session not found");
  [GeneratedRegex(@"not signed in|not logged in|log ?in|sign ?in|authenticat|401|unauthori[sz]ed|credentials", RegexOptions.IgnoreCase)] private static partial Regex SignedOutError();
+ /// A sign-in error, unless a key, token or provider from the environment was refused: it would still win after signing in, so its error stays on screen.
+ static async Task<bool> NeedsSignIn(AgentAdapter cli, string error)
+ {
+  if (!SignedOutError().IsMatch(error)) return false;
+  await CheckAi(cli);
+  return cli.Billing.Length == 0;
+ }
  [GeneratedRegex(@"\x1b\[[0-9;?]*[A-Za-z]")] private static partial Regex TerminalCodes();
 
  // Setting up an AI app: is it installed and signed in ("missing", "signedOut", "ready", or "installing"/"signingIn" while
@@ -1345,7 +1352,7 @@ public partial class MainWindow
   int tabsBefore = 0; Process? p = null;
   try {
    Directory.CreateDirectory(AiFolder);
-   var start = AgentAdapter.Launch(exe, AiFolder, cli.SignIn);
+   var start = AgentAdapter.Launch(exe, AiFolder, cli.SignIn, keep: cli.Kept);
    start.RedirectStandardInput = start.RedirectStandardOutput = start.RedirectStandardError = true;
    start.StandardOutputEncoding = start.StandardErrorEncoding = new UTF8Encoding(false);
    p = aiSetupProcess = Process.Start(start)!;

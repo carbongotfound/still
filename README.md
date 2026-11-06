@@ -2,7 +2,7 @@
 
 # still.
 
-**An open-source browser with AI companions that run on the Claude, ChatGPT, Grok, Gemini or OpenCode app you're already signed into. Or bring an OpenAI- or Claude-compatible API.**
+**An open-source browser with AI companions that work with the AI app on your computer: Claude Code, ChatGPT, Grok, Gemini or OpenCode. Or bring an OpenAI- or Claude-compatible API.**
 
 [**Download for Windows**](https://github.com/carbongotfound/still/releases/latest/download/Still-Setup-x64.exe) · [**Download for Mac**](https://github.com/carbongotfound/still/releases/latest/download/Still-mac.dmg) · [**What's new**](#whats-new-in-210) · [**What you can do**](#what-you-can-do-with-still) · [**Install**](#install) · [**Contributing**](#contributing)
 
@@ -19,7 +19,7 @@
 
 <p align="center"><img src="docs/screenshots/home.webp" alt="Still's new tab: Research Maya in front, the rest of the team behind her, and the message box below" width="900"></p>
 
-Still is a real browser with a team of AI companions built in. Hire the ones you need, hand them a task, and they get on with it in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They think with the AI app you already pay for, so there's no new plan and no key to paste. Everything stays on your computer.
+Still is a real browser with a team of AI companions built in. Hire the ones you need, hand them a task, and they get on with it in their own background tabs: reading pages, clicking, typing, filling forms and reporting back. They work with the AI app installed on your computer, such as Claude Code, or an API you add. Everything stays on your computer.
 
 ## What's new in 2.10
 
@@ -72,9 +72,9 @@ Every fact a companion keeps shows up in Settings with where it came from. Add t
 
 <p align="center"><img src="docs/screenshots/memory.webp" alt="Settings > Companions: what Maya knows, four facts each with where it came from, and buttons to edit or forget" width="700"></p>
 
-### Use the AI you already have
+### Choose your AI
 
-Pick Claude, ChatGPT, Grok, Gemini or OpenCode, signed in with your own plan, and switch any time, even mid-chat. Or plug in an OpenAI- or Claude-compatible API, like a model running on your own machine.
+Pick Claude, ChatGPT, Grok, Gemini or OpenCode, each through its own app on your computer, and switch any time, even mid-chat. Or plug in an OpenAI- or Claude-compatible API, like a model running on your own machine.
 
 <p align="center"><img src="docs/screenshots/ai-picker.webp" alt="The side chat's model list: Claude and its models, ChatGPT, Grok and its models, Gemini, a local model added as a Compatible API, More agents and Model settings" width="400"></p>
 
@@ -86,7 +86,7 @@ Deleting a chat, a companion, a memory, a key or your history asks first and say
 
 ## Supported AI apps
 
-Still runs the AI's own app in the background, signed in to your plan. It never asks for a key for these, never reads the app's login, and strips API-key settings from each run so nothing gets billed to an API account.
+Still runs the AI's own app in the background. It never asks for a key for these and never reads the app's login. Claude Code keeps its own sign-in and any API key, auth token or cloud provider set in your environment; when one of those is in use, Claude's card in **Settings > Models** says so, because that account gets billed. For the other apps, Still strips API-key settings from each run, so nothing gets billed to an API account.
 
 | AI | What Still runs | How it connects |
 |---|---|---|
@@ -147,7 +147,7 @@ Still updates itself on Windows and the Mac. It checks for a new version when it
 - **Windows** 10 (1809 or later) or 11, x64. Setup installs the Microsoft Edge WebView2 Runtime if it's missing.
 - **macOS** 12 or later.
 - Linux isn't supported yet.
-- **An AI** for the companions: one of the apps above signed in to your own account, or a Compatible API. Still works as a plain browser without one.
+- **An AI** for the companions: one of the apps above, set up with your own account, or a Compatible API. Still works as a plain browser without one.
 
 ## Privacy
 

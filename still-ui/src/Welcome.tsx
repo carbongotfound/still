@@ -94,17 +94,18 @@ function Connect({ ai, send }: { ai: AiState; send: Send }) {
        : <small>{h.app} isn't on this computer yet, and Still can't install it for you. Get it from {host(h.site)}{h.installCommand ? <> or run this in {MAC ? "Terminal" : "PowerShell"}: <code>{h.installCommand}</code></> : ""}, then check again.</small>}</span>
       {h.installer ? <Button size="sm" onClick={() => send("aiInstall")}>Install and sign in</Button> : <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button>}</div>
     : s === "signedOut" ? <div className="ob-status is-ask"><span><b>Sign in</b>
-      <small>{h.terminalSignIn ? <>{h.app} signs in from a terminal. Run this in {MAC ? "Terminal" : "PowerShell"}, sign in with your plan, then check again: <code>{h.terminalSignIn}</code></> : h.maker ? `${h.app} is installed. Sign in once with your ${h.maker} plan, on ${h.maker}'s own site.` : `${h.app} is installed. Sign in once with your plan.`}</small></span>
+      <small>{h.terminalSignIn ? <>{h.app} signs in from a terminal. Run this in {MAC ? "Terminal" : "PowerShell"}, sign in, then check again: <code>{h.terminalSignIn}</code></> : h.maker ? `${h.app} is installed. Sign in once, on ${h.maker}'s own site.` : `${h.app} is installed. Sign in once.`}</small></span>
       {h.terminalSignIn ? <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button> : <Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button>}</div>
     : s === "needsKey" || s === "badKey" ? <p className="ob-note">{h.name} uses an API key. Add it in Settings, under Models, after setup, or pick an app you're signed in to.</p>
-    : <p className="ob-ready"><Check />{h.name} is ready, {h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "with no key needed" : "with your API key") : "signed in with your plan"}.</p>}
+    : h.billing ? <p className="ob-ready"><Check />{h.name} is ready. {h.billing}</p>
+    : <p className="ob-ready"><Check />{h.name} is ready, {h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "with no key needed" : "with your API key") : "signed in"}.</p>}
    {ai.error && <div className="ob-status is-error" role="alert"><span><small>{ai.error}</small></span><Button size="sm" variant="outline" onClick={() => send(s === "missing" && h?.installer ? "aiInstall" : s === "signedOut" && !h?.terminalSignIn ? "aiLogin" : "aiCheck")}><RotateCw />Retry</Button></div>}
   </div>
   <details className="ob-api"><summary>Use an API instead</summary><QuickApi api={ai.apis} send={send} /></details>
   <details className="ob-how"><summary>How this works</summary>
    <p>Still runs {h ? h.app : "your AI app"} on this computer and sends it what you ask, with the pages you share.</p>
-   <p>It counts toward your {h?.maker || "AI"} plan, the same as using {h ? h.app : "the app"} yourself. Still doesn't add a plan of its own.</p>
-   <p>What you send goes to {h?.maker || "your AI provider"}. Still keeps your chats and your companion's memory on this computer.</p>
+   <p>It counts the same as using {h ? h.app : "the app"} yourself, on the account it's set up with. Still doesn't charge anything of its own.</p>
+   <p>What you send goes to {(!h?.billing && h?.maker) || "your AI provider"}. Still keeps your chats and your companion's memory on this computer.</p>
    <p>Your companion asks you before buying anything, sending messages or posts, or deleting things. Private tabs, passwords and cookies are never available.</p>
   </details>
  </>
@@ -358,11 +359,11 @@ export function Welcome({ theme, talk, ai, noAi, sounds = true, soundsBlocked = 
      {introOn ? null : again ? (who ? <Interview who={who} send={send} onClose={() => finish()} onDone={(done, first) => { setTalked(done); setFirstUp(first) }} /> : null) : <>
      {at === "welcome" && <>
       <motion.h1 className="ob-headline" initial={{ opacity: 0, y: reduce ? 0 : 8 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: reduce ? 0 : intro, duration: reduce ? .01 : .35, ease: EASE }}>A little less work. A little more still.</motion.h1>
-      <Bubbles from={intro} lines={canAi ? ["Still is a browser with a companion that works in your tabs with you.", "It runs on the AI app you already use, signed in with your own plan. Let's make your companion. It takes a couple of minutes."]
+      <Bubbles from={intro} lines={canAi ? ["Still is a browser with a companion that works in your tabs with you.", "It works with an AI app on your computer. Let's make your companion. It takes a couple of minutes."]
        : ["Still is an open-source browser. AI apps on this computer can work in it, right next to your tabs."]} />
      </>}
      {at === "connect" && ai && <>
-      <Bubbles lines={["First, which model should your companion think with?", "Pick the AI app you already use. Still runs it on this computer, signed in with your own plan."]} />
+      <Bubbles lines={["First, which model should your companion think with?", "Pick an AI app. Still runs it on this computer."]} />
       <Reveal after={2}><Connect ai={ai} send={send} /></Reveal>
      </>}
      {at === "create" && chatting && <Interview making who={{ ...companion, name: nameOf }} send={send} onClose={() => { setChatted(true); setChatting(false) }} onMade={made} />}
