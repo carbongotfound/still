@@ -1385,6 +1385,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 [data-slot=dialog-overlay]:has(~ .crew-dialog), [data-slot=dialog-overlay]:has(~ .hire-profile) { z-index:85; } .crew-dialog, .hire-profile { z-index:90; }
 [data-slot=dialog-overlay]:has(~ .hire-profile) { background:rgb(0 0 0 / .28); backdrop-filter:blur(3px); }
 [data-slot=dialog-overlay]:has(~ .look-dialog) { z-index:85; } .look-dialog { z-index:90; }
+[data-slot=select-content] { z-index:100; } /* in front of the setup screen (80) and its dialogs (90): at the default 50 a list opens unseen behind them */
 @media (max-width:760px) { .ob-stage { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); justify-items:center; } .ob-companion { justify-self:center; } .ob-companion .mascot { --s:180px !important; } .ob-talk { width:100%; } }
 @media (prefers-reduced-motion: reduce) { .ob, .ob * { animation:none !important; transition:none !important; } }
 

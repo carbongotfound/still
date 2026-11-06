@@ -41,7 +41,12 @@ def type_into(p, selector, value):
 
 def pick(p, label, option):
     js(p, f"document.querySelector('{FORM} [aria-label={json.dumps(label)}]').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
-    return until(lambda: js(p, f"(() => {{ const o = [...document.querySelectorAll('[role=option]')].find(o => o.innerText.trim() === {json.dumps(option)}); o?.click(); return !!o }})()"), 5)
+    # It has to be in front to be picked. An open list turns pointer events off on the body, setup screen included, so a
+    # plain hit test goes through the screen and a click by script reaches an option hidden behind it: turn them on to look.
+    return until(lambda: js(p, f"""(() => {{ const o = [...document.querySelectorAll('[role=option]')].find(o => o.innerText.trim() === {json.dumps(option)}); if (!o) return false
+      const r = o.getBoundingClientRect(), off = document.body.style.pointerEvents; document.body.style.pointerEvents = 'auto'
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2); document.body.style.pointerEvents = off
+      if (!o.contains(top)) return false; o.click(); return true }})()"""), 5)
 
 
 def read(f):
@@ -106,7 +111,7 @@ def main():
         check(prefs().get("AiHarness") == q.get("Id"), "and becomes the AI")
 
         # A Claude-compatible server that asks for a key: first without one, then with it.
-        pick(p, "Kind", "Claude-compatible")
+        check(pick(p, "Kind", "Claude-compatible"), "The Kind list shows in front of the setup screen, and Claude-compatible can be picked")
         got, _ = test(p, keyed.url + "/v1", "fake-large")
         check(any(part == "Key" and not ok and "asks for a key" in t for ok, part, t in got), "A server that wants a key says so: " + "; ".join(t for _, _, t in got))
         got, _ = test(p, keyed.url + "/v1", "fake-large", KEY)
