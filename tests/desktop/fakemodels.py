@@ -93,7 +93,7 @@ class Fake:
                 body = self.body = fake.last = json.loads(self.rfile.read(int(self.headers.get("Content-Length") or 0)) or b"{}")
                 ok, sent = self.key_ok()
                 kind = "anthropic" if self.path.endswith("/messages") else "openai" if self.path.endswith("/chat/completions") else "gemini" if ":" in self.path else "?"
-                model = body.get("model") or (re.search(r"models/([^:]+):", self.path) or [None, ""])[1]
+                model = body.get("model") or self.path.partition("models/")[2].partition(":")[0]
                 text, done = last_user(kind, body)
                 tools = tool_names(kind, body)
                 fake.requests.append({"path": self.path.split("?")[0], "kind": kind, "model": model, "keySent": sent, "keyOk": ok, "stream": body.get("stream", ":stream" in self.path),
