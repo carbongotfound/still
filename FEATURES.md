@@ -148,11 +148,12 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **AI tabs**: agents work in background tabs grouped under AI; tabs close 48 h after their chat goes quiet.
 - ✅ **AI cursor and glow**: a named arrow in the companion's color glides to each click; a glow frames the page in use.
 - ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs.
+- ✅ **The next message keeps the chat's page**: with the chat in front, a step that names no tab runs on the chat's own page, the one seen last, also after the run before it ended. A chat with no page yet is told to open one (`AgentTab`, `AgentPage`).
 - ✅ **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`).
 - ✅ **Permission layer**: every call is read, navigate, interact or sensitive; rules per site and companion: always, once per chat, or every time.
 - ✅ **Step labels tell the truth**: a step in the chat reads as going while it runs (Clicking “Reserve”, with a spinner, including while a permission card is open). It says it happened only once its result says so (Clicked “Reserve”), and the row gets a tick only when every step in it worked. After Deny or any failed step it says so (Didn't click “Reserve”) with an X and no tick. Stop or a failed run leaves Stopped clicking “Reserve”, since a step cut off may or may not have happened (`MainWindow.Ai.cs` `StepWords`, `Ai.swift` `stepWords`, `AiSidebar.tsx`, `tests/desktop/stepstate.py`).
 - ✅ **Clicks and keys are checked** (`PageJs` `watch`, `ClickJs`, `SeenJs`, `Verdict` / `verdict`; `tests/desktop/actions.py`): before a click, a disabled, hidden, covered or out-of-view element is an error, including inside a same-origin frame and in a tab out of view. After it, the click counts only if it reached the element and something changed: the address, the page's content, the element's state, focus into a field, scroll, or a download. Nothing changed reads "No change after clicking" with no tick and tells the companion to check before trying again. A form counts on the page changing or navigating, not on the button press; a required field left empty says which field and that the form wasn't sent. Enter and `press_key` work the same way. A scroll that moves nothing and a page that doesn't load are errors too. Limits: a page that changes by itself (a clock, a carousel) reads as changed, though the click still had to reach the element, and a page that stops events at the window before Still's listener reads as not reached.
-- ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first.
+- ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first. At zero the card's buttons go off and the step waits half a second more, so a Cancel on its way still stops it; one that arrives after the step went ahead says it was too late.
 - ✅ **Sensitive sites**: every click or keystroke on a listed site counts as sensitive (Preferences `SensitiveSites`).
 - ✅ **AI permissions page**: defaults, rules per site and companion, sensitive sites, reset all (`Permissions.tsx`).
 - ✅ **Ask when away**: idle 1 min, locked or minimized → the agent asks in its own chat; answer verified with a one-time code (`user_confirmed`).
@@ -315,6 +316,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Known gaps
 
+- Two clicks at once on one page, on Windows: both report that the click didn't reach the page, and neither lands. Nothing claims success. The Mac runs both. Cause not confirmed; it goes with the concurrency work.
 - Extensions don't exist on Mac. Cookies (sign-ins) come over only from Chromium browsers, not from Firefox, or Safari on the Mac.
 - Not code-signed (Windows SmartScreen) or notarized (Mac); no independent security audit. Mac updates are checked by Sparkle's EdDSA signature on an ad-hoc signed app, not a Developer ID.
 - Started on another profile folder (`--profile`, as tests do), the Mac installs an update but doesn't reopen Still, since reopening would open the Default profile. Mac QA builds don't run Sparkle.

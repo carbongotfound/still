@@ -6,7 +6,7 @@ the cards like a person would.
   BOTH <site>       clicks Add to cart and Save for later at the same time (two cards: Approve all)
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
-countdown running out, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
+countdown running out, Cancel right at the end of it, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
 settings page and Reset all, and the audit log in the chat's details.
 
 With --live it runs one small real task through Claude (Haiku) instead: buy a mug. You take over mid-run, the page
@@ -145,7 +145,10 @@ FAKE = textwrap.dedent(r'''
         call("ask_user", question="This page wants a code from your phone. Could you enter it?", tabId=json.loads(last[0])["tabId"])
     elif m := re.search(r"CAP (\S+)", tag):
         for i in range(7): call("open_tab", url=m[1] + "/shop?n=%d" % i)
-    elif re.search(r"SLOW", tag):
+    elif re.search(r"AGAIN", tag):  # the tab this chat already has
+        call("click", selector="#order")
+    elif m := re.search(r"SLOW (\S+)", tag):
+        call("open_tab", url=m[1] + "/shop")
         call("wait_for", text="never shows up", timeoutMs=30000)
         call("wait_for", text="never shows up", timeoutMs=30000)
     reply("Done.")
@@ -226,6 +229,7 @@ def main():
         once_per_chat(process)
         ask_every_time(process)
         sensitive(process)
+        cancel_at_the_end(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
@@ -377,6 +381,56 @@ def sensitive(process):
     idle(process)
 
 
+def cancel_at_the_end(process):
+    """Cancel right as a countdown ends: it stops the step, the chat and its tab keep working, and one that really is
+    too late says so. late: send Cancel that many ms after the deadline, as a click that's still on its way to Still."""
+    def arm(late=None):
+        js(process, """(() => { window.__card = window.__end = null;
+          if (!window.__rejected) { window.__rejected = []; addEventListener('unhandledrejection', e => __rejected.push(String(e.reason))) }
+          if (window.__seen) window.chrome.webview.removeEventListener('message', window.__seen);
+          window.__seen = e => { const card = e.data?.kind === 'ai' && e.data.data.approvals?.find(a => a.until); if (!card || __card?.id === card.id) return; __card = card;
+            const wait = Date.parse(card.until) - Date.now(), late = %s;
+            setTimeout(() => { __end = { said: document.querySelector('.countdown-card .ask-q')?.innerText, off: [...document.querySelectorAll('.countdown-card button')].every(b => b.disabled) } }, wait + 250);
+            if (late !== null) setTimeout(cancel, wait + late) };
+          window.cancel = () => window.chrome.webview.postMessage({ op: 'permAnswer', id: __card.id, run: __card.run, answer: 'cancel' });
+          window.chrome.webview.addEventListener('message', window.__seen); return true })()""" % json.dumps(late))
+
+    def toasts():
+        return js(process, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' | ')") or ""
+
+    orders = len(ORDERS)
+    tag = f"ORDER {SITE} s"
+    arm(300)
+    ask(process, tag)
+    until(lambda: len(calls(tag)) == 2, 30)
+    step = calls(tag)[-1] if len(calls(tag)) == 2 else {}
+    end = js(process, "window.__end") or {}
+    check(not step.get("ok") and "cancelled" in step.get("text", "") and len(ORDERS) == orders, "A Cancel on its way as the countdown ends stops the step, and the AI hears it")
+    check(end.get("off") and end.get("said") == "Going ahead…", f"At zero the card says it's going ahead and its buttons are off ({end})")
+    check(until(lambda: audit(tag)[-1:] == ["You cancelled it"], 10), "The log says you cancelled it")
+    js(process, "cancel()")
+    time.sleep(.5)
+    check("Too late" not in toasts(), "Cancelling that step twice doesn't say it was too late")
+
+    arm()
+    front = rpc(process).get("activeId")
+    send(process, "aiSend", text="AGAIN s")  # at once, as the report did: the same chat, on the tab it already has
+    check(until(lambda: counting(process), 30), "The next message in the chat runs on its tab, and counts down again")
+    check(until(lambda: len(ORDERS) == orders + 1, 20) and until(lambda: calls("AGAIN s") and calls("AGAIN s")[-1]["ok"], 15), "Left alone this time, the step goes ahead")
+    check(not cards(process) and not counting(process), "No card is left behind")
+    check(rpc(process).get("activeId") == front, "None of it moved you off the tab you're on")
+    js(process, "cancel()")
+    check(until(lambda: "Too late to cancel" in toasts(), 5), "A Cancel after it went ahead says it was too late")
+    check(not js(process, "window.__rejected.length"), "No unhandled rejections through all this")
+    idle(process)
+
+    ask(process, "AGAIN u")
+    until(lambda: calls("AGAIN u"), 30)
+    step = (calls("AGAIN u") or [{}])[-1]
+    check(not step.get("ok") and "open_tab" in step.get("text", ""), f"A chat with no page yet is told to open one ({step.get('text', '')[:80]!r})")
+    idle(process)
+
+
 def approve_all(process):
     send(process, "permReset")
     until(lambda: not rules(), 10)
@@ -407,8 +461,8 @@ def keys_and_help(process):
     check(until(lambda: calls("CART " + SITE + " 1 m") and calls("CART " + SITE + " 1 m")[-1]["ok"], 15), "Ctrl+Enter approves the card in front of you")
     idle(process)
 
-    ask(process, "SLOW n")
-    until(lambda: chat_of("SLOW n") and js(process, "!!document.querySelector('.tasks-button b')"), 30)
+    ask(process, f"SLOW {SITE} n")
+    until(lambda: chat_of(f"SLOW {SITE} n") and calls(f"SLOW {SITE} n") and js(process, "!!document.querySelector('.tasks-button b')"), 30)
     rpc(process, "key", key="K", mods="Control, Shift")
     check(until(lambda: js(process, "!!document.querySelector('.tasks-menu')"), 5), "Ctrl+Shift+K opens the running tasks")
     rpc(process, "key", key="Escape", mods="None")
@@ -433,16 +487,17 @@ def keys_and_help(process):
 
 def crash_resume(process):
     """A crash mid-run: the next start offers Resume all."""
-    ask(process, "SLOW q")
-    until(lambda: (chat_of("SLOW q") or {}).get("Running"), 30)
+    tag = f"SLOW {SITE} q"
+    ask(process, tag)
+    until(lambda: (chat_of(tag) or {}).get("Running"), 30)
     process.kill(); process.wait(timeout=20)
     process = launch(EXE, PROFILE)
     offer = until(lambda: "Resume all" in (js(process, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' | ')") or ""), 15)
     check(offer, "After a crash, Still offers to resume the chat that was working")
     capture(process, "resume-all-v01")
     js(process, "[...document.querySelectorAll('[data-sonner-toast] button')].find(b => b.innerText.trim() === 'Resume all')?.click()")
-    check(until(lambda: any("Picked up where it stopped" in (m.get("Text") or "") for m in (chat_of("SLOW q") or {}).get("Messages", [])), 15), "Resume all sends the chat on")
-    send(process, "aiStop", id=(chat_of("SLOW q") or {}).get("Id", ""))
+    check(until(lambda: any("Picked up where it stopped" in (m.get("Text") or "") for m in (chat_of(tag) or {}).get("Messages", [])), 15), "Resume all sends the chat on")
+    send(process, "aiStop", id=(chat_of(tag) or {}).get("Id", ""))
     return process
 
 

@@ -564,6 +564,8 @@ public partial class MainWindow
   // Without a tabId the agent keeps working in the tab it used last, even after the user switches to another one.
   string id = S(args, "tabId");
   if (id.Length == 0 && agentTabs.TryGetValue(who, out var last) && FindTab(last) != null) id = last;
+  // With the chat in front, a new message carries on in the chat's own page: the chat tab has no page to act on.
+  if (id.Length == 0 && active?.ChatId != null) id = Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Where(t => (t.InChat ?? t.RunChat) == who && !t.Closed).MaxBy(t => t.LastActive)?.Id ?? "";
   foreach (var w in Windows.Where(w => !w.closing)) {
    var t = id.Length > 0 ? w.tabs.FirstOrDefault(x => x.Id == id) : (w == this ? w.active : null);
    if (t != null) {
@@ -578,6 +580,7 @@ public partial class MainWindow
  async Task<(MainWindow w, BrowserTab t, CoreWebView2 core)> AgentPage(string who, JsonElement args)
  {
   var (w, t) = AgentTab(who, args);
+  if (t.ChatId != null) throw new InvalidOperationException("That tab is a chat, not a page. Open a page with open_tab.");
   if (t.Dialog is { } d) throw new InvalidOperationException($"The page is waiting on a dialog ({DialogKind(d)}): \"{Clip(d.Args.Message, 200)}\". Answer it with handle_dialog first.");
   var core = await Core(w, t);
   // Agents work in background tabs, which never have focus; editors like Notion ignore typing without it.
@@ -748,14 +751,17 @@ public partial class MainWindow
    "timeout" => Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply."),
    _ => Fail("The user said no to this. Don't try it again; if you need it, ask them in your reply.") };
  }
+ static string? wentAhead; // the last countdown that ran out: a Cancel for it came too late, and the user hears that
  // A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
  static async Task<string> Approve(ChatRun run, string what, string site, string action, string why, bool countdown)
  {
   var card = new Approval(Convert.ToHexString(RandomNumberGenerator.GetBytes(4)).ToLowerInvariant(), what, site, action, why, countdown ? DateTime.UtcNow.AddSeconds(8) : null, new(TaskCreationOptions.RunContinuationsAsynchronously));
   run.Approvals.Add(card); PublishAiEverywhere();
   if (!countdown) TaskState(run, "waiting", "approval", what + " on " + site);
-  var wait = Task.Delay(countdown ? TimeSpan.FromSeconds(8) : TimeSpan.FromMinutes(10));
-  string answer = await Task.WhenAny(card.Answer.Task, wait) == wait ? (countdown ? "go" : "timeout") : await card.Answer.Task;
+  // The card's Cancel goes at 8 s. Half a second more, so a click already on its way still stops the step.
+  await Task.WhenAny(card.Answer.Task, Task.Delay(countdown ? TimeSpan.FromSeconds(8.5) : TimeSpan.FromMinutes(10)));
+  string answer = card.Answer.Task.IsCompleted ? await card.Answer.Task : countdown ? "go" : "timeout";
+  if (answer == "go") wentAhead = card.Id;
   run.Approvals.Remove(card); PublishAiEverywhere();
   if (!countdown && !run.Approvals.Any(a => a.Until == null)) TaskState(run, "running");
   return answer;

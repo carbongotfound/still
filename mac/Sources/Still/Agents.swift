@@ -154,12 +154,16 @@ func siteOf(_ input: String) -> String {
 func ruleText(_ rule: [String: Any], _ key: String) -> String { rule[key] as? String ?? "" }
 var sessionGrants = Set<String>() // outside apps: "who action site" allowed until Still closes
 
+var wentAhead: String? // the last countdown that ran out: a Cancel for it came too late, and the user hears that
 /// A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
 @MainActor func approve(_ run: ChatRun, _ what: String, _ site: String, _ action: String, _ why: String, countdown: Bool) async -> String {
  let card = Approval(id: String((0..<8).map { _ in "0123456789abcdef".randomElement()! }), what: what, site: site, action: action, why: why, until: countdown ? Date().addingTimeInterval(8) : nil)
  run.approvals.append(card); publishAiEverywhere()
  if !countdown { taskState(run, "waiting", "approval", what + " on " + site) }
- let answer: String = await withCheckedContinuation { done in card.answer.wait(countdown ? 8 : 600) { done.resume(returning: $0 ?? (countdown ? "go" : "timeout")) } }
+ // The card's Cancel goes at 8 s. Half a second more, so a click already on its way still stops the step.
+ await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in card.answer.wait(countdown ? 8.5 : 600) { _ in done.resume() } }
+ let answer = card.answer.value ?? (countdown ? "go" : "timeout")
+ if answer == "go" { wentAhead = card.id }
  run.approvals.removeAll { $0 === card }; publishAiEverywhere()
  if !countdown && !run.approvals.contains(where: { $0.until == nil }) { taskState(run, "running") }
  return answer
@@ -776,6 +780,8 @@ extension Browser {
  func agentTab(_ who: String, _ args: [String: Any]) throws -> (browser: Browser, tab: Tab) {
   var id = argText(args, "tabId")
   if id.isEmpty, let last = agentTabs[who], findTab(last) != nil { id = last }
+  // With the chat in front, a new message carries on in the chat's own page: the chat tab has no page to act on.
+  if id.isEmpty, active?.chatId != nil, let page = browsers.flatMap({ $0.tabs }).filter({ ($0.inChat ?? $0.runChat) == who && !$0.closed }).max(by: { $0.lastSeen < $1.lastSeen }) { id = page.id }
   for browser in browsers {
    guard let tab = id.isEmpty ? (browser === self ? browser.active : nil) : browser.tabs.first(where: { $0.id == id }) else { continue }
    // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
@@ -789,6 +795,7 @@ extension Browser {
  /// The agent's tab, ready for page work. A page paused on a dialog can't run scripts, so that comes first.
  @MainActor func agentPage(_ who: String, _ args: [String: Any]) async throws -> (browser: Browser, tab: Tab, view: WKWebView) {
   let (browser, tab) = try agentTab(who, args)
+  if tab.chatId != nil { throw AgentError("That tab is a chat, not a page. Open a page with open_tab.") }
   if let dialog = tab.dialog { throw AgentError("The page is waiting on a dialog (\(dialog.kind)): \"\(clipped(dialog.message, 200))\". Answer it with handle_dialog first.") }
   let view: WKWebView
   if let open = tab.view { view = open } else {
@@ -1196,6 +1203,7 @@ extension Browser {
   case "agentStop": stopAgent(argText(data, "key"))
   case "permAnswer": // a card's answer; no id: Approve all
    let id = argText(data, "id"), answer = argText(data, "answer")
+   if answer == "cancel" && id == wentAhead { toast("Too late to cancel. That step had already gone ahead."); break }
    guard let asking = runs[argText(data, "run").isEmpty ? shownChat?.id ?? "" : argText(data, "run")] else { break }
    for card in asking.approvals where id.isEmpty ? card.until == nil : card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) ? answer : "deny") }
   case "permSet":

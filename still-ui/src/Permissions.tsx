@@ -57,10 +57,10 @@ function Countdown({ card, send }: { card: Approval; send: Send }) {
  const [duration] = useState(() => Math.max(0, end - Date.now()))
  useEffect(() => { const t = setInterval(() => setLeft(seconds()), 200); return () => clearInterval(t) }, [end]) // eslint-disable-line react-hooks/exhaustive-deps
  return <div className="ask-card countdown-card" role="alert">
-  <div className="ask-q"><ShieldAlert /><p>Going ahead in {left}s</p></div>
+  <div className="ask-q"><ShieldAlert /><p>{left ? `Going ahead in ${left}s` : "Going ahead…"}</p></div>
   <ul className="approve-steps"><li className="is-sensitive"><span><b>{card.what}</b><small>{[card.site, card.why].filter(Boolean).join(" · ")}</small></span></li></ul>
   <div className="countdown-bar" aria-hidden><i style={{ animationDuration: duration + "ms" }} /></div>
-  <div className="approve-actions"><Button size="sm" variant="outline" onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "cancel" })}>Cancel</Button><Button size="sm" onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "now" })}>Do it now</Button></div>
+  <div className="approve-actions"><Button size="sm" variant="outline" disabled={!left} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "cancel" })}>Cancel</Button><Button size="sm" disabled={!left} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "now" })}>Do it now</Button></div>
  </div>
 }
 
