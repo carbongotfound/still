@@ -134,7 +134,7 @@ public partial class MainWindow
  {
   if(shellReady){ShellOpen("about");return;}
   OpenSheet("about", "still.");
-  SheetContent.Children.Add(Note("The open-source agent browser that runs on the AI you already pay for.", 15));
+  SheetContent.Children.Add(Note("The open-source agent browser that works with the AI apps on your computer.", 15));
   Heading("Built here");
   SheetContent.Children.Add(Note("Your tabs, history and bookmarks stay in your Windows user profile. Still has no account, telemetry, or cloud sync. Websites have their own privacy policies. Microsoft's WebView2 runtime is maintained and updated separately."));
   SheetContent.Children.Add(Note("Still is licensed under the GNU AGPL v3.0 or later. THIRD-PARTY-NOTICES.txt in Still's folder lists everything it ships from others."));

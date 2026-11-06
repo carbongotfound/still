@@ -1128,7 +1128,7 @@ public partial class MainWindow
     int cut = shown.Length > 0 ? chat.Messages.FindLastIndex(m => m.Role == "user") : from; // the message comes again, with its steps
     chat.Messages.RemoveRange(cut, chat.Messages.Count - cut);
     tierFailed.Add(cli.Id + ":" + (who?.Mode is "efficient" or "expert" ? who.Mode : "default"));
-    onDefault[chat.Id] = $"{ModelName(cli.Id, model)} isn't available on your {cli.Name} plan, so this ran on {cli.Name}'s default model. You can pick another in Settings → Models.";
+    onDefault[chat.Id] = $"{ModelName(cli.Id, model)} isn't available on your {cli.Name} account, so this ran on {cli.Name}'s default model. You can pick another in Settings → Models.";
     chat.Session = null; chat.Started = false; chat.Error = "";
     runs.Remove(chat.Id); run.Dispose(); run = null;
     me.Task.State = "interrupted"; // the run on the default model carries on this task

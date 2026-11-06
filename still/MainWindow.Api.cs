@@ -6,7 +6,7 @@ namespace Still;
 // API providers, in AI settings: add one (OpenAI- or Anthropic-compatible: name, base URL, key, models, prices, a monthly
 // limit), check it with Test connection, and see what it costs per reply, per chat and per month. The key arrives from the
 // shell once, as typed, and goes straight to ApiKeyStore; after that the shell only hears its last four characters.
-// Signing in with a plan never needs any of this. The Mac's twin is ApiAgent.swift.
+// An AI app you've signed in to never needs any of this. The Mac's twin is ApiAgent.swift.
 public partial class MainWindow
 {
  static readonly Dictionary<string, string> apiKeyEnds = []; // provider id → the key's last four characters

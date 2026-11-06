@@ -10,7 +10,7 @@
   <PublishSingleFile>true</PublishSingleFile><IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
   <IncludeAllContentForSelfExtract>false</IncludeAllContentForSelfExtract><EnableCompressionInSingleFile>false</EnableCompressionInSingleFile><PublishReadyToRun>true</PublishReadyToRun><TieredPGO>true</TieredPGO><ConcurrentGarbageCollection>false</ConcurrentGarbageCollection><StartupObject>Still.Program</StartupObject>
   <DebugType>embedded</DebugType>
-  <Description>The open-source agent browser that runs on the AI you already pay for.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
+  <Description>The open-source agent browser that works with the AI apps on your computer.</Description><ApplicationIcon>Assets\still.ico</ApplicationIcon><ApplicationManifest>app.manifest</ApplicationManifest>
  </PropertyGroup>
  <ItemGroup>
   <EmbeddedResource Include="Shell\**\*" LogicalName="Still.Content.Shell/%(RecursiveDir)%(Filename)%(Extension)" />

@@ -163,7 +163,7 @@ export function QuickApi({ api, send }: { api?: ApiState; send: Send }) {
 export function ApiProviders({ api, send }: { api?: ApiState; send: Send }) {
  const list = api?.providers ?? []
  return <div className="api-providers">
-  <p className="plug-note">Use your own API key with a provider that speaks the OpenAI or Anthropic format. It uses your API key and your provider bills you per use. Signing in with a plan doesn't need this. Test connection sends one tiny request, which your provider may bill.</p>
+  <p className="plug-note">Use your own API key with a provider that speaks the OpenAI or Anthropic format. It uses your API key and your provider bills you per use. An AI app you've signed in to doesn't need this. Test connection sends one tiny request, which your provider may bill.</p>
   {api?.error && <p className="api-warn" role="alert">{api.error}</p>}
   {list.map(p => <Provider key={p.id} p={p} busy={api?.busy ?? ""} send={send} />)}
   {!list.length && <p className="plug-note">None added yet. Add one in Your models, under More agents.</p>}

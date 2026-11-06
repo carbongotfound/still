@@ -1,6 +1,6 @@
 # Agents
 
-Still runs the AI apps people already pay for. Built in: Claude (Claude Code), ChatGPT (OpenAI's CLI) and Grok (Grok Build).
+Still runs AI apps installed on the user's computer. Built in: Claude (Claude Code), ChatGPT (OpenAI's CLI) and Grok (Grok Build).
 Each is an `AgentAdapter` in `still/Agents/AgentAdapter.cs`; their JSON lines become `AgentEvent`s in `AgentStream.cs`.
 
 ## More agents: manifests

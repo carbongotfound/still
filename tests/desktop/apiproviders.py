@@ -109,11 +109,11 @@ def main():
         send(p, "aiToggle")
         send(p, "aiCheck")
         shown = until(lambda: (t := text(p)) and "Gemini" in t and "More agents" in t and t, 30) or ""  # OpenCode and the API presets wait under More agents
-        check("Gemini" in shown and "API provider" not in shown and "Needs a key" not in shown and "No API key needed" in shown, "The AI picker lists Gemini and asks nobody for a key")
+        check("Gemini" in shown and "API provider" not in shown and "Needs a key" not in shown and "Still works through an AI app on this computer" in shown, "The AI picker lists Gemini and asks nobody for a key")
         send(p, "openPanel", name="settings", value="models")
         page = until(lambda: (t := text(p)) and "None added yet" in t and t, 15) or ""
-        check("Add one in Your models, under More agents" in page and "your provider bills you per use" in page and "Signing in with a plan doesn't need this" in page,
-              "Settings → Models has API providers, saying who bills, that plans don't need it, and where to add one")
+        check("Add one in Your models, under More agents" in page and "your provider bills you per use" in page and "An AI app you've signed in to doesn't need this" in page,
+              "Settings → Models has API providers, saying who bills, that a signed-in app doesn't need it, and where to add one")
 
         # Adding one: the key goes to its store, the models come from the provider's list.
         save(p, "Fake OpenAI", url=fake.url + "/v1", key=K1)

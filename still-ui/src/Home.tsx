@@ -118,7 +118,7 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
  }, [send])
  return <section className="home-page" aria-label="Companions">
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
-  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you, on top of your own AI plan. Got one someone shared? Paste it here.</p>
+  <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">
    {ai.companions?.map(c => { const h = aiOf(ai, c); return <article key={c.id} className="mate-card" style={{ "--hue": hueOf(c) } as CSSProperties}>
     <button className="mate-portrait" aria-label={"Edit " + c.name} onClick={() => onEdit(c)}><Face companion={c} size={112} follow /><Pencil className="mate-edit" /></button>

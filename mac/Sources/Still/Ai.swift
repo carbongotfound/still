@@ -1454,7 +1454,7 @@ extension Browser {
     chat.messages.removeSubrange(min(cut, chat.messages.count)...)
     let who = companions.first { $0.id == chat.companion }
     tierFailed.insert(cli.id + ":" + (who.map { $0.mode == "efficient" || $0.mode == "expert" ? $0.mode : "default" } ?? "default"))
-    onDefault[chat.id] = "\(modelName(cli.id, request.model)) isn't available on your \(cli.name) plan, so this ran on \(cli.name)'s default model. You can pick another in Settings → Models."
+    onDefault[chat.id] = "\(modelName(cli.id, request.model)) isn't available on your \(cli.name) account, so this ran on \(cli.name)'s default model. You can pick another in Settings → Models."
     chat.session = nil; chat.started = false; chat.error = ""
     runs[chat.id] = nil; run = nil
     me.task.state = "interrupted" // the run on the default model carries on this task

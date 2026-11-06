@@ -4,7 +4,7 @@ using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 namespace Still;
 
-/// "Set it up with <name>": an interview run by the user's own AI app (small messages on their plan) that follows up on
+/// "Set it up with <name>": an interview run by the user's own AI app (small messages) that follows up on
 /// what they say until it knows them, then sets Still up around them (Assets/setup.md): settings, companions from Still's
 /// library to hire (suggested only: each needs the user's Hire), what each companion focuses on and remembers, and starter
 /// routines, off. Every change keeps an undo, and the
