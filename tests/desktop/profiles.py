@@ -46,7 +46,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         extra = []
         if url.path == "/signin":  # /signin?as=<who>: signs this profile in as <who>
             who = query.get("as", ["someone"])[0]
-            body, extra = f"<title>Signed in {who}</title><h1>Welcome {who}</h1>", [("Set-Cookie", f"still_qa={who}; Path=/; Max-Age=86400")]
+            body, extra = f"<title>Signed in {who}</title><h1>Welcome {who}</h1>", [("Set-Cookie", f"still_qa={urllib.parse.quote(who)}; Path=/; Max-Age=86400")]
         else:  # /whoami: who this profile is signed in as
             who = next((c.split("=", 1)[1] for c in cookie.split("; ") if c.startswith("still_qa=")), "")
             title = f"Signed in as {who}" if who else "Signed out"
