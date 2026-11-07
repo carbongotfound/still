@@ -63,12 +63,22 @@ public partial class MainWindow
   try { return File.ReadAllText(Path.Combine(App.DataRoot, "Extensions", id + ".path")).Trim(); } catch (IOException) { return null; }
  }
 
+ /// A file a manifest names, as a full path inside the extension's folder. Anything else is refused.
+ internal static string InsideExtension(string folder, string file)
+ {
+  string name = file.TrimStart('/'), root = Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar;
+  if (name.Length > 0 && !name.Any(c => c is '\\' or ':' || char.IsControl(c)) && !name.Split('/').Contains("..")
+      && Path.GetFullPath(Path.Combine(root, name)) is var full && full.StartsWith(root, StringComparison.OrdinalIgnoreCase)) return full;
+  throw new InvalidDataException("This extension's manifest names a file outside its folder.");
+ }
+
  /// Adds the adapter to an installed extension folder. Returns true when the service worker changed
  /// (the extension must be reloaded to pick it up).
  internal static bool PatchExtension(string folder)
  {
   string manifestPath = Path.Combine(folder, "manifest.json");
   var manifest = JsonNode.Parse(File.ReadAllText(manifestPath)) as JsonObject ?? throw new InvalidDataException("Invalid extension manifest.");
+  if (manifest["background"]?["service_worker"]?.GetValue<string>() is { } named) InsideExtension(folder, named); // before anything is written
   Directory.CreateDirectory(Path.Combine(folder, "still-adapter"));
   File.WriteAllText(Path.Combine(folder, "still-adapter", "shim.js"), ExtensionShim);
   File.WriteAllText(Path.Combine(folder, "still-adapter", "bridge.js"), ExtensionBridge);
@@ -78,9 +88,10 @@ public partial class MainWindow
    if (Path.GetFileName(worker) == "still-adapter-sw.js") return false;
    // Next to the original, so its relative importScripts paths still resolve.
    string dir = Path.GetDirectoryName(worker.TrimStart('/'))?.Replace('\\', '/') ?? "", wrapper = (dir.Length > 0 ? dir + "/" : "") + "still-adapter-sw.js";
+   string original = JsonSerializer.Serialize("/" + worker.TrimStart('/'));
    File.WriteAllText(Path.Combine(folder, wrapper), background["type"]?.GetValue<string>() == "module"
-    ? $"import '/still-adapter/shim.js';\nimport '/{worker.TrimStart('/')}';\n"
-    : $"importScripts('/still-adapter/shim.js', '/{worker.TrimStart('/')}');\n");
+    ? $"import '/still-adapter/shim.js';\nimport {original};\n"
+    : $"importScripts('/still-adapter/shim.js', {original});\n");
    background["service_worker"] = wrapper;
   } else if (background["scripts"] is JsonArray scripts) { // Manifest V2 background page
    if (scripts.Any(s => s?.GetValue<string>() == "still-adapter/shim.js")) return false;
@@ -180,8 +191,8 @@ public partial class MainWindow
    foreach (var key in new[] { "action", "browser_action", "page_action" })
     if (m.TryGetProperty(key, out var a) && a.TryGetProperty("default_icon", out var icon)) { file = Pick(icon); if (file != null) break; }
    if (file == null && m.TryGetProperty("icons", out var icons)) file = Pick(icons);
-   if (file != null && !file.Contains("..")) {
-    string path = Path.Combine(folder, file.TrimStart('/'));
+   if (file != null) {
+    string path = InsideExtension(folder, file);
     string type = Path.GetExtension(path).ToLowerInvariant() switch { ".svg" => "image/svg+xml", ".jpg" or ".jpeg" => "image/jpeg", ".webp" => "image/webp", _ => "image/png" };
     if (new FileInfo(path).Length < 512 * 1024) result = $"data:{type};base64," + Convert.ToBase64String(File.ReadAllBytes(path));
    }

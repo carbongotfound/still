@@ -159,6 +159,7 @@ public partial class MainWindow
   var path=Path.GetFullPath(folder);string manifestPath=Path.Combine(path,"manifest.json");if(new FileInfo(manifestPath).Length>1024*1024)throw new IOException("The extension manifest is too large.");
   byte[] manifestBytes=await File.ReadAllBytesAsync(manifestPath);using var manifest=JsonDocument.Parse(manifestBytes);
   var root=manifest.RootElement;string name=ExtensionName(root,path);var permissions=new List<string>();
+  if(root.TryGetProperty("background",out var background)&&background.ValueKind==JsonValueKind.Object&&background.TryGetProperty("service_worker",out var worker))InsideExtension(path,worker.ValueKind==JsonValueKind.String?worker.GetString()!:"");
   foreach(string key in new[]{"permissions","host_permissions","optional_permissions","optional_host_permissions"})if(root.TryGetProperty(key,out var list))permissions.AddRange(list.EnumerateArray().Select(v=>v.GetString()??""));
   if(root.TryGetProperty("content_scripts",out var scripts))foreach(var script in scripts.EnumerateArray())if(script.TryGetProperty("matches",out var matches))permissions.AddRange(matches.EnumerateArray().Select(v=>v.GetString()??""));
   string contentHash=await Task.Run(()=>ExtensionTreeHash(path));
@@ -193,7 +194,9 @@ public partial class MainWindow
   if(expectedManifest==null||Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(await File.ReadAllBytesAsync(Path.Combine(destination,"manifest.json"))))!=expectedManifest)throw new IOException("The extension permissions changed. Choose the folder again to review them.");
   if(expectedContent==null||await Task.Run(()=>ExtensionTreeHash(destination))!=expectedContent)throw new IOException("The extension files changed after review. Review the extension again.");
   var core=await ManagementCore();
-  try{PatchExtension(destination);}catch(Exception ex)when(ex is IOException or System.Text.Json.JsonException or InvalidDataException){App.Log(ex);}
+  try{PatchExtension(destination);}
+  catch(InvalidDataException ex){Directory.Delete(destination,true);throw new IOException(ex.Message);} // never installed half adapted
+  catch(Exception ex)when(ex is IOException or System.Text.Json.JsonException){App.Log(ex);}
   var installed=await core.Profile.AddBrowserExtensionAsync(destination);ExtensionIcons.Remove(installed.Id);
   extensionPages.Remove(installed.Id+":page");extensionPages.Remove(installed.Id+":popup");
   File.WriteAllText(Path.Combine(destination,"..",installed.Id+".path"),destination);
