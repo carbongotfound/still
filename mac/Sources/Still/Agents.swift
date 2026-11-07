@@ -946,7 +946,12 @@ extension Browser {
                  "go_forward": "Go forward", "reload": "Reload the page", "close_tab": "Close a tab", "switch_tab": "Switch tabs"]
     what = named[tool] ?? "Read the page"
     if tool == "click" || tool == "type" || tool == "press_key" {
-     let look = try await agentJs(try await agentPage(who, args).view, agentScripts["Sensitive"] ?? "", probe(tool, args)) as? [String: Any] ?? [:]
+     let page = try await agentPage(who, args)
+     // Pages re-render under the AI: a control that isn't there yet is waited for here, so it's asked about like any other.
+     let look = try await settled(page.tab, page.view) {
+      guard let seen = try await agentJs(page.view, agentScripts["Sensitive"] ?? "", probe(tool, args)) as? [String: Any] else { throw PageMiss(missed: true, message: "The page is still loading, so nothing was done. Call read_page, then try again.") }
+      return seen
+     } as? [String: Any] ?? [:]
      let label = look["label"] as? String ?? ""
      why = look["why"] as? String ?? ""
      step.why = why; step.print = look["print"] as? String ?? ""
@@ -960,8 +965,8 @@ extension Browser {
      else if tool == "type" { what = look["secret"] as? Bool == true || argText(args, "text").isEmpty ? "Type into “" + label + "”" : "Type “" + clipped(argText(args, "text"), 60) + "” into “" + label + "”" }
     }
    }
-   if !["open_tab", "read_url", "web_search"].contains(tool) { step.tabId = try agentTab(who, args).tab.id; step.site = site; step.onTab = true } // last: if any of this failed, the tool itself says what's wrong
-  } catch { return nil } // no page or no such element: the tool itself says what's wrong
+   if !["open_tab", "read_url", "web_search"].contains(tool) { step.tabId = try agentTab(who, args).tab.id; step.site = site; step.onTab = true }
+  } catch { return agentFail(error.localizedDescription) } // no page, no such element, or the check couldn't run: without the check, nothing happens
   let marked = pref("SensitiveSites", [String]()).contains { onSite($0, site) }
   if action == "interact" && (!why.isEmpty || marked) { action = "sensitive"; if why.isEmpty { why = "You marked " + site + " as sensitive." } }
   let run = runs[who]

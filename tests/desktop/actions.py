@@ -144,7 +144,7 @@ def main():
         fresh()
         ok, said = click("#trap")
         # Windows moves the real mouse over the page first, so the sheet takes the click. A Mac tab out of view gets no hover, so the click reaches a button that does nothing.
-        check(not ok and ("didn't reach" in said and "Sheet" in said or "nothing on the page changed" in said), f"A sheet that slides in on hover: never called Clicked ({said[:110]})")
+        check(not ok and (("didn't reach" in said or "on top of" in said) and "Sheet" in said or "nothing on the page changed" in said), f"A sheet that slides in on hover: never called Clicked ({said[:110]})")
 
         fresh()
         ok, said = click("#presser")

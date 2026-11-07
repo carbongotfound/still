@@ -9,6 +9,7 @@ the cards like a person would.
   SWAP <url>        clicks #swap on a page that turns it into something else while the card waits (see TRICKY)
   KEY <url>         presses Enter in a field: the page moves the focus while the card waits
   FRAME <url>       clicks into another site's frame, then presses a key there
+  STEP <url> click|key|send <what>   one step on a page: click a selector, press a key, or type into a selector and press Enter
   LATER <url>       clicks Add to cart, then a moment later Save for later: a second step arrives under a waiting card
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
@@ -86,6 +87,22 @@ if (how === 'press') b.addEventListener('pointerdown', () => { b.type = 'submit'
 </script>"""
 # A page with another site's frame in it: Still can't look inside, the frame counts what it gets.
 FRAMED = """<!doctype html><meta charset=utf-8><title>Framed</title><iframe id=inner src="{SRC}" style="width:420px;height:200px;border:0"></iframe>"""
+# Pages that try to get past the check. /guard?page=<name>
+GUARD = {
+    # The form's own fields hide its method and fields: the button's label says nothing either.
+    "fields": """<form method=post action=/buy><input name=method value=x><input name=elements value=y><button id=go>Go on</button></form>""",
+    # The page replaces what a script would use to read it.
+    "patched": """<form method=post action=/buy><button id=go>Place order</button></form><script>
+for (const [o, k, v] of [[RegExp.prototype, 'test', () => false], [RegExp.prototype, 'exec', () => null], [String.prototype, 'toLowerCase', () => ''], [Array.prototype, 'some', () => false],
+ [Element.prototype, 'matches', () => false], [Element.prototype, 'closest', () => null], [JSON, 'stringify', () => '""'], [Document.prototype, 'querySelector', () => null]]) { Object.defineProperty(o, k, { value: v }); }
+</script>""",
+    # Nothing there when the step starts.
+    "late": """<div id=spot></div><script>setTimeout(() => { spot.innerHTML = '<button id=go onclick="fetch(\\'/hit/late\\'+location.search,{method:\\'POST\\'})">Add to cart</button>'; }, 300);</script>""",
+    "plain": """<p>Just text, nothing focused.</p><script>addEventListener('keydown', () => fetch('/hit/key' + location.search, { method: 'POST' }));</script>""",
+    "button": """<form method=post action=/buy><button id=go>Place order</button></form><script>go.focus();</script>""",
+    "icon": """<form method=post action=/buy><button><svg id=go width=40 height=40><rect width=40 height=40 /></svg></button></form>""",
+    "box": """<div id=box contenteditable style="min-height:80px;border:1px solid">hello</div><script>box.focus();</script>""",
+}
 INNER = """<!doctype html><meta charset=utf-8><title>Inner</title><style>body{margin:0}button{width:100%;height:190px}</style><button id=b>Pay</button>
 <script>const tell = w => fetch('/hit/' + w + location.search, { method: 'POST' }); b.onclick = () => tell('innerclick'); addEventListener('keydown', () => tell('innerkey'));</script>"""
 # The live run's page: one checkout that needs a code only you have.
@@ -101,6 +118,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.page(TRICKY)
         if self.path.startswith("/go"):
             return self.page("go" if GO.get(self.path.split("?", 1)[-1]) else "wait")
+        if self.path.startswith("/guard"):
+            which = urllib.parse.parse_qs(self.path.split("?", 1)[-1])["page"][0]
+            return self.page("<!doctype html><meta charset=utf-8><title>Guard</title>" + GUARD[which])
         if self.path.startswith("/framed"):
             return self.page(FRAMED.replace("{SRC}", OTHER + "/inner?" + self.path.split("?", 1)[-1]))
         if self.path.startswith("/inner"):
@@ -207,6 +227,11 @@ FAKE = textwrap.dedent(r'''
         both = [threading.Thread(target=call, args=("click",), kwargs={"selector": "#cart"}), threading.Thread(target=lambda: (time.sleep(4), call("click", selector="#wish")))]
         for t in both: t.start()
         for t in both: t.join()
+    elif m := re.search(r"STEP (\S+) (\S+) (\S+)", tag):
+        call("open_tab", url=m[1])
+        if m[2] == "click": call("click", selector=m[3])
+        elif m[2] == "key": call("press_key", key=m[3])
+        elif m[2] == "send": call("type", selector=m[3], text="hi", submit=True)
     elif m := re.search(r"FRAME (\S+)", tag):
         call("open_tab", url=m[1])
         call("click", selector="#inner")
@@ -315,6 +340,7 @@ def main():
         only_what_was_shown(process)
         steady_buttons(process)
         only_once(process)
+        check_comes_first(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
@@ -739,6 +765,64 @@ def only_once(process):
     clicked = next((c for c in calls(f"FRAME {SITE}/framed?k=f z") if c["tool"] == "click"), {})
     check("can't say" in clicked.get("text", "") and "didn't reach" not in clicked.get("text", ""), f"It says it can't tell, not that the click missed ({clicked.get('text', '')[:120]})")
     send(process, "permSet", site="127.0.0.1", action="interact", companion="", mode="")
+
+
+def check_comes_first(process):
+    """If Still can't look at a step, the step doesn't run. And what it looks at is what's really there."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+
+    def step(page, how, what, name):
+        """Runs one step on a guard page and returns the card's text: the card is denied and nothing may have happened."""
+        query = f"page={page}&k={uuid.uuid4().hex[:6]}"
+        tag = f"STEP {SITE}/guard?{query} {how} {what} s"
+        before = len(ORDERS)
+        ask(process, tag)
+        opened = until(lambda: cards(process), 30)
+        if opened and "Open" in opened[0]:  # opening the site asks first in a new chat
+            press(process, "Allow in this chat")
+            until(lambda: calls(tag, opens=True), 15)
+        shown = until(lambda: [c for c in cards(process) if "Open" not in c], 30)
+        hits = [h for h in HITS if query in h]
+        check(bool(shown), f"{name}: it asks first")
+        check(not hits and len(ORDERS) == before, f"{name}: nothing happened yet ({hits})")
+        if shown:
+            press(process, "Deny")
+        until(lambda: calls(tag), 30)
+        idle(process)
+        check(not [h for h in HITS if query in h and "changed" not in h] and len(ORDERS) == before, f"{name}: Deny, and nothing happened")
+        return shown[0] if shown else ""
+
+    said = step("fields", "click", "#go", "A form whose fields hide its method")
+    check("form" in said, f"...and the card says it sends a form ({said!r})")
+    said = step("patched", "click", "#go", "A page that replaced the browser's own functions")
+    check("Place order" in said and "purchase" in said, f"...and the card still says what the button is ({said!r})")
+    said = step("late", "click", "#go", "A button that shows up late")
+    check("Add to cart" in said, f"...and the card names it ({said!r})")
+    said = step("plain", "key", "PageDown", "A key with nothing focused")
+    check("PageDown" in said, f"...and the card names the key ({said!r})")
+    said = step("button", "key", "Enter", "Enter on a focused Place order")
+    check("purchase" in said, f"...and the card says why ({said!r})")
+    said = step("button", "key", "Space", "Space on a focused Place order")
+    check("purchase" in said, f"...and the card says why ({said!r})")
+    said = step("icon", "click", "#go", "An icon inside a form's button")
+    check("form" in said, f"...and the card says it sends a form ({said!r})")
+    said = step("box", "key", "Enter", "Enter in a box you write in")
+    check("send" in said, f"...and the card says it may send ({said!r})")
+    said = step("box", "send", "#box", "Typing into that box and pressing Enter")
+    check("send" in said, f"...and the card says it may send ({said!r})")
+
+    tag = f"STEP {SITE}/guard?page=plain&k=none click #nothing s"
+    ask(process, tag)
+    until(lambda: cards(process) or calls(tag), 30)
+    if cards(process):
+        press(process, "Allow in this chat")
+    done = until(lambda: calls(tag), 30)
+    check(done and not done[-1]["ok"] and "find" in done[-1]["text"].lower(), f"A button that never shows up: the step fails ({done and done[-1]['text'][:80]})")
+    check(not cards(process), "...with no card")
+    idle(process)
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
 
 
 def approve_all(process):

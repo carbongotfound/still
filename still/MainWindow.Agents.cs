@@ -422,11 +422,11 @@ public partial class MainWindow
   // Exactly what a step's approval is for: the page, the control's kind and words, and where it would send things. Never what's
   // typed in a field. Form properties are read through the prototype: a field named "action" would hide the real one.
   const formProp = (f, k) => Object.getOwnPropertyDescriptor(view(f).HTMLFormElement.prototype, k).get.call(f);
+  const formOf = e => { const f = e.localName === 'form' ? e : e.form; return f?.localName === 'form' ? f : e.closest?.('form') || null; };
   const print = e => {
    const page = location.origin + location.pathname + location.search;
    if (!e || e.localName === 'body' || e.localName === 'html') return JSON.stringify([page]);
-   let f = e.localName === 'form' ? e : e.form;
-   if (f?.localName !== 'form') f = e.closest?.('form');
+   const f = formOf(e);
    return JSON.stringify([page, e.ownerDocument.location.origin, e.localName, e.type || '', e.getAttribute('role') || '', label(e), String(e.href || ''),
     f ? formProp(f, 'action') : '', f ? formProp(f, 'method') : '', e.getAttribute('formaction') || '', e.getAttribute('formmethod') || '']);
   };
@@ -449,6 +449,8 @@ public partial class MainWindow
     W.got = true;
     if (!expect || W.through) return true;
     if (!ev.isTrusted) return !W.blocked;
+    // It acted on the press and left: it worked, and the rest of the click isn't for whatever is under the mouse now.
+    if (W.sent && e && !e.isConnected) { W.pressed = true; ev.preventDefault(); ev.stopImmediatePropagation(); return false; }
     if (!W.blocked && (ev.type === 'keydown' || !ev.type.startsWith('key')) && !allowed(ev)) W.blocked = W.sent ? 'during' : 'before';
     if (W.blocked) { ev.preventDefault(); ev.stopImmediatePropagation(); return false; }
     W.sent = true;
@@ -607,19 +609,26 @@ public partial class MainWindow
  // Is this click or keystroke sensitive: buying, sending, deleting, a form that posts, a password or payment field?
  const string SensitiveJs = """
   const e = o.tool !== 'press_key' && (o.id || o.selector || (o.tool === 'click' && o.text)) ? target(o) : deepActive();
-  if (!e) return missing(o);
-  if (e.localName === 'body') return { error: 'nofocus' };
-  const form = e.form || (e.closest && e.closest('form'));
+  if (!e && o.tool !== 'press_key') return missing(o);
+  if (!e || /^(body|html)$/.test(e.localName) && !e.isContentEditable) {
+   if (o.tool === 'type') return { error: 'nofocus' };
+   return { label: 'the page', why: '', secret: false, password: false, print: print(e) };
+  }
+  const form = formOf(e);
   const secret = x => x.type === 'password' ? 'password' : /^cc-|card.?num|cvc|cvv|security.?code|iban/i.test((x.autocomplete || '') + ' ' + (x.name || '') + ' ' + (x.id || '')) ? 'payment' : '';
-  const posts = !!form && (form.method === 'post' || [...form.elements].some(secret));
-  const words = (label(e) + ' ' + (e.localName === 'input' ? e.value : '')).toLowerCase();
+  const posts = !!form && (formProp(form, 'method') === 'post' || e.getAttribute('formmethod')?.toLowerCase() === 'post' || [...formProp(form, 'elements')].some(secret));
+  const control = e.closest?.('button,a[href],summary,input,[role=button],[role=link],[role=menuitem]') || e; // an icon inside a button is the button
+  const words = (label(control) + ' ' + (control.localName === 'input' ? control.value : '')).toLowerCase();
+  const enter = /(^|\+)\s*(enter|return)$/i.test(o.key || ''), writes = e.isContentEditable || e.getAttribute('role') === 'textbox';
+  // Enter or Space on a button is a click. Keywords and forms are the best a page lets Still tell.
+  const pressed = o.tool === 'press_key' && (enter || /^(space|spacebar| )$/i.test(o.key || '')) && control.matches('button,a[href],summary,input[type=submit],input[type=button],input[type=image],[role=button],[role=link],[role=menuitem]');
   let why = '';
-  if (o.tool === 'type') why = secret(e) === 'password' ? 'It types into a password field.' : secret(e) ? 'It types into a payment field.' : o.submit && posts ? 'It sends a form.' : '';
-  else if (o.tool === 'press_key') why = /enter/i.test(o.key) && posts && e.matches('input,select') ? 'It sends a form.' : '';
+  if (o.tool === 'type') why = secret(e) === 'password' ? 'It types into a password field.' : secret(e) ? 'It types into a payment field.' : o.submit && posts ? 'It sends a form.' : o.submit && writes ? 'It may send what was typed.' : '';
+  else if (o.tool === 'press_key' && !pressed) why = !enter ? '' : posts && e.matches('input,select') ? 'It sends a form.' : writes || e.localName === 'textarea' && o.key.includes('+') ? 'It may send what was typed.' : '';
   else if (/\b(buy|purchase|place order|order now|pay|checkout|check out|subscribe|book now|reserve)\b/.test(words)) why = 'It looks like a purchase.';
   else if (/\b(send|post|publish|reply|tweet|comment)\b/.test(words)) why = 'It sends something in your name.';
   else if (/\b(delete|remove|discard|trash|unsubscribe|close account|cancel order|cancel subscription)\b/.test(words)) why = 'It deletes or cancels something.';
-  else if (posts && e.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
+  else if (posts && control.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
   return { label: label(e) || kind(e), why, secret: !!secret(e), password: secret(e) === 'password', print: print(e) };
  """;
  const string FileInputJs = """
@@ -628,7 +637,7 @@ public partial class MainWindow
 
  static async Task<JsonElement> Js(CoreWebView2 core, string body, object o)
  {
-  string json = await core.RunAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
+  string json = await core.RunInOwnWorld("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
   using var doc = JsonDocument.Parse(json);
   var r = doc.RootElement.Clone();
   if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err) && err.GetString() == "changed") throw new PageChanged();
@@ -822,7 +831,12 @@ public partial class MainWindow
     what = tool switch { "scroll" => "Scroll the page", "press_key" => "Press " + S(args, "key"), "handle_dialog" => "Answer the page's dialog", "go_back" => "Go back",
      "go_forward" => "Go forward", "reload" => "Reload the page", "close_tab" => "Close a tab", "switch_tab" => "Switch tabs", _ => "Read the page" };
     if (tool is "click" or "type" or "press_key") {
-     var look = await Js((await AgentPage(who, args)).core, SensitiveJs, Probe(tool, args));
+     var page = await AgentPage(who, args);
+     // Pages re-render under the AI: a control that isn't there yet is waited for here, so it's asked about like any other.
+     var look = await Settled(page.t, page.core, async () => {
+      var seen = await Js(page.core, SensitiveJs, Probe(tool, args));
+      return seen.ValueKind == JsonValueKind.Object ? seen : throw new PageMiss(true, "The page is still loading, so nothing was done. Call read_page, then try again.");
+     });
      string label = Str(look, "label"); why = step.Why = Str(look, "why"); step.Print = Str(look, "print");
      // AIs never type a password: they wait while the user signs in.
      if (look.GetProperty("password").GetBoolean() && !(tool == "press_key" && S(args, "key") is "Tab" or "Escape" or "Esc") && tool != "click") {
@@ -833,8 +847,8 @@ public partial class MainWindow
      else if (tool == "type") what = look.GetProperty("secret").GetBoolean() || S(args, "text").Length == 0 ? "Type into “" + label + "”" : "Type “" + Clip(S(args, "text"), 60) + "” into “" + label + "”";
     }
    }
-   if (tool is not ("open_tab" or "read_url" or "web_search")) { step.TabId = AgentTab(who, args).tab.Id; step.Site = site; step.Tab = true; } // last: if any of this failed, the tool itself says what's wrong
-  } catch (InvalidOperationException) { return null; } // no page or no such element: the tool itself says what's wrong
+   if (tool is not ("open_tab" or "read_url" or "web_search")) { step.TabId = AgentTab(who, args).tab.Id; step.Site = site; step.Tab = true; }
+  } catch (InvalidOperationException ex) { return Fail(ex.Message); } // no page, no such element, or the check couldn't run: without the check, nothing happens
   bool marked = Prefs.SensitiveSites.Any(s => OnSite(s, site));
   if (action == "interact" && (why.Length > 0 || marked)) { action = "sensitive"; if (why.Length == 0) why = "You marked " + site + " as sensitive."; }
   var run = runs.GetValueOrDefault(who);
@@ -1139,7 +1153,7 @@ public partial class MainWindow
     var (w, t, core) = await AgentPage(who, args);
     var page = await Js(core, SnapshotJs, new { text = !(args.ValueKind == JsonValueKind.Object && args.TryGetProperty("text", out var tx) && (tx.ValueKind == JsonValueKind.False || tx.ValueKind == JsonValueKind.String && tx.GetString() == "false")), all = B(args, "all"), offset = (int)Math.Max(0, N(args, "offset", 0)) });
     string seen = RedactLogins(core.Source, page.GetString() ?? ""), site = Host(t.Url), back = Me(who) is { SignedIn: var done } && done.Site == site && DateTime.UtcNow - done.At < TimeSpan.FromMinutes(2) ? "signed in" : "";
-    if (back.Length == 0 && await core.RunAsync("[...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)") == "true") { await AskToSignIn(who, w, t, site); seen += "\n\n" + SigningIn(site); }
+    if (back.Length == 0 && await core.RunInOwnWorld("[...document.querySelectorAll('input[type=password]')].some(e=>e.getClientRects().length&&!e.disabled)") == "true") { await AskToSignIn(who, w, t, site); seen += "\n\n" + SigningIn(site); }
     Did(who, "Read " + Host(t.Url)); return Reply(new { text = seen });
    }
    case "find": {
@@ -1255,9 +1269,8 @@ public partial class MainWindow
     if (files.FirstOrDefault(f => !File.Exists(f)) is { } missing) return Fail("There's no file at " + missing);
     object input;
     if (Id(args).Length + S(args, "selector").Length > 0) {
-     using var found = JsonDocument.Parse(await core.CallDevToolsProtocolMethodAsync("Runtime.evaluate", JsonSerializer.Serialize(new { expression = "((o)=>{" + PageJs + FileInputJs + "})(" + JsonSerializer.Serialize(new { id = Id(args), selector = S(args, "selector") }) + ")" })));
-     var res = found.RootElement.GetProperty("result");
-     if (found.RootElement.TryGetProperty("exceptionDetails", out _) || Str(res, "subtype") != "node" || !res.TryGetProperty("objectId", out var obj)) return Fail("That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id.");
+     var found = await core.EvaluateInOwnWorld("((o)=>{" + PageJs + FileInputJs + "})(" + JsonSerializer.Serialize(new { id = Id(args), selector = S(args, "selector") }) + ")", byValue: false);
+     if (found.ValueKind != JsonValueKind.Object || found.TryGetProperty("exceptionDetails", out _) || !found.TryGetProperty("result", out var res) || Str(res, "subtype") != "node" || !res.TryGetProperty("objectId", out var obj)) return Fail("That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id.");
      input = new { files, objectId = obj.GetString() };
     } else if (t.AgentUpload is UploadRequest picker && picker.Core == core) input = new { files = picker.Multiple ? files : files[..1], backendNodeId = picker.Node };
     else return Fail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.");
