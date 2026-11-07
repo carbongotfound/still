@@ -227,12 +227,26 @@ export function starters(interests: string[] = [], companion?: { crew?: string }
 
 /// What Share copies (ProfilePanel), and reading it back: a companion someone shared, or null when the text isn't one.
 export const SHARE_KIND = "still.companion"
+/// Someone else's words become this companion's instructions, so you read them before hiring.
+export function SharedReview({ companion, onHire, onClose }: { companion: Companion; onHire: () => void; onClose: () => void }) {
+ return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+  <DialogContent className="app-dialog shared-review">
+   <DialogHeader><DialogTitle>Hire {companion.name}?</DialogTitle><DialogDescription>Someone else wrote this, and {companion.name} will follow it as if you had.</DialogDescription></DialogHeader>
+   <div className="shared-text">
+    {companion.role && <><b>Role</b><p>{companion.role}</p></>}
+    <b>Job</b><p>{companion.job || "None given"}</p>
+    {companion.tone && <><b>How they talk</b><p>{companion.tone}</p></>}
+   </div>
+   <div className="shared-actions"><Button variant="ghost" onClick={onClose}>Cancel</Button><Button onClick={onHire}>Hire</Button></div>
+  </DialogContent>
+ </Dialog>
+}
 export function fromShared(text: string): Companion | null {
  try {
   const got = JSON.parse(text)
   if (got?.kind !== SHARE_KIND || typeof got.name !== "string" || !got.name.trim()) return null
   const personality = ["direct", "warm", "playful", "formal"].includes(got.personality) ? got.personality : "", length = ["short", "detailed"].includes(got.length) ? got.length : "balanced"
-  return { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: got.mode, crew: String(got.crew ?? ""),
+  return { id: crypto.randomUUID().replace(/-/g, "").slice(0, 10), name: got.name.trim().slice(0, 24), face: "", color: "", job: String(got.job ?? ""), tone: String(got.tone ?? ""), look: String(got.look ?? ""), mode: ["efficient", "default"].includes(got.mode) ? got.mode : "default", crew: String(got.crew ?? ""),
    role: String(got.role ?? "").slice(0, 30), personality, length }
  } catch { return null }
 }

@@ -1772,6 +1772,10 @@ button.role-art { cursor:pointer; } button.role-art:focus-visible { box-shadow:i
 .library-paste textarea { margin-top:4px; padding:9px 11px; border:1px solid var(--input); border-radius:12px; background:var(--background); font:14px/1.5 var(--font-ui); resize:none; outline:none; }
 .library-paste textarea:focus-visible { border-color:var(--ring); box-shadow:0 0 0 3px color-mix(in oklab,var(--ring) 40%,transparent); }
 .library-bad { color:var(--destructive); font-size:13px; }
+.shared-text { display:grid; gap:4px; max-height:40vh; overflow:auto; font-size:13px; white-space:pre-wrap; overflow-wrap:anywhere; }
+.shared-text b { font-weight:600; }
+.shared-text p { margin:0 0 8px; color:var(--muted-foreground); }
+.shared-actions { display:flex; justify-content:flex-end; gap:8px; }
 /* The library's cards: the companion big on a soft glow of its color, its name with its role, one line, then a white
    Hire button with View profile beside it (Hired, quietly, once it's on the team). */
 .library-card.role-card.is-art, .library-card.role-card.is-on { background:var(--card); border-color:var(--border); }

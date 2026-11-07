@@ -209,6 +209,16 @@ def main():
         check(until(lambda: shown(p, ".library-bad"), 3), "Pasting something else says it isn't a shared companion")
         share = {"kind": "still.companion", "v": 1, "name": "Pasty", "look": "", "job": "Checks prices.", "tone": "", "mode": "default", "crew": ""}
         paste(p, ".library-paste textarea", json.dumps(share))
+        check(until(lambda: "Checks prices." in (js(p, "document.querySelector('.shared-review')?.innerText") or ""), 5) and "Pasty" not in mates(), "A pasted companion shows its job first, and isn't hired yet")
+        click(p, ".shared-review button", "Cancel")
+        until(lambda: not shown(p, ".shared-review"), 3)
+        check("Pasty" not in mates(), "Cancel hires nobody")
+        check(open_library(p), "The library opens again after Cancel")
+        click(p, ".library-more .role-head", "Paste a shared companion")
+        until(lambda: shown(p, ".library-paste textarea"), 3)
+        paste(p, ".library-paste textarea", json.dumps(share))
+        until(lambda: shown(p, ".shared-review"), 5)
+        click(p, ".shared-review button", "Hire")
         check(until(lambda: mates().get("Pasty", {}).get("Job") == "Checks prices.", 5) and until(lambda: not shown(p, ".companion-library"), 3), "Pasting a shared companion adds them and closes the library")
         check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "and says Pasty joined")
 

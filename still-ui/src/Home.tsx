@@ -10,7 +10,7 @@ import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
-import { CrewCards, fromPremade, fromShared } from "./crew"
+import { CrewCards, SharedReview, fromPremade, fromShared } from "./crew"
 import { deleteAllChats, deleteChat, destroy, fire } from "./Undo"
 import { PluginsPage, Who } from "./Plugins"
 import { toast } from "sonner"
@@ -107,16 +107,16 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
 const aiOf = (ai: AiState, c: Companion) => ai.harnesses.find(h => h.id === (c.ai || ai.harness))
 
 export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMemory }: { ai: AiState; send: Send; onEdit: (c: Companion) => void; onMake: () => void; onChat: (id: string) => void; onHire: (c: Companion) => void; onMemory: (id: string) => void }) {
+ const [shared, setShared] = useState<Companion | null>(null)
  useEffect(() => { // a companion someone shared (ProfilePanel's Share), pasted anywhere on the page
   const paste = (e: ClipboardEvent) => {
    const c = !(e.target as HTMLElement).closest?.("input, textarea") && fromShared(e.clipboardData?.getData("text") ?? "")
-   if (!c) return
-   send("companionSave", c)
-   toast(`Hired ${c.name}. They start fresh: they don't know anything about you yet.`)
+   if (c) setShared(c)
   }
   addEventListener("paste", paste); return () => removeEventListener("paste", paste)
  }, [send])
  return <section className="home-page" aria-label="Companions">
+  {shared && <SharedReview companion={shared} onClose={() => setShared(null)} onHire={() => { send("companionSave", shared); toast(`Hired ${shared.name}. They start fresh: they don't know anything about you yet.`); setShared(null) }} />}
   <header className="home-page-head"><h1>Companions</h1><Button className="home-new" onClick={() => onEdit(randomCompanion())}><Plus />Hire a companion</Button></header>
   <p className="home-page-lead">Who you work with. Each one has a job, a way of talking, skills and a memory of you. Got one someone shared? Paste it here.</p>
   <div className="mate-grid">

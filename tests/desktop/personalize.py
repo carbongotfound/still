@@ -291,6 +291,8 @@ def main():
         click(p, ".library-more .role-head", "Paste a shared companion")
         until(lambda: shown(p, ".library-paste textarea"), 3)
         js(p, f"(() => {{ const d = new DataTransfer(); d.setData('text/plain', {json.dumps(json.dumps({**shared, 'name': 'Pip Two'}))}); document.querySelector('.library-paste textarea')?.dispatchEvent(new ClipboardEvent('paste', {{ clipboardData: d, bubbles: true, cancelable: true }})) }})()")
+        until(lambda: js(p, "!!document.querySelector('.shared-review')"), 5)
+        js(p, "[...document.querySelectorAll('.shared-review button')].find(b => b.innerText.trim() === 'Hire').click()")
         two = until(lambda: mates().get("Pip Two"), 5) or {}
         check(two.get("Role") == "Scout" and two.get("Personality") == "direct" and two.get("Length") == "short", "A pasted companion keeps them")
         check(until(lambda: js(p, "document.querySelector('.joined-card [data-slot=dialog-title]')?.innerText") == "Scout Pip Two joined your team", 5), "A custom companion with a Role shows role first, like the crew")

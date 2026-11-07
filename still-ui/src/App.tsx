@@ -12,7 +12,7 @@ import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
 import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
-import { CompanionLibrary, CompanionProfile, JoinedCard, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
+import { CompanionLibrary, CompanionProfile, JoinedCard, SharedReview, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginKeySetting, PluginStack } from "./Plugins"
 import { ChatHistory, ChatLink, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
@@ -346,6 +346,7 @@ export default function App() {
  const [buddy, setBuddy] = useState("") // the companion picked on the new tab page
  const [draft, setDraft] = useState<Companion | null>(null) // "Make your own": the profile panel on a companion not hired yet
  const [joined, setJoined] = useState<Companion | null>(null)
+ const [shared, setShared] = useState<Companion | null>(null)
  const [profile, setProfile] = useState("") // the companion whose profile is open
  const [profileTab, setProfileTab] = useState("general") // the tab it opens on: "model" from a Model settings… link
  const closeProfile = () => { setProfile(""); setProfileTab("general") }
@@ -1037,7 +1038,8 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {profile && ai && <ProfilePanel ai={ai} id={profile} tab={profileTab} send={send} onPick={setProfile} onClose={closeProfile} onOpenFile={path => { closeProfile(); openFile(path) }} onSkills={() => { closeProfile(); goHome("skills") }}
    onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} />}
   {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onProfile={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
-   onOwn={() => { setLibrary(false); setDraft(randomCompanion()) }} onPaste={c => { setLibrary(false); hire(c) }} />}
+   onOwn={() => { setLibrary(false); setDraft(randomCompanion()) }} onPaste={c => { setLibrary(false); setShared(c) }} />}
+  {shared && <SharedReview companion={shared} onClose={() => setShared(null)} onHire={() => { hire(shared); setShared(null) }} />}
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
    onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
   {draft && ai && <ProfilePanel ai={ai} id="" draft={draft} send={send} onPick={setProfile} onClose={() => setDraft(null)} onOpenFile={openFile} onSkills={() => { setDraft(null); goHome("skills") }} onHire={c => { hire(c); setDraft(null) }} />}
