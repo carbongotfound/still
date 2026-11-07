@@ -24,6 +24,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent))
 from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
+from mcp_client import Mcp, call_async  # noqa: E402
+
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("profiles-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
@@ -219,6 +221,28 @@ def main():
         text, _ = run_tab(p, SITE + "/whoami?p=companion2", chat=comp.get("Id"))
         check("Signed in as helper" in text, "and the user's sign-in never shows in the companion's")
         check(not any("still_qa=regular" in c for path, c in VISITS if "p=companion" in path), "No regular cookie is ever sent from the companion profile")
+
+        # The profile keeps the AI out of the user's tabs too: not listed, not named in its prompt, not usable by id.
+        _, own = page_says(p, SITE + "/whoami?p=mine-kept")
+        n = len(results())
+        send(p, "aiSend", text=f"TAB: {SITE}/whoami?p=companion-kept", companion="maya")  # from the user's tab, in the side chat
+        until(lambda: len(results()) > n, 60)
+        told = prompts()[-1]
+        check("you stay out of" in told and "p=mine-kept" not in told and own["Id"] not in told, f"A companion-profile chat isn't told about the user's own tab ({told[-160:]!r})")
+        probe = Mcp(EXE, "Probe", PROFILE)
+        try:
+            pending = call_async(probe, "list_tabs")
+            until(lambda: "Probe" in (js(p, "document.body.innerText") or ""), 30)
+            send(p, "agentAnswer", allow=True)
+            pending.get(timeout=60)
+            ok, listed = probe.call("list_tabs", seconds=30)
+            check(ok and "p=mine-kept" not in listed and "p=companion-kept" in listed, "Its tab list has only the companion profile's tabs")
+            ok, said = probe.call("read_page", tabId=own["Id"], seconds=30)
+            check(not ok and "own browser profile" in said and "regular" not in said, "It can't read the user's own tab by its id")
+            ok, said = probe.call("click", tabId=own["Id"], selector="body", seconds=30)
+            check(not ok and "own browser profile" in said, "...or act in it")
+        finally:
+            probe.close()
 
         # A chat from before keeps the user's profile, whatever the setting.
         text, tab = run_tab(p, SITE + "/whoami?p=old", chat="oldchat")

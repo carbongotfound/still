@@ -926,6 +926,8 @@ extension Browser {
 
  /// Finds a tab the agent may use: never private tabs. Without a tabId the agent keeps working in the tab it used last,
  /// even after the user switches to another one.
+ /// The companion profile keeps its sign-ins apart from the user's, so its chats stay out of the user's tabs, except one handed over.
+ func outOfProfile(_ who: String, _ tab: Tab) -> Bool { onCompanion(who) && tab.chatId == nil && tab.engine != "Companion" && (tab.inChat ?? tab.runChat) != who }
  func agentTab(_ who: String, _ args: [String: Any]) throws -> (browser: Browser, tab: Tab) {
   var id = argText(args, "tabId")
   if id.isEmpty, let last = agentTabs[who], findTab(last) != nil { id = last }
@@ -935,6 +937,7 @@ extension Browser {
    guard let tab = id.isEmpty ? (browser === self ? browser.active : nil) : browser.tabs.first(where: { $0.id == id }) else { continue }
    // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
    if incognitoRun(who) ? (tab.inChat ?? tab.runChat) != who : tab.isPrivate { throw AgentError(incognitoRun(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.") }
+   if outOfProfile(who, tab) { throw AgentError("That tab is in the user's own browser profile, and you browse apart from it. Open a page with open_tab, or ask the user to hand you the tab.") }
    browser.claim(who, tab)
    return (browser, tab)
   }
@@ -1147,7 +1150,7 @@ extension Browser {
    case "list_tabs":
     var list: [[String: Any]] = []
     for (index, browser) in browsers.enumerated() {
-     for tab in browser.tabs where incognitoRun(who) ? (tab.inChat ?? tab.runChat) == who : !tab.isPrivate {
+     for tab in browser.tabs where incognitoRun(who) ? (tab.inChat ?? tab.runChat) == who : !tab.isPrivate && !outOfProfile(who, tab) {
       var item: [String: Any] = ["tabId": tab.id, "title": tab.title, "url": tab.url, "window": index + 1]
       if tab === browser.active { item["active"] = true }
       if agentTabs[who] == tab.id { item["yours"] = true }

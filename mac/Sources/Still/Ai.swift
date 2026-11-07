@@ -1303,8 +1303,9 @@ extension Browser {
 
  /// What the agent should know about where the user is right now.
  func aiContext(_ chat: AiChat?) -> String {
-  let open = browsers.flatMap(\.tabs).filter { !$0.isPrivate }.count
-  let place = active.map { a in a.url.isEmpty ? "The active tab is empty." : a.isPrivate ? "The active tab is private, which is off-limits." : "Active tab: \"\(a.title)\" \(a.url) (tabId \(a.id))." } ?? "The active tab is empty."
+  func apart(_ t: Tab) -> Bool { chat.map { !$0.ephemeral && $0.profile == "companion" && t.chatId == nil && t.engine != "Companion" && (t.inChat ?? t.runChat) != $0.id } ?? false }
+  let open = browsers.flatMap(\.tabs).filter { !$0.isPrivate && !apart($0) }.count
+  let place = active.map { a in a.url.isEmpty ? "The active tab is empty." : a.isPrivate ? "The active tab is private, which is off-limits." : apart(a) ? "The active tab is the user's own, in a profile you stay out of." : "Active tab: \"\(a.title)\" \(a.url) (tabId \(a.id))." } ?? "The active tab is empty."
   let pages = chat.map { c in tabs.filter { $0.inChat == c.id && !$0.closed }.map { "\"\($0.title)\" \($0.url) (tabId \($0.id))" } } ?? []
   if chat?.ephemeral == true { return "[Still] This chat is in an incognito window: you only use the private tabs you open here." + (pages.isEmpty ? "" : " Your tabs in this chat: " + pages.joined(separator: "; ") + ".") }
   return "[Still] \(place) \(open) tab\(open == 1 ? "" : "s") open." + (pages.isEmpty ? "" : " Your tabs in this chat: " + pages.joined(separator: "; ") + ".")

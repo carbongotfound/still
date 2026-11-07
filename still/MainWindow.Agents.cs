@@ -690,6 +690,7 @@ public partial class MainWindow
    if (t != null) {
     // An incognito chat works only in the private tabs it opened. Every other agent never touches a private tab.
     if (Incognito(who) ? (t.InChat ?? t.RunChat) != who : t.Private) throw new InvalidOperationException(Incognito(who) ? "An incognito chat only uses the tabs it opened. Open one with open_tab." : "Private tabs are off-limits to agents.");
+    if (OutOfProfile(who, t)) throw new InvalidOperationException("That tab is in the user's own browser profile, and you browse apart from it. Open a page with open_tab, or ask the user to hand you the tab.");
     Claim(who, w, t); return (w, t);
    }
   }
@@ -706,6 +707,8 @@ public partial class MainWindow
   await core.CallDevToolsProtocolMethodAsync("Emulation.setFocusEmulationEnabled", "{\"enabled\":true}");
   return (w, t, core);
  }
+ /// The companion profile keeps its sign-ins apart from the user's, so its chats stay out of the user's tabs, except one handed over.
+ static bool OutOfProfile(string who, BrowserTab t) => OnCompanion(who) && t.ChatId == null && t.Engine != CompanionEngine && (t.InChat ?? t.RunChat) != who;
  static BrowserTab? FindTab(string id) => Windows.Where(w => !w.closing).SelectMany(w => w.tabs).FirstOrDefault(t => t.Id == id);
  static string Clip(string s, int n) => s.Length > n ? s[..(n - 1)] + "…" : s;
  static readonly Dictionary<string, string> agentTabs = []; // run key -> the tab it is working in
@@ -1196,7 +1199,7 @@ public partial class MainWindow
     return Reply(new { done = $"{(again ? "Replaced" : "Saved")} {Path.GetFileName(file)} in the user's Library. It shows in the chat as a card they can open, so don't paste its contents in your reply." });
    }
    case "list_tabs":
-    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => Incognito(who) ? (t.InChat ?? t.RunChat) == who : !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
+    return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => Incognito(who) ? (t.InChat ?? t.RunChat) == who : !t.Private && !OutOfProfile(who, t)).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "web_search": return await WebSearch(who, args);
    case "read_url": return await ReadUrl(who, args, step);
    case "read_attachment": return ReadAttachment(who, S(args, "id"), (int)Math.Max(0, N(args, "offset", 0)));

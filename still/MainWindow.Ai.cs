@@ -918,9 +918,11 @@ public partial class MainWindow
  /// What the agent should know about where the user is right now.
  string AiContext(AiChat? chat = null)
  {
-  var open = Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Count(t => !t.Private);
+  bool Apart(BrowserTab t) => chat is { Ephemeral: false, Profile: CompanionProfile } && t.ChatId == null && t.Engine != CompanionEngine && (t.InChat ?? t.RunChat) != chat.Id;
+  var open = Windows.Where(w => !w.closing).SelectMany(w => w.tabs).Count(t => !t.Private && !Apart(t));
   string where = active == null || active.Url.Length == 0 ? "The active tab is empty."
    : active.Private ? "The active tab is private, which is off-limits."
+   : Apart(active) ? "The active tab is the user's own, in a profile you stay out of."
    : $"Active tab: \"{active.Title}\" {active.Url} (tabId {active.Id}).";
   var pages = chat == null ? [] : tabs.Where(t => t.InChat == chat.Id && !t.Closed).Select(t => $"\"{t.Title}\" {t.Url} (tabId {t.Id})").ToList();
   if (chat?.Ephemeral == true) return "[Still] This chat is in an incognito window: you only use the private tabs you open here." + (pages.Count > 0 ? " Your tabs in this chat: " + string.Join("; ", pages) + "." : "");
