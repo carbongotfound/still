@@ -244,6 +244,13 @@ def main():
         finally:
             probe.close()
 
+        if not MAC:  # the Mac imports straight into the user's store
+            for t in rpc(p)["tabs"]:
+                if t.get("engineProfile") == "Default":
+                    send(p, "close", id=t["Id"])
+            until(lambda: not [t for t in rpc(p)["tabs"] if t.get("engineProfile") == "Default"], 10)
+            check(any(t.get("engineProfile") == "Companion" for t in rpc(p)["tabs"]) and rpc(p, "managementProfile")["profile"] == "Default", "With only a companion's tab live, imported sign-ins still go to the user's own profile")
+
         # A chat from before keeps the user's profile, whatever the setting.
         text, tab = run_tab(p, SITE + "/whoami?p=old", chat="oldchat")
         check("Signed in as regular" in text and tab.get("engineProfile") == "Default", "An older chat keeps browsing in the user's profile")

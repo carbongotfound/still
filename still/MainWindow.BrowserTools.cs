@@ -48,7 +48,7 @@ public partial class MainWindow
  }
  async Task<CoreWebView2> ManagementCore()
  {
-  if(tabs.FirstOrDefault(t=>!t.Private&&t.View?.CoreWebView2!=null)?.View?.CoreWebView2 is {} ready)return ready;
+  if(tabs.FirstOrDefault(t=>!t.Private&&t.Engine==null&&t.View?.CoreWebView2!=null)?.View?.CoreWebView2 is {} ready)return ready; // the user's own profile, never the companion's
   if(managementView?.CoreWebView2 is {} existing)return existing;
   managementView=new WebView2{Visibility=Visibility.Hidden};WebHost.Children.Add(managementView);
   var env=await App.BrowserEnvironment;var options=env.CreateCoreWebView2ControllerOptions();options.ProfileName="Default";
