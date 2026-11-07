@@ -235,7 +235,7 @@ def pages():
     class Page(http.server.BaseHTTPRequestHandler):
         def do_GET(self):
             title = "Desk lamp review" if "review" in self.path else "Secret plans"
-            body = f"<!doctype html><title>{title}</title><h1>{title}</h1><p>Warm 2700K light, no glare.</p>".encode()
+            body = f"<!doctype html><title>{title}</title><h1 onclick='this.title=1'>{title}</h1><p>Warm 2700K light, no glare.</p>".encode()
             self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
         def log_message(self, *a):
