@@ -146,7 +146,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/slow"):
             HITS.append("/slow")
             time.sleep(4)  # the click waits for the page, and holds its turn
-        self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else FRAMED if self.path.startswith("/upload-frame") else UPLOAD if self.path.startswith("/upload") else "<!doctype html><title>Page</title><p>Page")
+        self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else UPLOAD_FRAMED if self.path.startswith("/upload-frame") else UPLOAD if self.path.startswith("/upload") else "<!doctype html><title>Page</title><p>Page")
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
@@ -173,7 +173,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
 UPLOAD = "<!doctype html><title>Upload</title><input type=file multiple>"
-FRAMED = "<!doctype html><title>Framed</title><h1>Files</h1><iframe width=300 height=120></iframe><script>document.querySelector('iframe').src = 'http://localhost:' + location.port + '/upload'</script>"
+UPLOAD_FRAMED = "<!doctype html><title>Framed</title><h1>Files</h1><iframe width=300 height=120></iframe><script>document.querySelector('iframe').src = 'http://localhost:' + location.port + '/upload'</script>"
 SITE = f"http://127.0.0.1:{SERVER.server_port}"
 OTHER = f"http://localhost:{SERVER.server_port}"  # the same shop under another site name
 
@@ -621,7 +621,7 @@ def no_site_no_rule(process):
     rpc(process, "eval", script=blob)
     until(lambda: rpc(process, "eval", script="document.title") == "Blob", 15)
     tab = rpc(process)["activeId"]
-    ask(process, plan("blob", {"name": "click", "arguments": {"tabId": tab, "selector": "#buy"}}))
+    ask(process, plan("blob", ["click", {"tabId": tab, "selector": "#buy"}]))
     card = until(lambda: cards(process), 20)
     choices = js(process, "[...document.querySelectorAll('.approve-card .approve-actions button')].map(b => b.innerText.trim())") or []
     check(card and "Allow once" in choices and "Always on this site" not in choices, f"A page with no site doesn't offer Always on this site ({choices})")
@@ -832,7 +832,7 @@ def uploads(process):
         check("no file" in said, "...and then it says so")
         pending, shown = asked([str(report)])
         send(process, "navigate", url=OTHER + "/upload")
-        until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/uploadcomplete", 15)
+        until(lambda: rpc(process, "eval", script="location.hostname + location.pathname + document.readyState") == "localhost/uploadcomplete", 15)
         _, said = answer(pending, True, [str(report)])
         check(("another site" in said or "Waiting" in said) and not attached(), f"A page that moves to another site meanwhile gets nothing ({said[:60]!r})")
         if "Waiting" in said:
