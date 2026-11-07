@@ -210,6 +210,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var privateHidden: [String: [String]] = [:]
  // Browser tools (Tools.swift, Vault.swift)
  var permissions: [PendingPermission] = []
+ var qaAppLinks: [String] = [] // a test build records app links instead of opening them
  var privateSitePermissions: [String: [String: String]] = [:] // a private window's site rules, never written down
  var upload: UploadRequest?
  var loginOffer: LoginOffer?
@@ -451,6 +452,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "agentAnswer": answerAgent(data["allow"] as? Bool ?? false)
   case "removeHistory": history.removeAll { $0["Url"] as? String == text("url") }; saveLater()
   case "clearHistory": history.removeAll(); store.picks.removeAll(); save(); toast("History cleared.")
+  case "forgetAppLinks": prefs["AllowedAppLinks"] = [String](); saveLater()
   case "clearCompanionData": // Settings → Clear the companion profile: the user's own sign-ins stay
    companionStore.removeData(ofTypes: WKWebsiteDataStore.allWebsiteDataTypes(), modifiedSince: .distantPast) { self.toast("Companion profile cleared. Companions are signed out of every site there.") }
   case "clearCookies":
@@ -1054,8 +1056,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if view === shell { decisionHandler(action.request.url?.scheme == "still" ? .allow : .cancel); return }
   if action.shouldPerformDownload { tabs.first { $0.view === view }?.downloadAt = Date(); decisionHandler(.download); return }
   if let url = action.request.url, let scheme = url.scheme?.lowercased(), !["http", "https", "about", "data", "blob", "file"].contains(scheme) {
-   // mailto:, facetime:, zoommtg: and other app links open only from a click.
-   if action.navigationType == .linkActivated { NSWorkspace.shared.open(url) }
+   // mailto:, facetime:, zoommtg: and other app links open only from a click, and ask first.
+   if action.navigationType == .linkActivated, let tab = tabs.first(where: { $0.view === view }) { openAppLink(tab, url, scheme, action) }
    decisionHandler(.cancel); return
   }
   if let url = action.request.url, url.host == sampleHost, action.targetFrame?.isMainFrame == true, sampleLoads.remove(ObjectIdentifier(view)) == nil {

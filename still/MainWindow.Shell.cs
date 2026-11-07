@@ -216,6 +216,7 @@ public partial class MainWindow
      case "startupSettings":System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("ms-settings:startupapps"){UseShellExecute=true});break;
      case "sidebarResize":if(data.TryGetProperty("width",out var p5w)&&p5w.TryGetDouble(out var p5wv)){Prefs.SidebarWidth=Math.Clamp(p5wv,190,360);SaveLater();foreach(var w in Windows)w.ShellPublish();}break;
      case "clearCompanionData":await ClearCompanionData();break;
+     case "forgetAppLinks":Prefs.AllowedAppLinks.Clear();SaveLater();break;
      case "clearHistory":state.History.Clear();state.AddressPicks.Clear();Save();Toast("History cleared.");break;
      case "clearCookies":
       var regularCore=await ManagementCore();await regularCore.Profile.ClearBrowsingDataAsync(CoreWebView2BrowsingDataKinds.AllSite);Toast("Cookies and website data cleared.");break;

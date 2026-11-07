@@ -13,7 +13,7 @@ public partial class MainWindow
   "ms-project", "ms-publisher", "ms-spd", "ms-infopath", "ms-diagcab", "ms-rd", "microsoft-edge", "microsoft-edge-holographic", "stillurl" };
  string lastAppLink = ""; DateTime lastAppLinkAt;
 
- async void OpenAppLink(BrowserTab tab, string uri)
+ async void OpenAppLink(BrowserTab tab, string uri, string from, bool clicked)
  {
   // The engine can report the same launch twice (navigation + launch event); ask once.
   if (uri == lastAppLink && DateTime.UtcNow - lastAppLinkAt < TimeSpan.FromSeconds(2)) return;
@@ -22,11 +22,14 @@ public partial class MainWindow
   string scheme = u.Scheme;
   if (DangerousSchemes.Contains(scheme)) { Toast("Still blocked a link that could run programs on this PC."); return; }
   if (AppForScheme(scheme) is not { } app) { Toast($"No app on this PC opens {scheme}: links."); return; }
-  string site = Host(tab.Url); if (string.IsNullOrWhiteSpace(site)) site = "This page";
+  // Who asked: a frame answers for itself, not for the page around it. Only a real click by the page itself can be remembered.
+  string top = Host(tab.Url), site = Uri.TryCreate(from, UriKind.Absolute, out var origin) && origin.Scheme is "http" or "https" ? Host(from) : top;
+  bool own = clicked && site == top;
+  if (string.IsNullOrWhiteSpace(site)) site = "This page";
   string key = site + "|" + scheme;
-  if (!Prefs.AllowedAppLinks.Contains(key)) {
+  if (!own || !Prefs.AllowedAppLinks.Contains(key)) {
    if (!await AskPermission(tab, site, "open " + app)) return;
-   if (!tab.Private) { Prefs.AllowedAppLinks.Add(key); SaveLater(); }
+   if (own && !tab.Private) { Prefs.AllowedAppLinks.Add(key); SaveLater(); }
   }
   try { Process.Start(new ProcessStartInfo(HandlerUri(uri)) { UseShellExecute = true }); }
   catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { Toast($"Couldn't open {app}."); }

@@ -151,6 +151,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
+ case "appLinks": done(["opened": b.qaAppLinks])
  case "keyboardHolder": done(["hidden": (b.window.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor ?? false])
  case "keyboardToHidden":
   let hiddenPage = b.tabs.compactMap(\.view).first { $0.isHidden }

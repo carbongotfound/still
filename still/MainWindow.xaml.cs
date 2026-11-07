@@ -426,7 +426,7 @@ public partial class MainWindow : Window
   bool Off() => tab.Wire != wire;
   core.ScriptDialogOpening += (_, e) => { if (Off()) return; OpenPageDialog(tab, e); };
   core.FaviconChanged+=async(_,_)=>{ if (Off()) return; await UpdateFavicon(tab,core); };
-  core.LaunchingExternalUriScheme+=(_,e)=>{if (Off()) return; e.Cancel=true;var uri=e.Uri;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri));};
+  core.LaunchingExternalUriScheme+=(_,e)=>{if (Off()) return; e.Cancel=true;var uri=e.Uri;var from=e.InitiatingOrigin;var clicked=e.IsUserInitiated;Dispatcher.BeginInvoke(()=>OpenAppLink(tab,uri,from,clicked));};
   core.ServerCertificateErrorDetected+=(_,e)=>{if (Off()) return; e.Action=CoreWebView2ServerCertificateErrorAction.Cancel;tab.CertificateError=true;tab.Secure=false;ShellPublish();};
   core.NavigationStarting += (_, e) => { if (Off()) return; 
    view.DefaultBackgroundColor = dark ? DarkPage : System.Drawing.Color.White;
@@ -436,7 +436,7 @@ public partial class MainWindow : Window
    if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var uri)) { e.Cancel = true; return; }
    if (uri.Scheme is not ("http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension" or "view-source" or "edge")) {
     e.Cancel = true;
-    Dispatcher.BeginInvoke(() => OpenAppLink(tab, e.Uri));
+    { var link = e.Uri; var clicked = e.IsUserInitiated; Dispatcher.BeginInvoke(() => OpenAppLink(tab, link, "", clicked)); }
     return;
    }
    if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";

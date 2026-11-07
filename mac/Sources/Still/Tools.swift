@@ -205,6 +205,27 @@ extension Browser {
   schedulePublish()
   DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak pending] in pending?.finish(false) }
  }
+ /// A link to another app: Still asks in its permission bar, and remembers yes per site and app. Who asked: a frame answers for
+ /// itself. Only a real click by the page itself can be remembered, or use what's remembered.
+ func openAppLink(_ tab: Tab, _ url: URL, _ scheme: String, _ action: WKNavigationAction) {
+  guard let app = NSWorkspace.shared.urlForApplication(toOpen: url) else { toast("No app on this Mac opens \(scheme): links."); return }
+  let origin = action.sourceFrame.securityOrigin, site = origin.host.isEmpty ? "This page" : hostName(authority(origin))
+  let own = action.sourceFrame.isMainFrame && action.buttonNumber != 0, key = site + "|" + scheme
+  let open = { [weak self] in if isQa { self?.qaAppLinks.append(url.absoluteString) } else { NSWorkspace.shared.open(url) } }
+  if own && pref("AllowedAppLinks", [String]()).contains(key) { open(); return }
+  let pending = PendingPermission(tab: tab, site: site, kind: "open " + FileManager.default.displayName(atPath: app.path).replacingOccurrences(of: ".app", with: ""))
+  pending.answer = { [weak self] allow in
+   guard let self else { return }
+   self.permissions.removeAll { $0 === pending }
+   self.schedulePublish()
+   guard allow, !tab.closed else { return }
+   if own && !tab.isPrivate { var list = pref("AllowedAppLinks", [String]()); list.append(key); self.prefs["AllowedAppLinks"] = list; self.saveLater() }
+   open()
+  }
+  permissions.append(pending)
+  schedulePublish()
+  DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak pending] in pending?.finish(false) }
+ }
  func answerPermission(_ id: String, _ allow: Bool) { permissions.first { $0.id == id }?.finish(allow) }
  func dropPermissions(_ tab: Tab) { for pending in permissions where pending.tab === tab { pending.finish(false) } }
  func permissionData() -> [String: Any]? {

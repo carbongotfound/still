@@ -12,6 +12,7 @@ import shutil
 import subprocess
 import sys
 import threading
+import urllib.parse
 import time
 import uuid
 import winreg
@@ -108,7 +109,9 @@ def link_args(process):
 
 class Page(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
-        body = b"<!doctype html><title>Links</title><p>Links</p>"
+        body = b"<!doctype html><title>Links</title><p>Links</p><a id=go style='display:block;width:200px;height:40px;background:#ccc'>Open</a>"
+        if self.path.startswith("/frame"):
+            body = b"<!doctype html><title>Frame</title><script>location.href = decodeURIComponent(location.search.slice(1))</script>"
         self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
 
     def log_message(self, *a):
@@ -139,7 +142,15 @@ def app_link(process):
         def go(link):
             rpc(process, "eval", script=f"location.href = {json.dumps(link)}")
 
-        go(f'{SCHEME}:one" --evil "two three')
+        def click(link):
+            at = rpc(process, "eval", script=f"(a => (a.href = {json.dumps(link)}, (r => [r.x + 20, r.y + 10])(a.getBoundingClientRect())))(document.querySelector('#go'))")
+            for kind in ("mousePressed", "mouseReleased"):
+                rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
+
+        def answer(word):
+            js(process, f"[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === {json.dumps(word)}).click()")
+
+        click(f'{SCHEME}:one" --evil "two three')
         check(until(lambda: "wants to" in bar(process), 15), "An app link asks first")
         check(not log.exists(), "...and nothing started yet")
         js(process, "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === 'Allow').click()")
@@ -147,10 +158,31 @@ def app_link(process):
         args = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
         check(len(args) == 1 and "%22" in args[0] and '"' not in args[0] and "%20" in args[0], f"The app gets one argument, whatever the link said ({args})")
 
-        go(f"{SCHEME}:plain/path?a=b&c=d#e")
-        check(until(lambda: len(log.read_text(encoding="utf-8").splitlines()) == 2, 15), "On that site it doesn't ask again")
+        click(f"{SCHEME}:plain/path?a=b&c=d#e")
+        check(until(lambda: len(log.read_text(encoding="utf-8").splitlines()) == 2, 15), "On that site a click doesn't ask again")
         args = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
         check(args == [f"{SCHEME}:plain/path?a=b&c=d#e"], f"An ordinary link gets there as it was ({args})")
+
+        go(f"{SCHEME}:scripted")
+        check(until(lambda: "wants to" in bar(process), 15), "A link nobody clicked asks, even on an allowed site")
+        answer("Block")
+        until(lambda: "wants to" not in bar(process), 5)
+        check(len(log.read_text(encoding="utf-8").splitlines()) == 2, "...and Block starts nothing")
+
+        frame = f"http://localhost:{server.server_port}/frame?" + urllib.parse.quote(f"{SCHEME}:framed", safe="")
+        rpc(process, "eval", script=f"document.body.insertAdjacentHTML('beforeend', '<iframe src=\"{frame}\"></iframe>')")
+        said = until(lambda: bar(process) if "wants to" in bar(process) else "", 15) or ""
+        check("localhost" in said and "127.0.0.1" not in said, f"Another site's frame asks in its own name ({said[:80]!r})")
+        answer("Allow")
+        check(until(lambda: len(log.read_text(encoding="utf-8").splitlines()) == 3, 15), "...and Allow is for that one link")
+        rpc(process, "eval", script="document.querySelector('iframe').remove()")
+
+        send(process, "forgetAppLinks")
+        time.sleep(.5)
+        click(f"{SCHEME}:again")
+        check(until(lambda: "wants to" in bar(process), 15), "After forgetting, the site asks again")
+        answer("Block")
+        until(lambda: "wants to" not in bar(process), 5)
 
         go('stillurl:one" --temp "two')
         time.sleep(2)
