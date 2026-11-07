@@ -27,7 +27,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import press_ready, CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 RUN = ROOT / "artifacts" / ("exchange-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
@@ -473,7 +473,7 @@ def main():
         check(shown_chat() == both and "Jonah wants to do this" in card, f"Jonah's click asks first, in Maya's chat ({card[:80]!r})")
         check(until(lambda: [c[1:] for c in shown_cards()] == [["needs", "Needs you"]], 5), f"and the row says Needs you ({shown_cards()})")
         shot("needs-you.png")
-        js(P, "document.querySelector('.chat-view .approve-card [data-approve]').click()")
+        press_ready(P, "document.querySelector('.chat-view .approve-card [data-approve]')")
         check(settled(both, 1, 30) and calls("Jonah", "click") and not calls("Jonah", "click")[-1]["error"], "Allowed there, Jonah's click goes ahead")
         plan({"Jonah": [{"text": "Clicked it myself.", "calls": [{"name": "open_tab", "arguments": {"url": site + "/review"}}, {"name": "read_page", "arguments": {}}, {"name": "click", "arguments": {"selector": "h1"}}]}]})
         alone = new_chat("Click the review's heading.", companion="jonah")

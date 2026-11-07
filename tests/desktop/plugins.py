@@ -45,7 +45,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import press_ready, CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("plugins-" + uuid.uuid4().hex[:8])
@@ -259,7 +259,7 @@ def buttons(process):
 
 
 def press(process, words, within=".approve-card"):
-    return js(process, f"(() => {{ const b = [...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)}); b?.click(); return !!b }})()")
+    return press_ready(process, f"[...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)})")
 
 
 def type_into(process, selector, value):

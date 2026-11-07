@@ -17,7 +17,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import press_ready, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 import exchange as X  # noqa: E402  the fake agent app and its chat helpers
 
 RUN = ROOT / "artifacts" / ("assistant-" + uuid.uuid4().hex[:8])
@@ -164,7 +164,7 @@ def main():
         card = until(lambda: js(P, "document.querySelector('.chat-view .approve-card')?.innerText ?? ''"), 30) or ""
         check(X.shown_chat() == chain and "Maya wants to do this" in card, f"Maya's click asks first, in Ruth's chat ({card[:80]!r})")
         shot("needs-you.png")
-        js(P, "document.querySelector('.chat-view .approve-card [data-approve]').click()")
+        press_ready(P, "document.querySelector('.chat-view .approve-card [data-approve]')")
         check(X.settled(chain, 1, 30) and X.calls("Maya", "click") and not X.calls("Maya", "click")[-1]["error"], "Once the user allows it, Maya's click goes ahead")
         send(P, "permSet", site="127.0.0.1", action="interact", companion=rid, mode="")
         send(P, "permSet", site="127.0.0.1", action="interact", companion="maya", mode="")

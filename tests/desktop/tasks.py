@@ -24,7 +24,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 import qa
-from qa import js, rpc, send, until
+from qa import press_ready, js, rpc, send, until
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = Path(__file__).resolve().parents[2] / "artifacts" / f"tasks-{uuid.uuid4().hex[:8]}"
@@ -159,7 +159,7 @@ def ask(p, tag):
 
 
 def press(p, words, within=".ask-card"):
-    return js(p, f"(() => {{ const b = [...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)}); b?.click(); return !!b }})()")
+    return press_ready(p, f"[...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)})")
 
 
 def toasts(p):

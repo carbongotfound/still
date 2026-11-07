@@ -13,7 +13,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fakemodels import Fake  # noqa: E402
-from qa import CREW, js, launch, rpc, send, text, until  # noqa: E402
+from qa import press_ready, CREW, js, launch, rpc, send, text, until  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("stepstate-" + uuid.uuid4().hex[:8])
@@ -51,7 +51,7 @@ def card(p):
 
 
 def press(p, words):
-    return js(p, f"(b => {{ b?.click(); return !!b }})([...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === {json.dumps(words)}))")
+    return press_ready(p, f"[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === {json.dumps(words)})")
 
 
 def idle(p):

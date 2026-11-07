@@ -52,7 +52,7 @@ export type Attached = { id: string; name: string; size: number }
 export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean } // stock: one Still ships (Reset puts it back)
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
-export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string }[] }
+export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
 const waits = (r: Run) => !!r.question || !!r.asks?.length
 export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => (r.id === id || r.root === id) && waits(r))
@@ -890,8 +890,10 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
      {waits(r) ? <i className="is-needs" aria-hidden /> : <Spinner className="tasks-spin" aria-hidden />}</DropdownMenuItem>
     {tabs.filter(t => t.inChat === r.id).map(t => <div key={t.id} className="tasks-page">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.title || host(t.url)}</span><button onClick={() => send("aiHelpPage", { id: t.id })}>Watch</button><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}
     {r.question && <div className="tasks-ask"><p>{r.question}</p>{(r.options ?? []).slice(0, 4).map(o => <button key={o} onClick={() => send("aiAnswer", { id: r.id, text: o })}>{o}</button>)}</div>}
-    {r.asks?.map(a => <div key={a.id} className="tasks-ask"><p>{a.what} <small>on {a.site}</small></p>
-     <button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow once</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Deny</button></div>)}
+    {r.asks?.map(a => <div key={a.id} className="tasks-ask"><p>{a.what} <small>on {a.site}{a.why ? " · " + a.why : ""}</small></p>
+     {a.action === "sensitive" || a.action === "plugin"
+      ? <button onClick={() => send("chatOpen", { id: r.id })}>Open to decide</button>
+      : <><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow once</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Deny</button></>}</div>)}
    </div> })}
    {apps.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Other AI apps' tabs</DropdownMenuLabel>
     {apps.map(t => <div key={t.id} className="tasks-page is-app">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.agent ? t.agent + ": " : ""}{t.title || host(t.url)}</span><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}</>}

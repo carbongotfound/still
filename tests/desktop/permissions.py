@@ -8,6 +8,7 @@ the cards like a person would.
   QUEUE <url>       a click on a link to a slow page (it holds the page's turn), and a second one waiting behind it
   SWAP <url>        clicks #swap on a page that turns it into something else while the card waits (see TRICKY)
   KEY <url>         presses Enter in a field: the page moves the focus while the card waits
+  LATER <url>       clicks Add to cart, then a moment later Save for later: a second step arrives under a waiting card
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
 countdown running out, Cancel right at the end of it, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
@@ -30,7 +31,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, ROOT, js, launch, launcher, press_ready, rpc, send, until  # noqa: E402
 from mcp_client import Mcp, call_async  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
@@ -75,6 +76,7 @@ const change = () => {
  if (how === 'quiet') { b.type = 'submit'; }                                      // same words, but now it submits
  if (how === 'away') location.href = q.get('to');                                 // the tab goes to another site
  if (how === 'focus') document.getElementById('other').focus();                   // the key would go somewhere else
+ fetch('/hit/changed' + location.search, { method: 'POST' });
 };
 const poll = setInterval(async () => { if (await (await fetch('/go' + location.search)).text() === 'go') { clearInterval(poll); change(); } }, 60);
 if (how === 'focus') document.getElementById('field').focus();
@@ -191,6 +193,11 @@ FAKE = textwrap.dedent(r'''
     elif m := re.search(r"SWAP (\S+)", tag):
         call("open_tab", url=m[1])
         call("click", selector="#swap")
+    elif m := re.search(r"LATER (\S+)", tag):
+        call("open_tab", url=m[1])
+        both = [threading.Thread(target=call, args=("click",), kwargs={"selector": "#cart"}), threading.Thread(target=lambda: (time.sleep(4), call("click", selector="#wish")))]
+        for t in both: t.start()
+        for t in both: t.join()
     elif m := re.search(r"KEY (\S+)", tag):
         call("open_tab", url=m[1])
         call("press_key", key="Enter")
@@ -237,7 +244,7 @@ def counting(process):
 
 
 def press(process, words, within=".approve-card"):
-    return js(process, f"(() => {{ const b = [...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)}); b?.click(); return !!b }})()")
+    return press_ready(process, f"[...document.querySelectorAll({json.dumps(within + ' button')})].find(b => b.innerText.trim() === {json.dumps(words)})")
 
 
 def ask(process, tag):
@@ -286,6 +293,7 @@ def main():
         cancel_at_the_end(process)
         one_at_a_time(process)
         only_what_was_shown(process)
+        steady_buttons(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
@@ -530,6 +538,11 @@ def only_what_was_shown(process):
     until(lambda: not rules(), 10)
     orders = lambda who: [o for o in ORDERS if who in o["path"]]
 
+    def change(query):
+        """The page changes, and says so: a hidden page's timers run when they like."""
+        GO[query] = True
+        until(lambda: "/hit/changed?" + query in HITS, 15)
+
     def swap(how, extra=""):
         query = f"do={how}&k={uuid.uuid4().hex[:6]}{extra}"
         tag = f"SWAP {SITE}/tricky?{query} s"
@@ -541,8 +554,7 @@ def only_what_was_shown(process):
     before = len(orders("tricky"))
     query, tag, shown = swap("order")
     check(shown and "Add to cart" in shown[0], "The card shows Add to cart")
-    GO[query] = True
-    time.sleep(.5)
+    change(query)
     press(process, "Allow once")
     again = until(lambda: any("Place order" in c for c in cards(process)) and cards(process), 15)
     check(again and "changed since you were asked" in again[0], "The page changed: Still asks again, naming the new button, and says why")
@@ -556,8 +568,7 @@ def only_what_was_shown(process):
     # Same words, but now it submits a form: still not what was approved.
     before = len(orders("tricky"))
     query, tag, shown = swap("quiet")
-    GO[query] = True
-    time.sleep(.5)
+    change(query)
     press(process, "Allow once")
     again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
     check(again, "A button that keeps its words but now submits a form asks again")
@@ -593,8 +604,7 @@ def only_what_was_shown(process):
     ask(process, tag)
     shown = until(lambda: cards(process), 30)
     check(shown and "Press Enter" in shown[0], "The card shows the key")
-    GO[query] = True
-    time.sleep(.5)
+    change(query)
     press(process, "Allow once")
     again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
     check(again, "The focus moved while the card waited: Still asks again")
@@ -620,6 +630,47 @@ def only_what_was_shown(process):
     send(process, "permSensitive", site="127.0.0.1", on=False)
     send(process, "permReset")
     until(lambda: not rules(), 10)
+
+
+def steady_buttons(process):
+    """A new step can't move a button under the cursor, and a press meant for one step can't land on the next."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    spot = lambda: js(process, """[...document.querySelectorAll('.approve-actions button')].map(b => { const r = b.getBoundingClientRect(); return b.innerText.trim() + '@' + Math.round(r.left) + ',' + Math.round(r.top) + (b.hasAttribute('data-approve') ? '*' : '') })""")
+    tag = f"LATER {SITE}/shop?k=l r"
+    ask(process, tag)
+    until(lambda: len(cards(process)) == 1, 30, .05)
+    fresh = js(process, "[...document.querySelectorAll('.approve-actions button')].every(b => b.disabled)")
+    check(fresh, "A card that has just appeared doesn't take a click yet")
+    time.sleep(.7)
+    alone = spot()
+    check(alone and alone[-1].startswith("Allow once@") and alone[-1].endswith("*"), f"Allow once is the last button, and the one Ctrl+Enter presses ({alone})")
+    until(lambda: len(cards(process)) == 2, 30, .05)
+    time.sleep(.7)
+    two = spot()
+    check(two == alone, f"A second step arriving moves none of the buttons, and they're the same buttons ({two})")
+    check(js(process, "!document.querySelector('.approve-all [data-approve]') && !![...document.querySelectorAll('.approve-all button')].find(b => b.innerText.trim() === 'Approve all (2)')"), "Approve all sits apart from them, and Ctrl+Enter can't press it")
+    # A double press on Allow once: the first answers the first step, the second lands on a button that isn't ready.
+    js(process, """(() => { const once = () => [...document.querySelectorAll('.approve-actions button')].find(b => b.innerText.trim() === 'Allow once'); once().click(); setTimeout(() => once()?.click(), 120); setTimeout(() => once()?.click(), 300); return true })()""")
+    until(lambda: "/hit/cart?k=l" in HITS, 15)
+    time.sleep(1.5)
+    check("/hit/cart?k=l" in HITS and "/hit/wish?k=l" not in HITS, "A quick second press doesn't approve the next step")
+    check(len(cards(process)) == 1 and "Save for later" in cards(process)[0], "The next step is still waiting, on its own card")
+    press(process, "Deny")
+    idle(process)
+    check("/hit/wish?k=l" not in HITS, "Deny: it doesn't run")
+
+    send(process, "permSensitive", site="127.0.0.1", on=True)
+    ask(process, f"CART {SITE} 1 u")
+    check(until(lambda: cards(process), 30), "A sensitive step waits on its card")
+    rpc(process, "key", key="K", mods="Control, Shift")
+    until(lambda: js(process, "!!document.querySelector('.tasks-menu')"), 5)
+    menu = until(lambda: js(process, "[...document.querySelectorAll('.tasks-ask')].map(e => e.innerText).join(' ')"), 5) or ""
+    check("Open to decide" in menu and "Allow once" not in menu and "marked" in menu, f"The running tasks menu sends a sensitive step to its card, and says why ({menu})")
+    rpc(process, "key", key="Escape", mods="None")
+    press(process, "Deny")
+    idle(process)
+    send(process, "permSensitive", site="127.0.0.1", on=False)
 
 
 def approve_all(process):
@@ -648,6 +699,7 @@ def keys_and_help(process):
     """Phase 6: the keyboard over live cards and runs, the help card, the tab cap."""
     ask(process, f"CART {SITE} 1 m")
     check(until(lambda: cards(process), 30), "A card waits for Ctrl+Enter")
+    time.sleep(.7)
     js(process, "document.activeElement?.blur?.(); window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true }))")
     check(until(lambda: calls("CART " + SITE + " 1 m") and calls("CART " + SITE + " 1 m")[-1]["ok"], 15), "Ctrl+Enter approves the card in front of you")
     idle(process)

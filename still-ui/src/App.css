@@ -1084,6 +1084,8 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .approve-no { display:grid; place-items:center; width:24px; height:24px; flex:none; border-radius:7px; color:var(--muted-foreground); } .approve-no:hover { background:var(--muted); color:var(--foreground); }
 .approve-no svg { width:14px; height:14px; }
 .approve-actions { display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-top:12px; }
+.approve-all { display:flex; justify-content:flex-end; gap:6px; margin-top:10px; }
+.approve-steps li.is-active { border-color:color-mix(in oklab,var(--foreground) 35%,var(--border)); }
 .countdown-card { border-color:color-mix(in oklab,#e0a23a 55%,var(--border)); }
 .countdown-card .ask-q > svg { width:20px; height:20px; flex:none; color:#c47a12; } .dark .countdown-card .ask-q > svg { color:#f0b65c; }
 .countdown-bar { height:4px; margin-top:12px; border-radius:99px; background:var(--muted); overflow:hidden; }

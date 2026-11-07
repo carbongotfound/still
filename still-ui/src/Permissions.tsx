@@ -19,32 +19,41 @@ export type AuditEntry = { at: string; what: string; site: string; result: strin
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
 
-// The cards above the message box: steps waiting for your OK (Approve all when there are several), and countdowns.
+// Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
+function useArmed(key: string) {
+ const [armed, setArmed] = useState<string | null>(null)
+ useEffect(() => { const t = setTimeout(() => setArmed(key), 500); return () => clearTimeout(t) }, [key])
+ return armed === key
+}
+
+// The cards above the message box: steps waiting for your OK, and countdowns. The bottom row always acts on one step, the oldest,
+// shown right above it, and each button keeps its place; a step that arrives later lands above and can't move anything under the
+// cursor. Approve all and Deny all sit at the top, away from that row, and Ctrl+Enter never presses them.
 export function Approvals({ list, companion, companions, send, incognito }: { list: Approval[]; companion?: Companion; companions?: Companion[]; send: Send; incognito?: boolean }) {
- const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null
+ const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null, active = asks[0]
  const mate = (a?: Approval | null) => companions?.find(c => c.id === a?.who) ?? companion, name = mate(one)?.name ?? "Your AI"
+ const ready = useArmed(active?.id ?? ""), readyAll = useArmed(asks.map(a => a.id).join())
  const byId = (id: string) => list.find(a => a.id === id)
  const answer = (id: string, a: string) => send("permAnswer", { id, run: byId(id)?.run, answer: a })
  return <>
   {list.filter(a => a.until).map(a => <Countdown key={a.id} card={a} send={send} />)}
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
    <div className="ask-q"><Face companion={mate(one)} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
-   <ul className="approve-steps">{asks.map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin") && "is-sensitive")}>
+   {!one && <div className="approve-all"><Button size="sm" variant="ghost" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" variant="outline" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "once"))}>Approve all ({asks.length})</Button></div>}
+   <ul className="approve-steps">{[...asks.slice(1), active].map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin") && "is-sensitive", !one && a === active && "is-active")}>
     {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" ? <ShieldAlert /> : <ShieldCheck />}
     <span><b>{a.what}</b><small>{[a.who && a.who !== companion?.id && mate(a)?.name, a.site, a.why].filter(Boolean).join(" · ")}</small></span>
-    {!one && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
+    {!one && a !== active && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
    </li>)}</ul>
-   <div className="approve-actions">{one?.action === "connect"
-    ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "connect")}>{one.what}</Button></>
-    : one?.action === "plugin" // the user's own apps: once at a time, never "always"
-    ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
-    : one
-    ? <><Button size="sm" variant="ghost" onClick={() => answer(one.id, "deny")}>Deny</Button>
-     {!incognito && <Button size="sm" variant="outline" title={one.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(one.id, "always")}>Always on this site</Button>}
-     {one.action === "sensitive"
-      ? <><Button size="sm" variant="outline" title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button></>
-      : <><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" onClick={() => answer(one.id, "once")}>Allow once</Button><Button size="sm" onClick={() => answer(one.id, "chat")}>Allow in this chat</Button></>}</>
-    : <><Button size="sm" variant="ghost" onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" data-approve title="Ctrl+Enter" onClick={() => asks.forEach(a => answer(a.id, "once"))}>Approve all ({asks.length})</Button></>}
+   <div className="approve-actions">{active.action === "connect"
+    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "connect")}>{active.what}</Button></>
+    : active.action === "plugin" // the user's own apps: once at a time, never "always"
+    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
+    : <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button>
+     {incognito ? <span /> : <Button size="sm" variant="outline" disabled={!ready} title={active.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(active.id, "always")}>Always on this site</Button>}
+     {active.action === "sensitive"
+      ? <><Button size="sm" variant="outline" disabled={!ready} title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(active.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
+      : <><Button size="sm" disabled={!ready} onClick={() => answer(active.id, "chat")}>Allow in this chat</Button><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>}</>}
    </div>
   </div>}
  </>
@@ -55,12 +64,13 @@ function Countdown({ card, send }: { card: Approval; send: Send }) {
  const seconds = () => Math.max(0, Math.ceil((end - Date.now()) / 1000))
  const [left, setLeft] = useState(seconds)
  const [duration] = useState(() => Math.max(0, end - Date.now()))
- useEffect(() => { const t = setInterval(() => setLeft(seconds()), 200); return () => clearInterval(t) }, [end]) // eslint-disable-line react-hooks/exhaustive-deps
+ const ready = useArmed(card.id) // Cancel takes a click at once; Do it now, a moment later
+ useEffect(() => { const t = setInterval(() => setLeft(seconds()), 200), zero = setTimeout(() => setLeft(0), end - Date.now()); return () => { clearInterval(t); clearTimeout(zero) } }, [end]) // eslint-disable-line react-hooks/exhaustive-deps
  return <div className="ask-card countdown-card" role="alert">
   <div className="ask-q"><ShieldAlert /><p>{left ? `Going ahead in ${left}s` : "Going ahead…"}</p></div>
   <ul className="approve-steps"><li className="is-sensitive"><span><b>{card.what}</b><small>{[card.site, card.why].filter(Boolean).join(" · ")}</small></span></li></ul>
   <div className="countdown-bar" aria-hidden><i style={{ animationDuration: duration + "ms" }} /></div>
-  <div className="approve-actions"><Button size="sm" variant="outline" disabled={!left} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "cancel" })}>Cancel</Button><Button size="sm" disabled={!left} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "now" })}>Do it now</Button></div>
+  <div className="approve-actions"><Button size="sm" variant="outline" disabled={!left} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "cancel" })}>Cancel</Button><Button size="sm" disabled={!left || !ready} onClick={() => send("permAnswer", { id: card.id, run: card.run, answer: "now" })}>Do it now</Button></div>
  </div>
 }
 

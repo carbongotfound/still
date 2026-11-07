@@ -113,6 +113,11 @@ def alive(pid):
 START = 120  # seconds a QA build gets to come up: a first start on Windows waits on WebView2, 18 to 25 s here and more on a busy PC
 
 
+def press_ready(process, find, seconds=5):
+    """Clicks a button once it takes clicks: a card's buttons wait a moment after their meaning changes. find: JS for the button."""
+    return until(lambda: js(process, f"(b => {{ if (!b || b.disabled) return false; b.click(); return true }})({find})"), seconds, .05)
+
+
 def until_started(process, seconds=START):
     """Waits until a Still that was just started answers on its test pipe, has a tab and has drawn its interface.
     A slow start is waited out. One that exits or never comes up fails with the reason, and one that hangs is closed."""

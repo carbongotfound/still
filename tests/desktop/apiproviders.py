@@ -14,7 +14,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 from fakemodels import Fake  # noqa: E402
-from qa import CREW, MAC, js, launch, rpc, send, text, until  # noqa: E402
+from qa import press_ready, CREW, MAC, js, launch, rpc, send, text, until  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("apiproviders-" + uuid.uuid4().hex[:8])
@@ -170,7 +170,7 @@ def main():
         send(p, "aiSend", text='CALL open_tab {"url": "' + fake.url + '/page"}\nCALL click {"text": "Press me"}')
         card = " ".join(until(lambda: js(p, "[...document.querySelectorAll('.approve-card .approve-steps li')].map(e => e.innerText)"), 30) or [])
         check("Press me" in card and "127.0.0.1" in card, "A click waits on the approval card, naming the step and the site")
-        js(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow once')?.click()")
+        press_ready(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow once')")
         check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "Allow once lets the click run")
         idle(p)
 
