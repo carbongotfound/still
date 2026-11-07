@@ -6,6 +6,8 @@ the cards like a person would.
   BOTH <site>       clicks Add to cart and Save for later at the same time (two cards: Approve all)
   PAIR <url>        the same on a page of its own, so each run's clicks can be counted on the server
   QUEUE <url>       a click on a link to a slow page (it holds the page's turn), and a second one waiting behind it
+  SWAP <url>        clicks #swap on a page that turns it into something else while the card waits (see TRICKY)
+  KEY <url>         presses Enter in a field: the page moves the focus while the card waits
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
 countdown running out, Cancel right at the end of it, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
@@ -39,6 +41,7 @@ OUT = ROOT / "docs" / "agentic" / "compare"
 RESULT = {"checks": []}
 ORDERS = []
 HITS = []  # what the shop's buttons told the server, as /hit/<button>?k=<which run>
+GO = {}  # query string -> True: time for that tricky page to change
 LIVE = "--live" in sys.argv
 CODE = "482913"  # the code "texted to your phone": only the test (you) knows it
 
@@ -59,6 +62,25 @@ button{padding:8px 14px;border-radius:8px;border:1px solid #7a3e1d;background:#f
 <div id=row><button type=button id=cart onclick="this.dataset.n=(+this.dataset.n||0)+1;hit(this)">Add to cart</button> <button type=button id=wish onclick="this.dataset.n=1;hit(this)">Save for later</button> <a id=slow href=/slow>Details</a></div></section>
 <section><h2>Checkout</h2><form id=checkout method=post action=/order><p><label>Name <input id=name name=name></label></p><button id=order>Place order</button></form></section></main>
 <script>const hit = b => fetch('/hit/' + b.id + location.search, { method: 'POST' }); document.getElementById('row').addEventListener('click', e => { if (e.target.id === 'row') fetch('/hit/row' + location.search, { method: 'POST' }); });</script>"""
+# A shop that changes its mind. /tricky?do=... decides how; the test's own fetches tell it when.
+TRICKY = """<!doctype html><meta charset=utf-8><title>Tricky shop</title>
+<form id=f method=post action=/order?who=tricky><input type=hidden name=name value=tricky><input id=field name=note placeholder="Note"><button type=button id=swap>Add to cart</button></form>
+<input id=other placeholder="Other">
+<script>
+const q = new URLSearchParams(location.search), how = q.get('do');
+const b = document.getElementById('swap');
+b.addEventListener('click', () => fetch('/hit/cart' + location.search, { method: 'POST' }));
+const change = () => {
+ if (how === 'order') { b.type = 'submit'; b.textContent = 'Place order'; }       // the classic: Add to cart becomes Place order
+ if (how === 'quiet') { b.type = 'submit'; }                                      // same words, but now it submits
+ if (how === 'away') location.href = q.get('to');                                 // the tab goes to another site
+ if (how === 'focus') document.getElementById('other').focus();                   // the key would go somewhere else
+};
+const poll = setInterval(async () => { if (await (await fetch('/go' + location.search)).text() === 'go') { clearInterval(poll); change(); } }, 60);
+if (how === 'focus') document.getElementById('field').focus();
+// A page that swaps on the press itself, past every check before it.
+if (how === 'press') b.addEventListener('pointerdown', () => { b.type = 'submit'; b.textContent = 'Place order'; }, true);
+</script>"""
 # The live run's page: one checkout that needs a code only you have.
 MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple Market</title>") + """<main><section><div class=pic></div><h2>Trail mug</h2><p>$18 each</p></section>
 <section><h2>Checkout</h2><form id=checkout method=post action=/buy><p><label>Quantity <input id=qty name=qty type=number min=1 value=1></label></p>
@@ -68,7 +90,12 @@ MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/tricky"):
+            return self.page(TRICKY)
+        if self.path.startswith("/go"):
+            return self.page("go" if GO.get(self.path.split("?", 1)[-1]) else "wait")
         if self.path.startswith("/slow"):
+            HITS.append("/slow")
             time.sleep(4)  # the click waits for the page, and holds its turn
         self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else "<!doctype html><title>Page</title><p>Page")
 
@@ -161,6 +188,12 @@ FAKE = textwrap.dedent(r'''
         time.sleep(.3)
         call("click", selector="#wish")
         first.join()
+    elif m := re.search(r"SWAP (\S+)", tag):
+        call("open_tab", url=m[1])
+        call("click", selector="#swap")
+    elif m := re.search(r"KEY (\S+)", tag):
+        call("open_tab", url=m[1])
+        call("press_key", key="Enter")
     elif m := re.search(r"HELP (\S+)", tag):
         call("open_tab", url=m[1] + "/shop")
         call("ask_user", question="This page wants a code from your phone. Could you enter it?", tabId=json.loads(last[0])["tabId"])
@@ -252,6 +285,7 @@ def main():
         sensitive(process)
         cancel_at_the_end(process)
         one_at_a_time(process)
+        only_what_was_shown(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
@@ -484,7 +518,106 @@ def one_at_a_time(process):
     send(process, "aiStop")
     idle(process)
     time.sleep(5)  # the slow page is in, the turn is free: time enough for a stray click to land
+    check("/slow" in HITS, "The first click went through, holding the page's turn")
     check(f"/hit/wish?k=q" not in HITS, "A click still waiting its turn when you press Stop never happens")
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+
+
+def only_what_was_shown(process):
+    """Allow is for what the card showed. If the page changes, nothing happens until you've been asked again."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    orders = lambda who: [o for o in ORDERS if who in o["path"]]
+
+    def swap(how, extra=""):
+        query = f"do={how}&k={uuid.uuid4().hex[:6]}{extra}"
+        tag = f"SWAP {SITE}/tricky?{query} s"
+        ask(process, tag)
+        shown = until(lambda: cards(process), 30)
+        return query, tag, shown
+
+    # Add to cart turns into a real Place order while the card waits, and you press Allow once.
+    before = len(orders("tricky"))
+    query, tag, shown = swap("order")
+    check(shown and "Add to cart" in shown[0], "The card shows Add to cart")
+    GO[query] = True
+    time.sleep(.5)
+    press(process, "Allow once")
+    again = until(lambda: any("Place order" in c for c in cards(process)) and cards(process), 15)
+    check(again and "changed since you were asked" in again[0], "The page changed: Still asks again, naming the new button, and says why")
+    check(len(orders("tricky")) == before, "Allow once on Add to cart did not place the order")
+    press(process, "Deny")
+    idle(process)
+    check(len(orders("tricky")) == before, "Denying the new card places nothing")
+    logged = lambda: any(a["Result"] == "The page changed, so Still asked again" for c in json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8")) for a in c.get("Audit", []))
+    check(until(logged, 10), "The log says the page changed")
+
+    # Same words, but now it submits a form: still not what was approved.
+    before = len(orders("tricky"))
+    query, tag, shown = swap("quiet")
+    GO[query] = True
+    time.sleep(.5)
+    press(process, "Allow once")
+    again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
+    check(again, "A button that keeps its words but now submits a form asks again")
+    check(len(orders("tricky")) == before, "...and nothing was sent")
+    press(process, "Deny")
+    idle(process)
+
+    # The tab goes to another site while the card waits.
+    query, tag, shown = swap("away", "&to=" + urllib.parse.quote(OTHER + "/tricky?do=none&k=away"))
+    GO[query] = True
+    time.sleep(1.5)
+    press(process, "Allow once")
+    again = until(lambda: [c for c in cards(process) if "localhost" in c and "changed since you were asked" in c], 15)
+    check(again, "The tab went to another site while the card waited: Still asks again, naming that site")
+    check(not [h for h in HITS if "k=away" in h], "...and Allow once for the first site did nothing on the second")
+    press(process, "Deny")
+    idle(process)
+
+    # The swap happens on the press itself, past every check before it: the guard in the page stops it.
+    before = len(orders("tricky"))
+    query, tag, shown = swap("press")
+    press(process, "Allow once")
+    time.sleep(3)
+    check(len(orders("tricky")) == before, "A button that swaps at the moment of the press doesn't get the click")
+    if any("changed since you were asked" in c for c in cards(process)):
+        press(process, "Deny")
+    idle(process)
+
+    # A key: the page moves the focus while the card waits (a sensitive site, so Enter asks first).
+    send(process, "permSensitive", site="127.0.0.1", on=True)
+    query = f"do=focus&k={uuid.uuid4().hex[:6]}"
+    tag = f"KEY {SITE}/tricky?{query} s"
+    ask(process, tag)
+    shown = until(lambda: cards(process), 30)
+    check(shown and "Press Enter" in shown[0], "The card shows the key")
+    GO[query] = True
+    time.sleep(.5)
+    press(process, "Allow once")
+    again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
+    check(again, "The focus moved while the card waited: Still asks again")
+    press(process, "Deny")
+    idle(process)
+    send(process, "permSensitive", site="127.0.0.1", on=False)
+
+    # The countdown is the same: Add to cart, allowed in this chat as sensitive, turns into Place order at the last moment.
+    send(process, "permSet", site="127.0.0.1", action="sensitive", companion="", mode="always")
+    send(process, "permSensitive", site="127.0.0.1", on=True)
+    before = len(orders("tricky"))
+    query = f"do=order&k={uuid.uuid4().hex[:6]}"
+    ask(process, f"SWAP {SITE}/tricky?{query} s")
+    shown = until(lambda: counting(process), 30)
+    check("Add to cart" in (shown or ""), "A sensitive step you allowed counts down, showing Add to cart")
+    GO[query] = True  # it runs out with the button already changed
+    again = until(lambda: "Place order" in counting(process) and counting(process), 15)
+    check(again and "changed since you were asked" in again, "At the end of the countdown the page has changed: a new countdown, naming what's there now")
+    check(len(orders("tricky")) == before, "Nothing was ordered on a countdown shown for Add to cart")
+    press(process, "Cancel", ".countdown-card")
+    idle(process)
+    check(len(orders("tricky")) == before, "Cancel on the new countdown: still nothing ordered")
+    send(process, "permSensitive", site="127.0.0.1", on=False)
     send(process, "permReset")
     until(lambda: not rules(), 10)
 

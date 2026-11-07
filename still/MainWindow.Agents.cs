@@ -57,6 +57,9 @@ public partial class MainWindow
  sealed class AgentStep
  {
   public AiSensitive? Intent; // the sensitive step about to run
+  public string TabId = "", Site = "", Why = "", Print = ""; // what the gate saw: an approval is for exactly this
+  public bool Tab; // it's about a page in a tab, not a new one
+  public bool Again; // the page changed since the user was asked: the next card says so
   public bool Abandoned; // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
   public void Live() { if (Abandoned) throw new InvalidOperationException("Stopped."); }
  }
@@ -137,41 +140,60 @@ public partial class MainWindow
    var step = new AgentStep();
    SemaphoreSlim? turn = null;
    try {
-    // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-    var gate = Gate(who, tool, args, quick, step);
-    string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
-    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
-    if (refused != null) return refused;
     int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
-    // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
-    // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
-    if (TakesTurn(tool)) {
-     var wanted = AgentTab(who, args).tab.Turn;
-     var wait = wanted.WaitAsync();
-     var won = await Task.WhenAny(wait, interrupt.Task, Task.Delay(limit));
-     if (won != wait) {
-      _ = wait.ContinueWith(_ => wanted.Release());
-      return won == interrupt.Task ? await interrupt.Task : Fail($"Another step on this page didn't finish within {limit / 1000} s, so {tool} wasn't done. Call read_page to see where it is.");
+    // An approval is for what the card showed. The page can change while it waits, so once it's this call's turn Still looks
+    // again, and if it's not the same any more it goes back to asking. The same goes for what happens during the step itself.
+    for (int tries = 0; ; tries++) {
+     // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
+     var gate = Gate(who, tool, args, quick, step);
+     string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
+     if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
+     if (refused != null) return refused;
+     // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
+     // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
+     if (TakesTurn(tool)) {
+      var wanted = AgentTab(who, args).tab.Turn;
+      var wait = wanted.WaitAsync();
+      var won = await Task.WhenAny(wait, interrupt.Task, Task.Delay(limit));
+      if (won != wait) {
+       _ = wait.ContinueWith(_ => wanted.Release());
+       return won == interrupt.Task ? await interrupt.Task : Fail($"Another step on this page didn't finish within {limit / 1000} s, so {tool} wasn't done. Call read_page to see where it is.");
+      }
+      turn = wanted;
      }
-     turn = wanted;
+     var same = StillTheSame(who, tool, args, step);
+     var looked = await Task.WhenAny(same, interrupt.Task, Task.Delay(limit));
+     if (looked == interrupt.Task) return await interrupt.Task;
+     if (looked != same) return Fail($"Still couldn't read the page within {limit / 1000} s, so {tool} wasn't done. Call read_page to see where it is.");
+     if (await same) {
+      var going = runs.GetValueOrDefault(who);
+      if (going != null && step.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
+      me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
+      string result;
+      try {
+       var working = RunTool(who, tool, args, quick, step);
+       var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
+       step.Abandoned = first != working;
+       try {
+        result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
+         : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
+       } catch (PageChanged) when (tries < 2) {
+        if (step.Intent is { } none) none.Outcome = "failed"; // nothing was sent
+        goto changed;
+       }
+       if (going != null) {
+        if (step.Intent is { } ran && first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; // cut off, or no sign it worked: uncertain
+        Checkpoint(going, tool, result);
+       }
+       if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
+      } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
+      return result;
+     }
+     if (tries >= 2) return Fail(KeptChanging);
+     changed:
+     turn?.Release(); turn = null;
+     step.Again = true;
     }
-    var going = runs.GetValueOrDefault(who);
-    if (going != null && step.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
-    me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
-    string result;
-    try {
-     var working = RunTool(who, tool, args, quick, step);
-     var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
-     step.Abandoned = first != working;
-     result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
-      : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
-     if (going != null) {
-      if (step.Intent is { } ran && first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; // cut off, or no sign it worked: uncertain
-      Checkpoint(going, tool, result);
-     }
-     if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
-    } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
-    return result;
    } finally {
     turn?.Release();
     if (calling.Remove(interrupt) && calling.Count == 0 && agentInterrupts.GetValueOrDefault(who) == calling) agentInterrupts.Remove(who);
@@ -384,23 +406,48 @@ public partial class MainWindow
    }
    return null;
   };
+  // Exactly what a step's approval is for: the page, the control's kind and words, and where it would send things. Never what's
+  // typed in a field. Form properties are read through the prototype: a field named "action" would hide the real one.
+  const formProp = (f, k) => Object.getOwnPropertyDescriptor(view(f).HTMLFormElement.prototype, k).get.call(f);
+  const print = e => {
+   const page = location.origin + location.pathname + location.search;
+   if (!e || e.localName === 'body' || e.localName === 'html') return JSON.stringify([page]);
+   let f = e.localName === 'form' ? e : e.form;
+   if (f?.localName !== 'form') f = e.closest?.('form');
+   return JSON.stringify([page, e.ownerDocument.location.origin, e.localName, e.type || '', e.getAttribute('role') || '', label(e), String(e.href || ''),
+    f ? formProp(f, 'action') : '', f ? formProp(f, 'method') : '', e.getAttribute('formaction') || '', e.getAttribute('formmethod') || '']);
+  };
   // What an action did: a watcher set up before it, kept on the window between calls. No watcher later means a new document.
   const WATCH = Symbol.for('still.watch');
   const stateOf = e => !e ? '' : JSON.stringify([e.checked, e.value, e.open, e.selectedIndex, e.control?.checked, e.control?.value]);
   const typable = e => !!e && (e.isContentEditable || e.localName === 'textarea' || e.localName === 'select' || e.localName === 'input' && !/^(button|submit|reset|image|checkbox|radio|file|color|range)$/.test(e.type));
-  const watch = (e, hit) => {
+  const watch = (e, hit, expect) => {
    window[WATCH]?.stop();
    const d = e ? e.ownerDocument : document, at = new Set([window, d.defaultView, e?.getRootNode?.()].filter(Boolean));
-   const W = { e, n: 0, got: false, reached: false, pressed: false, keyed: false, missed: '', submitted: false, invalid: '' };
+   const W = { e, n: 0, got: false, reached: false, pressed: false, keyed: false, missed: '', submitted: false, invalid: '', blocked: '', sent: false, through: false };
    const hits = ev => { const path = ev.composedPath(); return !e || path.includes(e) || !!hit && path.includes(hit); };
+   // The last check, as Still's own input arrives. Not what was approved, or not on it: the input stops here, the page never gets
+   // it, and the step goes back to asking. blocked 'before': nothing reached the page yet. 'during': part of it did. The page's own
+   // scripted events aren't Still's input, and once the click or key is through what follows (a label's click, say) is the page's.
+   const allowed = ev => ev.type.startsWith('key') ? deepActive() === e && print(e) === expect : hits(ev) && print(e) === expect;
+   const pass = ev => {
+    W.got = true;
+    if (!expect || W.through) return true;
+    if (!ev.isTrusted) return !W.blocked;
+    if (!W.blocked && (ev.type === 'keydown' || !ev.type.startsWith('key')) && !allowed(ev)) W.blocked = W.sent ? 'during' : 'before';
+    if (W.blocked) { ev.preventDefault(); ev.stopImmediatePropagation(); return false; }
+    W.sent = true;
+    if (ev.type === 'click' || ev.type === 'keydown') W.through = true;
+    return true;
+   };
    const ours = m => m.type === 'attributes' ? /^data-still-/.test(m.attributeName) : m.type === 'childList' && [...m.addedNodes, ...m.removedNodes].every(x => x.localName === 'still-cursor'); // the AI's cursor and read_page's ids
    const seen = new MutationObserver(list => { for (const m of list) if (!ours(m)) W.n++; });
    for (const x of new Set([document, d])) seen.observe(x, { subtree: true, childList: true, attributes: true, characterData: true });
    const on = {
-    mousedown: ev => { W.got = true; if (hits(ev)) W.pressed = true; },
-    click: ev => { W.got = true; if (hits(ev)) W.reached = true; else if (!W.reached) W.missed = line(ev.composedPath()[0]); },
-    keydown: () => { W.got = W.keyed = true; },
-    pointerdown: () => { W.got = true; }, mouseup: () => { W.got = true; }, keypress: () => { W.got = true; }, keyup: () => { W.got = true; },
+    mousedown: ev => { if (pass(ev) && hits(ev)) W.pressed = true; },
+    click: ev => { if (!pass(ev)) return; if (hits(ev)) W.reached = true; else if (!W.reached) W.missed = line(ev.composedPath()[0]); },
+    keydown: ev => { if (pass(ev)) W.keyed = true; },
+    pointerdown: pass, pointerup: pass, mouseup: pass, keypress: pass, keyup: pass,
     submit: () => { W.submitted = true; },
     invalid: ev => { if (!W.invalid) W.invalid = (label(ev.target) || kind(ev.target)) + ': ' + ev.target.validationMessage; },
    };
@@ -448,6 +495,7 @@ public partial class MainWindow
  """;
  const string ClickJs = """
   const e = target(o); if (!e) return missing(o);
+  if (o.expect && print(e) !== o.expect) return { error: 'changed' };
   if (e.matches(':disabled') || e.closest('[aria-disabled="true"]')) return { error: 'disabled', label: label(e) || kind(e) };
   e.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
   const b = box(e); if ((!b.w && !b.h) || !e.getClientRects().length || view(e).getComputedStyle(e).visibility === 'hidden') return { error: 'hidden' };
@@ -458,12 +506,14 @@ public partial class MainWindow
   const top = deepAt(x, y);
   if (!top) return { error: 'offscreen' };
   if (!inside(top, e) && !inside(e, top) && top.closest('label')?.control !== e) return { error: 'covered', by: line(top.closest(Q) || top) };
-  if (!o.again) watch(e, top);
+  if (!o.again) watch(e, top, o.expect);
   return { x, y, label: label(e) || kind(e) };
  """;
  // Key presses: a watcher on whatever has focus. MarkJs: the point to measure from, after the mouse has moved over the element.
  const string WatchJs = """
-  watch(deepActive(), null); return true;
+  const e = deepActive();
+  if (o.expect && print(e) !== o.expect) return { error: 'changed' };
+  watch(e, null, o.expect); return true;
  """;
  const string MarkJs = """
   window[WATCH]?.mark(); return true;
@@ -481,7 +531,7 @@ public partial class MainWindow
   if (scrollX !== W.x || scrollY !== W.y) changed.push('scroll');
   if (o.key ? a !== W.active || sig(a) !== W.sig || String(getSelection()) !== W.sel : typable(a) && (a !== W.active || a === W.e)) changed.push('focus');
   if (W.e?.closest?.('a[download]') && W.reached) changed.push('download');
-  const out = { reached: W.reached, pressed: W.pressed, keyed: W.keyed, missed: W.missed, submitted: W.submitted, invalid: W.invalid, changed };
+  const out = { reached: W.reached, pressed: W.pressed, keyed: W.keyed, missed: W.missed, submitted: W.submitted, invalid: W.invalid, blocked: W.blocked, changed };
   if (o.last) W.stop();
   return out;
  """;
@@ -489,6 +539,8 @@ public partial class MainWindow
  const string FocusJs = """
   const e = o.id || o.selector ? target(o) : deepActive();
   if (!e || e.localName === 'body') return o.id || o.selector ? missing(o) : { error: 'nofocus' };
+  if (o.expect && print(e) !== o.expect) return { error: 'changed' };
+  S.typing = e;
   if (e.localName === 'select') {
    const want = o.value.trim().toLowerCase(), opts = [...e.options];
    const opt = opts.find(x => x.value === o.value || x.text.trim().toLowerCase() === want) || opts.find(x => x.text.trim().toLowerCase().includes(want));
@@ -527,6 +579,11 @@ public partial class MainWindow
   return { done: 'Scrolled ' + (o.direction === 'up' ? 'up' : 'down'), at: max > 0 ? Math.round(sc.scrollTop / max * 100) + '%' : 'no scrolling here' };
  """;
  const string SigJs = "return { sig: sig(deepActive()) };";
+ // Right before typing: still the field that was approved, and the keys would go into it.
+ const string SameJs = """
+  const e = S.typing, a = deepActive();
+  return !!e && e.isConnected && print(e) === o.expect && (!a || a.localName === 'body' || inside(e, a)) ? true : { error: 'changed' };
+ """;
  const string WaitJs = """
   const found = o.id ? !!byId(o.id) : o.selector ? !!bySel(o.selector) : pageText().toLowerCase().includes(o.text.toLowerCase());
   return o.gone ? !found : found;
@@ -534,7 +591,7 @@ public partial class MainWindow
  // upload_file by element: the file input itself, for DOM.setFileInputFiles.
  // Is this click or keystroke sensitive: buying, sending, deleting, a form that posts, a password or payment field?
  const string SensitiveJs = """
-  const e = o.id || o.selector || (o.tool === 'click' && o.text) ? target(o) : deepActive();
+  const e = o.tool !== 'press_key' && (o.id || o.selector || (o.tool === 'click' && o.text)) ? target(o) : deepActive();
   if (!e) return missing(o);
   if (e.localName === 'body') return { error: 'nofocus' };
   const form = e.form || (e.closest && e.closest('form'));
@@ -548,7 +605,7 @@ public partial class MainWindow
   else if (/\b(send|post|publish|reply|tweet|comment)\b/.test(words)) why = 'It sends something in your name.';
   else if (/\b(delete|remove|discard|trash|unsubscribe|close account|cancel order|cancel subscription)\b/.test(words)) why = 'It deletes or cancels something.';
   else if (posts && e.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
-  return { label: label(e) || kind(e), why, secret: !!secret(e), password: secret(e) === 'password' };
+  return { label: label(e) || kind(e), why, secret: !!secret(e), password: secret(e) === 'password', print: print(e) };
  """;
  const string FileInputJs = """
   const e = target(o); return e && e.localName === 'input' && e.type === 'file' ? e : e?.querySelector?.('input[type=file]') || e?.closest?.('label')?.control || null;
@@ -559,7 +616,8 @@ public partial class MainWindow
   string json = await core.RunAsync("((o)=>{try{" + PageJs + body + "}catch(err){return {error:'script',message:String(err&&err.message||err)}}})(" + JsonSerializer.Serialize(o) + ")");
   using var doc = JsonDocument.Parse(json);
   var r = doc.RootElement.Clone();
-  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err)) throw new PageMiss(err.GetString() is "gone" or "notfound" or "hidden" or "covered" or "disabled" or "offscreen", err.GetString() switch {
+  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out var err) && err.GetString() == "changed") throw new PageChanged();
+  if (r.ValueKind == JsonValueKind.Object && r.TryGetProperty("error", out err)) throw new PageMiss(err.GetString() is "gone" or "notfound" or "hidden" or "covered" or "disabled" or "offscreen", err.GetString() switch {
    "gone" => "That element isn't on the page anymore (the page changed or it's a new page). Call read_page or find for current ids.",
    "notfound" => "Couldn't find that element on the page. Call read_page or find.",
    "hidden" => "That element is hidden right now (maybe in a closed menu). Open what contains it first, or call read_page.",
@@ -576,6 +634,8 @@ public partial class MainWindow
   return r;
  }
  sealed class PageMiss(bool missed, string message) : InvalidOperationException(message) { public readonly bool Missed = missed; } // Missed: the element moved, vanished or is covered
+ const string KeptChanging = "The page kept changing, so Still did nothing and stopped asking. Call read_page to see it now.";
+ sealed class PageChanged() : InvalidOperationException(KeptChanging); // not what the user approved any more, and nothing was sent: the step asks again
  // Pages re-render under the AI: when the element is missing, wait for the page to settle and try once more.
  // Still missing: the error carries a fresh read of the page, so the AI picks again (and asks again if that step needs asking).
  static async Task<JsonElement> Settled(BrowserTab t, CoreWebView2 core, Func<Task<JsonElement>> act)
@@ -697,6 +757,20 @@ public partial class MainWindow
  static readonly string[] PermissionActions = ["read", "navigate", "interact", "sensitive"];
  static string DefaultPermission(string action) => action switch { "interact" => "chat", "sensitive" => "ask", _ => "always" };
  static bool OnSite(string rule, string site) => rule.Length > 0 && (site == rule || site.EndsWith("." + rule, StringComparison.Ordinal));
+ /// Once it's this call's turn, right before it runs: is this still what the gate saw? The same tab on the same site, and for
+ /// a click or a key the same control, doing the same thing?
+ async Task<bool> StillTheSame(string who, string tool, JsonElement args, AgentStep step)
+ {
+  if (!step.Tab) return true;
+  var t = AgentTab(who, args).tab;
+  if (t.Id != step.TabId || tool != "navigate" && Host(t.Url) != step.Site) return false; // navigate's site is where it's going
+  if (step.Print.Length == 0) return true;
+  try {
+   var look = await Js((await AgentPage(who, args)).core, SensitiveJs, Probe(tool, args));
+   return Str(look, "print") == step.Print && Str(look, "why") == step.Why;
+  } catch (InvalidOperationException) { return false; }
+ }
+ static object Probe(string tool, JsonElement args) => new { tool, id = Id(args), selector = S(args, "selector"), text = S(args, "text"), key = S(args, "key"), submit = B(args, "submit") };
  static string SiteOf(string input) => (input = input.Trim().ToLowerInvariant()).Length == 0 ? "" : Host(input.Contains("://") ? input : "https://" + input);
  static readonly HashSet<string> sessionGrants = []; // outside apps: "who action site" allowed until Still closes
  /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
@@ -722,6 +796,8 @@ public partial class MainWindow
    _ => "" }; // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
   if (action.Length == 0) return null;
   string site, what, why = "";
+  bool again = step.Again;
+  step.Intent = null; step.Again = false; step.Tab = false; step.Print = step.Why = "";
   try {
    if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); what = "Open " + site; }
    else if (tool == "read_url") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Read " + site; }
@@ -731,8 +807,8 @@ public partial class MainWindow
     what = tool switch { "scroll" => "Scroll the page", "press_key" => "Press " + S(args, "key"), "handle_dialog" => "Answer the page's dialog", "go_back" => "Go back",
      "go_forward" => "Go forward", "reload" => "Reload the page", "close_tab" => "Close a tab", "switch_tab" => "Switch tabs", _ => "Read the page" };
     if (tool is "click" or "type" or "press_key") {
-     var look = await Js((await AgentPage(who, args)).core, SensitiveJs, new { tool, id = Id(args), selector = S(args, "selector"), text = S(args, "text"), key = S(args, "key"), submit = B(args, "submit") });
-     string label = Str(look, "label"); why = Str(look, "why");
+     var look = await Js((await AgentPage(who, args)).core, SensitiveJs, Probe(tool, args));
+     string label = Str(look, "label"); why = step.Why = Str(look, "why"); step.Print = Str(look, "print");
      // AIs never type a password: they wait while the user signs in.
      if (look.GetProperty("password").GetBoolean() && !(tool == "press_key" && S(args, "key") is "Tab" or "Escape" or "Esc") && tool != "click") {
       var (w, t) = AgentTab(who, args); await AskToSignIn(who, w, t, site);
@@ -742,10 +818,12 @@ public partial class MainWindow
      else if (tool == "type") what = look.GetProperty("secret").GetBoolean() || S(args, "text").Length == 0 ? "Type into “" + label + "”" : "Type “" + Clip(S(args, "text"), 60) + "” into “" + label + "”";
     }
    }
+   if (tool is not ("open_tab" or "read_url" or "web_search")) { step.TabId = AgentTab(who, args).tab.Id; step.Site = site; step.Tab = true; } // last: if any of this failed, the tool itself says what's wrong
   } catch (InvalidOperationException) { return null; } // no page or no such element: the tool itself says what's wrong
   bool marked = Prefs.SensitiveSites.Any(s => OnSite(s, site));
   if (action == "interact" && (why.Length > 0 || marked)) { action = "sensitive"; if (why.Length == 0) why = "You marked " + site + " as sensitive."; }
   var run = runs.GetValueOrDefault(who);
+  if (again) { if (run != null) Audit(run.Chat, what, site, "The page changed, so Still asked again"); why = why.Length > 0 ? "The page changed since you were asked. " + why : "The page changed since you were asked."; }
   // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
   // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   var up = run == null ? default : ExchangeOf(run.Chat);
@@ -922,6 +1000,7 @@ public partial class MainWindow
    else if (now.TryGetProperty("gone", out _)) { await WaitLoaded(t, 8000); break; } // a new document: it navigated
    else {
     seen = now;
+    if (Str(now, "blocked").Length > 0) break;
     changed = [.. now.GetProperty("changed").EnumerateArray().Select(c => c.GetString() ?? "")];
     if (Str(now, "invalid").Length > 0 && !Flag("submitted")) break;
     if (key.Length == 0 && Str(now, "missed").Length > 0 && !Flag("pressed")) break; // it landed on something else
@@ -934,6 +1013,8 @@ public partial class MainWindow
   if (t.Loading) await WaitLoaded(t, 8000);
   if (step.Abandoned) return null;
   if (!t.Closed) try { await Js(core, SeenJs, new { key, last = true }); } catch (InvalidOperationException) { }
+  if (Str(seen, "blocked") == "before") throw new PageChanged(); // nothing reached the page: ask again
+  if (Str(seen, "blocked") == "during") return Unverified(who, key.Length > 0 ? "Pressing" : "Clicking", "Stopped: the page changed", $"The page changed during the {(key.Length > 0 ? "key press" : "click")}, so Still stopped it partway. {CheckFirst}");
   bool moved = Moved() || seen.ValueKind == JsonValueKind.Object && changed.Contains("url");
   string invalid = Str(seen, "invalid"), action = key.Length > 0 ? "pressing " + key : "clicking “" + name + "”", doing = key.Length > 0 ? "Pressing" : "Clicking";
   if (key.Length == 0 && Str(seen, "missed") is { Length: > 0 } missed && !Flag("pressed")) return Fail($"The click didn't reach \"{name}\": it landed on {missed}. Call read_page to see the page now.");
@@ -1064,7 +1145,7 @@ public partial class MainWindow
    }
    case "click": {
     var (w, t, core) = await AgentPage(who, args);
-    var hit = await Settled(t, core, () => Js(core, ClickJs, new { id = Id(args), selector = S(args, "selector"), text = S(args, "text") }));
+    var hit = await Settled(t, core, () => Js(core, ClickJs, new { id = Id(args), selector = S(args, "selector"), text = S(args, "text"), expect = step.Print }));
     double x = hit.GetProperty("x").GetDouble(), y = hit.GetProperty("y").GetDouble();
     string label = Str(hit, "label"), before = agentTabs.GetValueOrDefault(who) ?? "";
     await Pointer(who, t, core, x, y);
@@ -1082,12 +1163,13 @@ public partial class MainWindow
     var (w, t, core) = await AgentPage(who, args);
     string text = S(args, "text"), before = agentTabs.GetValueOrDefault(who) ?? "";
     if (text.Trim().Length >= 4) runs.GetValueOrDefault(who)?.Typed.Add(text.Trim());
-    object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked };
+    object Q(bool clicked) => new { id = Id(args), selector = S(args, "selector"), value = text, append = B(args, "append"), clicked, expect = step.Print };
     var focus = await Settled(t, core, () => Js(core, FocusJs, Q(false)));
     t.AgentActedAt = DateTime.UtcNow;
     if (Str(focus, "done") is { Length: > 0 } picked) { Did(who, picked); return Reply(new { done = picked }); }
     if (focus.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Object) {
      await Pointer(who, t, core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
+     if (step.Print.Length > 0) await Js(core, SameJs, new { expect = step.Print });
      await MouseClick(core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble(), step);
      focus = await Js(core, FocusJs, Q(true)); // the click moved the caret: put it back
     }
@@ -1095,6 +1177,7 @@ public partial class MainWindow
      await Pointer(who, t, core, near.GetProperty("x").GetDouble(), near.GetProperty("y").GetDouble());
     async Task<bool> Unchanged() => Str(await Js(core, SigJs, new { }), "sig") == Str(focus, "sig");
     step.Live();
+    if (step.Print.Length > 0) await Js(core, SameJs, new { expect = step.Print }); // nothing typed yet: a change asks again
     if (text.Length > 0) {
      await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
      // Some editors ignore inserted text and only take key presses: type it key by key.
@@ -1105,8 +1188,11 @@ public partial class MainWindow
     string field = Str(focus, "label");
     if (B(args, "submit")) {
      string urlBefore = t.Url;
-     await Js(core, WatchJs, new { }); await Deliver(core, step, () => PressKey(core, "Enter"));
-     if (await Verdict(who, t, core, before, urlBefore, "Enter", field, step) is { } unsent) return unsent;
+     // Already typed, so a change here stops with Enter unpressed instead of starting over.
+     try {
+      await Js(core, WatchJs, new { expect = step.Print }); await Deliver(core, step, () => PressKey(core, "Enter"));
+      if (await Verdict(who, t, core, before, urlBefore, "Enter", field, step) is { } unsent) return unsent;
+     } catch (PageChanged) { return Fail("Typed into \"" + field + "\", but the page changed before Enter, so Still didn't press it. Call read_page to see it now."); }
     }
     Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
    }
@@ -1115,7 +1201,7 @@ public partial class MainWindow
     string before = agentTabs.GetValueOrDefault(who) ?? "";
     t.AgentActedAt = DateTime.UtcNow;
     string urlBefore = t.Url;
-    await Js(core, WatchJs, new { }); await Deliver(core, step, () => PressKey(core, S(args, "key")));
+    await Js(core, WatchJs, new { expect = step.Print }); await Deliver(core, step, () => PressKey(core, S(args, "key")));
     if (await Verdict(who, t, core, before, urlBefore, S(args, "key"), "", step) is { } nothing) return nothing;
     Did(who, "Pressed " + S(args, "key")); return Reply(Outcome(who, t, before, "Pressed " + S(args, "key")));
    }

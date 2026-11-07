@@ -101,11 +101,17 @@ func endCalls(_ who: String, _ reply: String) { agentInterrupts.removeValue(forK
 /// One tool call on its way through.
 final class AgentStep {
  var intent: AiSensitive? // the sensitive step about to run
+ var tabId = "", site = "", why = "", print = "" // what the gate saw: an approval is for exactly this
+ var onTab = false // it's about a page in a tab, not a new one
+ var again = false // the page changed since the user was asked: the next card says so
+ var changed = false // ... and the tool found that out with nothing sent
  var abandoned = false // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
  func live() throws { if abandoned { throw AgentError("Stopped.") } }
 }
 // These act on a page, so they take its turn: one at a time, whoever is asking. Reads run alongside, and handle_dialog
 // never waits: the step holding the turn may be stuck behind that very dialog.
+let keptChanging = "The page kept changing, so Still did nothing and stopped asking. Call read_page to see it now."
+struct PageChanged: LocalizedError { var errorDescription: String? { keptChanging } } // not what the user approved any more, and nothing was sent: the step asks again
 let takesTurn: Set<String> = ["click", "type", "press_key", "scroll", "navigate", "go_back", "go_forward", "reload", "close_tab", "upload_file"]
 /// One AI action at a time on a page, first come, first served (Windows: a SemaphoreSlim).
 final class PageTurn {
@@ -199,7 +205,7 @@ enum Raced { case done(String?), interrupted(String), late }
 // The page scripts come straight from the Windows app (mac/build.sh copies them), so both stay in step.
 let agentScripts: [String: String] = {
  var scripts: [String: String] = [:]
- for name in ["Page", "Snapshot", "Find", "Click", "Watch", "Mark", "Seen", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
+ for name in ["Page", "Snapshot", "Find", "Click", "Watch", "Mark", "Seen", "Same", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
   scripts[name] = (try? String(contentsOf: resources.appendingPathComponent("agent-\(name).js"), encoding: .utf8)) ?? ""
  }
  return scripts
@@ -248,6 +254,7 @@ func scriptError(_ code: String, _ reply: [String: Any]) -> String {
  let result: Any
  do { result = try await withCheckedThrowingContinuation { done in view.evaluateJavaScript(source, in: nil, in: stillWorld) { done.resume(with: $0) } } }
  catch { throw AgentError("The page's script failed: " + error.localizedDescription) }
+ if let reply = result as? [String: Any], reply["error"] as? String == "changed" { throw PageChanged() }
  if let reply = result as? [String: Any], let code = reply["error"] as? String { throw PageMiss(missed: ["gone", "notfound", "hidden", "covered", "disabled", "offscreen"].contains(code), message: scriptError(code, reply)) }
  return result is NSNull ? nil : result
 }
@@ -326,6 +333,7 @@ let agentProbeRead = "return !window.__stillProbe || window.__stillProbe.got;" /
  try step.live()
  if await trusted(view, { sendClick(view, x, y) }) { return }
  try step.live()
+ if (try? await agentJs(view, "return !!window[WATCH]?.got;", [:])) as? Bool == true { return } // it got there, or the guard stopped it: never play it twice
  var again = o; again["again"] = true // the watcher set up before stays
  _ = try await agentJs(view, "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail, again)
 }
@@ -338,7 +346,7 @@ let checkFirst = "It may still be working: call read_page to check before trying
 /// Did the action work? Its watcher says whether the event reached the element and what changed after. Nil means it went
 /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
 /// ponytail: a page that changes by itself (a clock, a carousel) reads as changed. The event still had to reach the element.
-@MainActor func verdict(_ who: String, _ tab: Tab, _ view: WKWebView, _ tabBefore: String, _ urlBefore: String, _ key: String, _ name: String, _ step: AgentStep) async -> String? {
+@MainActor func verdict(_ who: String, _ tab: Tab, _ view: WKWebView, _ tabBefore: String, _ urlBefore: String, _ key: String, _ name: String, _ step: AgentStep) async throws -> String? {
  let started = Date(), from = Date().addingTimeInterval(-1)
  func moved() -> Bool { tab.closed || tab.url != urlBefore || (agentTabs[who] ?? "") != tabBefore || tab.downloadAt > from }
  var seen: [String: Any]?, changed: [String] = []
@@ -350,6 +358,7 @@ let checkFirst = "It may still be working: call read_page to check before trying
   if let now = read {
    if now["gone"] != nil { await waitLoaded(tab, 8); break } // a new document: it navigated
    seen = now; changed = now["changed"] as? [String] ?? []
+   if !words("blocked").isEmpty { break }
    if !words("invalid").isEmpty && !flag("submitted") { break }
    if key.isEmpty && !words("missed").isEmpty && !flag("pressed") { break } // it landed on something else
   } else if view.isLoading || moved() { await waitLoaded(tab, 8); return nil }
@@ -361,6 +370,8 @@ let checkFirst = "It may still be working: call read_page to check before trying
  if view.isLoading { await waitLoaded(tab, 8) }
  if step.abandoned { return nil }
  if !tab.closed { _ = try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key, "last": true]) }
+ if words("blocked") == "before" { throw PageChanged() } // nothing reached the page: ask again
+ if words("blocked") == "during" { return unverified(who, key.isEmpty ? "Clicking" : "Pressing", "Stopped: the page changed", "The page changed during the \(key.isEmpty ? "click" : "key press"), so Still stopped it partway. " + checkFirst) }
  let wentOn = moved() || changed.contains("url"), action = key.isEmpty ? "clicking “" + name + "”" : "pressing " + key, doingWord = key.isEmpty ? "Clicking" : "Pressing"
  if key.isEmpty && !words("missed").isEmpty && !flag("pressed") { return agentFail("The click didn't reach \"\(name)\": it landed on \(words("missed")). Call read_page to see the page now.") }
  if !words("invalid").isEmpty && !flag("submitted") && !wentOn { return unverified(who, doingWord, "Form not sent after " + action, "The form wasn't sent: \(words("invalid")). Fix that field first.") }
@@ -401,10 +412,12 @@ let macKeyOrder = Array("asdfhgzxcv§bqweryt123465=97-80]ou[ip\rlj'k;\\,/nm.\t `
 }
 /// Presses a key like a person would, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab".
 @MainActor func pressKey(_ view: WKWebView, _ combo: String, _ step: AgentStep) async throws {
- let info = try keyInfo(combo)
+ var info = try keyInfo(combo)
+ if !step.print.isEmpty { info["expect"] = step.print }
  try step.live()
  if await trusted(view, { sendKey(view, info) }) { return }
  try step.live()
+ if (try? await agentJs(view, "return !!window[WATCH]?.got;", [:])) as? Bool == true { return } // it got there, or the guard stopped it: never play it twice
  _ = try await agentJs(view, agentKeyScript, info)
 }
 /// Types text one key at a time; a new line is Enter where the field has lines.
@@ -457,10 +470,12 @@ const el = target(o), w = view(el), rect = el.getBoundingClientRect(), cx = rect
 let at = typeof rootNode.elementFromPoint === 'function' ? rootNode.elementFromPoint(cx, cy) : null;
 if (!at || !(inside(el, at) || inside(at, el) || at.closest('label')?.control === el)) at = el;
 const base = { bubbles: true, cancelable: true, composed: true, view: w, clientX: cx, clientY: cy, screenX: cx, screenY: cy, button: 0, detail: 1 };
-const fire = (type, buttons) => { const init = Object.assign({}, base, { buttons }); at.dispatchEvent(type.startsWith('pointer') && w.PointerEvent ? new w.PointerEvent(type, Object.assign(init, { pointerId: 1, pointerType: 'mouse', isPrimary: true })) : new w.MouseEvent(type, init)); };
+let halted = false;
+const held = () => { if (!halted && o.expect && print(el) !== o.expect) { halted = true; if (window[WATCH]) window[WATCH].blocked = 'during'; } return halted; };
+const fire = (type, buttons) => { if (held()) return; const init = Object.assign({}, base, { buttons }); at.dispatchEvent(type.startsWith('pointer') && w.PointerEvent ? new w.PointerEvent(type, Object.assign(init, { pointerId: 1, pointerType: 'mouse', isPrimary: true })) : new w.MouseEvent(type, init)); };
 fire('pointerover', 0); fire('mouseover', 0); fire('pointermove', 0); fire('mousemove', 0); fire('pointerdown', 1); fire('mousedown', 1);
 const f = at.closest('a[href],button,input,select,textarea,summary,[tabindex],[contenteditable]');
-if (f && f !== deepActive() && typeof f.focus === 'function') f.focus({ preventScroll: true });
+if (!held() && f && f !== deepActive() && typeof f.focus === 'function') f.focus({ preventScroll: true });
 fire('pointerup', 0); fire('mouseup', 0); fire('click', 0);
 return { label: r.label };
 """#
@@ -487,9 +502,11 @@ return true;
 // press_key: the key events, then what the browser itself would do for keys a page doesn't handle.
 let agentKeyScript = #"""
 const e = deepActive() || document.body, w = view(e), d = e.ownerDocument;
+if (o.expect && print(e) !== o.expect) return { error: 'changed' };
 const init = { key: o.key, code: o.code, keyCode: o.keyCode, which: o.keyCode, altKey: o.alt, ctrlKey: o.ctrl, metaKey: o.meta, shiftKey: o.shift, bubbles: true, cancelable: true, composed: true, view: w };
 const ev = (type, extra) => { const k = new w.KeyboardEvent(type, Object.assign({}, init, extra)); if (!k.keyCode && o.keyCode) try { Object.defineProperty(k, 'keyCode', { get: () => o.keyCode }); Object.defineProperty(k, 'which', { get: () => o.keyCode }); } catch {} return k; };
 const go = e.dispatchEvent(ev('keydown'));
+if (o.expect && print(e) !== o.expect) { if (window[WATCH]) window[WATCH].blocked = 'during'; return true; }
 if (go && o.text) e.dispatchEvent(ev('keypress', { charCode: o.text.charCodeAt(0) }));
 const field = e.isContentEditable || e.localName === 'textarea' || e.localName === 'input' && !/^(button|submit|reset|checkbox|radio|file|image|range|color)$/.test(e.type);
 const sc = document.scrollingElement || document.documentElement, role = e.getAttribute ? e.getAttribute('role') || '' : '';
@@ -609,48 +626,77 @@ extension Browser {
    publishEverywhere()
    DispatchQueue.main.asyncAfter(deadline: .now() + 121) { publishEverywhere() } // the pill goes once the agent is quiet
   }
-  // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-  let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick, step) }
-  var refused: String?
-  switch gate {
-  case .done(let reply): refused = reply
-  case .interrupted(let reply): refused = reply
-  case .late: refused = agentFail(stopText)
-  }
-  if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
-  if let refused { return refused }
   let limit: Double = tool == "ask_user" || tool == "run_plugin_action" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
-  // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
-  // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
-  if takesTurn.contains(tool) {
-   let wanted: PageTurn
-   do { wanted = try agentTab(who, args).tab.turn } catch { return agentFail(error.localizedDescription) }
-   var lost = false
-   let waited = await race(interrupt, limit) { await withCheckedContinuation { (go: CheckedContinuation<Void, Never>) in wanted.take { if lost { wanted.release() }; go.resume() } }; return nil }
-   switch waited {
-   case .done: turn = wanted
-   case .interrupted(let reply): lost = true; return reply
-   case .late: lost = true; return agentFail("Another step on this page didn't finish within \(Int(limit)) s, so \(tool) wasn't done. Call read_page to see where it is.")
+  // An approval is for what the card showed. The page can change while it waits, so once it's this call's turn Still looks
+  // again, and if it's not the same any more it goes back to asking. The same goes for what happens during the step itself.
+  for tries in 0... {
+   // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
+   let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick, step) }
+   var refused: String?
+   switch gate {
+   case .done(let reply): refused = reply
+   case .interrupted(let reply): refused = reply
+   case .late: refused = agentFail(stopText)
    }
+   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
+   if let refused { return refused }
+   // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
+   // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
+   if takesTurn.contains(tool) {
+    let wanted: PageTurn
+    do { wanted = try agentTab(who, args).tab.turn } catch { return agentFail(error.localizedDescription) }
+    var lost = false
+    let waited = await race(interrupt, limit) { await withCheckedContinuation { (go: CheckedContinuation<Void, Never>) in wanted.take { if lost { wanted.release() }; go.resume() } }; return nil }
+    switch waited {
+    case .done: turn = wanted
+    case .interrupted(let reply): lost = true; return reply
+    case .late: lost = true; return agentFail("Another step on this page didn't finish within \(Int(limit)) s, so \(tool) wasn't done. Call read_page to see where it is.")
+    }
+   }
+   var same = false
+   switch await race(interrupt, limit, { await self.stillTheSame(who, tool, args, step) ? "same" : nil }) {
+   case .done(let yes): same = yes != nil
+   case .interrupted(let reply): return reply
+   case .late: return agentFail("Still couldn't read the page within \(Int(limit)) s, so \(tool) wasn't done. Call read_page to see where it is.")
+   }
+   if same {
+    // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
+    let going = runs[who]
+    if let going, let intent = step.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
+    me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
+    defer { me.tool = ""; me.count += 1; me.seen = Date() }
+    step.changed = false
+    let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick, step) }), result: String
+    switch raced {
+    case .done(let reply): result = reply ?? agentFail("Failed.")
+    case .interrupted(let reply): step.abandoned = true; result = reply
+    case .late: step.abandoned = true; result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
+    }
+    if !(step.changed && tries < 2) {
+     if let going {
+      if let ran = step.intent, case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" } // cut off, or no sign it worked: uncertain
+      checkpoint(going, tool, result)
+     }
+     if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
+     return result
+    }
+   } else if tries >= 2 { return agentFail(keptChanging) }
+   turn?.release(); turn = nil
+   step.again = true
   }
-  // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
-  let going = runs[who]
-  if let going, let intent = step.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
-  me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
-  defer { me.tool = ""; me.count += 1; me.seen = Date() }
-  let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick, step) }), result: String
-  switch raced {
-  case .done(let reply): result = reply ?? agentFail("Failed.")
-  case .interrupted(let reply): step.abandoned = true; result = reply
-  case .late: step.abandoned = true; result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
-  }
-  if let going {
-   if let ran = step.intent, case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" } // cut off, or no sign it worked: uncertain
-   checkpoint(going, tool, result)
-  }
-  if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
-  return result
+  return agentFail(keptChanging)
  }
+
+ /// Once it's this call's turn, right before it runs: is this still what the gate saw? The same tab on the same site, and for
+ /// a click or a key the same control, doing the same thing?
+ @MainActor func stillTheSame(_ who: String, _ tool: String, _ args: [String: Any], _ step: AgentStep) async -> Bool {
+  if !step.onTab { return true }
+  guard let tab = try? agentTab(who, args).tab, tab.id == step.tabId, tool == "navigate" || hostName(tab.url) == step.site else { return false } // navigate's site is where it's going
+  if step.print.isEmpty { return true }
+  guard let page = try? await agentPage(who, args), let look = (try? await agentJs(page.view, agentScripts["Sensitive"] ?? "", probe(tool, args))) as? [String: Any] else { return false }
+  return look["print"] as? String == step.print && (look["why"] as? String ?? "") == step.why
+ }
+ func probe(_ tool: String, _ args: [String: Any]) -> [String: Any] { ["tool": tool, "id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "key": argText(args, "key"), "submit": argFlag(args, "submit")] }
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Nil: no answer yet; the question stays up.
  /// now: don't wait for the answer (the agent asks the user elsewhere, see needsConfirm).
@@ -876,6 +922,8 @@ extension Browser {
   default: return nil // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
   }
   var site = "", what = "", why = ""
+  let again = step.again
+  step.intent = nil; step.again = false; step.onTab = false; step.print = ""; step.why = ""
   do {
    if tool == "open_tab" || tool == "navigate" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Open " + site }
    else if tool == "read_url" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Read " + site }
@@ -886,10 +934,10 @@ extension Browser {
                  "go_forward": "Go forward", "reload": "Reload the page", "close_tab": "Close a tab", "switch_tab": "Switch tabs"]
     what = named[tool] ?? "Read the page"
     if tool == "click" || tool == "type" || tool == "press_key" {
-     let o: [String: Any] = ["tool": tool, "id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "key": argText(args, "key"), "submit": argFlag(args, "submit")]
-     let look = try await agentJs(try await agentPage(who, args).view, agentScripts["Sensitive"] ?? "", o) as? [String: Any] ?? [:]
+     let look = try await agentJs(try await agentPage(who, args).view, agentScripts["Sensitive"] ?? "", probe(tool, args)) as? [String: Any] ?? [:]
      let label = look["label"] as? String ?? ""
      why = look["why"] as? String ?? ""
+     step.why = why; step.print = look["print"] as? String ?? ""
      // AIs never type a password: they wait while the user signs in.
      if look["password"] as? Bool == true && tool != "click" && !(tool == "press_key" && ["Tab", "Escape", "Esc"].contains(argText(args, "key"))) {
       let (browser, tab) = try agentTab(who, args)
@@ -900,10 +948,12 @@ extension Browser {
      else if tool == "type" { what = look["secret"] as? Bool == true || argText(args, "text").isEmpty ? "Type into “" + label + "”" : "Type “" + clipped(argText(args, "text"), 60) + "” into “" + label + "”" }
     }
    }
+   if !["open_tab", "read_url", "web_search"].contains(tool) { step.tabId = try agentTab(who, args).tab.id; step.site = site; step.onTab = true } // last: if any of this failed, the tool itself says what's wrong
   } catch { return nil } // no page or no such element: the tool itself says what's wrong
   let marked = pref("SensitiveSites", [String]()).contains { onSite($0, site) }
   if action == "interact" && (!why.isEmpty || marked) { action = "sensitive"; if why.isEmpty { why = "You marked " + site + " as sensitive." } }
   let run = runs[who]
+  if again { if let run { audit(run.chat, what, site, "The page changed, so Still asked again") }; why = why.isEmpty ? "The page changed since you were asked." : "The page changed since you were asked. " + why }
   // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
   // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   let up = run.map { exchangeOf($0.chat) }
@@ -1045,7 +1095,7 @@ extension Browser {
     did(who, "Took a screenshot"); return agentOk(["image": png.base64EncodedString(), "mimeType": "image/png"])
    case "click":
     let (_, tab, view) = try await agentPage(who, args)
-    let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text")]
+    let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "text": argText(args, "text"), "expect": step.print]
     let hit = try await settled(tab, view) { try await agentJs(view, agentScripts["Click"] ?? "", o) } as? [String: Any] ?? [:]
     let x = (hit["x"] as? NSNumber)?.doubleValue ?? 0, y = (hit["y"] as? NSNumber)?.doubleValue ?? 0
     let label = hit["label"] as? String ?? "", before = agentTabs[who] ?? ""
@@ -1057,19 +1107,20 @@ extension Browser {
     // may have sent more calls in the same breath, so it isn't always the last step.
     let numbered = "Clicking element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
     if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicking “" + label + "”" }
-    if let missed = await verdict(who, tab, view, before, urlBefore, "", label, step) { return missed }
+    if let missed = try await verdict(who, tab, view, before, urlBefore, "", label, step) { return missed }
     did(who, "Clicked '" + label + "'"); return agentOk(outcome(who, tab, before, "Clicked \"" + label + "\""))
    case "type":
     let (_, tab, view) = try await agentPage(who, args)
     let text = argText(args, "text"), append = argFlag(args, "append"), submit = argFlag(args, "submit"), before = agentTabs[who] ?? ""
     let typed = text.trimmingCharacters(in: .whitespacesAndNewlines)
     if typed.count >= 4 { runs[who]?.typed.insert(typed) } // form data: memory never keeps it
-    let q = { (clicked: Bool) -> [String: Any] in ["id": argId(args), "selector": argText(args, "selector"), "value": text, "append": append, "clicked": clicked] }
+    let q = { (clicked: Bool) -> [String: Any] in ["id": argId(args), "selector": argText(args, "selector"), "value": text, "append": append, "clicked": clicked, "expect": step.print] }
     var focus = try await settled(tab, view) { try await agentJs(view, agentScripts["Focus"] ?? "", q(false)) } as? [String: Any] ?? [:]
     tab.agentActedAt = Date()
     if let picked = focus["done"] as? String, !picked.isEmpty { did(who, picked); return agentOk(["done": picked]) }
     if let at = focus["at"] as? [String: Any], let x = (at["x"] as? NSNumber)?.doubleValue, let y = (at["y"] as? NSNumber)?.doubleValue {
      await pointer(who, tab, view, x, y)
+     if !step.print.isEmpty { _ = try await agentJs(view, agentScripts["Same"] ?? "", ["expect": step.print]) }
      try? await mouseClick(view, x, y, q(false), step)
      focus = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)) as? [String: Any] ?? [:] // the click moved the caret: put it back
     } else if let near = focus["near"] as? [String: Any], let x = (near["x"] as? NSNumber)?.doubleValue, let y = (near["y"] as? NSNumber)?.doubleValue {
@@ -1078,6 +1129,7 @@ extension Browser {
     let field = focus["label"] as? String ?? ""
     func unchanged() async -> Bool { ((try? await agentJs(view, "return { sig: sig(deepActive()) };", [:])) as? [String: Any])?["sig"] as? String == focus["sig"] as? String }
     try step.live()
+    if !step.print.isEmpty { _ = try await agentJs(view, agentScripts["Same"] ?? "", ["expect": step.print]) } // nothing typed yet: a change asks again
     if !text.isEmpty {
      view.insertText(text)
      // Some editors ignore inserted text: put it in the way typing would, or type it key by key.
@@ -1087,8 +1139,11 @@ extension Browser {
     } else if !append { try await pressKey(view, "Backspace", step) }
     if submit {
      let urlBefore = tab.url
-     _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, "Enter", step)
-     if let unsent = await verdict(who, tab, view, before, urlBefore, "Enter", field, step) { return unsent }
+     // Already typed, so a change here stops with Enter unpressed instead of starting over.
+     do {
+      _ = try await agentJs(view, agentScripts["Watch"] ?? "", ["expect": step.print]); try await pressKey(view, "Enter", step)
+      if let unsent = try await verdict(who, tab, view, before, urlBefore, "Enter", field, step) { return unsent }
+     } catch is PageChanged { return agentFail("Typed into \"" + field + "\", but the page changed before Enter, so Still didn't press it. Call read_page to see it now.") }
     }
     did(who, "Typed into " + field)
     return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "")))
@@ -1096,8 +1151,8 @@ extension Browser {
     let (_, tab, view) = try await agentPage(who, args)
     let before = agentTabs[who] ?? "", urlBefore = tab.url
     tab.agentActedAt = Date()
-    _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, argText(args, "key"), step)
-    if let nothing = await verdict(who, tab, view, before, urlBefore, argText(args, "key"), "", step) { return nothing }
+    _ = try await agentJs(view, agentScripts["Watch"] ?? "", ["expect": step.print]); try await pressKey(view, argText(args, "key"), step)
+    if let nothing = try await verdict(who, tab, view, before, urlBefore, argText(args, "key"), "", step) { return nothing }
     did(who, "Pressed " + argText(args, "key")); return agentOk(outcome(who, tab, before, "Pressed " + argText(args, "key")))
    case "scroll":
     let (_, _, view) = try await agentPage(who, args)
@@ -1129,7 +1184,8 @@ extension Browser {
     return try await uploadFiles(who, tab, view, args, quick, step)
    default: return agentFail("Unknown tool: " + tool)
    }
-  } catch { return agentFail(error.localizedDescription) }
+  } catch is PageChanged { step.changed = true; step.intent?.outcome = "failed"; return agentFail(keptChanging) } // nothing was sent
+  catch { return agentFail(error.localizedDescription) }
  }
 
  @MainActor func uploadFiles(_ who: String, _ tab: Tab, _ view: WKWebView, _ args: [String: Any], _ quick: Bool, _ step: AgentStep) async throws -> String {
