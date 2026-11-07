@@ -20,6 +20,9 @@ public partial class App : Application
  private Mutex? instance;
  private IDisposable? linkListener, launcherListener;
  internal static string InstanceName(string folder)=>"Local\\Still-"+Convert.ToHexString(System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(Path.GetFullPath(folder).TrimEnd(Path.DirectorySeparatorChar).ToLowerInvariant())))[..20];
+ internal static string[] StartArgs = [];
+ /// Windows starts Still for a link as `--link <address>`. Whatever the link says, it's one address and never a setting for Still.
+ internal static string[] LinkArgs(string[] args) => args.FirstOrDefault() != "--link" ? args : args.Length == 2 && !args[1].StartsWith('-') ? [args[1]] : [];
  static string? ArgAfter(string[] args, string flag) { int i = Array.IndexOf(args, flag); return i >= 0 && i + 1 < args.Length ? args[i + 1] : null; }
  internal static void ConfigureProfile(string[] args)
  {
@@ -34,18 +37,18 @@ public partial class App : Application
   base.OnStartup(e);
   StartupMetrics.Mark("app-startup");
 #if STILL_QA
-  IsQa = e.Args.Contains("--qa");
+  IsQa = StartArgs.Contains("--qa");
 #endif
-  IsTemp = e.Args.Contains("--temp"); launchArgs = e.Args;
-  try { ConfigureProfile(e.Args); } catch(Exception ex) { MessageBox.Show(ex.Message,"Still");Shutdown();return; }
-  var launchUrl = BrowserRegistration.UrlFromArgs(e.Args);
+  IsTemp = StartArgs.Contains("--temp"); launchArgs = StartArgs;
+  try { ConfigureProfile(StartArgs); } catch(Exception ex) { MessageBox.Show(ex.Message,"Still");Shutdown();return; }
+  var launchUrl = BrowserRegistration.UrlFromArgs(StartArgs);
   // `Still.exe --mcp`: run only the MCP stdio server (launched by AI apps); no window.
-  if (e.Args.FirstOrDefault() == "--cli") { var cliArgs = e.Args.Skip(1).ToArray(); new Thread(() => { int code = 1; try { code = McpServer.Cli(InstanceName(DataRoot), cliArgs); } finally { Dispatcher.Invoke(() => Shutdown(code)); } }) { IsBackground = true }.Start(); return; }
-  if (e.Args.Contains("--mcp")) { new Thread(() => { try { McpServer.RunId = ArgAfter(e.Args, "--run") ?? ""; McpServer.NoTools = e.Args.Contains("--no-tools"); McpServer.NoPlugins = e.Args.Contains("--no-plugins"); McpServer.Run(InstanceName(DataRoot), ArgAfter(e.Args, "--as"), e.Args.Contains("--this-profile")); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
+  if (StartArgs.FirstOrDefault() == "--cli") { var cliArgs = StartArgs.Skip(1).ToArray(); new Thread(() => { int code = 1; try { code = McpServer.Cli(InstanceName(DataRoot), cliArgs); } finally { Dispatcher.Invoke(() => Shutdown(code)); } }) { IsBackground = true }.Start(); return; }
+  if (StartArgs.Contains("--mcp")) { new Thread(() => { try { McpServer.RunId = ArgAfter(StartArgs, "--run") ?? ""; McpServer.NoTools = StartArgs.Contains("--no-tools"); McpServer.NoPlugins = StartArgs.Contains("--no-plugins"); McpServer.Run(InstanceName(DataRoot), ArgAfter(e.Args, "--as"), e.Args.Contains("--this-profile")); } finally { Dispatcher.Invoke(Shutdown); } }) { IsBackground = true }.Start(); return; }
   instance = new Mutex(true, InstanceName(DataRoot), out var first);
   if (!first) {
    // Already running: hand the link (or a plain "bring to front") to the open window.
-   if (!e.Args.Contains("--startup") && !BrowserRegistration.Forward(InstanceName(DataRoot), launchUrl))
+   if (!StartArgs.Contains("--startup") && !BrowserRegistration.Forward(InstanceName(DataRoot), launchUrl))
     MessageBox.Show("Still is already open. Look for it in your taskbar.", "Still");
    Shutdown(); return;
   }
@@ -56,7 +59,7 @@ public partial class App : Application
    if ((Still.MainWindow.Windows.Exists(w => w.IsVisible) ? Still.MainWindow.Home : MainWindow as Still.MainWindow) is { } target) target.OpenFromOutside(url); // a normal window, never a sign-in one
   });
   linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
-  if (!e.Args.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
+  if (!StartArgs.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
   _ = BrowserEnvironment.ContinueWith(t => t.Result.BrowserProcessExited += (_, ev) => {
    if (ev.BrowserProcessExitKind == Microsoft.Web.WebView2.Core.CoreWebView2BrowserProcessExitKind.Failed) Dispatcher.BeginInvoke(RestartAfterEngineCrash);
   }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.FromCurrentSynchronizationContext()); // start the engine while the window is still being built

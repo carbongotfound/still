@@ -10,7 +10,7 @@ public partial class MainWindow
  static readonly HashSet<string> DangerousSchemes = new(StringComparer.OrdinalIgnoreCase) {
   "javascript", "vbscript", "data", "file", "shell", "res", "hcp", "its", "mk", "ms-its", "ms-msdt", "search", "search-ms",
   "ms-officecmd", "ms-cxh", "ms-cxh-full", "ms-appinstaller", "ms-excel", "ms-word", "ms-powerpoint", "ms-access", "ms-visio",
-  "ms-project", "ms-publisher", "ms-spd", "ms-infopath", "ms-diagcab", "ms-rd", "microsoft-edge", "microsoft-edge-holographic" };
+  "ms-project", "ms-publisher", "ms-spd", "ms-infopath", "ms-diagcab", "ms-rd", "microsoft-edge", "microsoft-edge-holographic", "stillurl" };
  string lastAppLink = ""; DateTime lastAppLinkAt;
 
  async void OpenAppLink(BrowserTab tab, string uri)
@@ -28,8 +28,18 @@ public partial class MainWindow
    if (!await AskPermission(tab, site, "open " + app)) return;
    if (!tab.Private) { Prefs.AllowedAppLinks.Add(key); SaveLater(); }
   }
-  try { Process.Start(new ProcessStartInfo(uri) { UseShellExecute = true }); }
+  try { Process.Start(new ProcessStartInfo(HandlerUri(uri)) { UseShellExecute = true }); }
   catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException) { Toast($"Couldn't open {app}."); }
+ }
+
+ // The link as an app's command line gets it: everything that isn't plainly part of an address is percent-encoded, so it stays
+ // one argument for the app, however the app registered itself.
+ internal static string HandlerUri(string uri)
+ {
+  var text = new System.Text.StringBuilder();
+  foreach (byte b in System.Text.Encoding.UTF8.GetBytes(uri))
+   if (char.IsAsciiLetterOrDigit((char)b) || ";/?:@&=+$,!'()*-._~#[]%".Contains((char)b)) text.Append((char)b); else text.Append('%').Append(b.ToString("X2"));
+  return text.ToString();
  }
 
  // A friendly name for the app registered for this link type, or null when nothing on the PC handles it.

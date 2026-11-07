@@ -10,6 +10,7 @@ internal static class Program
  static void Main(string[] args)
  {
   StartupMetrics.Mark("entry");
+  args = App.StartArgs = App.LinkArgs(args);
   if (!args.Contains("--mcp") && args.FirstOrDefault() != "--cli")
   {
    try

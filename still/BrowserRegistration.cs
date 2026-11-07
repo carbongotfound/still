@@ -14,7 +14,7 @@ internal static class BrowserRegistration
  static string Exe => Environment.ProcessPath!;
  // Links go to the tiny StillOpen.exe next to Still.exe when it is installed: it hands a link to the open window without starting this 160 MB app.
  static string Handler => Path.Combine(Path.GetDirectoryName(Exe)!, "StillOpen.exe") is var h && File.Exists(h) ? h : Exe;
- static string Open => "\"" + Handler + "\" \"%1\"";
+ static string Open => "\"" + Handler + "\" " + (Handler == Exe ? "--link " : "") + "\"%1\"";
  public static string LinkPipe => "Still-links-" + Environment.UserName;
 
  public static void Register()

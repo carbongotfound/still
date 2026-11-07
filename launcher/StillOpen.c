@@ -1,6 +1,7 @@
 // Tiny link handler: Windows starts this instead of the 160 MB Still.exe when a link is clicked in another app.
 // If Still is open it hands the link over a pipe and exits in milliseconds; otherwise it starts Still.exe.
 #include <windows.h>
+#include <wchar.h>
 #include <shellapi.h>
 #include <shlwapi.h>
 
@@ -26,10 +27,12 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR cmd, int show)
    }
   }
  }
- // Still isn't open (or this isn't a web link): start Still.exe with the same arguments.
+ // Still isn't open (or this isn't a web link): start Still.exe. Windows passes a link as one quoted argument, so anything
+ // else came from inside a link, and Still gets none of it.
  static WCHAR exe[MAX_PATH], line[32768];
  GetModuleFileNameW(NULL, exe, MAX_PATH); PathRemoveFileSpecW(exe); PathAppendW(exe, L"Still.exe");
- wsprintfW(line, L"\"%s\" ", exe); lstrcatW(line, PathGetArgsW(GetCommandLineW()));
+ lstrcpyW(line, L"\""); lstrcatW(line, exe); lstrcatW(line, L"\"");
+ if (argv && argc == 2 && !wcschr(argv[1], L'"') && lstrlenW(argv[1]) < 30000) { lstrcatW(line, L" --link \""); lstrcatW(line, argv[1]); lstrcatW(line, L"\""); }
  STARTUPINFOW si = { sizeof si }; PROCESS_INFORMATION pi;
  if (!CreateProcessW(exe, line, NULL, NULL, FALSE, 0, NULL, NULL, &si, &pi)) return 1;
  AllowSetForegroundWindow(pi.dwProcessId);
