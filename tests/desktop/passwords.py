@@ -9,7 +9,9 @@ Out: artifacts/passwords-*/ (result.json, shots/*.png: save prompt, fill menu an
 """
 import csv
 import hashlib
+import csv
 import http.server
+import io
 import json
 import os
 from pathlib import Path
@@ -547,6 +549,7 @@ def main():
         check(until(lambda: "Password copied" in text(process), 5), "Copy works after the check (test builds never touch the clipboard)")
         send(process, "vaultSave", origin="https://weak.example", username="me", password="password")
         send(process, "vaultSave", origin="https://reuse.example", username="me", password="Lighthouse-Keeper-43")
+        send(process, "vaultSave", origin="https://sheet.example", username='=HYPERLINK("https://x.example")', password="=Keeps-Its-Own-Form-5")
         time.sleep(.6)
         flags = {(v["origin"], v["username"]): (v["weak"], v["reused"]) for v in vault(process)}
         check(flags.get(("https://weak.example", "me")) == (True, False) and flags.get(("https://reuse.example", "me")) == (False, True)
@@ -565,6 +568,8 @@ def main():
         until(lambda: js(process, "!!document.querySelector('[role=alertdialog]:not(.permission-bar)')"), 5)
         js(process, "[...document.querySelectorAll('[role=alertdialog]:not(.permission-bar) button')].find(b => b.innerText === 'Confirm').click()")
         exported = until(lambda: (RUN / "export.csv").exists() and (RUN / "export.csv").read_text(encoding="utf-8"), 5) or ""
+        row = next((r for r in csv.reader(io.StringIO(exported)) if len(r) > 3 and r[1].startswith("https://sheet.example")), [])
+        check(row[2:4] == ['\'=HYPERLINK("https://x.example")', "=Keeps-Its-Own-Form-5"], f"A username can't act as a spreadsheet formula, and the password stays exact ({row})")
         rows = list(csv.DictReader(exported.splitlines()))
         check(refused and any(r["username"] == "ada@example.com" and r["password"] == "Lighthouse-Keeper-43" and r["url"].startswith(SITE) for r in rows),
               "Export writes a CSV only after the check")

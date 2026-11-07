@@ -313,7 +313,8 @@ extension Browser {
    func write(_ file: URL) {
     func cell(_ v: String) -> String { v.unicodeScalars.contains { ",\"\r\n".unicodeScalars.contains($0) } ? "\"" + v.replacingOccurrences(of: "\"", with: "\"\"") + "\"" : v }
     var csv = "name,url,username,password,note\r\n"
-    for v in entries.sorted(by: { $0.origin < $1.origin }) { csv += [hostName(v.origin), v.origin + "/", v.username, v.password].map(cell).joined(separator: ",") + ",\r\n" }
+    func text(_ v: String) -> String { v.first.map { "=+-@\t\r".contains($0) } == true ? "'" + v : v } // a spreadsheet runs a cell that starts like this, and a site can choose its username. Passwords stay exact: this file is how they move.
+    for v in entries.sorted(by: { $0.origin < $1.origin }) { csv += [text(hostName(v.origin)), v.origin + "/", text(v.username), v.password].map(cell).joined(separator: ",") + ",\r\n" }
     do { try Data(csv.utf8).write(to: file, options: .atomic); toast("Exported \(entries.count) passwords. Anyone who opens that file can read them, so delete it when you're done.") }
     catch { toast("Couldn't save the file: " + error.localizedDescription) }
    }

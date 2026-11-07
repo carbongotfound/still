@@ -220,7 +220,8 @@ public partial class MainWindow
   if(string.IsNullOrEmpty(file))return;
   static string Cell(string v)=>v.IndexOfAny([',','"','\r','\n'])>=0?"\""+v.Replace("\"","\"\"")+"\"":v;
   var csv=new StringBuilder("name,url,username,password,note\r\n");
-  foreach(var v in entries.OrderBy(v=>v.Origin))csv.Append(Cell(Host(v.Origin))).Append(',').Append(Cell(v.Origin+"/")).Append(',').Append(Cell(v.Username)).Append(',').Append(Cell(v.Password)).Append(",\r\n");
+  static string Text(string v)=>v.Length>0&&"=+-@\t\r".Contains(v[0])?"'"+v:v; // a spreadsheet runs a cell that starts like this, and a site can choose its username. Passwords stay exact: this file is how they move.
+  foreach(var v in entries.OrderBy(v=>v.Origin))csv.Append(Cell(Text(Host(v.Origin)))).Append(',').Append(Cell(v.Origin+"/")).Append(',').Append(Cell(Text(v.Username))).Append(',').Append(Cell(v.Password)).Append(",\r\n");
   try{await File.WriteAllTextAsync(file,csv.ToString(),new UTF8Encoding(false));Toast($"Exported {entries.Count} passwords. Anyone who opens that file can read them, so delete it when you're done.");}
   catch(Exception ex) when(ex is IOException or UnauthorizedAccessException){Toast("Couldn't save the file: "+ex.Message);}
  }
