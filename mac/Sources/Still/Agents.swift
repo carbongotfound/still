@@ -279,7 +279,11 @@ func argNumber(_ args: [String: Any], _ key: String, _ fallback: Double) -> Doub
 /// An element id from read_page or find: 12, "12" or "[12]".
 func argId(_ args: [String: Any]) -> String { ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "[] ")) }
 func clipped(_ text: String, _ limit: Int) -> String { text.count > limit ? String(text.prefix(limit - 1)) + "…" : text }
-func hostName(_ url: String) -> String { URL(string: url)?.host.map { $0.hasPrefix("www.") ? String($0.dropFirst(4)) : $0 } ?? url }
+func hostName(_ url: String) -> String {
+ guard var host = URL(string: url)?.host?.lowercased() else { return url }
+ while host.hasSuffix(".") { host.removeLast() }
+ return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
+}
 
 func scriptError(_ code: String, _ reply: [String: Any]) -> String {
  switch code {
@@ -969,7 +973,7 @@ extension Browser {
 
  func agentWebUrl(_ input: String) throws -> String {
   let text = input.trimmingCharacters(in: .whitespacesAndNewlines), url = resolve(text)
-  guard !text.isEmpty, let scheme = URL(string: url)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { throw AgentError("Agents can only open http and https pages.") }
+  guard !text.isEmpty, let parsed = URL(string: url), let scheme = parsed.scheme?.lowercased(), scheme == "http" || scheme == "https", parsed.host?.isEmpty == false else { throw AgentError("Agents can only open http and https pages.") }
   return url
  }
 

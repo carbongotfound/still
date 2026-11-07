@@ -365,6 +365,7 @@ def main():
         one_at_a_time(process)
         only_what_was_shown(process)
         no_site_no_rule(process)
+        site_spelling(process)
         steady_buttons(process)
         only_once(process)
         check_comes_first(process)
@@ -608,6 +609,34 @@ def one_at_a_time(process):
     time.sleep(5)  # the slow page is in, the turn is free: time enough for a stray click to land
     check("/slow" in HITS, "The first click went through, holding the page's turn")
     check(f"/hit/wish?k=q" not in HITS, "A click still waiting its turn when you press Stop never happens")
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+
+
+def site_spelling(process):
+    # However an address spells a site's name, its rule applies and its card names it. And www only comes off the front of a name.
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    port = SERVER.server_port
+    for name in ("localhost", "ewww.localhost"):
+        send(process, "permSet", site=name, action="read", companion="", mode="ask")
+    until(lambda: len(rules()) == 2, 10)
+    for url, name, what in (
+        (f"http://LOCALHOST:{port}/who?spell-a", "localhost", "Capitals in an address don't get past a site's rule"),
+        (f"http://localhost.:{port}/who?spell-b", "localhost", "Nor does a dot at the end of its name"),
+        (f"http://ewww.localhost:{port}/who?spell-c", "ewww.localhost", "A www inside a name stays there, so it can't pass for another site"),
+    ):
+        ask(process, plan("spell", ["read_url", {"url": url}]))
+        card = " ".join(until(lambda: cards(process), 20) or [])
+        check(f"Read {name}" in card, f"{what} ({card[:80]!r})")
+        press(process, "Deny")
+        idle(process)
+    # An address without its slashes, which a browser takes as the same site: it asks like any other, or it's refused.
+    ask(process, plan("spell", ["read_url", {"url": f"http:/localhost:{port}/who?spell-d"}]))
+    if until(lambda: cards(process), 8):
+        press(process, "Deny")
+    idle(process)
+    check("/who?spell-d" not in COOKIES, "An address missing its slashes doesn't get past the rule either")
     send(process, "permReset")
     until(lambda: not rules(), 10)
 

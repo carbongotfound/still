@@ -591,7 +591,7 @@ public partial class MainWindow : Window
  }
  static string DialogKind(PageDialog d) => d.Args.Kind switch { CoreWebView2ScriptDialogKind.Confirm => "confirm", CoreWebView2ScriptDialogKind.Prompt => "prompt", CoreWebView2ScriptDialogKind.Beforeunload => "leave page", _ => "alert" };
  object? PageDialogData() => active?.Dialog is { } d ? new { id = active.Id, kind = DialogKind(d), message = d.Args.Message, defaultText = d.Args.DefaultText, site = d.Site } : null;
- public static string Host(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? (u.IsFile ? Path.GetFileName(u.LocalPath) : u.Host.Replace("www.", "")) : url;
+ public static string Host(string url) => Uri.TryCreate(url, UriKind.Absolute, out var u) ? (u.IsFile ? Path.GetFileName(u.LocalPath) : u.Host.TrimEnd('.') is var host && host.StartsWith("www.", StringComparison.Ordinal) ? host[4..] : host) : url;
  public static string ResolveAddress(string input, string engine)
  {
   input = input.Trim();
