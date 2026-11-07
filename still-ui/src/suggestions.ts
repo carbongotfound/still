@@ -63,7 +63,7 @@ export function homeIdeas({ name, role, asks = [], fits = [], uses = [], memory 
   if (app) add({ kind: 'app', label: APP_TASKS[app.slug][0], why: `${app.name} is connected`, prompt: APP_TASKS[app.slug][1] })
   const tab = tabs.find(t => !t.isPrivate && !t.chatId && !t.inChat && !t.loading && t.id !== activeId && /^https?:\/\//.test(t.url))
   if (tab) add({ kind: 'tab', label: 'Sum up ' + clip(tab.title || new URL(tab.url).hostname, 40), why: 'Open in your tabs',
-    prompt: `Sum up my open tab "${tab.title}" (${tab.url}) in a few short bullet points.` })
+    prompt: `Sum up my open tab at ${tab.url} in a few short bullet points.` }) // not its title: that's the page's words, and this goes as the user's
   for (const [interest, label, prompt] of fits) add({ kind: 'role', label, why: `You work on ${interest.toLowerCase()}`, prompt })
   if (role) for (const [label, prompt] of asks) add({ kind: 'role', label, why: `${name}'s role: ${role}`, prompt })
   return out

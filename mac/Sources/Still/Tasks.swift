@@ -82,7 +82,7 @@ func checkpoint(_ r: ChatRun, _ tool: String, _ result: String) {
 func resumeBrief(_ t: AiTask) -> String {
  var lines = ["[Still] Still closed before you finished this task, and the user asked you to pick it up again."]
  if !t.ask.isEmpty { lines.append("What you were asked: " + t.ask) }
- if !t.steps.isEmpty { lines.append("What you did before it stopped (oldest first):\n" + t.steps.suffix(15).map { "- " + $0.what + ($0.ok ? "" : " (didn't work)") }.joined(separator: "\n")) }
+ if !t.steps.isEmpty { lines.append("What you did before it stopped (oldest first):\n" + t.steps.suffix(15).map { "- " + clipped($0.what.replacingOccurrences(of: "[", with: "(").replacingOccurrences(of: "]", with: ")").components(separatedBy: .newlines).joined(separator: " "), 120) + ($0.ok ? "" : " (didn't work)") }.joined(separator: "\n")) }
  if !t.tabs.isEmpty { lines.append("Tabs you had open: " + t.tabs.joined(separator: ", ")) }
  if !t.pending.isEmpty { lines.append("You were waiting for the user on: " + t.pending + ". Ask again if you still need it.") }
  let unsure = t.sensitive.filter { $0.outcome == nil }

@@ -35,6 +35,7 @@ test('ideas never use a private tab, its title or its address', () => {
   const tabs = [tab('p', 'Secret bank statement', 'https://bank.example/statement', {isPrivate: true}), tab('n', 'Quarterly plan', 'https://docs.example/plan')]
   const ideas = homeIdeas({name: 'Maya', tabs})
   assert.deepEqual(ideas.map(i => i.label), ['Sum up Quarterly plan'])
+  assert.ok(!ideas[0].prompt.includes('Quarterly plan'), 'a page title never goes in as the user\'s own words')
   assert.ok(!JSON.stringify(ideas).includes('bank'))
   assert.deepEqual(homeIdeas({name: 'Maya', tabs: tabs.slice(0, 1)}), [])
 })

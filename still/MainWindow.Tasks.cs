@@ -96,7 +96,7 @@ public partial class MainWindow
  {
   var lines = new List<string> { "[Still] Still closed before you finished this task, and the user asked you to pick it up again." };
   if (t.Ask.Length > 0) lines.Add("What you were asked: " + t.Ask);
-  if (t.Steps.Count > 0) lines.Add("What you did before it stopped (oldest first):\n" + string.Join("\n", t.Steps.TakeLast(15).Select(s => "- " + s.What + (s.Ok ? "" : " (didn't work)"))));
+  if (t.Steps.Count > 0) lines.Add("What you did before it stopped (oldest first):\n" + string.Join("\n", t.Steps.TakeLast(15).Select(s => "- " + Clip(s.What.Replace('[', '(').Replace(']', ')').ReplaceLineEndings(" "), 120) + (s.Ok ? "" : " (didn't work)"))));
   if (t.Tabs.Count > 0) lines.Add("Tabs you had open: " + string.Join(", ", t.Tabs));
   if (t.Pending.Length > 0) lines.Add("You were waiting for the user on: " + t.Pending + ". Ask again if you still need it.");
   if (t.Sensitive.Where(s => s.Outcome == null).ToList() is { Count: > 0 } unsure)
