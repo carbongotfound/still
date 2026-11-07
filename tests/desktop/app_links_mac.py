@@ -70,7 +70,9 @@ def main():
                 rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
 
         press_link("mailto:one@example.com")
-        check(until(lambda: "wants to" in bar(process), 15), f"A link to another app asks first ({bar(process)[:70]!r})")
+        check(until(lambda: "wants to" in bar(process), 15, .02), f"A link to another app asks first ({bar(process)[:70]!r})")
+        allow = "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === 'Allow')"
+        check(js(process, allow + ".disabled") is True, "Allow doesn't take a click the moment the bar appears")
         check(not opened(), "...and nothing has opened")
         answer(process, "Allow")
         check(until(lambda: opened() == ["mailto:one@example.com"], 5), f"Allow opens it ({opened()})")

@@ -18,7 +18,7 @@ import uuid
 import winreg
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import ROOT, js, launch, press_ready, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("app-links-" + uuid.uuid4().hex[:8])
@@ -148,12 +148,13 @@ def app_link(process):
                 rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
 
         def answer(word):
-            js(process, f"[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === {json.dumps(word)}).click()")
+            press_ready(process, f"[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === {json.dumps(word)})")
 
         click(f'{SCHEME}:one" --evil "two three')
-        check(until(lambda: "wants to" in bar(process), 15), "An app link asks first")
+        check(until(lambda: "wants to" in bar(process), 15, .02), "An app link asks first")
+        check(js(process, "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === 'Allow').disabled") is True, "Allow doesn't take a click the moment the bar appears")
         check(not log.exists(), "...and nothing started yet")
-        js(process, "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.innerText.trim() === 'Allow').click()")
+        answer("Allow")
         check(until(log.exists, 15), "Allow starts the app")
         args = json.loads(log.read_text(encoding="utf-8").splitlines()[-1])
         check(len(args) == 1 and "%22" in args[0] and '"' not in args[0] and "%20" in args[0], f"The app gets one argument, whatever the link said ({args})")

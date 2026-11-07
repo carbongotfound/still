@@ -19,7 +19,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, rpc, send, until  # noqa: E402
+from qa import ROOT, js, launch, press_ready, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else ROOT / "artifacts" / "sitepermissions-shots"
@@ -86,7 +86,7 @@ def bar(p):
 
 
 def answer(p, allow):
-    js(p, "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.textContent === '%s')?.click()" % ("Allow" if allow else "Block"))
+    press_ready(p, "[...document.querySelectorAll('.permission-wrap.is-open .permission-bar button')].find(b => b.textContent === '%s')" % ("Allow" if allow else "Block"))
     until(lambda: not bar(p), 5)
 
 

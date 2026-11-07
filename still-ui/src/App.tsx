@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
 import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, isRunning, since, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
-import { AuditList, PermissionsSettings } from "./Permissions"
+import { AuditList, PermissionsSettings, useArmed } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
@@ -315,6 +315,8 @@ export default function App() {
  const [stateRaw, setState] = useState<State>(initial)
  const goneV = useGone() // what's waiting to be deleted, behind an Undo toast, stays out of view
  const state = useMemo(() => goneV ? { ...stateRaw, history: isGone("clearHistory") ? [] : stateRaw.history, bookmarks: stateRaw.bookmarks.filter(b => !isGone("bookmark:" + b.url)) } : stateRaw, [stateRaw, goneV])
+ const agentReady = useArmed(state.agent?.pending ? state.agent.ask || state.agent.client || "asking" : "")
+ const permissionReady = useArmed(state.permission?.id ?? "")
  const [pane, setPane] = useState("")
  const [displayPane, setDisplayPane] = useState("")
  const [settingsPage, setSettingsPage] = useState("general")
@@ -732,12 +734,12 @@ export default function App() {
       {state.agent?.client ? <AiLogo id={state.agent.client} size={20} /> : <Bot />}<span>{state.agent?.ask
        ? <><b>{state.agent.client}</b> wants to {state.agent.ask}.</>
        : <><b>{state.agent?.client}</b> wants to control Still. It can open, read and click pages, but never private tabs, passwords or cookies.</>}</span>
-      <Button variant="ghost" size="sm" onClick={() => send("agentAnswer", { allow: false })}>Block</Button><Button size="sm" onClick={() => send("agentAnswer", { allow: true })}>Allow</Button>
+      <Button variant="ghost" size="sm" onClick={() => send("agentAnswer", { allow: false })}>Block</Button><Button size="sm" disabled={!agentReady} onClick={() => send("agentAnswer", { allow: true })}>Allow</Button>
      </div></div>
      <div className={cn("permission-wrap", state.permission && "is-open")}><div className="permission-bar" role="alertdialog" aria-label="Site permission" aria-hidden={!state.permission}>
       <ShieldCheck /><span><b>{shownPermission?.site}</b> wants to {shownPermission?.kind}.</span>
       <Button variant="ghost" size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: false })}>Block</Button>
-      <Button size="sm" disabled={!state.permission} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: true })}>Allow</Button>
+      <Button size="sm" disabled={!state.permission || !permissionReady} onClick={() => state.permission && send("permissionAnswer", { id: state.permission.id, allow: true })}>Allow</Button>
      </div></div>
      <SaveLoginBar offer={state.loginOffer} send={send} />
      <div className="page-row">

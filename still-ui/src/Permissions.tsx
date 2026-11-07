@@ -20,7 +20,7 @@ const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pa
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
 
 // Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
-function useArmed(key: string) {
+export function useArmed(key: string) {
  const [armed, setArmed] = useState<string | null>(null)
  useEffect(() => { const t = setTimeout(() => setArmed(key), 500); return () => clearTimeout(t) }, [key])
  return armed === key
