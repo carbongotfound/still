@@ -301,13 +301,21 @@ public partial class MainWindow
    ?? (lower.Replace(" ", "") is var squashed && pluginBySlug.ContainsKey(squashed) ? squashed : null);
  }
 
+ /// All an action will carry, for its card. Past what fits, the card says how much it isn't showing.
+ static string PluginWhy(JsonObject? arguments)
+ {
+  string all = string.Join(" · ", (arguments ?? []).Where(p => p.Value != null && p.Value.ToString().Length > 0).Select(p => p.Key + ": " + (p.Value is JsonValue v && v.TryGetValue<string>(out var s) ? s : p.Value!.ToJsonString())));
+  return all.Length <= 1200 ? all : all[..1200] + " … and " + (all.Length - 1200) + " more characters not shown";
+ }
+
  async Task<string> PluginTool(string who, string tool, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Plugins are only for Still's own companions.");
   if (run.Chat.Ephemeral) return Fail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.");
   if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.");
-  var mate = Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
-  bool Mine(string slug) => mate?.PluginsOff.Contains(slug) != true;
+  // A helper works for whoever asked: an app any of them has off stays off.
+  var team = ExchangeOf(run.Chat).Chain.Select(id => Companions.FirstOrDefault(c => c.Id == id)).ToList();
+  bool Mine(string slug) => team.All(mate => mate?.PluginsOff.Contains(slug) != true);
   string Unavailable() => pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.";
 
   if (tool == "list_connected_plugins") {
@@ -357,8 +365,7 @@ public partial class MainWindow
   var arguments = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("args", out var given) && given.ValueKind == JsonValueKind.Object ? JsonNode.Parse(given.GetRawText()) : new JsonObject();
   if (!PluginReads(info, action, slug)) {
    string what = (Str(info, "name") is { Length: > 0 } name ? name : action) + " in " + app;
-   string why = string.Join(" · ", (arguments as JsonObject ?? new JsonObject()).Where(p => p.Value is JsonValue v && v.TryGetValue<string>(out var s) && s.Length > 0).Take(3).Select(p => p.Key + ": " + Clip(p.Value!.ToString(), 60)));
-   string answer = await Approve(run, what, app, "plugin", why, countdown: false);
+   string answer = await Approve(run, what, app, "plugin", PluginWhy(arguments as JsonObject), countdown: false);
    Audit(run.Chat, what, app, answer is "once" or "chat" or "always" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no");
    PublishAiEverywhere();
    if (answer is not ("once" or "chat" or "always")) return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.");

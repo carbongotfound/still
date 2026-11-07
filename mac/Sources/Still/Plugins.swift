@@ -357,12 +357,22 @@ extension Browser {
    "connecting": pluginConnecting, "failed": pluginFailed, "error": pluginError, "connected": pluginAccounts.map { ["id": $0.id, "slug": $0.slug, "name": $0.name] }]
  }
 
+ /// All an action will carry, for its card. Past what fits, the card says how much it isn't showing.
+ func pluginWhy(_ arguments: [String: Any]) -> String {
+  let all = arguments.sorted { $0.key < $1.key }.compactMap { k, v -> String? in
+   let shown = v as? String ?? (try? JSONSerialization.data(withJSONObject: v, options: [.fragmentsAllowed, .sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
+   return shown.isEmpty ? nil : k + ": " + shown
+  }.joined(separator: " · ")
+  return all.count <= 1200 ? all : String(all.prefix(1200)) + " … and \(all.count - 1200) more characters not shown"
+ }
+
  @MainActor func pluginTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
   guard let run = runs[who] else { return agentFail("Plugins are only for Still's own companions.") }
   if run.chat.ephemeral { return agentFail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.") }
   guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.") }
-  let mate = companions.first { $0.id == run.chat.companion }
-  func mine(_ slug: String) -> Bool { mate?.pluginsOff.contains(slug) != true }
+  // A helper works for whoever asked: an app any of them has off stays off.
+  let team = exchangeOf(run.chat).chain.map { id in companions.first { $0.id == id } }
+  func mine(_ slug: String) -> Bool { team.allSatisfy { $0?.pluginsOff.contains(slug) != true } }
   func unavailable() -> String { pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later." }
 
   if tool == "list_connected_plugins" {
@@ -416,8 +426,7 @@ extension Browser {
   let arguments = args["args"] as? [String: Any] ?? [:]
   if !pluginReads(info, action, slug) {
    let name = pluginStr(info, "name"), what = (name.isEmpty ? action : name) + " in " + app
-   let why = arguments.sorted { $0.key < $1.key }.compactMap { k, v in (v as? String).flatMap { $0.isEmpty ? nil : k + ": " + clipped($0, 60) } }.prefix(3).joined(separator: " · ")
-   let answer = await approve(run, what, app, "plugin", why, countdown: false)
+   let answer = await approve(run, what, app, "plugin", pluginWhy(arguments), countdown: false)
    let allowed = ["once", "chat", "always"].contains(answer)
    audit(run.chat, what, app, allowed ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no")
    publishAiEverywhere()
