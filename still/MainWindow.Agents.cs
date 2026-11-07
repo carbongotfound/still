@@ -321,11 +321,11 @@ public partial class MainWindow
  static string SigningIn(string site) => "This is a sign-in page for " + site + ". AIs never type or see passwords, so Still paused you and asked the user to sign in themselves. Call your next tool again: Still holds it until they hand the tab back, then check the page with read_page.";
  // Masks inputs whose value matches a saved login's fingerprint (MainWindow.LoginPrints), then unmasks them.
  const string MaskJs = """
-  const print = s => { let h = 0; for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0; return h; };
+  const hash = s => { let h = 0; for (let i = 0; i < s.length; i++) h = h * 31 + s.charCodeAt(i) | 0; return h; };
   walk(document, e => {
    if (e.localName !== 'input') return;
    if (!o.on) { if (e.hasAttribute('data-still-masked')) { e.style.removeProperty('-webkit-text-security'); e.removeAttribute('data-still-masked'); } return; }
-   if (e.value && o.prints.includes(print(e.value))) { e.style.setProperty('-webkit-text-security', 'disc', 'important'); e.setAttribute('data-still-masked', ''); }
+   if (e.value && o.prints.includes(hash(e.value))) { e.style.setProperty('-webkit-text-security', 'disc', 'important'); e.setAttribute('data-still-masked', ''); }
   });
   return true;
  """;
@@ -1168,7 +1168,10 @@ public partial class MainWindow
     if (t != previous) { await w.SelectTab(t); await Task.Delay(200); }
     using var ms = new MemoryStream();
     var prints = LoginPrints(core.Source); // fields showing a saved login are masked in the picture
-    try { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = true }); await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms); }
+    try {
+     if (prints.Length > 0 && (await Js(core, MaskJs, new { prints, on = true })).ValueKind != JsonValueKind.True) return Fail("Couldn't hide the saved login on this page, so no screenshot was taken.");
+     await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
+    }
     finally { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = false }); if (previous != null && previous != t && !previous.Closed && w.active == t) await w.SelectTab(previous); }
     Did(who, "Took a screenshot"); return Reply(new { image = Convert.ToBase64String(ms.ToArray()), mimeType = "image/png" });
    }

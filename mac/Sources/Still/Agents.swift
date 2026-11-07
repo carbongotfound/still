@@ -1102,7 +1102,10 @@ extension Browser {
     let previous = browser.active
     if tab !== previous { browser.select(tab); try? await Task.sleep(nanoseconds: 300_000_000) }
     let prints = loginPrints(view.url?.absoluteString ?? "") // fields showing a saved login are masked in the picture
-    if !prints.isEmpty { _ = try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": true]) }
+    if !prints.isEmpty, (try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": true])) as? Bool != true {
+     if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
+     return agentFail("Couldn't hide the saved login on this page, so no screenshot was taken.")
+    }
     let shot: (NSImage?, Error?) = await withCheckedContinuation { done in view.takeSnapshot(with: nil) { done.resume(returning: ($0, $1)) } }
     if !prints.isEmpty { _ = try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": false]) }
     if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
