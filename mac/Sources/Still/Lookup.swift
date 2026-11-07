@@ -31,6 +31,12 @@ enum Lookup {
 /// Says when the lookup page has loaded. Dialogs are accepted, pop-ups never open and nothing downloads.
 final class LookupDelegate: NSObject, WKNavigationDelegate, WKUIDelegate {
  var loaded: ((Bool) -> Void)?
+ var hop: ((String) -> String?)? // looks at each address the page is sent to, and says why not
+ var refused: String?
+ func webView(_ view: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping (WKNavigationActionPolicy) -> Void) {
+  if action.targetFrame?.isMainFrame != false, let url = action.request.url?.absoluteString, let no = hop?(url) { refused = no; decisionHandler(.cancel); loaded?(false); return }
+  decisionHandler(.allow)
+ }
  func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) { loaded?(true) }
  func webView(_ view: WKWebView, didFail navigation: WKNavigation!, withError error: Error) { failed(error) }
  func webView(_ view: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) { failed(error) }
@@ -51,7 +57,7 @@ extension Browser {
  }
 
  /// store: an incognito chat's window's private website data, in a page used once; otherwise the shared hidden page.
- @MainActor func lookUp(_ url: String, _ script: String, _ args: [String: Any], store: WKWebsiteDataStore? = nil) async throws -> Any? {
+ @MainActor func lookUp(_ url: String, _ script: String, _ args: [String: Any], store: WKWebsiteDataStore? = nil, hop: ((String) -> String?)? = nil) async throws -> Any? {
   await Lookup.enter()
   defer {
    Lookup.idle = Timer.scheduledTimer(withTimeInterval: 60, repeats: false) { _ in Lookup.view?.stopLoading(); Lookup.view = nil }
@@ -77,10 +83,12 @@ extension Browser {
    let once = Once<Bool?>()
    once.action = { done.resume(returning: $0) }
    Lookup.helper.loaded = { once.fire($0) }
+   Lookup.helper.hop = hop; Lookup.helper.refused = nil
    view.load(URLRequest(url: address))
    DispatchQueue.main.asyncAfter(deadline: .now() + 20) { once.fire(nil) }
   }
-  Lookup.helper.loaded = nil
+  Lookup.helper.loaded = nil; Lookup.helper.hop = nil
+  if let refused = Lookup.helper.refused { throw AgentError(refused) }
   guard let loaded else { throw AgentError("The page took too long to load.") }
   if !loaded { throw AgentError("The page didn't load.") }
   try? await Task.sleep(nanoseconds: 350_000_000) // pages that draw their text with script
@@ -108,9 +116,19 @@ extension Browser {
   return found.isEmpty ? agentFail("No results. Try other words, or open_tab the search to see the page.") : agentOk(["results": found])
  }
 
- @MainActor func readUrl(_ who: String, _ args: [String: Any]) async throws -> String {
-  let url = try agentWebUrl(argText(args, "url"))
-  let page = try await lookUp(url, lookupScripts.readable, ["offset": Int(min(1e9, max(0, argNumber(args, "offset", 0))))], store: try lookupStore(who)) as? [String: Any] ?? [:]
+ @MainActor func readUrl(_ who: String, _ args: [String: Any], _ step: AgentStep) async throws -> String {
+  let url = try agentWebUrl(argText(args, "url")), first = hostName(url), chat = runs[who]?.chat, up = chat.map { exchangeOf($0) }
+  // Signed out, unless the user named the site, the chat has used it or they said yes to it. An incognito chat's page is private already.
+  if let up, chat?.ephemeral != true { step.signedOut = !step.allowed && !beenTo(up.root, first) && !up.chain.allSatisfy { siteAllows($0, first, "read") } }
+  // A redirect, or the page's own script, may send it somewhere the gate never looked at.
+  let hop: (String) -> String? = { [self] to in
+   guard let scheme = URL(string: to)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return nil }
+   let host = hostName(to)
+   if host == first || up.map({ beenTo($0.root, host) }) == true { return nil }
+   let ruled = up.map { u in strictest(u.chain.map { permissionMode($0, host, "read") ?? defaultPermission("read") }) != "always" } ?? ((permissionMode("", host, "read") ?? "always") != "always")
+   return privateName(host) || ruled || up != nil && !step.signedOut ? "That page sent Still to \(host), so it stopped there. Read \(host) directly if you need it." : nil
+  }
+  let page = try await lookUp(url, lookupScripts.readable, ["offset": Int(min(1e9, max(0, argNumber(args, "offset", 0)))), "signedOut": step.signedOut], store: step.signedOut ? WKWebsiteDataStore.nonPersistent() : lookupStore(who), hop: hop) as? [String: Any] ?? [:]
   let at = (page["url"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? url
   did(who, "Read " + hostName(at))
   if let run = runs[who] { run.chat.messages.append(AiMessage("read", jsonText(["url": at, "title": page["title"] as? String ?? ""]))); publishAiEverywhere() }

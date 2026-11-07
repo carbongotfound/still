@@ -24,6 +24,7 @@ Screenshots: docs/agentic/compare/ (approval-v01, sensitive-v01, countdown-v01, 
 """
 import http.server
 import json
+import os
 from pathlib import Path
 import sys
 import textwrap
@@ -44,6 +45,7 @@ OUT = ROOT / "docs" / "agentic" / "compare"
 RESULT = {"checks": []}
 ORDERS = []
 HITS = []  # what the shop's buttons told the server, as /hit/<button>?k=<which run>
+COOKIES = {}  # /who?... -> the Cookie header it came with
 GO = {}  # query string -> True: time for that tricky page to change
 LIVE = "--live" in sys.argv
 CODE = "482913"  # the code "texted to your phone": only the test (you) knows it
@@ -116,6 +118,22 @@ class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/tricky"):
             return self.page(TRICKY)
+        if self.path.startswith("/login"):
+            HITS.append("/login")
+            self.send_response(200)
+            self.send_header("Set-Cookie", "sid=sam; Max-Age=3600; Path=/")
+            self.send_header("Content-Type", "text/html")
+            self.send_header("Content-Length", "2")
+            self.end_headers()
+            return self.wfile.write(b"ok")
+        if self.path.startswith("/jump"):
+            self.send_response(302)
+            self.send_header("Location", urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)["to"][0])
+            self.send_header("Content-Length", "0")
+            return self.end_headers()
+        if self.path.startswith("/who"):
+            COOKIES[self.path] = self.headers.get("Cookie")
+            return self.page("<!doctype html><title>Who</title><p>" + ("Signed in as Sam" if self.headers.get("Cookie") else "Signed out"))
         if self.path.startswith("/go"):
             return self.page("go" if GO.get(self.path.split("?", 1)[-1]) else "wait")
         if self.path.startswith("/guard"):
@@ -195,7 +213,9 @@ FAKE = textwrap.dedent(r'''
         return ok
     def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
-    if m := re.search(r"CART (\S+) (\d+)", tag):
+    if m := re.search(r"PLAN (\w+)", tag):
+        for tool, a in json.load(open(os.path.join(here, "plan-" + m[1] + ".json"))): call(tool, **a)
+    elif m := re.search(r"CART (\S+) (\d+)", tag):
         call("open_tab", url=m[1] + "/shop")
         for _ in range(int(m[2])): call("click", selector="#cart")
     elif m := re.search(r"ORDER (\S+)", tag):
@@ -342,6 +362,8 @@ def main():
         only_once(process)
         check_comes_first(process)
         approve_all(process)
+        reach(process)
+        process = private_hosts(process)
         keys_and_help(process)
         outside(process)
         outside_once(process)
@@ -721,6 +743,146 @@ def steady_buttons(process):
     send(process, "permSensitive", site="127.0.0.1", on=False)
 
 
+def plan(name, *steps):
+    """A run the fake agent plays from a file, so the addresses in it aren't in what the user said."""
+    (BIN / f"plan-{name}.json").write_text(json.dumps(steps), encoding="utf-8")
+    return f"PLAN {name}"
+
+
+def reach(process):
+    """Page text can steer an AI into reading something signed in and carrying it off in an address. After reading from the
+    web a new site asks first, an address with a lot of data in it always asks, and a read of a site nobody named is signed out."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    for base in (SITE, OTHER):
+        send(process, "new", url=f"{base}/login")
+    check(until(lambda: HITS.count("/login") >= 2, 20), "Signed in to both test sites")
+    run = uuid.uuid4().hex[:6]
+    who = lambda base, name: f"{base}/who?{run}-{name}"
+    path = lambda url: url[url.index("/who"):]
+    seen = lambda url: path(url) in COOKIES
+    why = lambda: js(process, "document.querySelector('.approve-card')?.innerText ?? ''") or ""
+    read = lambda url: ["read_url", {"url": url}]
+    go = lambda url: ["open_tab", {"url": url}]
+    jump = lambda url: f"{SITE}/jump?to=" + urllib.parse.quote(url, safe="")
+    long = lambda url: url + "&d=" + "x" * 300
+
+    url = who(OTHER, "a")
+    ask(process, tag := plan("a", read(url)))
+    check(until(lambda: seen(url), 30), "The first read of a site goes ahead with no card")
+    check(COOKIES.get(path(url)) is None, "and signed out, though the user is signed in there")
+    check(until(lambda: "signedOut" in "".join(c["text"] for c in calls(tag)), 15), f"and the AI hears it read signed out ({calls(tag)})")
+    idle(process)
+
+    first, then = who(SITE, "b1"), who(OTHER, "b2")
+    ask(process, plan("b", read(first), go(then)))
+    check(until(lambda: "A new site" in why(), 30), f"After reading from the web, opening a new site asks first ({why()!r})")
+    press(process, "Deny")
+    idle(process)
+    check(not seen(then), "Deny: the site is never reached")
+
+    first, then, more = who(SITE, "c1"), who(OTHER, "c2"), who(OTHER, "c3")
+    ask(process, plan("c", read(first), go(then), go(more)))
+    until(lambda: "A new site" in why(), 30)
+    press(process, "Allow once")
+    check(until(lambda: seen(more), 20) and seen(then), "Allowed: it goes, and that site needs no asking again in this chat")
+    idle(process)
+
+    near, far, next_far, short = who(OTHER, "d1"), long(who(OTHER, "d2")), long(who(OTHER, "d3")), who(OTHER, "d4")
+    ask(process, plan("d", read(near), go(far), go(next_far), go(short)) + " on localhost")
+    check(until(lambda: seen(near), 30) and "sid=sam" in (COOKIES.get(path(near)) or ""), f"A site the user named reads signed in ({COOKIES.get(path(near))!r})")
+    check(until(lambda: "a lot of data" in why(), 30), f"Even there, an address with a lot of data in it asks ({why()!r})")
+    press(process, "Allow in this chat")
+    check(until(lambda: seen(far), 20), "Allowed, it goes")
+    check(until(lambda: "a lot of data" in why(), 20), "Allow in this chat doesn't cover the next one")
+    press(process, "Deny")
+    check(until(lambda: seen(short), 20) and not seen(next_far), "Denied, it doesn't go; a short address on that site goes with no card")
+    idle(process)
+
+    tab, later = who(OTHER, "e1"), who(SITE, "e2")
+    ask(process, plan("e", go(tab), ["read_page", {}], read(later)))
+    check(until(lambda: seen(tab), 30) and until(lambda: "A new site" in why(), 30), f"After reading a page in a tab, even reading a new site asks first ({why()!r})")
+    press(process, "Allow once")
+    check(until(lambda: seen(later), 20) and "sid=sam" in (COOKIES.get(path(later)) or ""), "Allowed, it reads signed in")
+    idle(process)
+
+    one, two = who(OTHER, "f1"), who(SITE, "f2")
+    ask(process, plan("f", read(one), read(two)))
+    check(until(lambda: seen(two), 30) and not cards(process) and COOKIES.get(path(one)) is None and COOKIES.get(path(two)) is None, "Reading around the public web needs no card, and stays signed out")
+    idle(process)
+
+    first, then = who(SITE, "g1"), who(OTHER, "g2")
+    ask(process, plan("g", read(first), go(then)))
+    until(lambda: "A new site" in why(), 30)
+    press(process, "Always on this site")
+    check(until(lambda: seen(then), 20), "Always on this site: it goes")
+    idle(process)
+    first, then = who(SITE, "h1"), who(OTHER, "h2")
+    ask(process, plan("h", read(first), go(then)))
+    check(until(lambda: seen(then), 30) and not cards(process), "and the next chat doesn't ask about that site")
+    idle(process)
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+
+    url = who(OTHER, "i")
+    ask(process, "[localhost](http://x.test/a) " + plan("i", read(url)))
+    check(until(lambda: seen(url), 30) and COOKIES.get(path(url)) is None, "A tab's title in a message isn't the user naming the site")
+    idle(process)
+
+    url = who(OTHER, "j")
+    ask(process, (tag := plan("j", read(jump(url))) + " on 127.0.0.1"))
+    check(until(lambda: calls(tag), 30) and not seen(url) and "sent Still to" in calls(tag)[0]["text"], f"A signed-in read sent to another site stops there ({calls(tag)})")
+    idle(process)
+
+    url = who(OTHER, "k")
+    ask(process, plan("k", read(jump(url))))
+    check(until(lambda: seen(url), 30) and COOKIES.get(path(url)) is None, "A signed-out read can follow a redirect, and stays signed out")
+    idle(process)
+
+
+def private_hosts(process):
+    """A site on the user's own computer or network asks first, unless they named it. Starts over with localhost counted as private."""
+    rpc(process, "quit")
+    process.wait(timeout=20)
+    process = launch(EXE, PROFILE, {**os.environ, "STILL_QA_PRIVATE": "localhost"})
+    for host, private in {"127.0.0.1": True, "10.1.2.3": True, "192.168.1.1": True, "172.16.0.1": True, "169.254.169.254": True, "100.64.0.1": True, "[::1]": True, "::1": True, "[fe80::1]": True, "[fc00::1]": True,
+                          "[::ffff:192.168.1.1]": True, "2130706433": True, "localhost": True, "app.localhost": True, "printer.local": True, "nas.lan": True, "wiki.internal": True, "router": True, "router.": True,
+                          "example.com": False, "8.8.8.8": False, "172.32.0.1": False, "100.63.0.1": False, "[2606:4700::1111]": False, "local.example.com": False}.items():
+        check(rpc(process, "privateName", host=host).get("isPrivate") is private, f"{host} is {'' if private else 'not '}private")
+    run = uuid.uuid4().hex[:6]
+    who = lambda name: f"{OTHER}/who?{run}-{name}"
+    path = lambda url: url[url.index("/who"):]
+    seen = lambda url: path(url) in COOKIES
+    why = lambda: js(process, "document.querySelector('.approve-card')?.innerText ?? ''") or ""
+
+    url = who("l")
+    ask(process, plan("l", ["read_url", {"url": url}]))
+    check(until(lambda: "your own computer or network" in why(), 30), f"Reading a private site asks first, with nothing read yet ({why()!r})")
+    press(process, "Deny")
+    idle(process)
+    check(not seen(url), "Deny: it's never reached")
+
+    url = who("m")
+    ask(process, plan("m", ["open_tab", {"url": url}]))
+    check(until(lambda: "your own computer or network" in why(), 30), "Opening one asks too")
+    press(process, "Deny")
+    idle(process)
+    check(not seen(url), "Deny: it's never reached")
+
+    url = who("n")
+    ask(process, plan("n", ["read_url", {"url": url}]) + " on localhost")
+    check(until(lambda: seen(url), 30) and not cards(process) and "sid=sam" in (COOKIES.get(path(url)) or ""), "Named by the user: no card, and signed in")
+    idle(process)
+
+    url = who("o")
+    ask(process, (tag := plan("o", ["read_url", {"url": f"{SITE}/jump?to=" + urllib.parse.quote(url, safe="")}])))
+    check(until(lambda: calls(tag), 30) and not seen(url) and "sent Still to" in calls(tag)[0]["text"], f"A redirect to a private site stops there ({calls(tag)})")
+    idle(process)
+    rpc(process, "quit")
+    process.wait(timeout=20)
+    return launch(EXE, PROFILE)
+
+
 def only_once(process):
     """An action can't be approved twice, and approved once it happens once."""
     send(process, "permReset")
@@ -994,8 +1156,8 @@ def settings(process):
     until(lambda: js(process, "!!document.querySelector('[aria-label=\"Chat details\"]')"), 10)
     if not js(process, "!!document.querySelector('.chat-info')"):
         js(process, "document.querySelector('[aria-label=\"Chat details\"]').click()")
-    log = until(lambda: js(process, "document.querySelector('.audit-list')?.innerText ?? ''"), 10) or ""
-    check("You allowed it in this chat" in log and "Add to cart" in log, "The chat's details show its permission log")
+    log = lambda: js(process, "document.querySelector('.audit-list')?.innerText ?? ''") or ""  # the last chat's log can still be up for a moment
+    check(until(lambda: "You allowed it in this chat" in log() and "Add to cart" in log(), 10), "The chat's details show its permission log")
     capture(process, "audit-v01")
 
 

@@ -59,8 +59,10 @@ final class AiChat: Codable {
  var updated = Date()
  var messages: [AiMessage] = []
  var allowed: [String] = [] // "action site" the user allowed for the rest of this chat
+ var known: [String] = [] // the sites this chat has been to
+ var read = 0 // what it has read: 0 nothing, 1 the public web, 2 pages or apps the user is signed in to
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, audit }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, known, read, audit }
  init() {}
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -68,7 +70,7 @@ final class AiChat: Codable {
   title = c.value(.title, title); harness = c.value(.harness, harness); session = c.value(.session, session); started = c.value(.started, started)
   companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory); routine = c.value(.routine, routine)
   worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)
-  messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); audit = c.value(.audit, audit)
+  messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); known = c.value(.known, known); read = c.value(.read, read); audit = c.value(.audit, audit)
  }
 }
 

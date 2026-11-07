@@ -61,6 +61,9 @@ public partial class MainWindow
   public bool Tab; // it's about a page in a tab, not a new one
   public bool Again; // the page changed since the user was asked: the next card says so
   public bool Abandoned; // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
+  public bool Allowed; // the user said yes to this one on a card
+  public bool SignedOut; // read_url read it signed out
+  public string Goes = ""; // the site open_tab, navigate or read_url is going to
   public void Live() { if (Abandoned) throw new InvalidOperationException("Stopped."); }
  }
  // These act on a page, so they take its turn: one at a time, whoever is asking. Reads run alongside, and handle_dialog
@@ -183,6 +186,7 @@ public partial class MainWindow
        }
        if (going != null) {
         if (step.Intent is { } ran && first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; // cut off, or no sign it worked: uncertain
+        Exposed(going, tool, step);
         Checkpoint(going, tool, result);
        }
        if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
@@ -781,6 +785,60 @@ public partial class MainWindow
  static readonly string[] PermissionActions = ["read", "navigate", "interact", "sensitive"];
  static string DefaultPermission(string action) => action switch { "interact" => "chat", "sensitive" => "ask", _ => "always" };
  static bool OnSite(string rule, string site) => rule.Length > 0 && (site == rule || site.EndsWith("." + rule, StringComparison.Ordinal));
+ /// On this computer or its network, going by the name or address alone.
+ internal static bool IsPrivateName(string host)
+ {
+  host = host.Trim('[', ']').TrimEnd('.').ToLowerInvariant();
+  if (System.Net.IPAddress.TryParse(host, out var ip)) return PrivateIp(ip);
+  return !host.Contains('.') || new[] { ".localhost", ".local", ".internal", ".intranet", ".lan", ".home", ".corp", ".home.arpa" }.Any(end => host.EndsWith(end, StringComparison.Ordinal));
+ }
+ static bool PrivateIp(System.Net.IPAddress ip)
+ {
+  if (ip.IsIPv4MappedToIPv6) ip = ip.MapToIPv4();
+  if (System.Net.IPAddress.IsLoopback(ip) || ip.IsIPv6LinkLocal || ip.IsIPv6SiteLocal || ip.IsIPv6UniqueLocal || ip.Equals(System.Net.IPAddress.IPv6Any)) return true;
+  var b = ip.GetAddressBytes();
+  return b.Length == 4 && (b[0] is 0 or 10 or 127 || b[0] == 169 && b[1] == 254 || b[0] == 172 && b[1] is >= 16 and <= 31 || b[0] == 192 && b[1] == 168 || b[0] == 100 && b[1] is >= 64 and <= 127);
+ }
+ // Tests run on local pages: there, only the names a test lists count as private.
+ static bool PrivateName(string host) => App.IsQa ? (Environment.GetEnvironmentVariable("STILL_QA_PRIVATE") ?? "").Split(',').Contains(host) : IsPrivateName(host);
+ static async Task<bool> PrivateHost(string host)
+ {
+  if (PrivateName(host)) return true;
+  if (App.IsQa) return false;
+  try { return (await System.Net.Dns.GetHostAddressesAsync(host).WaitAsync(TimeSpan.FromSeconds(1))).Any(PrivateIp); }
+  catch (Exception ex) when (ex is System.Net.Sockets.SocketException or TimeoutException or ArgumentException) { return false; }
+ }
+ static readonly System.Text.RegularExpressions.Regex HostWords = new(@"[a-z0-9-]+(?:\.[a-z0-9-]+)+|localhost"), LinkTitles = new(@"\[[^\]]*\]\(");
+ /// Has this chat been there, or did the user name it? A tab's title in a message is the page's words, not the user's.
+ bool BeenTo(AiChat root, string host) => host == Host(SearchUrl("x")) || root.Known.Any(k => OnSite(k, host))
+  || root.Messages.Any(m => m.Role == "user" && m.Who == null && HostWords.Matches(LinkTitles.Replace(m.Text.ToLowerInvariant(), "(")).Any(t => OnSite(t.Value.StartsWith("www.", StringComparison.Ordinal) ? t.Value[4..] : t.Value, host)));
+ bool SiteAllows(string who, string site, string action) => Prefs.Permissions.Any(p => p.Action == action && p.Mode == "always" && OnSite(p.Site, site) && (p.Companion.Length == 0 || p.Companion == who));
+ /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
+ /// whether going somewhere takes a yes. Null: it doesn't.
+ async Task<(string Why, bool Data)?> Reach(AiChat root, string tool, string url, string host)
+ {
+  if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) return null;
+  int extra = u.Query.Length + u.Fragment.Length;
+  if (root.Read > 0 && (extra > 200 || u.AbsolutePath.Length > 300)) return ("This address carries a lot of data: " + Clip(u.PathAndQuery + u.Fragment, 120), true);
+  if (BeenTo(root, host)) return null;
+  if (await PrivateHost(host)) return ("This is on your own computer or network.", false);
+  // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
+  if (root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
+  return null;
+ }
+ /// What this step adds to what the chat has read, and where it has been.
+ static void Exposed(ChatRun run, string tool, AgentStep step)
+ {
+  var root = ExchangeOf(run.Chat).Root;
+  string been = step.Tab ? step.Site : step.SignedOut ? "" : step.Goes;
+  if (been.Length > 0 && !root.Known.Contains(been)) root.Known.Add(been);
+  int signedIn = run.Chat.Ephemeral ? 1 : 2; // an incognito window holds nothing else
+  root.Read = Math.Max(root.Read, tool switch {
+   "read_page" or "find" or "screenshot" or "wait_for" or "click" or "type" or "press_key" or "handle_dialog" or "list_tabs" or "run_plugin_action" => signedIn,
+   "read_url" => step.SignedOut ? 1 : signedIn,
+   "web_search" or "read_attachment" => 1,
+   _ => 0 });
+ }
  /// Once it's this call's turn, right before it runs: is this still what the gate saw? The same tab on the same site, and for
  /// a click or a key the same control, doing the same thing?
  async Task<bool> StillTheSame(string who, string tool, JsonElement args, AgentStep step)
@@ -819,12 +877,12 @@ public partial class MainWindow
    "click" or "type" or "press_key" or "scroll" or "handle_dialog" => "interact",
    _ => "" }; // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
   if (action.Length == 0) return null;
-  string site, what, why = "";
+  string site, what, why = "", url = "";
   bool again = step.Again;
-  step.Intent = null; step.Again = false; step.Tab = false; step.Print = step.Why = "";
+  step.Intent = null; step.Again = false; step.Tab = step.Allowed = step.SignedOut = false; step.Print = step.Why = step.Goes = "";
   try {
-   if (tool is "open_tab" or "navigate") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); what = "Open " + site; }
-   else if (tool == "read_url") { site = Host(WebUrl(S(args, "url"), Prefs.SearchEngine)); what = "Read " + site; }
+   if (tool is "open_tab" or "navigate") { url = WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who)); site = Host(url); what = "Open " + site; }
+   else if (tool == "read_url") { url = WebUrl(S(args, "url"), Prefs.SearchEngine); site = Host(url); what = "Read " + site; }
    else if (tool == "web_search") { site = Host(SearchUrl("x")); what = "Search for “" + Clip(S(args, "query"), 60) + "”"; }
    else {
     site = Host(AgentTab(who, args).tab.Url);
@@ -857,7 +915,12 @@ public partial class MainWindow
   // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   var up = run == null ? default : ExchangeOf(run.Chat);
   string mode = run != null ? Delegation.Strictest(up.Chain.Select(c => PermissionMode(c, site, action) ?? DefaultPermission(action))) : PermissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site;
-  bool granted = mode == "always" || mode == "chat" && (run != null ? up.Root.Allowed.Contains(key) : sessionGrants.Contains(who + " " + key));
+  bool data = false;
+  if (run != null && url.Length > 0) {
+   step.Goes = site;
+   if (!up.Chain.All(c => SiteAllows(c, site, action)) && await Reach(up.Root, tool, url, site) is { } reach) { why = why.Length > 0 ? why + " " + reach.Why : reach.Why; data = reach.Data; if (mode == "always") mode = "chat"; }
+  }
+  bool granted = !data && (mode == "always" || mode == "chat" && (run != null ? up.Root.Allowed.Contains(key) : sessionGrants.Contains(who + " " + key)));
   if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again
   if (run == null) {
    if (granted) return null;
@@ -874,6 +937,7 @@ public partial class MainWindow
   if (answer == "always" && run.Chat.Ephemeral) answer = "chat"; // an incognito chat writes no site rules
   if (answer == "always") SetPermission(site, action, "", "always");
   if (answer == "chat" && !up.Root.Allowed.Contains(key)) up.Root.Allowed.Add(key);
+  step.Allowed = answer is "always" or "chat" or "once";
   Audit(run.Chat, what, site, answer switch {
    "always" => "You always allow this on " + site, "chat" => "You allowed it in this chat", "once" => "You allowed it once",
    "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",
@@ -1123,7 +1187,7 @@ public partial class MainWindow
    case "list_tabs":
     return Reply(Windows.Where(w => !w.closing).SelectMany((w, wi) => w.tabs.Where(t => Incognito(who) ? (t.InChat ?? t.RunChat) == who : !t.Private).Select(t => new { tabId = t.Id, title = t.Title, url = t.Url, active = t == w.active ? true : (bool?)null, yours = agentTabs.GetValueOrDefault(who) == t.Id ? true : (bool?)null, window = wi + 1 })));
    case "web_search": return await WebSearch(who, args);
-   case "read_url": return await ReadUrl(who, args);
+   case "read_url": return await ReadUrl(who, args, step);
    case "read_attachment": return ReadAttachment(who, S(args, "id"), (int)Math.Max(0, N(args, "offset", 0)));
    case "open_tab": {
     bool background = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("background", out var bg) && bg.ValueKind is JsonValueKind.True or JsonValueKind.False ? bg.GetBoolean() : runs.ContainsKey(who);

@@ -56,6 +56,7 @@ public partial class MainWindow
         order = tabs.Select(t => t.Id) });
        if (op == "eval" && (doc.RootElement.TryGetProperty("tab", out var evalTab) ? tabs.FirstOrDefault(t => t.Id == evalTab.GetString()) : Shown ?? active)?.View?.CoreWebView2 is { } core) return await (doc.RootElement.TryGetProperty("world", out _) ? core.RunInOwnWorld(doc.RootElement.GetProperty("script").GetString() ?? "") : core.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? "")); // the page in view, or a given tab
        if (op == "linkArgs") return JsonSerializer.Serialize(App.LinkArgs(doc.RootElement.GetProperty("args").EnumerateArray().Select(a => a.GetString()!).ToArray()));
+       if (op == "privateName") return JsonSerializer.Serialize(new { isPrivate = IsPrivateName(doc.RootElement.GetProperty("host").GetString()!) });
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }

@@ -106,6 +106,9 @@ final class AgentStep {
  var again = false // the page changed since the user was asked: the next card says so
  var changed = false // ... and the tool found that out with nothing sent
  var abandoned = false // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
+ var allowed = false // the user said yes to this one on a card
+ var signedOut = false // read_url read it signed out
+ var goes = "" // the site open_tab, navigate or read_url is going to
  func live() throws { if abandoned { throw AgentError("Stopped.") } }
 }
 // These act on a page, so they take its turn: one at a time, whoever is asking. Reads run alongside, and handle_dialog
@@ -169,6 +172,50 @@ func userAway() -> Bool {
 let permissionActions = ["read", "navigate", "interact", "sensitive"]
 func defaultPermission(_ action: String) -> String { action == "interact" ? "chat" : action == "sensitive" ? "ask" : "always" }
 func onSite(_ rule: String, _ site: String) -> Bool { !rule.isEmpty && (site == rule || site.hasSuffix("." + rule)) }
+/// An address on this computer or its network, or nil if it's not an address at all.
+func privateAddress(_ host: String) -> Bool? {
+ var v4 = in_addr(), v6 = in6_addr()
+ func ipv4(_ b: [UInt8]) -> Bool { [0, 10, 127].contains(b[0]) || b[0] == 169 && b[1] == 254 || b[0] == 172 && (16...31).contains(b[1]) || b[0] == 192 && b[1] == 168 || b[0] == 100 && (64...127).contains(b[1]) }
+ if inet_pton(AF_INET6, host, &v6) == 1 {
+  let b = withUnsafeBytes(of: &v6) { Array($0) }
+  if b[..<10].allSatisfy({ $0 == 0 }) && b[10] == 0xff && b[11] == 0xff { return ipv4(Array(b[12...])) }
+  return b[..<15].allSatisfy { $0 == 0 } && b[15] <= 1 || b[0] & 0xfe == 0xfc || b[0] == 0xfe && b[1] & 0x80 == 0x80
+ }
+ if inet_aton(host, &v4) != 0 { return ipv4(withUnsafeBytes(of: &v4) { Array($0) }) }
+ return nil
+}
+/// On this computer or its network, going by the name or address alone.
+func isPrivateName(_ host: String) -> Bool {
+ var host = host.trimmingCharacters(in: CharacterSet(charactersIn: "[]")).lowercased()
+ while host.hasSuffix(".") { host.removeLast() }
+ if let address = privateAddress(host) { return address }
+ return !host.contains(".") || [".localhost", ".local", ".internal", ".intranet", ".lan", ".home", ".corp", ".home.arpa"].contains { host.hasSuffix($0) }
+}
+// Tests run on local pages: there, only the names a test lists count as private.
+func privateName(_ host: String) -> Bool { isQa ? (ProcessInfo.processInfo.environment["STILL_QA_PRIVATE"] ?? "").split(separator: ",").contains(Substring(host)) : isPrivateName(host) }
+func privateHost(_ host: String) async -> Bool {
+ if privateName(host) { return true }
+ if isQa { return false }
+ return await withCheckedContinuation { done in
+  let once = Once<Bool>()
+  once.action = { done.resume(returning: $0) }
+  DispatchQueue.global().async {
+   var found = false, list: UnsafeMutablePointer<addrinfo>?
+   if getaddrinfo(host, nil, nil, &list) == 0 {
+    var at = list
+    while let info = at {
+     var name = [CChar](repeating: 0, count: Int(NI_MAXHOST))
+     if getnameinfo(info.pointee.ai_addr, info.pointee.ai_addrlen, &name, socklen_t(name.count), nil, 0, NI_NUMERICHOST) == 0, privateAddress(String(cString: name).components(separatedBy: "%")[0]) == true { found = true }
+     at = info.pointee.ai_next
+    }
+    freeaddrinfo(list)
+   }
+   let result = found
+   DispatchQueue.main.async { once.fire(result) }
+  }
+  DispatchQueue.main.asyncAfter(deadline: .now() + 1) { once.fire(false) }
+ }
+}
 func siteOf(_ input: String) -> String {
  let text = input.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
  return text.isEmpty ? "" : hostName(text.contains("://") ? text : "https://" + text)
@@ -675,6 +722,7 @@ extension Browser {
     if !(step.changed && tries < 2) {
      if let going {
       if let ran = step.intent, case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" } // cut off, or no sign it worked: uncertain
+      exposed(going, tool, step)
       checkpoint(going, tool, result)
      }
      if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
@@ -911,6 +959,51 @@ extension Browser {
   return url
  }
 
+ /// Has this chat been there, or did the user name it? A tab's title in a message is the page's words, not the user's.
+ func beenTo(_ root: AiChat, _ host: String) -> Bool {
+  let host = host.lowercased()
+  if host == hostName(searchUrl("x")) || root.known.contains(where: { onSite($0, host) }) { return true }
+  return root.messages.contains { m in
+   guard m.role == "user", m.who == nil else { return false }
+   let text = m.text.lowercased().replacingOccurrences(of: #"\[[^\]]*\]\("#, with: "(", options: .regularExpression)
+   var from = text.startIndex
+   while let hit = text.range(of: #"[a-z0-9-]+(\.[a-z0-9-]+)+|localhost"#, options: .regularExpression, range: from..<text.endIndex) {
+    let word = String(text[hit])
+    if onSite(word.hasPrefix("www.") ? String(word.dropFirst(4)) : word, host) { return true }
+    from = hit.upperBound
+   }
+   return false
+  }
+ }
+ func siteAllows(_ who: String, _ site: String, _ action: String) -> Bool {
+  pref("Permissions", [[String: Any]]()).contains { ruleText($0, "Action") == action && ruleText($0, "Mode") == "always" && onSite(ruleText($0, "Site"), site) && (ruleText($0, "Companion").isEmpty || ruleText($0, "Companion") == who) }
+ }
+ /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
+ /// whether going somewhere takes a yes. Nil: it doesn't.
+ @MainActor func reach(_ root: AiChat, _ tool: String, _ url: String, _ host: String) async -> (why: String, data: Bool)? {
+  guard let u = URLComponents(string: url), ["http", "https"].contains(u.scheme?.lowercased() ?? "") else { return nil }
+  let extra = (u.percentEncodedQuery?.count ?? 0) + (u.percentEncodedFragment?.count ?? 0)
+  if root.read > 0 && (extra > 200 || u.percentEncodedPath.count > 300) { return ("This address carries a lot of data: " + clipped(u.percentEncodedPath + (u.percentEncodedQuery.map { "?" + $0 } ?? "") + (u.percentEncodedFragment.map { "#" + $0 } ?? ""), 120), true) }
+  if beenTo(root, host) { return nil }
+  if await privateHost(host) { return ("This is on your own computer or network.", false) }
+  // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
+  if root.read > 0 && (tool != "read_url" || root.read > 1 || extra > 60) { return ("A new site for this chat, after it read from the web.", false) }
+  return nil
+ }
+ /// What this step adds to what the chat has read, and where it has been.
+ func exposed(_ run: ChatRun, _ tool: String, _ step: AgentStep) {
+  let root = exchangeOf(run.chat).root
+  let been = step.onTab ? step.site : step.signedOut ? "" : step.goes
+  if !been.isEmpty && !root.known.contains(been) { root.known.append(been) }
+  let signedIn = run.chat.ephemeral ? 1 : 2 // an incognito window holds nothing else
+  switch tool {
+  case "read_page", "find", "screenshot", "wait_for", "click", "type", "press_key", "handle_dialog", "list_tabs", "run_plugin_action": root.read = max(root.read, signedIn)
+  case "read_url": root.read = max(root.read, step.signedOut ? 1 : signedIn)
+  case "web_search", "read_attachment": root.read = max(root.read, 1)
+  default: break
+  }
+ }
+
  /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
  func permissionMode(_ companion: String, _ site: String, _ action: String) -> String? {
   let rules = pref("Permissions", [[String: Any]]()).filter { ruleText($0, "Action") == action }
@@ -933,12 +1026,12 @@ extension Browser {
   case "click", "type", "press_key", "scroll", "handle_dialog": action = "interact"
   default: return nil // list_tabs shows no page; ask_user and save_file stay in Still; upload_file asks every time on its own
   }
-  var site = "", what = "", why = ""
+  var site = "", what = "", why = "", url = ""
   let again = step.again
-  step.intent = nil; step.again = false; step.onTab = false; step.print = ""; step.why = ""
+  step.intent = nil; step.again = false; step.onTab = false; step.allowed = false; step.signedOut = false; step.print = ""; step.why = ""; step.goes = ""
   do {
-   if tool == "open_tab" || tool == "navigate" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Open " + site }
-   else if tool == "read_url" { site = hostName(try agentWebUrl(argText(args, "url"))); what = "Read " + site }
+   if tool == "open_tab" || tool == "navigate" { url = try agentWebUrl(argText(args, "url")); site = hostName(url); what = "Open " + site }
+   else if tool == "read_url" { url = try agentWebUrl(argText(args, "url")); site = hostName(url); what = "Read " + site }
    else if tool == "web_search" { site = hostName(searchUrl("x")); what = "Search for “" + clipped(argText(args, "query"), 60) + "”" }
    else {
     site = hostName(try agentTab(who, args).tab.url)
@@ -974,8 +1067,14 @@ extension Browser {
   // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
   // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
   let up = run.map { exchangeOf($0.chat) }
-  let mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site
-  var granted = mode == "always" || mode == "chat" && (up.map { $0.root.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key))
+  var mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked ? "ask" : "always")
+  let key = action + " " + site
+  var data = false
+  if let up, !url.isEmpty {
+   step.goes = site
+   if !up.chain.allSatisfy({ siteAllows($0, site, action) }), let asked = await reach(up.root, tool, url, site) { why = why.isEmpty ? asked.why : why + " " + asked.why; data = asked.data; if mode == "always" { mode = "chat" } }
+  }
+  var granted = !data && (mode == "always" || mode == "chat" && (up.map { $0.root.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key)))
   if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
   guard let run else {
    if granted { return nil }
@@ -993,6 +1092,7 @@ extension Browser {
   if answer == "always" && run.chat.ephemeral { answer = "chat" } // an incognito chat writes no site rules
   if answer == "always" { setPermission(site, action, "", "always") }
   if let root = up?.root, answer == "chat" && !root.allowed.contains(key) { root.allowed.append(key) }
+  step.allowed = ["always", "chat", "once"].contains(answer)
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
                  "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
   audit(run.chat, what, site, results[answer] ?? "You said no")
@@ -1045,7 +1145,7 @@ extension Browser {
     }
     return agentOk(list)
    case "web_search": return try await webSearch(who, args)
-   case "read_url": return try await readUrl(who, args)
+   case "read_url": return try await readUrl(who, args, step)
    case "read_attachment": return readAttachment(who, argText(args, "id"), max(0, (args["offset"] as? NSNumber)?.intValue ?? 0))
    case "open_tab":
     let background = args["background"] as? Bool ?? (runs[who] != nil)
@@ -1477,7 +1577,7 @@ enum Mcp {
   tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.",
        [str("query", "What to search for"), num("count", "How many results, up to 10 (default 8)")], ["query"]),
   tool("read_attachment", "Read a file the user attached to their message, by the id Still gave you: text and code come back as text (20000 characters at a time), PDFs as their text, images as the image itself.", [str("id", "The attachment's id"), num("offset", "Text position to continue from, for long files")], ["id"]),
-  tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.",
+  tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there. It reads signed out (the reply says signedOut) unless the user named the site or you've used it in this chat; open_tab it to see it signed in.",
        [str("url", "The page's URL"), num("offset", "Text position to continue from, for long pages")], ["url"]),
   tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.",
        [str("url", "URL or search terms"), bool("background", "true (the default in Still's chat): your own tab, kept out of the user's tab strip. false: open it among the user's tabs, only when they asked for it there")], ["url"]),

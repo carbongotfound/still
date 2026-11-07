@@ -27,6 +27,8 @@ public sealed class AiFile { public string Id { get; set; } = ""; public string 
 public sealed class AiChat
 {
  public string Id { get; set; } = Guid.NewGuid().ToString("N");
+ public List<string> Known { get; set; } = []; // the sites this chat has been to
+ public int Read { get; set; } // what it has read: 0 nothing, 1 the public web, 2 pages or apps the user is signed in to
  public string Title { get; set; } = "";
  public string Harness { get; set; } = "";
  public string? Session { get; set; } // the CLI's conversation, resumed by the next message

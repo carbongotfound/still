@@ -151,6 +151,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
+ case "privateName": done(["isPrivate": isPrivateName(text("host"))])
  case "shellEval": qaWhenReady(b) { qaEval(b.shell, text("script"), done) }
  case "eval":
   let tab = request["tab"] != nil ? b.tabs.first { $0.id == text("tab") } : b.shown ?? b.active // the page in view, or a given tab
