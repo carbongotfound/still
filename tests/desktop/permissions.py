@@ -322,11 +322,15 @@ def capture(process, name):
     (OUT / f"{name}.png").write_bytes((PROFILE / f"{name}.png").read_bytes())
 
 
-def marked_sites():
+def saved_list(name):
     try:
-        return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get("SensitiveSites", [])
+        return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get(name, [])
     except (OSError, ValueError, KeyError):  # being replaced right now
         return []
+
+
+def marked_sites():
+    return saved_list("SensitiveSites")
 
 
 def rules():
@@ -367,6 +371,7 @@ def main():
         keys_and_help(process)
         outside(process)
         outside_once(process)
+        asked_in_app(process)
         settings(process)
         process = crash_resume(process)
         errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
@@ -1132,6 +1137,30 @@ def outside_once(process):
     finally:
         agent.close()
         send(process, "permSensitive", site="127.0.0.1", on=False)
+
+
+def asked_in_app(process):
+    """Only the user can say yes for the user. An AI app that can ask them itself does, and the AI sees neither the question nor a
+    code. Anything else waits for Still's own bar."""
+    plain, yes, no = Mcp(EXE, "Plain App", PROFILE), Mcp(EXE, "Yes App", PROFILE, answer="accept"), Mcp(EXE, "No App", PROFILE, answer="decline")
+    try:
+        names = [t["name"] for t in plain.request("tools/list", {})["result"]["tools"]]
+        check("user_confirmed" not in names and "click" in names, "No tool lets an AI say the user agreed")
+        ok, said = plain.call("user_confirmed", code="abc123", allow=True)
+        check(not ok and "Unknown tool" in said, f"...and calling it anyway does nothing ({said[:60]})")
+        ok, said = plain.call("list_tabs", seconds=70)  # right away if the user counts as away, or once the bar's wait ends
+        check(not ok and "Allow and Block" in said, f"An app that can't ask the user is told to wait for the bar ({said[:70]})")
+        check("user_confirmed" not in said and "code" not in said and "your chat" not in said, f"...and gets no code to answer with ({said!r})")
+        send(process, "agentAnswer", allow=False)
+        ok, said = yes.call("list_tabs", seconds=30)
+        check(ok and len(yes.asked) == 1 and "Yes App" in yes.asked[0], f"An app that can ask does, and Yes lets it in ({yes.asked}, {said[:50]})")
+        time.sleep(1.5)
+        check("Yes App" not in saved_list("ApprovedAgents"), "...until Still closes: it isn't remembered")
+        ok, said = no.call("list_tabs", seconds=30)
+        check(not ok and "said no" in said and len(no.asked) == 1, f"No keeps it out ({said[:60]})")
+    finally:
+        for app in (plain, yes, no):
+            app.close()
 
 
 def settings(process):

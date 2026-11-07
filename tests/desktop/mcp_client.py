@@ -7,19 +7,24 @@ import threading
 
 class Mcp:
     """A minimal MCP client over stdio, like an AI app would run it."""
-    def __init__(self, exe, name, profile):
+    def __init__(self, exe, name, profile, answer=None):
+        self.answer, self.asked = answer, []  # answer: this app can ask the user (MCP elicitation), and they say this
         self.proc = subprocess.Popen([str(exe), "--qa", "--mcp", "--as", name, "--profile", str(profile), "--profiles-root", str(profile)],
                                      stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.replies, self.next = {}, 1
         self.lock = threading.Condition()
         threading.Thread(target=self._read, daemon=True).start()
-        self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": name, "version": "1"}})
+        self.request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {"elicitation": {}} if answer else {}, "clientInfo": {"name": name, "version": "1"}})
         self._write({"jsonrpc": "2.0", "method": "notifications/initialized"})
     def _read(self):
         for line in self.proc.stdout:
             try:
                 message = json.loads(line)
             except json.JSONDecodeError:
+                continue
+            if message.get("method") == "elicitation/create":
+                self.asked.append(message["params"]["message"])
+                self._write({"jsonrpc": "2.0", "id": message["id"], "result": {"action": self.answer}})
                 continue
             with self.lock:
                 self.replies[message.get("id")] = message

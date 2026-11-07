@@ -638,14 +638,14 @@ extension Browser {
   guard pref("AgentsEnabled", false) else { return agentFail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.") }
   if tool == "user_confirmed" { return confirmed(client, args) }
   // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
-  let quick = root["elicit"] as? Bool == true || userAway()
+  let elicit = root["elicit"] as? Bool == true, quick = elicit || userAway()
   if blockedAgents.contains(key) { return agentFail("The user blocked this agent in Still for this session.") }
   if let until = stoppedAgents[who], Date() < until { return agentFail(stopText) }
   if pref("ApprovedAgents", [String]()).contains(where: { Mcp.agentName($0).lowercased() == key }) { approvedAgents.insert(key) } // approved once = remembered across restarts
   if !approvedAgents.contains(key) {
    switch await askUser(client, "", now: quick) {
    case .some(false): return agentFail("The user blocked this agent in Still for this session.")
-   case nil: return needsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.")
+   case nil: return needsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.", elicit)
    default: break
    }
   }
@@ -678,7 +678,7 @@ extension Browser {
   // again, and if it's not the same any more it goes back to asking. The same goes for what happens during the step itself.
   for tries in 0... {
    // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-   let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick, step) }
+   let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick, step, elicit) }
    var refused: String?
    switch gate {
    case .done(let reply): refused = reply
@@ -778,21 +778,21 @@ extension Browser {
   await withCheckedContinuation { done in askUser(client, ask, now: now) { done.resume(returning: $0) } }
  }
 
- func answerAgent(_ allow: Bool) {
+ func answerAgent(_ allow: Bool, remember: Bool = true) {
   guard let waiters = approvalWaiters else { return }
-  settle(askClient, askText, allow)
+  settle(askClient, askText, allow, remember: remember)
   approvalWaiters = nil; askClient = ""; askText = ""
   for wait in waiters { wait.fire(allow) }
   publishEverywhere()
  }
 
- func settle(_ client: String, _ ask: String, _ allow: Bool) {
+ func settle(_ client: String, _ ask: String, _ allow: Bool, remember: Bool = true) {
   if ask.isEmpty {
    if !allow { blockedAgents.insert(client.lowercased()) }
    else {
     approvedAgents.insert(client.lowercased())
     var list = pref("ApprovedAgents", [String]())
-    if !list.contains(where: { $0.lowercased() == client.lowercased() }) { list.append(client); prefs["ApprovedAgents"] = list; saveLater() }
+    if remember && !list.contains(where: { $0.lowercased() == client.lowercased() }) { list.append(client); prefs["ApprovedAgents"] = list; saveLater() }
    }
   }
   lastAnswer = (client: client, ask: ask, allow: allow, at: Date())
@@ -801,14 +801,13 @@ extension Browser {
 
  // The user is away from Still: the agent asks them in its own chat instead. MCP apps that support elicitation
  // ask the user themselves (the AI never sees the question); otherwise the AI passes the user's answer on.
- func needsConfirm(_ client: String, _ ask: String, _ waiting: String) -> String {
-  guard pref("AgentsAskInChat", true) else { return agentFail(waiting) }
+ func needsConfirm(_ client: String, _ ask: String, _ waiting: String, _ elicit: Bool) -> String {
+  guard elicit, pref("AgentsAskInChat", true) else { return agentFail(waiting) }
   confirmCodes = confirmCodes.filter { $0.value.until > Date() }
   let code = String((0..<6).map { _ in "0123456789abcdef".randomElement()! })
   confirmCodes[code] = (client: client, ask: ask, until: Date().addingTimeInterval(600))
   let question = ask.isEmpty ? "Allow \(client) to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : "Allow \(client) to \(shown(ask))?"
-  return jsonText(["ok": false, "confirm": ["code": code, "question": question],
-                   "error": waiting + " If the user isn't at Still, ask them in your chat instead: \"\(question)\" Then call user_confirmed with code \"\(code)\" and allow true or false, as they answer. Never answer for the user."])
+  return jsonText(["ok": false, "confirm": ["code": code, "question": question], "error": waiting])
  }
 
  func confirmed(_ client: String, _ args: [String: Any]) -> String {
@@ -817,8 +816,8 @@ extension Browser {
    return agentFail("That code isn't valid anymore (the user may have answered in Still). Call the tool again.")
   }
   let allow = argFlag(args, "allow")
-  if approvalWaiters != nil && askClient == ask.client && askText == ask.ask { answerAgent(allow) } else { settle(ask.client, ask.ask, allow) }
-  toast("\(ask.client) was \(allow ? "allowed" : "turned down") \(ask.ask.isEmpty ? "to use Still" : "to " + shown(ask.ask)), answered through its chat.")
+  if approvalWaiters != nil && askClient == ask.client && askText == ask.ask { answerAgent(allow, remember: false) } else { settle(ask.client, ask.ask, allow, remember: false) }
+  toast("\(ask.client) was \(allow ? "allowed" : "turned down") \(ask.ask.isEmpty ? "to use Still" : "to " + shown(ask.ask)), answered in that app.")
   return agentOk(["done": allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask."])
  }
 
@@ -1018,7 +1017,7 @@ extension Browser {
  }
 
  /// Whether this call may go ahead: nil, or the refusal for the AI.
- @MainActor func gate(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ step: AgentStep) async -> String? {
+ @MainActor func gate(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ step: AgentStep, _ elicit: Bool) async -> String? {
   var action: String
   switch tool {
   case "read_page", "find", "screenshot", "wait_for", "web_search", "read_url": action = "read"
@@ -1081,7 +1080,7 @@ extension Browser {
    let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site + (step.print.isEmpty ? "" : "\0" + step.print)
    switch await askUser(who, ask, now: quick) {
    case .some(false): return agentFail("The user said no to this. Don't try it again unless they ask.")
-   case nil: return needsConfirm(who, ask, "Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call \(tool) again.")
+   case nil: return needsConfirm(who, ask, "Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call \(tool) again.", elicit)
    default: break
    }
    if mode == "chat" { sessionGrants.insert(who + " " + key) }
@@ -1331,7 +1330,7 @@ extension Browser {
   let names = files.map { $0.lastPathComponent }.joined(separator: ", "), ask = "upload " + clipped(names, 120) + " to " + hostName(tab.url)
   switch await askUser(who, ask, now: quick) {
   case .some(false): return agentFail("The user didn't allow this upload. Don't try again unless they ask.")
-  case nil: return needsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.")
+  case nil: return agentFail("Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.")
   default: break
   }
   if !byId {
@@ -1605,7 +1604,6 @@ enum Mcp {
        [bool("accept", "true = OK / Leave, false = Cancel / Stay (default true)"), str("text", "For a prompt: the text to answer with"), tabId], []),
   tool("upload_file", "Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.",
        [("paths", ["type": "array", "items": ["type": "string"], "description": "Full paths of the files on this computer"] as [String: Any]), str("id", "Element id of a file input (optional)"), tabId], ["paths"]),
-  tool("user_confirmed", "Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.", [str("code", "The code Still gave you"), bool("allow", "true if the user said yes")], ["code"]),
   tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", [tabId], [])
  ]
  // Still's own companions keep a memory of the user, on this computer, one per companion; and Still's own chat can show
@@ -1735,7 +1733,7 @@ enum Mcp {
 
  static func callTool(_ id: Any, _ key: String, _ who: String, _ name: String, _ args: [String: Any], _ canElicit: Bool, _ lockProfile: Bool) {
   let cancelled: () -> Bool = { Mcp.locked { Mcp.cancelledIds.contains(key) } }
-  var reply = lockProfile && name == "list_profiles" ? agentFail("Unknown tool: list_profiles") : call(who, name, args, elicit: canElicit, cancelled: cancelled)
+  var reply = lockProfile && name == "list_profiles" || name == "user_confirmed" ? agentFail("Unknown tool: " + name) : call(who, name, args, elicit: canElicit, cancelled: cancelled)
   // The user isn't at Still: their AI app asks them (the AI never sees the question), then the call carries on.
   var tries = 0
   while tries < 2, canElicit, let confirm = jsonObject(reply)?["confirm"] as? [String: Any], let question = confirm["question"] as? String,

@@ -32,7 +32,6 @@ internal static class McpServer
   Tool("wait_for", "Wait until an element or some text appears (or, with gone=true, disappears), for up to timeoutMs.", new { text = Str("Text to wait for"), id = Str("Or: element id"), selector = Str("Or: CSS selector"), gone = Bool("Wait for it to disappear instead"), timeoutMs = Num("Up to 30000 (default 10000)"), tabId = Str("Tab id (optional)") }),
   Tool("handle_dialog", "Answer the alert, confirm, prompt or \"leave page?\" dialog the page is paused on (other tools tell you when one opens).", new { accept = Bool("true = OK / Leave, false = Cancel / Stay (default true)"), text = Str("For a prompt: the text to answer with"), tabId = Str("Tab id (optional)") }),
   Tool("upload_file", "Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.", new { paths = new { type = "array", items = new { type = "string" }, description = "Full paths of the files on this computer" }, id = Str("Element id of a file input (optional)"), tabId = Str("Tab id (optional)") }, "paths"),
-  Tool("user_confirmed", "Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.", new { code = Str("The code Still gave you"), allow = Bool("true if the user said yes") }, "code"),
   Tool("screenshot", "PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.", new { tabId = Str("Tab id (optional)") }),
  ];
  internal const string Instructions = "You're driving the user's own Still browser, signed in as them. "
@@ -140,7 +139,7 @@ internal static class McpServer
       string who = client;
       _ = Task.Run(() => {
        try {
-        string reply = lockProfile && name == "list_profiles" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: list_profiles" }) : Call(instance, who, name, args.DeepClone(), cts.Token, canElicit);
+        string reply = lockProfile && name == "list_profiles" || name == "user_confirmed" ? JsonSerializer.Serialize(new { ok = false, error = "Unknown tool: " + name }) : Call(instance, who, name, args.DeepClone(), cts.Token, canElicit);
         // The user isn't at Still: their AI app asks them (the AI never sees the question), then the call carries on.
         for (int tries = 0; tries < 2 && canElicit && JsonNode.Parse(reply)?["confirm"] is { } ask && Elicit(ask["question"]!.GetValue<string>(), cts.Token) is { } action; tries++) {
          var confirm = (JsonObject)args.DeepClone(); confirm["code"] = ask["code"]!.GetValue<string>(); confirm["allow"] = action == "accept";

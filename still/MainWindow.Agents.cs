@@ -117,13 +117,13 @@ public partial class MainWindow
    if (!Prefs.AgentsEnabled) return Fail("AI control is turned off. The user can turn it on in Still → Settings → Let other AI apps use Still.");
    if (tool == "user_confirmed") return Confirmed(client, args);
    // Don't keep the agent waiting on a bar nobody will see: its app can ask the user (elicitation), or the user is away.
-   bool quick = root.TryGetProperty("elicit", out var el) && el.ValueKind == JsonValueKind.True || UserAway();
+   bool elicit = root.TryGetProperty("elicit", out var el) && el.ValueKind == JsonValueKind.True, quick = elicit || UserAway();
    if (blockedAgents.Contains(client)) return Fail("The user blocked this agent in Still for this session.");
    if (stoppedAgents.TryGetValue(who, out var until) && DateTime.UtcNow < until) return Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message.");
    if (Prefs.ApprovedAgents.Any(a => McpServer.AgentName(a).Equals(client, StringComparison.OrdinalIgnoreCase))) approvedAgents.Add(client); // approved once = remembered across restarts/updates
    if (!approvedAgents.Contains(client)) switch (await AskUser(client, "", quick)) {
     case false: return Fail("The user blocked this agent in Still for this session.");
-    case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.");
+    case null: return NeedsConfirm(client, "", "Waiting for the user to let you in: Still shows a bar with Allow and Block at the top of its window. Tell the user to click Allow, then call the tool again.", elicit);
    }
    var me = Me(who);
    if (DateTime.UtcNow - me.Seen > TimeSpan.FromMinutes(2) && !me.Paused) { me.Since = DateTime.UtcNow; me.Count = 0; me.Recent.Clear(); } // a new stretch of work
@@ -148,7 +148,7 @@ public partial class MainWindow
     // again, and if it's not the same any more it goes back to asking. The same goes for what happens during the step itself.
     for (int tries = 0; ; tries++) {
      // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-     var gate = Gate(who, tool, args, quick, step);
+     var gate = Gate(who, tool, args, quick, step, elicit);
      string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
      if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
      if (refused != null) return refused;
@@ -232,43 +232,42 @@ public partial class MainWindow
  }
  /// A question's words: what follows them in ask ties a yes to the control it was about, and isn't for reading.
  static string AskShown(string ask) => ask.Split('\0')[0];
- void AnswerAgent(bool allow)
+ void AnswerAgent(bool allow, bool remember = true)
  {
   if (agentApproval is not { } pending) return;
-  Settle(askClient, askText, allow);
+  Settle(askClient, askText, allow, remember);
   agentApproval = null; askClient = askText = "";
   pending.TrySetResult(allow); PublishAll();
  }
- void Settle(string client, string ask, bool allow)
+ void Settle(string client, string ask, bool allow, bool remember = true)
  {
   if (ask.Length == 0) {
    if (!allow) blockedAgents.Add(client);
-   else { approvedAgents.Add(client); if (!Prefs.ApprovedAgents.Contains(client, StringComparer.OrdinalIgnoreCase)) Prefs.ApprovedAgents.Add(client); SaveLater(); }
+   else { approvedAgents.Add(client); if (remember && !Prefs.ApprovedAgents.Contains(client, StringComparer.OrdinalIgnoreCase)) { Prefs.ApprovedAgents.Add(client); SaveLater(); } }
   }
   lastAnswer = (client, ask, allow, DateTime.UtcNow);
   foreach (var code in confirmCodes.Where(c => c.Value.Client == client && c.Value.Ask == ask).Select(c => c.Key).ToList()) confirmCodes.Remove(code); // answered here: a code from the chat no longer counts
  }
 
- // The user is away from Still: the agent asks them in its own chat instead. MCP apps that support elicitation
- // ask the user themselves (the AI never sees the question); otherwise the AI passes the user's answer on.
+ // An AI app that can ask the user itself does (MCP elicitation): the app handles the code, and the AI sees neither it nor the
+ // question, so it can't answer for them. Letting an app in this way lasts until Still closes. Anything else waits for Still's bar.
  static readonly Dictionary<string, (string Client, string Ask, DateTime Until)> confirmCodes = [];
- string NeedsConfirm(string client, string ask, string waiting)
+ string NeedsConfirm(string client, string ask, string waiting, bool elicit)
  {
-  if (!Prefs.AgentsAskInChat) return Fail(waiting);
+  if (!elicit || !Prefs.AgentsAskInChat) return Fail(waiting);
   foreach (var old in confirmCodes.Where(c => c.Value.Until < DateTime.UtcNow).Select(c => c.Key).ToList()) confirmCodes.Remove(old);
   string code = Convert.ToHexString(RandomNumberGenerator.GetBytes(3)).ToLowerInvariant();
   confirmCodes[code] = (client, ask, DateTime.UtcNow.AddMinutes(10));
   string question = ask.Length == 0 ? $"Allow {client} to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : $"Allow {client} to {AskShown(ask)}?";
-  return JsonSerializer.Serialize(new { ok = false, confirm = new { code, question },
-   error = waiting + $" If the user isn't at Still, ask them in your chat instead: \"{question}\" Then call user_confirmed with code \"{code}\" and allow true or false, as they answer. Never answer for the user." }, ReplyJson);
+  return JsonSerializer.Serialize(new { ok = false, confirm = new { code, question }, error = waiting }, ReplyJson);
  }
  string Confirmed(string client, JsonElement args)
  {
   if (!confirmCodes.Remove(S(args, "code").Trim().ToLowerInvariant(), out var c) || !c.Client.Equals(client, StringComparison.OrdinalIgnoreCase) || c.Until < DateTime.UtcNow)
    return Fail("That code isn't valid anymore (the user may have answered in Still). Call the tool again.");
   bool allow = B(args, "allow");
-  if (agentApproval != null && askClient == c.Client && askText == c.Ask) AnswerAgent(allow); else Settle(c.Client, c.Ask, allow);
-  Toast($"{c.Client} was {(allow ? "allowed" : "turned down")} {(c.Ask.Length == 0 ? "to use Still" : "to " + AskShown(c.Ask))}, answered through its chat.");
+  if (agentApproval != null && askClient == c.Client && askText == c.Ask) AnswerAgent(allow, false); else Settle(c.Client, c.Ask, allow, false);
+  Toast($"{c.Client} was {(allow ? "allowed" : "turned down")} {(c.Ask.Length == 0 ? "to use Still" : "to " + AskShown(c.Ask))}, answered in that app.");
   return Reply(new { done = allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask." });
  }
  [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint Size, Time; }
@@ -869,7 +868,7 @@ public partial class MainWindow
   if (mode is "always" or "chat" or "ask") Prefs.Permissions.Add(new() { Site = site, Action = action, Companion = companion, Mode = mode });
   SaveLater();
  }
- async Task<string?> Gate(string who, string tool, JsonElement args, bool quick, AgentStep step)
+ async Task<string?> Gate(string who, string tool, JsonElement args, bool quick, AgentStep step, bool elicit)
  {
   string action = tool switch {
    "read_page" or "find" or "screenshot" or "wait_for" or "web_search" or "read_url" => "read",
@@ -927,7 +926,7 @@ public partial class MainWindow
    string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site + (step.Print.Length > 0 ? "\0" + step.Print : "");
    switch (await AskUser(who, ask, quick)) {
     case false: return Fail("The user said no to this. Don't try it again unless they ask.");
-    case null: return NeedsConfirm(who, ask, $"Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call {tool} again.");
+    case null: return NeedsConfirm(who, ask, $"Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call {tool} again.", elicit);
    }
    if (mode == "chat") sessionGrants.Add(who + " " + key);
    return null;
@@ -1345,7 +1344,7 @@ public partial class MainWindow
     string ask = "upload " + Clip(names, 120) + " to " + Host(t.Url);
     switch (await AskUser(who, ask, quick)) {
      case false: return Fail("The user didn't allow this upload. Don't try again unless they ask.");
-     case null: return NeedsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
+     case null: return Fail("Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
     }
     step.Live();
     await core.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", JsonSerializer.Serialize(input));
