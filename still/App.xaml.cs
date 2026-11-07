@@ -58,8 +58,10 @@ public partial class App : Application
   Action<string> open = url => Dispatcher.BeginInvoke(() => {
    if ((Still.MainWindow.Windows.Exists(w => w.IsVisible) ? Still.MainWindow.Home : MainWindow as Still.MainWindow) is { } target) target.OpenFromOutside(url); // a normal window, never a sign-in one
   });
-  linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
-  if (!StartArgs.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
+  try {
+   linkListener = BrowserRegistration.Listen(InstanceName(DataRoot), open);
+   if (!StartArgs.Contains("--profile") && !IsQa) launcherListener = BrowserRegistration.ListenForLauncher(open);
+  } catch (Exception ex) when (ex is UnauthorizedAccessException or IOException) { Log(ex); } // someone else holds the name: Still still opens, links start it instead
   _ = BrowserEnvironment.ContinueWith(t => t.Result.BrowserProcessExited += (_, ev) => {
    if (ev.BrowserProcessExitKind == Microsoft.Web.WebView2.Core.CoreWebView2BrowserProcessExitKind.Failed) Dispatcher.BeginInvoke(RestartAfterEngineCrash);
   }, CancellationToken.None, TaskContinuationOptions.OnlyOnRanToCompletion, TaskScheduler.FromCurrentSynchronizationContext()); // start the engine while the window is still being built

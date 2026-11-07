@@ -7,6 +7,8 @@ Run: python tests/desktop/app_links.py artifacts/Still-QA/Still.exe
 """
 import http.server
 import json
+from multiprocessing.connection import Listener
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -25,6 +27,7 @@ RUN = ROOT / "artifacts" / ("app-links-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 SCHEME = "still-qa-probe"
 KEY = "Software\\Classes\\" + SCHEME
+PIPE = "still-qa-links-" + uuid.uuid4().hex[:8]
 FAILED = []
 STUB = r"""
 #include <windows.h>
@@ -55,10 +58,13 @@ def build_launcher(folder):
         return False
     shutil.copy(ROOT / "launcher" / "StillOpen.c", folder)
     (folder / "Still.c").write_text(STUB, encoding="utf-8")
+    # The same launcher on a pipe of the test's own: the real Still's pipe is never touched.
+    (folder / "HandOver.c").write_text(rf'#define LINK_PIPE L"\\\\.\\pipe\\{PIPE}-%s"' + "\n" + (ROOT / "launcher" / "StillOpen.c").read_text(encoding="utf-8"), encoding="utf-8")
     (folder / "make.bat").write_text(f"""@call "{vcvars}" >nul
 @cd /d "{folder}"
 @cl /nologo /O1 /MT /W3 StillOpen.c /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib shlwapi.lib advapi32.lib
 @cl /nologo /O1 /MT /W3 Still.c /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib
+@cl /nologo /O1 /MT /W3 HandOver.c /link /SUBSYSTEM:WINDOWS user32.lib shell32.lib shlwapi.lib advapi32.lib
 """, encoding="utf-8")
     out = subprocess.run(["cmd", "/c", str(folder / "make.bat")], capture_output=True, text=True, errors="replace")
     built = (folder / "StillOpen.exe").exists() and (folder / "Still.exe").exists()
@@ -76,10 +82,28 @@ def launcher_gives(folder, tail):
     return result.read_bytes().decode("utf-16-le").splitlines()
 
 
+def hands_over(folder):
+    """With a Still of this user listening, a web link goes down its pipe. A holder that's another user can't be run here: no second account."""
+    link = "https://example.invalid/handed"
+    got = []
+    with Listener(rf"\\.\pipe\{PIPE}-{os.environ['USERNAME']}", family="AF_PIPE") as server:
+        def take():
+            with server.accept() as conn:
+                got.append(conn.recv_bytes())
+        reader = threading.Thread(target=take, daemon=True)
+        reader.start()
+        (folder / "Still.exe.args").unlink(missing_ok=True)
+        subprocess.run([str(folder / "HandOver.exe"), link], timeout=20)
+        reader.join(10)
+    check(got == [link.encode()], f"A web link goes to a Still of this user ({got})")
+    check(not (folder / "Still.exe.args").exists(), "...and doesn't start another one")
+
+
 def launcher_checks():
     folder = RUN / "launcher"
     if not build_launcher(folder):
         return
+    hands_over(folder)
     html = r"C:\some folder\page.html"
     for tail, want, name in [
         ('"stillurl:one"', ["--link", "stillurl:one"], "A link is one address"),
