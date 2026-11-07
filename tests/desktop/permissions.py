@@ -834,7 +834,7 @@ def uploads(process):
         send(process, "navigate", url=OTHER + "/upload")
         until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/uploadcomplete", 15)
         _, said = answer(pending, True, [str(report)])
-        check(("another site" in said or "Waiting" in said) and attached() == "", f"A page that moves to another site meanwhile gets nothing ({said[:60]!r})")
+        check(("another site" in said or "Waiting" in said) and not attached(), f"A page that moves to another site meanwhile gets nothing ({said[:60]!r})")
         if "Waiting" in said:
             check(until(lambda: "to localhost" in (js(process, bar) or ""), 5), f"...and asking again names the new site ({(js(process, bar) or '')[-60:]!r})")
             press(process, "Block", within=".permission-wrap.is-open .agent-bar")

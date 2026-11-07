@@ -362,7 +362,7 @@ extension Browser {
   let all = arguments.sorted { $0.key < $1.key }.compactMap { k, v -> String? in
    let shown = v as? String ?? (try? JSONSerialization.data(withJSONObject: v, options: [.fragmentsAllowed, .sortedKeys])).flatMap { String(data: $0, encoding: .utf8) } ?? ""
    return shown.isEmpty ? nil : k + ": " + shown
-  }.joined(separator: " · ")
+  }.sorted { $0.count < $1.count }.joined(separator: " · ") // shortest first: a long body can't push the recipient off the card
   return all.count <= 1200 ? all : String(all.prefix(1200)) + " … and \(all.count - 1200) more characters not shown"
  }
 

@@ -304,7 +304,7 @@ public partial class MainWindow
  /// All an action will carry, for its card. Past what fits, the card says how much it isn't showing.
  static string PluginWhy(JsonObject? arguments)
  {
-  string all = string.Join(" · ", (arguments ?? []).Where(p => p.Value != null && p.Value.ToString().Length > 0).Select(p => p.Key + ": " + (p.Value is JsonValue v && v.TryGetValue<string>(out var s) ? s : p.Value!.ToJsonString())));
+  string all = string.Join(" · ", (arguments ?? []).Where(p => p.Value != null && p.Value.ToString().Length > 0).Select(p => p.Key + ": " + (p.Value is JsonValue v && v.TryGetValue<string>(out var s) ? s : p.Value!.ToJsonString())).OrderBy(line => line.Length)); // shortest first: a long body can't push the recipient off the card
   return all.Length <= 1200 ? all : all[..1200] + " … and " + (all.Length - 1200) + " more characters not shown";
  }
 
