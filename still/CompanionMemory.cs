@@ -178,7 +178,8 @@ static partial class CompanionMemory
   if (replaces.Length > 0 && (old = Active(id).FirstOrDefault(f => f.Id == replaces)) == null) { why = "There's no memory with that id to replace. Find it with recall first."; return null; }
   if (old == null && key.Length > 0) old = Active(id).FirstOrDefault(f => f.Key == key && f.Subject == subject);
   if (old == null && Active(id).FirstOrDefault(f => Same(f, text, subject)) is { } same) { // said again: freshened, not copied
-   same.Text = text; same.At = now; if (chat.Length > 0) { same.Chat = chat; same.Msg = msg; }
+   if (!guessed || same.Guessed) same.Text = text; // a guess doesn't reword what the user said
+   same.At = now; if (chat.Length > 0) { same.Chat = chat; same.Msg = msg; }
    if (same.Guessed && !guessed) { same.Guessed = false; same.Source = source; } // once confirmed, it stays confirmed
    if (!Save(id)) { why = SaveFailed; return null; }
    return same;
@@ -189,7 +190,7 @@ static partial class CompanionMemory
   if (old != null) { old.Status = "superseded"; old.SupersededBy = fact.Id; fact.Supersedes = old.Id; }
   list.Add(fact);
   if (!Save(id)) { list.Remove(fact); if (old != null) { old.Status = "active"; old.SupersededBy = ""; } why = SaveFailed; return null; }
-  Changed(id, (old != null ? $"Updated \"{Clip(old.Text, 60)}\" to: " : "Remembered: ") + fact.Text, chat);
+  Changed(id, guessed ? "A new guess went into your memory: use recall if it matters" : (old != null ? $"Updated \"{Clip(old.Text, 60)}\" to: " : "Remembered: ") + fact.Text, chat);
   return fact;
  }
  internal const string SaveFailed = "Still couldn't save that to memory: the file couldn't be written. Nothing was remembered.";
@@ -530,7 +531,9 @@ public partial class MainWindow
     int msg = run.Chat.Messages.FindLastIndex(m => m.Role == "user");
     var heard = CompanionMemory.Stems(msg >= 0 ? run.Chat.Messages[msg].Text : ""); var stems = CompanionMemory.Stems(fact);
     bool again = stems.Count > 0 && (double)stems.Count(heard.Contains) / stems.Count >= .6; // the user just said it themselves
-    if (CompanionMemory.Remember(me.Id, fact, out var no, S(args, "kind"), run.Chat.Id, msg, S(args, "slot"), B(args, "guessed"), subject: S(args, "subject"), replaces: S(args, "replaces"), sayAgain: again) is not { } kept) return Fail(no);
+    // After reading the web a page could have asked for this: a guess, unless the user just said it. It isn't pinned and replaces nothing.
+    bool web = ExchangeOf(run.Chat).Root.Read > 0 && !again;
+    if (CompanionMemory.Remember(me.Id, fact, out var no, web ? "fact" : S(args, "kind"), run.Chat.Id, msg, web ? "" : S(args, "slot"), web || B(args, "guessed"), subject: S(args, "subject"), replaces: web ? "" : S(args, "replaces"), sayAgain: again) is not { } kept) return Fail(no);
     PublishAiEverywhere();
     return Reply(new { remembered = kept.Text, id = kept.Id, replaced = kept.Supersedes.Length > 0 ? kept.Supersedes : null });
    }

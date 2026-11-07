@@ -233,7 +233,8 @@ enum CompanionMemory {
   if !replaces.isEmpty { old = active(id).first { $0.id == replaces }; if old == nil { why = "There's no memory with that id to replace. Find it with recall first."; return nil } }
   if old == nil && !key.isEmpty { old = active(id).first { $0.key == key && $0.subject == subject } }
   if old == nil, let same = active(id).first(where: { sameThing($0, text, subject) }) { // said again: freshened, not copied
-   same.text = text; same.at = now; if !chat.isEmpty { same.chat = chat; same.msg = msg }
+   if !guessed || same.guessed { same.text = text } // a guess doesn't reword what the user said
+   same.at = now; if !chat.isEmpty { same.chat = chat; same.msg = msg }
    if same.guessed && !guessed { same.guessed = false; same.source = source } // once confirmed, it stays confirmed
    if !save(id) { why = saveFailed; return nil }
    return same
@@ -251,7 +252,7 @@ enum CompanionMemory {
    if let old { old.status = "active"; old.supersededBy = "" }
    why = saveFailed; return nil
   }
-  changed(id, (old.map { "Updated \"\(clip($0.text, 60))\" to: " } ?? "Remembered: ") + fact.text, chat)
+  changed(id, guessed ? "A new guess went into your memory: use recall if it matters" : (old.map { "Updated \"\(clip($0.text, 60))\" to: " } ?? "Remembered: ") + fact.text, chat)
   return fact
  }
 
@@ -654,8 +655,10 @@ func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String 
   let heard = CompanionMemory.stems(msg >= 0 ? run.chat.messages[msg].text : ""), stems = CompanionMemory.stems(fact)
   let again = !stems.isEmpty && Double(stems.filter(heard.contains).count) / Double(stems.count) >= 0.6 // the user just said it themselves
   var no = ""
-  guard let kept = CompanionMemory.remember(me.id, fact, &no, kind: argText(args, "kind"), chat: run.chat.id, msg: msg, key: argText(args, "slot"), guessed: argFlag(args, "guessed"),
-   subject: argText(args, "subject"), replaces: argText(args, "replaces"), sayAgain: again) else { return agentFail(no) }
+  // After reading the web a page could have asked for this: a guess, unless the user just said it. It isn't pinned and replaces nothing.
+  let web = exchangeOf(run.chat).root.read > 0 && !again
+  guard let kept = CompanionMemory.remember(me.id, fact, &no, kind: web ? "fact" : argText(args, "kind"), chat: run.chat.id, msg: msg, key: web ? "" : argText(args, "slot"), guessed: web || argFlag(args, "guessed"),
+   subject: argText(args, "subject"), replaces: web ? "" : argText(args, "replaces"), sayAgain: again) else { return agentFail(no) }
   publishAiEverywhere()
   return agentOk(["remembered": kept.text, "id": kept.id, "replaced": kept.supersedes.isEmpty ? NSNull() : kept.supersedes as Any])
  case "update_knowledge":
