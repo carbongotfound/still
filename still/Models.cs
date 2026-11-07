@@ -22,6 +22,7 @@ public sealed class BrowserTab
  [JsonIgnore] public List<string> Forward { get; } = [];
  public string? InChat { get; set; } // a page the AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  [JsonIgnore] public string? AgentKey { get; set; } // which AI run is at work here (see MainWindow.Worker)
+ [JsonIgnore] public SemaphoreSlim Turn { get; } = new(1, 1); // one AI action at a time on this page (see MainWindow.HandleAgent)
  [JsonIgnore] public string? RunChat { get; set; } // an ordinary tab Still's chat AI opened: "Open chat" opens that chat, and it can show beside the chat
  [JsonIgnore(Condition = JsonIgnoreCondition.WhenWritingNull)] public string? Engine { get; set; } // "Companion": the page is in the companion profile (Where companions browse); null: the user's own
  public string Favicon { get; set; } = "";

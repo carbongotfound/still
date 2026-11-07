@@ -157,6 +157,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Sensitive steps**: buying, sending, deleting, posting forms, password/payment fields; even when allowed, an 8 s cancel countdown first. At zero the card's buttons go off and the step waits half a second more, so a Cancel on its way still stops it; one that arrives after the step went ahead says it was too late.
 - ✅ **Sensitive sites**: every click or keystroke on a listed site counts as sensitive (Preferences `SensitiveSites`).
 - ✅ **AI permissions page**: defaults, rules per site and companion, sensitive sites, reset all (`Permissions.tsx`).
+- 🚧 (security/fixes) **One action at a time on a page**: steps that click, type, press keys, scroll or navigate wait their turn per tab, so two calls sent together can't mix or read each other's effects as their own, and Approve all runs each on its own button. Reads run alongside. Stop and Take over end all of a chat's running calls, the waiting ones too, and those never act (`HandleAgent` `TakesTurn`, `BrowserTab.Turn`; Mac `PageTurn`; tests/desktop/permissions.py).
 - ✅ **Ask when away**: idle 1 min, locked or minimized → the agent asks in its own chat; answer verified with a one-time code (`user_confirmed`).
 - ✅ **File uploads by AI**: `upload_file` attaches files only after you approve in the bar.
 - ✅ **Private tabs off-limits**: agents never see private tabs, saved passwords or cookies.
@@ -317,7 +318,6 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 ## Known gaps
 
-- Safety item: "Approve all runs both" in `permissions.py` fails on every Windows run, 9 of 9, plain main included. Cause found: Still doesn't run one action at a time on a page. Approve all lets both clicks go at once, and on Windows a click's press and release are sent one after the other, so two clicks mix and the page gets one click on the buttons' shared parent instead of either button. The Mac sends press and release together, so they never mix, and it passes. Both hosts also keep one click tracker per page, so with two actions at once the first can be reported as not landing when it did. In those runs a card's answer ran its step once, even on a double press. Not fixed yet.
 - The Mac `tabs` suite is flaky on plain main, so it doesn't count as passing until it's stable: 3 of 6 runs stopped early with no FAIL line (20, 20 and 13 checks instead of 55). A branch run also failed 2 of 4 at "A middle click opens a chat in a tab of its own". Cause not looked into.
 - The Windows `tasks` suite failed 1 of 6 runs on one check, "The reply says what was done and what was checked again", which reads the reply once right after the run ends. Plain main passed in the 1 run tried. Cause not confirmed.
 - Claude's login settings are tested with stand-in apps and made-up values on both systems. No real key, token, Bedrock, Vertex or Foundry account was used. The status shapes come from Claude Code 2.1.318 (Windows) and 2.1.316 (Mac).

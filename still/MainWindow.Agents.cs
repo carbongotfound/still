@@ -50,8 +50,19 @@ public partial class MainWindow
  static TaskCompletionSource<bool>? agentApproval;
  static string askClient = "", askText = "";
  static (string Client, string Ask, bool Allow, DateTime At) lastAnswer;
- // Ends an agent's running call early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
- static readonly Dictionary<string, TaskCompletionSource<string>> agentInterrupts = new(StringComparer.OrdinalIgnoreCase);
+ // Ends an agent's running calls early with this reply: a dialog or file picker opened in its tab, or the user pressed Stop.
+ static readonly Dictionary<string, List<TaskCompletionSource<string>>> agentInterrupts = new(StringComparer.OrdinalIgnoreCase);
+ static void EndCalls(string who, string reply) { if (agentInterrupts.Remove(who, out var running)) foreach (var call in running) call.TrySetResult(reply); }
+ /// One tool call on its way through.
+ sealed class AgentStep
+ {
+  public AiSensitive? Intent; // the sensitive step about to run
+  public bool Abandoned; // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
+  public void Live() { if (Abandoned) throw new InvalidOperationException("Stopped."); }
+ }
+ // These act on a page, so they take its turn: one at a time, whoever is asking. Reads run alongside, and handle_dialog
+ // never waits: the step holding the turn may be stuck behind that very dialog.
+ static bool TakesTurn(string tool) => tool is "click" or "type" or "press_key" or "scroll" or "navigate" or "go_back" or "go_forward" or "reload" or "close_tab" or "upload_file";
  static bool agentServerStarted;
  internal static MainWindow Home => LastActive is { closing: false, temporary: false, incognito: false } w ? w : Windows.FirstOrDefault(w => !w.closing && !w.temporary && !w.incognito) ?? Windows.FirstOrDefault(w => !w.closing && !w.temporary) ?? Windows.First(w => !w.closing);
 
@@ -120,31 +131,52 @@ public partial class MainWindow
     for (var wait = DateTime.UtcNow.AddSeconds(1.5); !kick.Messages.Any(m => m.Role == "assistant") && DateTime.UtcNow < wait;) await Task.Delay(100);
     if (!kick.Messages.Any(m => m.Role == "assistant")) return Fail(HelloFirst);
    }
-   var interrupt = agentInterrupts[who] = new(TaskCreationOptions.RunContinuationsAsynchronously);
-   // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-   var gate = Gate(who, tool, args, quick);
-   string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
-   if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
-   if (refused != null) { if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who); PublishAll(); return refused; }
-   var going = runs.GetValueOrDefault(who);
-   if (going?.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
-   me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
-   string result;
+   var interrupt = new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously);
+   if (!agentInterrupts.TryGetValue(who, out var calling)) agentInterrupts[who] = calling = [];
+   calling.Add(interrupt);
+   var step = new AgentStep();
+   SemaphoreSlim? turn = null;
    try {
-    var working = RunTool(who, tool, args, quick);
+    // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
+    var gate = Gate(who, tool, args, quick, step);
+    string? refused = await Task.WhenAny(gate, interrupt.Task) == gate ? await gate : await interrupt.Task;
+    if (!gate.IsCompleted) foreach (var card in runs.GetValueOrDefault(who)?.Approvals.ToList() ?? []) card.Answer.TrySetResult("stop");
+    if (refused != null) return refused;
     int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
-    var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
-    result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
-     : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
-    if (going != null) {
-     if (going.Intent is { } ran) { if (first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; going.Intent = null; } // cut off, or no sign it worked: uncertain
-     Checkpoint(going, tool, result);
+    // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
+    // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
+    if (TakesTurn(tool)) {
+     var wanted = AgentTab(who, args).tab.Turn;
+     var wait = wanted.WaitAsync();
+     var won = await Task.WhenAny(wait, interrupt.Task, Task.Delay(limit));
+     if (won != wait) {
+      _ = wait.ContinueWith(_ => wanted.Release());
+      return won == interrupt.Task ? await interrupt.Task : Fail($"Another step on this page didn't finish within {limit / 1000} s, so {tool} wasn't done. Call read_page to see where it is.");
+     }
+     turn = wanted;
     }
-    if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
-   } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
-   if (agentInterrupts.GetValueOrDefault(who) == interrupt) agentInterrupts.Remove(who);
-   PublishAll();
-   return result;
+    var going = runs.GetValueOrDefault(who);
+    if (going != null && step.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
+    me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
+    string result;
+    try {
+     var working = RunTool(who, tool, args, quick, step);
+     var first = await Task.WhenAny(working, interrupt.Task, Task.Delay(limit));
+     step.Abandoned = first != working;
+     result = first == working ? await working : first == interrupt.Task ? await interrupt.Task
+      : Fail($"{tool} didn't finish within {limit / 1000} s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.");
+     if (going != null) {
+      if (step.Intent is { } ran && first == working && !result.Contains("\"unverified\":true", StringComparison.Ordinal)) ran.Outcome = result.StartsWith("{\"ok\":false", StringComparison.Ordinal) ? "failed" : "done"; // cut off, or no sign it worked: uncertain
+      Checkpoint(going, tool, result);
+     }
+     if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
+    } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
+    return result;
+   } finally {
+    turn?.Release();
+    if (calling.Remove(interrupt) && calling.Count == 0 && agentInterrupts.GetValueOrDefault(who) == calling) agentInterrupts.Remove(who);
+    PublishAll();
+   }
   } catch (JsonException) { return Fail("Invalid request."); }
   catch (Exception ex) when (ex is InvalidOperationException or KeyNotFoundException or FormatException or ArgumentException or IOException or UnauthorizedAccessException or NotSupportedException or System.Runtime.InteropServices.COMException or TimeoutException) { return Fail(ex.Message); }
  }
@@ -226,7 +258,7 @@ public partial class MainWindow
   me.Paused = on;
   TaskState(runs.GetValueOrDefault(key), on ? "paused" : "running");
   if (!on && me.SignIn.Length > 0) { me.SignedIn = (me.SignIn, DateTime.UtcNow); me.SignIn = ""; }
-  if (on && agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail(TookOver));
+  if (on) EndCalls(key, Fail(TookOver));
   if (on && agentTabs.GetValueOrDefault(key) is { } id && tabs.FirstOrDefault(t => t.Id == id) is { } t) await SelectTab(t);
   PublishAll();
  }
@@ -235,7 +267,7 @@ public partial class MainWindow
  {
   var me = workers.GetValueOrDefault(key);
   ReleaseAgentTabs(key); stoppedAgents[key] = DateTime.UtcNow.AddSeconds(30);
-  if (agentInterrupts.Remove(key, out var running)) running.TrySetResult(Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."));
+  EndCalls(key, Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."));
   if (runs.TryGetValue(key, out var run)) { run.Queue.Clear(); StopRun(run); }
   workers.Remove(key); PublishAll(); PublishAiEverywhere(); Toast("Stopped " + (me?.Label ?? "the AI agent") + ".");
  }
@@ -267,7 +299,7 @@ public partial class MainWindow
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  static void InterruptAgent(BrowserTab t, object reply)
  {
-  if (t.AgentKey is { } who && agentTabs.GetValueOrDefault(who) == t.Id && agentInterrupts.Remove(who, out var running)) running.TrySetResult(Reply(reply));
+  if (t.AgentKey is { } who && agentTabs.GetValueOrDefault(who) == t.Id) EndCalls(who, Reply(reply));
  }
 
  static string S(JsonElement args, string key) => args.ValueKind == JsonValueKind.Object && args.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
@@ -681,7 +713,7 @@ public partial class MainWindow
   if (mode is "always" or "chat" or "ask") Prefs.Permissions.Add(new() { Site = site, Action = action, Companion = companion, Mode = mode });
   SaveLater();
  }
- async Task<string?> Gate(string who, string tool, JsonElement args, bool quick)
+ async Task<string?> Gate(string who, string tool, JsonElement args, bool quick, AgentStep step)
  {
   string action = tool switch {
    "read_page" or "find" or "screenshot" or "wait_for" or "web_search" or "read_url" => "read",
@@ -742,7 +774,7 @@ public partial class MainWindow
   PublishAiEverywhere();
   if (answer is "always" or "chat" or "once" or "go" or "now" && action == "sensitive") {
    if (run.Recheck) { run.Recheck = false; foreach (var s in run.Task.Sensitive.Where(s => s.Outcome == null)) s.Outcome = "rechecked"; }
-   run.Intent = new() { What = what, Site = site };
+   step.Intent = new() { What = what, Site = site };
   }
   return answer switch {
    "always" or "chat" or "once" or "go" or "now" => null,
@@ -845,18 +877,19 @@ public partial class MainWindow
   ["ArrowUp"] = ("ArrowUp", 38, ""), ["ArrowDown"] = ("ArrowDown", 40, ""), ["ArrowLeft"] = ("ArrowLeft", 37, ""), ["ArrowRight"] = ("ArrowRight", 39, ""),
   ["Home"] = ("Home", 36, ""), ["End"] = ("End", 35, ""), ["PageUp"] = ("PageUp", 33, ""), ["PageDown"] = ("PageDown", 34, ""), ["Space"] = ("Space", 32, " "),
  };
- static async Task MouseClick(CoreWebView2 core, double x, double y)
+ static async Task MouseClick(CoreWebView2 core, double x, double y, AgentStep step)
  {
   foreach (var type in new[] { "mouseMoved", "mousePressed", "mouseReleased" }) {
-   if (type == "mousePressed") await Js(core, MarkJs, new { }); // what hovering changed doesn't count as the click's doing
+   if (type == "mousePressed") { await Js(core, MarkJs, new { }); step.Live(); } // what hovering changed doesn't count as the click's doing
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchMouseEvent", JsonSerializer.Serialize(new { type, x, y, button = type == "mouseMoved" ? "none" : "left", clickCount = type == "mouseMoved" ? 0 : 1 }));
   }
  }
  /// Sends input and makes sure the page got it. A page that has just loaded out of view can drop input without a word;
  /// nothing reached it, so sending it again can't do anything twice.
- static async Task Deliver(CoreWebView2 core, Func<Task> send)
+ static async Task Deliver(CoreWebView2 core, AgentStep step, Func<Task> send)
  {
   for (int tries = 0; tries < 8; tries++) {
+   step.Live();
    await send();
    for (int i = 0; i < 4; i++) {
     if ((await Js(core, GotJs, new { })).ValueKind != JsonValueKind.False) return;
@@ -875,7 +908,7 @@ public partial class MainWindow
  /// Did the action work? Its watcher says whether the event reached the element and what changed after. Null means it went
  /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
  /// ponytail: a page that changes by itself (a clock, a carousel) reads as changed. The event still had to reach the element.
- static async Task<string?> Verdict(string who, BrowserTab t, CoreWebView2 core, string tabBefore, string urlBefore, string key, string name)
+ static async Task<string?> Verdict(string who, BrowserTab t, CoreWebView2 core, string tabBefore, string urlBefore, string key, string name, AgentStep step)
  {
   DateTime from = DateTime.UtcNow.AddSeconds(-1), started = DateTime.UtcNow;
   bool Moved() => t.Closed || t.Url != urlBefore || agentTabs.GetValueOrDefault(who) != tabBefore || t.DownloadStartedAt > from;
@@ -884,6 +917,7 @@ public partial class MainWindow
   bool Flag(string f) => seen.ValueKind == JsonValueKind.Object && seen.TryGetProperty(f, out var v) && v.ValueKind == JsonValueKind.True;
   for (;;) {
    var now = await Js(core, SeenJs, new { key });
+   if (step.Abandoned) return null; // its answer is already out, and the watcher may be the next step's by now
    if (now.ValueKind != JsonValueKind.Object) { if (t.Loading || Moved()) { await WaitLoaded(t, 8000); return null; } }
    else if (now.TryGetProperty("gone", out _)) { await WaitLoaded(t, 8000); break; } // a new document: it navigated
    else {
@@ -898,6 +932,7 @@ public partial class MainWindow
    await Task.Delay(100);
   }
   if (t.Loading) await WaitLoaded(t, 8000);
+  if (step.Abandoned) return null;
   if (!t.Closed) try { await Js(core, SeenJs, new { key, last = true }); } catch (InvalidOperationException) { }
   bool moved = Moved() || seen.ValueKind == JsonValueKind.Object && changed.Contains("url");
   string invalid = Str(seen, "invalid"), action = key.Length > 0 ? "pressing " + key : "clicking “" + name + "”", doing = key.Length > 0 ? "Pressing" : "Clicking";
@@ -912,11 +947,11 @@ public partial class MainWindow
    : Fail($"The click didn't reach \"{name}\", so nothing was clicked. Call read_page to see the page now.");
  }
  /// Types text one key at a time; a new line is Enter where the field has lines.
- static async Task TypeKeys(CoreWebView2 core, string text, bool multiline, Worker me)
+ static async Task TypeKeys(CoreWebView2 core, string text, bool multiline, Worker me, AgentStep step)
  {
   foreach (var r in text.ReplaceLineEndings("\n").EnumerateRunes()) {
    string s = r.ToString();
-   if (me.Paused) return; // the user took over mid-word
+   if (me.Paused || step.Abandoned) return; // the user took over mid-word
    if (s == "\n") { if (multiline) await PressKey(core, "Enter"); continue; }
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyDown", key = s, text = s, unmodifiedText = s }));
    await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", key = s }));
@@ -939,7 +974,7 @@ public partial class MainWindow
   await core.CallDevToolsProtocolMethodAsync("Input.dispatchKeyEvent", JsonSerializer.Serialize(new { type = "keyUp", modifiers, key = name, code, windowsVirtualKeyCode = vk }));
  }
 
- async Task<string> RunTool(string who, string tool, JsonElement args, bool quick)
+ async Task<string> RunTool(string who, string tool, JsonElement args, bool quick, AgentStep step)
  {
   switch (tool) {
    case "ask_user": return await AskInChat(who, args);
@@ -986,7 +1021,7 @@ public partial class MainWindow
     Did(who, "Opened " + Host(tab.Url)); return Reply(new { tabId = tab.Id, title = tab.Title, url = tab.Url });
    }
    case "navigate": {
-    var (w, t, core) = await AgentPage(who, args); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); await WaitLoaded(t);
+    var (w, t, core) = await AgentPage(who, args); step.Live(); core.Navigate(WebUrl(S(args, "url"), Prefs.SearchEngine, WorkFolder(who))); await WaitLoaded(t);
     if (t.ShowingError) return Fail("That page didn't load: " + Host(S(args, "url")) + ". Check the address, or try again.");
     Did(who, "Went to " + Host(t.Url)); return Reply(new { tabId = t.Id, title = t.Title, url = t.Url });
    }
@@ -998,6 +1033,7 @@ public partial class MainWindow
    case "close_tab": { var (w, t) = AgentTab(who, args); await w.CloseTab(t, true); agentTabs.Remove(who); Did(who, "Closed a tab"); return Reply(new { done = "Closed the tab" }); }
    case "go_back": case "go_forward": case "reload": {
     var (w, t, core) = await AgentPage(who, args);
+    step.Live();
     if (tool == "go_back") { if (!core.CanGoBack) return Fail("There's no earlier page in this tab."); core.GoBack(); }
     else if (tool == "go_forward") { if (!core.CanGoForward) return Fail("There's no later page in this tab."); core.GoForward(); }
     else core.Reload();
@@ -1034,12 +1070,12 @@ public partial class MainWindow
     await Pointer(who, t, core, x, y);
     t.AgentActedAt = DateTime.UtcNow;
     string urlBefore = t.Url;
-    await Deliver(core, () => MouseClick(core, x, y));
+    await Deliver(core, step, () => MouseClick(core, x, y, step));
     // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
     string numbered = "Clicking element " + (args.TryGetProperty("id", out var raw) ? raw.ValueKind == JsonValueKind.String ? raw.GetString() : raw.GetRawText() : "");
-    if (label.Length > 0 && runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m.Role == "tool" && m.Text == numbered) is { } step) step.Text = "Clicking “" + label + "”";
-    if (await Verdict(who, t, core, before, urlBefore, "", label) is { } missed) return missed;
+    if (label.Length > 0 && runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m.Role == "tool" && m.Text == numbered) is { } row) row.Text = "Clicking “" + label + "”";
+    if (await Verdict(who, t, core, before, urlBefore, "", label, step) is { } missed) return missed;
     Did(who, "Clicked '" + label + "'"); return Reply(Outcome(who, t, before, "Clicked \"" + label + "\""));
    }
    case "type": {
@@ -1052,24 +1088,25 @@ public partial class MainWindow
     if (Str(focus, "done") is { Length: > 0 } picked) { Did(who, picked); return Reply(new { done = picked }); }
     if (focus.TryGetProperty("at", out var at) && at.ValueKind == JsonValueKind.Object) {
      await Pointer(who, t, core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
-     await MouseClick(core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble());
+     await MouseClick(core, at.GetProperty("x").GetDouble(), at.GetProperty("y").GetDouble(), step);
      focus = await Js(core, FocusJs, Q(true)); // the click moved the caret: put it back
     }
     else if (focus.TryGetProperty("near", out var near) && near.ValueKind == JsonValueKind.Object)
      await Pointer(who, t, core, near.GetProperty("x").GetDouble(), near.GetProperty("y").GetDouble());
     async Task<bool> Unchanged() => Str(await Js(core, SigJs, new { }), "sig") == Str(focus, "sig");
+    step.Live();
     if (text.Length > 0) {
      await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
      // Some editors ignore inserted text and only take key presses: type it key by key.
-     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean(), Me(who)); }
+     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean(), Me(who), step); }
      if (await Unchanged()) return Fail("Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
     }
     else if (!B(args, "append")) await PressKey(core, "Backspace");
     string field = Str(focus, "label");
     if (B(args, "submit")) {
      string urlBefore = t.Url;
-     await Js(core, WatchJs, new { }); await Deliver(core, () => PressKey(core, "Enter"));
-     if (await Verdict(who, t, core, before, urlBefore, "Enter", field) is { } unsent) return unsent;
+     await Js(core, WatchJs, new { }); await Deliver(core, step, () => PressKey(core, "Enter"));
+     if (await Verdict(who, t, core, before, urlBefore, "Enter", field, step) is { } unsent) return unsent;
     }
     Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
    }
@@ -1078,12 +1115,13 @@ public partial class MainWindow
     string before = agentTabs.GetValueOrDefault(who) ?? "";
     t.AgentActedAt = DateTime.UtcNow;
     string urlBefore = t.Url;
-    await Js(core, WatchJs, new { }); await Deliver(core, () => PressKey(core, S(args, "key")));
-    if (await Verdict(who, t, core, before, urlBefore, S(args, "key"), "") is { } nothing) return nothing;
+    await Js(core, WatchJs, new { }); await Deliver(core, step, () => PressKey(core, S(args, "key")));
+    if (await Verdict(who, t, core, before, urlBefore, S(args, "key"), "", step) is { } nothing) return nothing;
     Did(who, "Pressed " + S(args, "key")); return Reply(Outcome(who, t, before, "Pressed " + S(args, "key")));
    }
    case "scroll": {
     var (w, t, core) = await AgentPage(who, args);
+    step.Live();
     var r = await Js(core, ScrollJs, new { id = Id(args), selector = S(args, "selector"), direction = S(args, "direction"), amount = Math.Clamp(N(args, "amount", 0), 0, 20000) });
     Did(who, Str(r, "done")); return Reply(new { done = Str(r, "done"), at = Str(r, "at") is { Length: > 0 } at ? at : null });
    }
@@ -1128,6 +1166,7 @@ public partial class MainWindow
      case false: return Fail("The user didn't allow this upload. Don't try again unless they ask.");
      case null: return NeedsConfirm(who, ask, "Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
     }
+    step.Live();
     await core.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", JsonSerializer.Serialize(input));
     t.AgentUpload = null;
     Did(who, "Attached " + names); return Reply(new { done = "Attached " + names });

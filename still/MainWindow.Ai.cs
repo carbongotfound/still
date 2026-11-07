@@ -464,7 +464,6 @@ public partial class MainWindow
   public readonly HashSet<string> Typed = []; // what it typed into pages: form data, which memory never keeps
   public AiTask Task = new(); // its state and checkpoint (MainWindow.Tasks.cs)
   public bool Recheck; // picked up after a sensitive step that may not have finished: the next one asks again
-  public AiSensitive? Intent; // the sensitive step about to run
  }
  static readonly Dictionary<string, ChatRun> runs = []; // by chat id
  static readonly HashSet<string> kickoffs = []; // chats a new companion started itself: its first question's answer goes to its memory

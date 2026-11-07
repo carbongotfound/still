@@ -96,7 +96,23 @@ var askClient = "", askText = ""
 var lastAnswer: (client: String, ask: String, allow: Bool, at: Date)? = nil
 // Ends an agent's running call early with this reply, by run key: a dialog or file picker opened in its tab, or the user
 // took over or pressed Stop.
-var agentInterrupts: [String: Answer] = [:]
+var agentInterrupts: [String: [Answer]] = [:]
+func endCalls(_ who: String, _ reply: String) { agentInterrupts.removeValue(forKey: who)?.forEach { $0.set(reply) } }
+/// One tool call on its way through.
+final class AgentStep {
+ var intent: AiSensitive? // the sensitive step about to run
+ var abandoned = false // Stop, Take over or the time limit already answered the AI: nothing more of this call may reach the page
+ func live() throws { if abandoned { throw AgentError("Stopped.") } }
+}
+// These act on a page, so they take its turn: one at a time, whoever is asking. Reads run alongside, and handle_dialog
+// never waits: the step holding the turn may be stuck behind that very dialog.
+let takesTurn: Set<String> = ["click", "type", "press_key", "scroll", "navigate", "go_back", "go_forward", "reload", "close_tab", "upload_file"]
+/// One AI action at a time on a page, first come, first served (Windows: a SemaphoreSlim).
+final class PageTurn {
+ private var held = false, queue: [() -> Void] = []
+ func take(_ then: @escaping () -> Void) { if held { queue.append(then) } else { held = true; then() } }
+ func release() { if queue.isEmpty { held = false } else { queue.removeFirst()() } }
+}
 var agentTabs: [String: String] = [:] // run key -> the tab it is working in
 var stoppedAgents: [String: Date] = [:] // run key -> until when its calls are refused
 var agentServerStarted = false
@@ -303,10 +319,13 @@ let agentProbeRead = "return !window.__stillProbe || window.__stillProbe.got;" /
  return true
 }
 /// Clicks like a real mouse; if the page didn't get it, the same click is played by script on the element.
-@MainActor func mouseClick(_ view: WKWebView, _ x: Double, _ y: Double, _ o: [String: Any]) async throws {
+@MainActor func mouseClick(_ view: WKWebView, _ x: Double, _ y: Double, _ o: [String: Any], _ step: AgentStep) async throws {
+ try step.live()
  _ = sendClick(view, x, y, moveOnly: true)
  _ = try? await agentJs(view, agentScripts["Mark"] ?? "", [:]) // what hovering changed doesn't count as the click's doing
+ try step.live()
  if await trusted(view, { sendClick(view, x, y) }) { return }
+ try step.live()
  var again = o; again["again"] = true // the watcher set up before stays
  _ = try await agentJs(view, "const r = (() => {\n" + (agentScripts["Click"] ?? "") + "\n})();\nif (r.error) return r;\n" + agentClickTail, again)
 }
@@ -319,14 +338,16 @@ let checkFirst = "It may still be working: call read_page to check before trying
 /// Did the action work? Its watcher says whether the event reached the element and what changed after. Nil means it went
 /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
 /// ponytail: a page that changes by itself (a clock, a carousel) reads as changed. The event still had to reach the element.
-@MainActor func verdict(_ who: String, _ tab: Tab, _ view: WKWebView, _ tabBefore: String, _ urlBefore: String, _ key: String, _ name: String) async -> String? {
+@MainActor func verdict(_ who: String, _ tab: Tab, _ view: WKWebView, _ tabBefore: String, _ urlBefore: String, _ key: String, _ name: String, _ step: AgentStep) async -> String? {
  let started = Date(), from = Date().addingTimeInterval(-1)
  func moved() -> Bool { tab.closed || tab.url != urlBefore || (agentTabs[who] ?? "") != tabBefore || tab.downloadAt > from }
  var seen: [String: Any]?, changed: [String] = []
  func flag(_ f: String) -> Bool { seen?[f] as? Bool == true }
  func words(_ f: String) -> String { seen?[f] as? String ?? "" }
  while true {
-  if let now = (try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key])) as? [String: Any] {
+  let read = (try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key])) as? [String: Any]
+  if step.abandoned { return nil } // its answer is already out, and the watcher may be the next step's by now
+  if let now = read {
    if now["gone"] != nil { await waitLoaded(tab, 8); break } // a new document: it navigated
    seen = now; changed = now["changed"] as? [String] ?? []
    if !words("invalid").isEmpty && !flag("submitted") { break }
@@ -338,6 +359,7 @@ let checkFirst = "It may still be working: call read_page to check before trying
   try? await Task.sleep(nanoseconds: 100_000_000)
  }
  if view.isLoading { await waitLoaded(tab, 8) }
+ if step.abandoned { return nil }
  if !tab.closed { _ = try? await agentJs(view, agentScripts["Seen"] ?? "", ["key": key, "last": true]) }
  let wentOn = moved() || changed.contains("url"), action = key.isEmpty ? "clicking “" + name + "”" : "pressing " + key, doingWord = key.isEmpty ? "Clicking" : "Pressing"
  if key.isEmpty && !words("missed").isEmpty && !flag("pressed") { return agentFail("The click didn't reach \"\(name)\": it landed on \(words("missed")). Call read_page to see the page now.") }
@@ -378,16 +400,18 @@ let macKeyOrder = Array("asdfhgzxcv§bqweryt123465=97-80]ou[ip\rlj'k;\\,/nm.\t `
  return true
 }
 /// Presses a key like a person would, e.g. "Enter", "Escape", "a", "Control+A", "Shift+Tab".
-@MainActor func pressKey(_ view: WKWebView, _ combo: String) async throws {
+@MainActor func pressKey(_ view: WKWebView, _ combo: String, _ step: AgentStep) async throws {
  let info = try keyInfo(combo)
+ try step.live()
  if await trusted(view, { sendKey(view, info) }) { return }
+ try step.live()
  _ = try await agentJs(view, agentKeyScript, info)
 }
 /// Types text one key at a time; a new line is Enter where the field has lines.
-@MainActor func typeKeys(_ view: WKWebView, _ text: String, _ multiline: Bool, _ me: Worker) async {
+@MainActor func typeKeys(_ view: WKWebView, _ text: String, _ multiline: Bool, _ me: Worker, _ step: AgentStep) async {
  for character in text.replacingOccurrences(of: "\r\n", with: "\n") {
-  if me.paused { return } // the user took over mid-word
-  if character == "\n" { if multiline { try? await pressKey(view, "Enter") }; continue }
+  if me.paused || step.abandoned { return } // the user took over mid-word
+  if character == "\n" { if multiline { try? await pressKey(view, "Enter", step) }; continue }
   _ = sendKey(view, ["key": String(character), "code": ""])
   try? await Task.sleep(nanoseconds: 1_000_000)
  }
@@ -575,15 +599,18 @@ extension Browser {
    while !kick.messages.contains(where: { $0.role == "assistant" }) && Date() < wait { try? await Task.sleep(nanoseconds: 100_000_000) }
    if !kick.messages.contains(where: { $0.role == "assistant" }) { return agentFail(helloFirst) }
   }
-  let interrupt = Answer()
-  agentInterrupts[who] = interrupt
+  let interrupt = Answer(), step = AgentStep()
+  agentInterrupts[who, default: []].append(interrupt)
+  var turn: PageTurn?
   defer {
-   if agentInterrupts[who] === interrupt { agentInterrupts[who] = nil }
+   turn?.release()
+   agentInterrupts[who]?.removeAll { $0 === interrupt }
+   if agentInterrupts[who]?.isEmpty == true { agentInterrupts[who] = nil }
    publishEverywhere()
    DispatchQueue.main.asyncAfter(deadline: .now() + 121) { publishEverywhere() } // the pill goes once the agent is quiet
   }
   // The permission layer: it runs, asks in the chat, or counts down first. Take over and Stop end the wait too.
-  let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick) }
+  let gate = await race(interrupt, 3600) { await self.gate(who, tool, args, quick, step) }
   var refused: String?
   switch gate {
   case .done(let reply): refused = reply
@@ -593,19 +620,32 @@ extension Browser {
   if case .done = gate {} else { for card in runs[who]?.approvals ?? [] { card.answer.set("stop") } }
   if let refused { return refused }
   let limit: Double = tool == "ask_user" || tool == "run_plugin_action" || tool == "ask_companion" ? 660 : tool == "wait_for" ? min(30000, max(100, argNumber(args, "timeoutMs", 10000))) / 1000 + 5 : tool == "upload_file" ? 60 : 30
+  // An AI may send several calls in one breath. Run side by side their clicks would mix, and each would read the other's
+  // effects as its own, so they wait their turn. Stop or Take over while waiting: the call ends here and never acts.
+  if takesTurn.contains(tool) {
+   let wanted: PageTurn
+   do { wanted = try agentTab(who, args).tab.turn } catch { return agentFail(error.localizedDescription) }
+   var lost = false
+   let waited = await race(interrupt, limit) { await withCheckedContinuation { (go: CheckedContinuation<Void, Never>) in wanted.take { if lost { wanted.release() }; go.resume() } }; return nil }
+   switch waited {
+   case .done: turn = wanted
+   case .interrupted(let reply): lost = true; return reply
+   case .late: lost = true; return agentFail("Another step on this page didn't finish within \(Int(limit)) s, so \(tool) wasn't done. Call read_page to see where it is.")
+   }
+  }
   // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
   let going = runs[who]
-  if let going, let intent = going.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
+  if let going, let intent = step.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
   me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
   defer { me.tool = ""; me.count += 1; me.seen = Date() }
-  let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick) }), result: String
+  let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick, step) }), result: String
   switch raced {
   case .done(let reply): result = reply ?? agentFail("Failed.")
-  case .interrupted(let reply): result = reply
-  case .late: result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
+  case .interrupted(let reply): step.abandoned = true; result = reply
+  case .late: step.abandoned = true; result = agentFail("\(tool) didn't finish within \(Int(limit)) s, so Still stopped waiting. The page may be slow or stuck: call read_page to see where it is.")
   }
   if let going {
-   if let ran = going.intent { if case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" }; going.intent = nil } // cut off, or no sign it worked: uncertain
+   if let ran = step.intent, case .done = raced, !result.contains("\"unverified\":true") { ran.outcome = toolFailed(result) ? "failed" : "done" } // cut off, or no sign it worked: uncertain
    checkpoint(going, tool, result)
   }
   if (tool == "ask_companion" || tool == "tell_companion") && !me.target.isEmpty && !toolFailed(result) { did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.target) }
@@ -697,7 +737,7 @@ extension Browser {
   me.paused = on
   taskState(runs[key], on ? "paused" : "running")
   if !on && !me.signIn.isEmpty { me.signedIn = (me.signIn, Date()); me.signIn = "" }
-  if on { agentInterrupts.removeValue(forKey: key)?.set(agentFail(tookOver)) }
+  if on { endCalls(key, agentFail(tookOver)) }
   if on, let id = agentTabs[key], let (browser, tab) = findTab(id) { browser.select(tab); browser.window.makeKeyAndOrderFront(nil) }
   publishEverywhere()
  }
@@ -709,7 +749,7 @@ extension Browser {
   for browser in browsers { for tab in browser.tabs where tab.agentKey == key { if let upload = tab.agentUpload { tab.agentUpload = nil; upload.complete(nil) } } }
   releaseAgentTabs(key)
   stoppedAgents[key] = Date().addingTimeInterval(30)
-  agentInterrupts.removeValue(forKey: key)?.set(agentFail(stopText))
+  endCalls(key, agentFail(stopText))
   if let run = runs[key] { run.queue.removeAll(); stopRun(run) }
   workers[key] = nil
   publishEverywhere(); publishAiEverywhere()
@@ -718,8 +758,8 @@ extension Browser {
 
  /// A dialog or file picker opened in the tab an agent is working in: its running call returns now and says so.
  func interruptAgent(_ tab: Tab, _ reply: [String: Any]) {
-  guard let who = tab.agentKey, agentTabs[who] == tab.id, let running = agentInterrupts.removeValue(forKey: who) else { return }
-  running.set(agentOk(reply))
+  guard let who = tab.agentKey, agentTabs[who] == tab.id else { return }
+  endCalls(who, agentOk(reply))
  }
 
  func claim(_ who: String, _ tab: Tab) {
@@ -827,7 +867,7 @@ extension Browser {
  }
 
  /// Whether this call may go ahead: nil, or the refusal for the AI.
- @MainActor func gate(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String? {
+ @MainActor func gate(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ step: AgentStep) async -> String? {
   var action: String
   switch tool {
   case "read_page", "find", "screenshot", "wait_for", "web_search", "read_url": action = "read"
@@ -892,7 +932,7 @@ extension Browser {
   publishAiEverywhere()
   if ["always", "chat", "once", "go", "now"].contains(answer) && action == "sensitive" {
    if run.recheck { run.recheck = false; for s in run.task.sensitive where s.outcome == nil { s.outcome = "rechecked" } }
-   run.intent = AiSensitive(what, site)
+   step.intent = AiSensitive(what, site)
   }
   switch answer {
   case "always", "chat", "once", "go", "now": return nil
@@ -903,7 +943,7 @@ extension Browser {
   }
  }
 
- @MainActor func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool) async -> String {
+ @MainActor func runTool(_ who: String, _ tool: String, _ args: [String: Any], _ quick: Bool, _ step: AgentStep) async -> String {
   do {
    if incognitoRun(who), ["remember", "forget", "update_knowledge", "save_file", "offer_routine"].contains(tool) { return agentFail(keepsNothing) }
    switch tool {
@@ -1012,12 +1052,12 @@ extension Browser {
     await pointer(who, tab, view, x, y)
     tab.agentActedAt = Date() // a pop-up or file picker it opens belongs to the agent
     let urlBefore = tab.url
-    try await mouseClick(view, x, y, o)
+    try await mouseClick(view, x, y, o, step)
     // The chat's step only had the element's number from the AI's call ("Clicking element 7"): name what it was. The AI
     // may have sent more calls in the same breath, so it isn't always the last step.
     let numbered = "Clicking element " + ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "")
     if !label.isEmpty, let step = runs[who]?.chat.messages.last(where: { $0.role == "tool" && $0.text == numbered }) { step.text = "Clicking “" + label + "”" }
-    if let missed = await verdict(who, tab, view, before, urlBefore, "", label) { return missed }
+    if let missed = await verdict(who, tab, view, before, urlBefore, "", label, step) { return missed }
     did(who, "Clicked '" + label + "'"); return agentOk(outcome(who, tab, before, "Clicked \"" + label + "\""))
    case "type":
     let (_, tab, view) = try await agentPage(who, args)
@@ -1030,24 +1070,25 @@ extension Browser {
     if let picked = focus["done"] as? String, !picked.isEmpty { did(who, picked); return agentOk(["done": picked]) }
     if let at = focus["at"] as? [String: Any], let x = (at["x"] as? NSNumber)?.doubleValue, let y = (at["y"] as? NSNumber)?.doubleValue {
      await pointer(who, tab, view, x, y)
-     try? await mouseClick(view, x, y, q(false))
+     try? await mouseClick(view, x, y, q(false), step)
      focus = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)) as? [String: Any] ?? [:] // the click moved the caret: put it back
     } else if let near = focus["near"] as? [String: Any], let x = (near["x"] as? NSNumber)?.doubleValue, let y = (near["y"] as? NSNumber)?.doubleValue {
      await pointer(who, tab, view, x, y)
     }
     let field = focus["label"] as? String ?? ""
     func unchanged() async -> Bool { ((try? await agentJs(view, "return { sig: sig(deepActive()) };", [:])) as? [String: Any])?["sig"] as? String == focus["sig"] as? String }
+    try step.live()
     if !text.isEmpty {
      view.insertText(text)
      // Some editors ignore inserted text: put it in the way typing would, or type it key by key.
      if await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); _ = try await agentJs(view, agentInsertScript, ["text": text, "append": append]) }
-     if text.count <= 4000, await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who)) }
+     if text.count <= 4000, await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who), step) }
      if await unchanged() { return agentFail("Typed, but \"" + field + "\" didn't change. Click it first, then type without an id, or use press_key.") }
-    } else if !append { try await pressKey(view, "Backspace") }
+    } else if !append { try await pressKey(view, "Backspace", step) }
     if submit {
      let urlBefore = tab.url
-     _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, "Enter")
-     if let unsent = await verdict(who, tab, view, before, urlBefore, "Enter", field) { return unsent }
+     _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, "Enter", step)
+     if let unsent = await verdict(who, tab, view, before, urlBefore, "Enter", field, step) { return unsent }
     }
     did(who, "Typed into " + field)
     return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "")))
@@ -1055,11 +1096,12 @@ extension Browser {
     let (_, tab, view) = try await agentPage(who, args)
     let before = agentTabs[who] ?? "", urlBefore = tab.url
     tab.agentActedAt = Date()
-    _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, argText(args, "key"))
-    if let nothing = await verdict(who, tab, view, before, urlBefore, argText(args, "key"), "") { return nothing }
+    _ = try await agentJs(view, agentScripts["Watch"] ?? "", [:]); try await pressKey(view, argText(args, "key"), step)
+    if let nothing = await verdict(who, tab, view, before, urlBefore, argText(args, "key"), "", step) { return nothing }
     did(who, "Pressed " + argText(args, "key")); return agentOk(outcome(who, tab, before, "Pressed " + argText(args, "key")))
    case "scroll":
     let (_, _, view) = try await agentPage(who, args)
+    try step.live()
     let o: [String: Any] = ["id": argId(args), "selector": argText(args, "selector"), "direction": argText(args, "direction"), "amount": min(20000, max(0, argNumber(args, "amount", 0)))]
     let scrolled = try await agentJs(view, agentScripts["Scroll"] ?? "", o) as? [String: Any] ?? [:], done = scrolled["done"] as? String ?? ""
     var reply: [String: Any] = ["done": done]
@@ -1084,13 +1126,13 @@ extension Browser {
     did(who, accept ? "Accepted a dialog" : "Dismissed a dialog"); return agentOk(outcome(who, tab, before, accept ? "Accepted the dialog" : "Dismissed the dialog"))
    case "upload_file":
     let (_, tab, view) = try await agentPage(who, args)
-    return try await uploadFiles(who, tab, view, args, quick)
+    return try await uploadFiles(who, tab, view, args, quick, step)
    default: return agentFail("Unknown tool: " + tool)
    }
   } catch { return agentFail(error.localizedDescription) }
  }
 
- @MainActor func uploadFiles(_ who: String, _ tab: Tab, _ view: WKWebView, _ args: [String: Any], _ quick: Bool) async throws -> String {
+ @MainActor func uploadFiles(_ who: String, _ tab: Tab, _ view: WKWebView, _ args: [String: Any], _ quick: Bool, _ step: AgentStep) async throws -> String {
   var paths: [String] = []
   if let list = args["paths"] as? [Any] { paths = list.map { $0 as? String ?? "" } } else if let one = args["paths"] as? String { paths = [one] }
   var files: [URL] = []

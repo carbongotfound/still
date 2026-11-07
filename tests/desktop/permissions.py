@@ -4,6 +4,8 @@ the cards like a person would.
   CART <site> <n>   clicks Add to cart n times (interact)
   ORDER <site>      types a name, then clicks Place order on a form that posts (sensitive)
   BOTH <site>       clicks Add to cart and Save for later at the same time (two cards: Approve all)
+  PAIR <url>        the same on a page of its own, so each run's clicks can be counted on the server
+  QUEUE <url>       a click on a link to a slow page (it holds the page's turn), and a second one waiting behind it
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
 countdown running out, Cancel right at the end of it, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
@@ -36,6 +38,7 @@ BIN = RUN / "bin"
 OUT = ROOT / "docs" / "agentic" / "compare"
 RESULT = {"checks": []}
 ORDERS = []
+HITS = []  # what the shop's buttons told the server, as /hit/<button>?k=<which run>
 LIVE = "--live" in sys.argv
 CODE = "482913"  # the code "texted to your phone": only the test (you) knows it
 
@@ -53,8 +56,9 @@ main{display:grid;grid-template-columns:1fr 1fr;gap:22px;padding:24px 28px}secti
 button{padding:8px 14px;border-radius:8px;border:1px solid #7a3e1d;background:#fff;font:inherit}#order{background:#7a3e1d;color:#fff}.pic{height:120px;border-radius:10px;background:linear-gradient(135deg,#ead9c4,#f6ede2)}</style>
 <header><b>Maple Market</b><form action=/shop role=search><input id=q name=q placeholder="Search the shop"><button>Search</button></form></header>
 <main><section><div class=pic></div><h2>Trail mug</h2><p>$18</p>
-<button type=button id=cart onclick="this.dataset.n=(+this.dataset.n||0)+1">Add to cart</button> <button type=button id=wish onclick="this.dataset.n=1">Save for later</button></section>
-<section><h2>Checkout</h2><form id=checkout method=post action=/order><p><label>Name <input id=name name=name></label></p><button id=order>Place order</button></form></section></main>"""
+<div id=row><button type=button id=cart onclick="this.dataset.n=(+this.dataset.n||0)+1;hit(this)">Add to cart</button> <button type=button id=wish onclick="this.dataset.n=1;hit(this)">Save for later</button> <a id=slow href=/slow>Details</a></div></section>
+<section><h2>Checkout</h2><form id=checkout method=post action=/order><p><label>Name <input id=name name=name></label></p><button id=order>Place order</button></form></section></main>
+<script>const hit = b => fetch('/hit/' + b.id + location.search, { method: 'POST' }); document.getElementById('row').addEventListener('click', e => { if (e.target.id === 'row') fetch('/hit/row' + location.search, { method: 'POST' }); });</script>"""
 # The live run's page: one checkout that needs a code only you have.
 MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple Market</title>") + """<main><section><div class=pic></div><h2>Trail mug</h2><p>$18 each</p></section>
 <section><h2>Checkout</h2><form id=checkout method=post action=/buy><p><label>Quantity <input id=qty name=qty type=number min=1 value=1></label></p>
@@ -64,10 +68,15 @@ MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple
 
 class Handler(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
+        if self.path.startswith("/slow"):
+            time.sleep(4)  # the click waits for the page, and holds its turn
         self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else "<!doctype html><title>Page</title><p>Page")
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
+        if self.path.startswith("/hit/"):
+            HITS.append(self.path)
+            return self.page("ok")
         ORDERS.append({"path": self.path, "body": urllib.parse.parse_qs(body), "t": time.time()})
         if self.path == "/buy" and urllib.parse.parse_qs(body).get("code") != [CODE]:
             return self.page("<!doctype html><title>Checkout</title><h1>That code didn't match</h1><p><a href=/mug>Try again</a>")
@@ -140,6 +149,18 @@ FAKE = textwrap.dedent(r'''
         both = [threading.Thread(target=call, args=("click",), kwargs={"selector": s}) for s in ("#cart", "#wish")]
         for t in both: t.start()
         for t in both: t.join()
+    elif m := re.search(r"PAIR (\S+)", tag):
+        call("open_tab", url=m[1])
+        both = [threading.Thread(target=call, args=("click",), kwargs={"selector": s}) for s in ("#cart", "#wish")]
+        for t in both: t.start()
+        for t in both: t.join()
+    elif m := re.search(r"QUEUE (\S+)", tag):
+        call("open_tab", url=m[1])
+        first = threading.Thread(target=call, args=("click",), kwargs={"selector": "#slow"})
+        first.start()
+        time.sleep(.3)
+        call("click", selector="#wish")
+        first.join()
     elif m := re.search(r"HELP (\S+)", tag):
         call("open_tab", url=m[1] + "/shop")
         call("ask_user", question="This page wants a code from your phone. Could you enter it?", tabId=json.loads(last[0])["tabId"])
@@ -230,6 +251,7 @@ def main():
         ask_every_time(process)
         sensitive(process)
         cancel_at_the_end(process)
+        one_at_a_time(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
@@ -429,6 +451,42 @@ def cancel_at_the_end(process):
     step = (calls("AGAIN u") or [{}])[-1]
     check(not step.get("ok") and "open_tab" in step.get("text", ""), f"A chat with no page yet is told to open one ({step.get('text', '')[:80]!r})")
     idle(process)
+
+
+def one_at_a_time(process):
+    """Two calls in one breath, over and over: both clicks reach their own buttons, and both say so."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    good = 0
+    for n in range(10):
+        tag = f"PAIR {SITE}/shop?k=p{n} r"
+        ask(process, tag)
+        until(lambda: len(cards(process)) == 2, 30)
+        press(process, "Approve all (2)")
+        until(lambda: len(calls(tag)) == 2, 30)
+        idle(process)
+        until(lambda: len([h for h in HITS if h.endswith(f"k=p{n}")]) >= 2, 5)
+        here = sorted(h for h in HITS if h.endswith(f"k=p{n}"))
+        if len(calls(tag)) == 2 and all(c["ok"] for c in calls(tag)) and here == [f"/hit/cart?k=p{n}", f"/hit/wish?k=p{n}"]:
+            good += 1
+        else:
+            print("   run", n, [(c["ok"], c["text"][:120]) for c in calls(tag)], here, flush=True)
+    check(good == 10, f"Two clicks at once land on their own buttons, once each, and neither is reported as missed ({good} of 10)")
+    check(not any("/hit/row" in h for h in HITS), "No click lands on the buttons' shared parent")
+
+    # Stop while a click waits its turn: it never happens, even after the first one finishes.
+    send(process, "permSet", site="", companion="maya", action="interact", mode="always")
+    until(lambda: rules(), 10)
+    tag = f"QUEUE {SITE}/shop?k=q r"
+    ask(process, tag)
+    until(lambda: calls(tag, opens=True), 30, .05)
+    time.sleep(1.5)  # the first click is waiting for the slow page, the second behind it
+    send(process, "aiStop")
+    idle(process)
+    time.sleep(5)  # the slow page is in, the turn is free: time enough for a stray click to land
+    check(f"/hit/wish?k=q" not in HITS, "A click still waiting its turn when you press Stop never happens")
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
 
 
 def approve_all(process):

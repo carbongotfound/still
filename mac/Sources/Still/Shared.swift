@@ -114,7 +114,6 @@ final class ChatRun {
  var typed = Set<String>() // what it typed into pages: form data, which memory never keeps
  var task = AiTask() // its state and checkpoint (Tasks.swift)
  var recheck = false // picked up after a sensitive step that may not have finished: the next one asks again
- var intent: AiSensitive? // the sensitive step about to run
  init(_ chat: AiChat, _ who: String) { self.chat = chat; self.who = who }
 }
 

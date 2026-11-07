@@ -148,6 +148,7 @@ final class Tab: NSObject {
  var agent: String? // the AI working in this tab right now (bot icon)
  var aiGroup = false // opened by an AI: shown together in the AI group
  var agentActedAt = Date.distantPast
+ let turn = PageTurn() // one AI action at a time on this page (see agentCall)
  var downloadAt = Date.distantPast, loadFailedAt = Date.distantPast // what an agent's click or navigate led to
  var dialog: PageDialog? // an alert/confirm/prompt the page is paused on
  var agentUpload: AgentUpload? // a file picker an AI's click opened, waiting for upload_file
