@@ -151,6 +151,11 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
+ case "keyboardHolder": done(["hidden": (b.window.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor ?? false])
+ case "keyboardToHidden":
+  let hiddenPage = b.tabs.compactMap(\.view).first { $0.isHidden }
+  let took = hiddenPage.map { b.window.makeFirstResponder($0) && b.window.firstResponder === $0 } ?? false
+  done(["tried": hiddenPage != nil, "took": took, "hidden": (b.window.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor ?? false])
  case "privateName": done(["isPrivate": isPrivateName(text("host"))])
  case "shellEval": qaWhenReady(b) { qaEval(b.shell, text("script"), done) }
  case "eval":

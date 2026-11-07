@@ -97,6 +97,15 @@ final class ShellView: WKWebView {
  }
 }
 
+/// Every change of who holds the keyboard comes through here, and a page out of sight never gets it. Refusing here, not in
+/// the page, leaves the page in front holding it: AppKit takes it from that page before it asks the new one.
+final class StillWindow: NSWindow {
+ override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
+  if let page = responder as? PageView, page.isHiddenOrHasHiddenAncestor { return false }
+  return super.makeFirstResponder(responder)
+ }
+}
+
 /// A page. Spots the interface keeps open over it (pageHoles: the AI's glow and its controls) show the shell through and take its clicks.
 final class PageView: WKWebView {
  var holes: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])? // in points, from the page's top left
@@ -170,7 +179,7 @@ final class Download {
 }
 
 final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavigationDelegate, WKUIDelegate, WKDownloadDelegate {
- let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+ let window = StillWindow(contentRect: NSRect(x: 0, y: 0, width: 1280, height: 820), styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
  let root = FlippedView()
  var shell: WKWebView!
  var tabs: [Tab] = []
