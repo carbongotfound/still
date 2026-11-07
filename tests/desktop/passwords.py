@@ -568,8 +568,8 @@ def main():
         until(lambda: js(process, "!!document.querySelector('[role=alertdialog]:not(.permission-bar)')"), 5)
         js(process, "[...document.querySelectorAll('[role=alertdialog]:not(.permission-bar) button')].find(b => b.innerText === 'Confirm').click()")
         exported = until(lambda: (RUN / "export.csv").exists() and (RUN / "export.csv").read_text(encoding="utf-8"), 5) or ""
-        row = next((r for r in csv.reader(io.StringIO(exported)) if len(r) > 3 and r[1].startswith("https://sheet.example")), [])
-        check(row[2:4] == ['\'=HYPERLINK("https://x.example")', "=Keeps-Its-Own-Form-5"], f"A username can't act as a spreadsheet formula, and the password stays exact ({row})")
+        sheet = next((r for r in csv.reader(io.StringIO(exported)) if len(r) > 3 and r[1].startswith("https://sheet.example")), [])
+        check(sheet[2:4] == ['\'=HYPERLINK("https://x.example")', "=Keeps-Its-Own-Form-5"], f"A username can't act as a spreadsheet formula, and the password stays exact ({sheet})")
         rows = list(csv.DictReader(exported.splitlines()))
         check(refused and any(r["username"] == "ada@example.com" and r["password"] == "Lighthouse-Keeper-43" and r["url"].startswith(SITE) for r in rows),
               "Export writes a CSV only after the check")

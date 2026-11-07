@@ -280,7 +280,7 @@ func argNumber(_ args: [String: Any], _ key: String, _ fallback: Double) -> Doub
 func argId(_ args: [String: Any]) -> String { ((args["id"] as? NSNumber)?.stringValue ?? args["id"] as? String ?? "").trimmingCharacters(in: CharacterSet(charactersIn: "[] ")) }
 func clipped(_ text: String, _ limit: Int) -> String { text.count > limit ? String(text.prefix(limit - 1)) + "…" : text }
 func hostName(_ url: String) -> String {
- guard var host = URL(string: url)?.host?.lowercased() else { return url }
+ guard var host = URL(string: url)?.host?.lowercased() else { return ["blob:", "data:", "about:"].contains { url.lowercased().hasPrefix($0) } ? "" : url }
  while host.hasSuffix(".") { host.removeLast() }
  return host.hasPrefix("www.") ? String(host.dropFirst(4)) : host
 }
