@@ -1148,7 +1148,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  func webView(_ view: WKWebView, runOpenPanelWith parameters: WKOpenPanelParameters, initiatedByFrame frame: WKFrameInfo, completionHandler: @escaping ([URL]?) -> Void) {
   guard let tab = tabs.first(where: { $0.view === view }) else { completionHandler(nil); return }
-  if agentPicker(tab, parameters.allowsMultipleSelection, completionHandler) { return }
+  if agentPicker(tab, parameters.allowsMultipleSelection, frame, completionHandler) { return }
   offerFiles(tab, parameters, completionHandler)
  }
 

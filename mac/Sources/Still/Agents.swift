@@ -29,7 +29,11 @@ final class Box<T> { var value: T? }
 /// An alert, confirm or prompt the page is paused on, answered from the shell's dialog or by an agent.
 struct PageDialog { let kind: String, message: String, defaultText: String, site: String; let answer: (Bool, String?) -> Void }
 /// A file picker an agent's click opened, waiting for upload_file.
-struct AgentUpload { let multiple: Bool; let complete: ([URL]?) -> Void }
+/// What an AI may name as a file: a full path on this computer, with nothing in it the bar couldn't show.
+func localFilePath(_ path: String) -> Bool {
+ (path.hasPrefix("/") || path.hasPrefix("~/")) && !path.unicodeScalars.contains { [.control, .format].contains($0.properties.generalCategory) }
+}
+struct AgentUpload { let multiple: Bool; let host: String; let complete: ([URL]?) -> Void }
 
 var approvedAgents = Set<String>(), blockedAgents = Set<String>() // lowercased names
 /// One AI at work, by run key: a chat's id for Still's own chat (so two chats on the same AI app stay apart),
@@ -952,6 +956,14 @@ extension Browser {
   return (browser, tab, view)
  }
 
+ /// Keys and Still's own data stay on this computer whatever an AI is told: only the person can pick them. A link is judged by where it leads.
+ func offLimitsFile(_ file: URL) -> Bool {
+  let keys: Set<String> = [".ssh", ".aws", ".azure", ".gnupg", ".kube", ".docker", ".claude", "keychains"]
+  return [file.path, file.resolvingSymlinksInPath().path].contains { path in
+   path.split(separator: "/").contains { keys.contains($0.lowercased()) } || [support.path, profileHome.path].contains { path.hasPrefix($0 + "/") }
+  }
+ }
+
  func agentWebUrl(_ input: String) throws -> String {
   let text = input.trimmingCharacters(in: .whitespacesAndNewlines), url = resolve(text)
   guard !text.isEmpty, let scheme = URL(string: url)?.scheme?.lowercased(), scheme == "http" || scheme == "https" else { throw AgentError("Agents can only open http and https pages.") }
@@ -1314,11 +1326,13 @@ extension Browser {
   for path in paths {
    let trimmed = path.trimmingCharacters(in: .whitespaces).trimmingCharacters(in: CharacterSet(charactersIn: "\""))
    if trimmed.isEmpty { continue }
+   guard localFilePath(trimmed) else { return agentFail("Pass full paths of files on this computer, like /Users/you/report.pdf.") }
    let file = URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath).standardizedFileURL
-   if !files.contains(file) && files.count < 12 { files.append(file) }
+   if !files.contains(file) { files.append(file) }
   }
   if files.isEmpty { return agentFail("Pass paths: the full paths of the files to attach.") }
-  if let missing = files.first(where: { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile != true }) { return agentFail("There's no file at " + missing.path) }
+  if files.count > 12 { return agentFail("Attach at most 12 files at a time.") }
+  if files.contains(where: offLimitsFile) { return agentFail("Still doesn't let an AI attach files from that folder. The user can attach it themselves.") }
   let notInput = "That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id."
   let noPicker = "No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input."
   let query: [String: Any] = ["id": argId(args), "selector": argText(args, "selector")], byId = !argId(args).isEmpty || !argText(args, "selector").isEmpty
@@ -1327,16 +1341,21 @@ extension Browser {
    var check = query; check["click"] = false
    guard try await agentJs(view, pick, check) as? Bool == true else { return agentFail(notInput) }
   } else if tab.agentUpload == nil { return agentFail(noPicker) }
-  let names = files.map { $0.lastPathComponent }.joined(separator: ", "), ask = "upload " + clipped(names, 120) + " to " + hostName(tab.url)
+  else if tab.agentUpload?.multiple == false && files.count > 1 { return agentFail("This file picker takes one file.") }
+  let site = hostName(tab.url), frame = byId ? "" : tab.agentUpload?.host ?? ""
+  let names = files.map { $0.lastPathComponent }.joined(separator: ", ")
+  let ask = "upload " + (files.count == 1 ? "this file: " : "\(files.count) files: ") + files.map(\.path).joined(separator: ", ") + " to " + (!frame.isEmpty && frame != site ? frame + " (a frame inside " + site + ")" : site)
   switch await askUser(who, ask, now: quick) {
   case .some(false): return agentFail("The user didn't allow this upload. Don't try again unless they ask.")
   case nil: return agentFail("Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.")
   default: break
   }
+  if hostName(tab.url) != site { return agentFail("The page went to another site while the user was being asked, so nothing was attached.") }
+  if let missing = files.first(where: { (try? $0.resourceValues(forKeys: [.isRegularFileKey]))?.isRegularFile != true }) { return agentFail("There's no file at " + missing.path) }
   if !byId {
    guard let picker = tab.agentUpload else { return agentFail(noPicker) }
    tab.agentUpload = nil
-   picker.complete(picker.multiple ? files : Array(files.prefix(1)))
+   picker.complete(files)
   } else {
    // Click the file input: WebKit asks for files (runOpenPanel), and agentPicker answers with these.
    if let picker = tab.agentUpload { tab.agentUpload = nil; picker.complete(nil) }
@@ -1352,11 +1371,14 @@ extension Browser {
 
  /// The page wants files. An agent's upload_file answers it, or, when an agent's click opened it, upload_file will:
  /// nothing pops up, and the agent's running call says a file picker opened.
- func agentPicker(_ tab: Tab, _ multiple: Bool, _ complete: @escaping ([URL]?) -> Void) -> Bool {
-  if let files = tab.uploadFiles { tab.uploadFiles = nil; complete(multiple ? files : Array(files.prefix(1))); return true }
+ func agentPicker(_ tab: Tab, _ multiple: Bool, _ frame: WKFrameInfo, _ complete: @escaping ([URL]?) -> Void) -> Bool {
+  if let files = tab.uploadFiles {
+   guard frame.isMainFrame, multiple || files.count == 1 else { complete(nil); return true } // what was approved was the page's own field
+   tab.uploadFiles = nil; complete(files); return true
+  }
   guard tab.agent != nil, Date().timeIntervalSince(tab.agentActedAt) < 10 else { return false }
   if let old = tab.agentUpload { tab.agentUpload = nil; old.complete(nil) }
-  tab.agentUpload = AgentUpload(multiple: multiple, complete: complete)
+  tab.agentUpload = AgentUpload(multiple: multiple, host: frame.securityOrigin.host.lowercased(), complete: complete)
   interruptAgent(tab, ["fileChooser": ["multiple": multiple], "url": tab.url, "note": "The page opened a file picker. Call upload_file with the full paths of the files to attach; the user is asked to allow it."])
   return true
  }

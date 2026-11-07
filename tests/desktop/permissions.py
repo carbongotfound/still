@@ -34,7 +34,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, press_ready, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, press_ready, rpc, send, until  # noqa: E402
 from mcp_client import Mcp, call_async  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
@@ -146,7 +146,7 @@ class Handler(http.server.BaseHTTPRequestHandler):
         if self.path.startswith("/slow"):
             HITS.append("/slow")
             time.sleep(4)  # the click waits for the page, and holds its turn
-        self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else "<!doctype html><title>Page</title><p>Page")
+        self.page(SHOP if self.path.startswith("/shop") else MUG if self.path.startswith("/mug") else FRAMED if self.path.startswith("/upload-frame") else UPLOAD if self.path.startswith("/upload") else "<!doctype html><title>Page</title><p>Page")
 
     def do_POST(self):
         body = self.rfile.read(int(self.headers.get("Content-Length") or 0)).decode()
@@ -172,6 +172,8 @@ class Handler(http.server.BaseHTTPRequestHandler):
 
 SERVER = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
 threading.Thread(target=SERVER.serve_forever, daemon=True).start()
+UPLOAD = "<!doctype html><title>Upload</title><input type=file multiple>"
+FRAMED = "<!doctype html><title>Framed</title><h1>Files</h1><iframe width=300 height=120></iframe><script>document.querySelector('iframe').src = 'http://localhost:' + location.port + '/upload'</script>"
 SITE = f"http://127.0.0.1:{SERVER.server_port}"
 OTHER = f"http://localhost:{SERVER.server_port}"  # the same shop under another site name
 
@@ -371,6 +373,7 @@ def main():
         keys_and_help(process)
         outside(process)
         outside_once(process)
+        uploads(process)
         asked_in_app(process)
         settings(process)
         process = crash_resume(process)
@@ -746,6 +749,90 @@ def steady_buttons(process):
     press(process, "Deny")
     idle(process)
     send(process, "permSensitive", site="127.0.0.1", on=False)
+
+
+def uploads(process):
+    # An upload's approval: every file named in full, held to that set and that site, nothing read before you answer.
+    folder = PROFILE.parent / "to-attach"
+    other = folder / "elsewhere"
+    other.mkdir(parents=True, exist_ok=True)
+    report, private = folder / "report.txt", other / "report.txt"
+    report.write_text("public", encoding="utf-8")
+    private.write_text("private", encoding="utf-8")
+    long_names = [folder / (f"{'a' * 60}{i}.txt") for i in range(4)]
+    for file in long_names:
+        file.write_text("x", encoding="utf-8")
+    key = folder / ".ssh" / "id_rsa"
+    key.parent.mkdir(exist_ok=True)
+    key.write_text("key", encoding="utf-8")
+    own = PROFILE / "own.txt"
+    own.write_text("own", encoding="utf-8")
+
+    send(process, "navigate", url=SITE + "/upload")
+    until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/uploadcomplete", 15)
+    agent = Mcp(EXE, "Probe", PROFILE)
+    agent.call("read_page", tabId=rpc(process)["activeId"], seconds=20)
+    bar = "document.querySelector('.permission-wrap.is-open .agent-bar')?.innerText ?? ''"
+    attached = lambda: rpc(process, "eval", script="[...document.querySelector('input').files].map(f => f.name).join('|')")
+    def asked(paths, **args):
+        pending = call_async(agent, "upload_file", selector="input", paths=paths, **args)
+        until(lambda: all(p in (js(process, bar) or "") for p in paths), 15)
+        return pending, js(process, bar) or ""
+    def answer(pending, allow, paths):
+        press(process, "Allow" if allow else "Block", within=".permission-wrap.is-open .agent-bar")
+        ok, said = pending.get(timeout=30)
+        if not ok and "Waiting" in said:  # the user counted as away: the answer applies to the next call
+            ok, said = agent.call("upload_file", selector="input", paths=paths, seconds=20)
+        return ok, said
+    try:
+        for paths, why, name in (
+            ([r"\\192.0.2.1\share\a.txt", "//192.0.2.1/share/a.txt"], "this computer", "A path to another computer is refused before anything looks at it"),
+            (["%PATH%"], "full paths", "A path with a variable in it isn't filled in"),
+            ([str(key)], "that folder", "A key folder is refused"),
+            ([str(own)], "that folder", "Still's own data is refused"),
+            ([str(folder / f"{i}.txt") for i in range(13)], "at most 12", "More files than the limit are refused, not cut short"),
+        ):
+            ok, said = agent.call("upload_file", selector="input", paths=paths, seconds=20)
+            check(not ok and why in said, name)
+        pending, shown = asked([str(report)])
+        check(str(report) in shown, "The approval shows the file's whole path")
+        answer(pending, True, [str(report)])
+        check(until(lambda: attached() == "report.txt", 5), "Allow attaches that file")
+        pending, shown = asked([str(private)])
+        check(str(private) in shown, "A file with the same name somewhere else asks again, with its own path")
+        answer(pending, False, [str(private)])
+        check(attached() == "report.txt", "...and Block leaves the field as it was")
+        paths = [str(p) for p in long_names]
+        pending, shown = asked(paths)
+        check("4 files" in shown and all(p in shown for p in paths), "Long names don't push files out of the approval")
+        answer(pending, False, paths)
+        pending, shown = asked([str(folder / "not-there.txt")])
+        check("not-there.txt" in shown, "Whether a file exists isn't checked until you answer")
+        _, said = answer(pending, True, [str(folder / "not-there.txt")])
+        check("no file" in said, "...and then it says so")
+        pending, shown = asked([str(report)])
+        send(process, "navigate", url=OTHER + "/upload")
+        until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/uploadcomplete", 15)
+        _, said = answer(pending, True, [str(report)])
+        check(("another site" in said or "Waiting" in said) and attached() == "", f"A page that moves to another site meanwhile gets nothing ({said[:60]!r})")
+        if "Waiting" in said:
+            check(until(lambda: "to localhost" in (js(process, bar) or ""), 5), f"...and asking again names the new site ({(js(process, bar) or '')[-60:]!r})")
+            press(process, "Block", within=".permission-wrap.is-open .agent-bar")
+        if MAC:  # Windows has a separate process for another site's frame: the system's own dialog opens there, for the person
+            send(process, "navigate", url=SITE + "/upload-frame")
+            until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/upload-framecomplete", 15)
+            agent.call("click", selector="h1", seconds=20)
+            at = rpc(process, "eval", script="(r => [r.x + 30, r.y + 20])(document.querySelector('iframe').getBoundingClientRect())")
+            for kind in ("mousePressed", "mouseReleased"):
+                rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
+            time.sleep(1)
+            pending = call_async(agent, "upload_file", paths=[str(report)])
+            shown = until(lambda: js(process, bar) if "upload" in (js(process, bar) or "") else "", 15) or ""
+            check("frame inside" in shown and "localhost" in shown, "A file picker in another site's frame names that site")
+            press(process, "Block", within=".permission-wrap.is-open .agent-bar")
+            pending.get(timeout=30)
+    finally:
+        agent.close()
 
 
 def plan(name, *steps):

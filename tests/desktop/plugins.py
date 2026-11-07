@@ -199,7 +199,7 @@ FAKE = textwrap.dedent(r'''
     request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}})
     still.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); still.stdin.flush()
     tag = prompt.rsplit("\n\n", 1)[-1].strip()
-    def call(name, **a):
+    def call(name, /, **a):
         m = request("tools/call", {"name": name, "arguments": a}) or {}
         r = m.get("result") or {"isError": True, "content": [{"text": "MCP error: " + json.dumps(m.get("error"))}]}
         ok, text = not r.get("isError"), "\n".join(c.get("text", "") for c in r.get("content", []))

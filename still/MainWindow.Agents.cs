@@ -765,10 +765,22 @@ public partial class MainWindow
   await Task.Delay(250);
   while (t.Loading && DateTime.UtcNow < until) await Task.Delay(100);
  }
+ // What an AI may name as a file. A path that reaches another computer would connect to it as soon as anything looked at it, so these go before the disk is touched.
+ static bool LocalFilePath(string path) => Path.IsPathFullyQualified(path) && !path.StartsWith(@"\\") && !path.StartsWith("//") && !path.StartsWith(@"\/") && !path.StartsWith(@"/\") && !path.Any(c => char.GetUnicodeCategory(c) is System.Globalization.UnicodeCategory.Control or System.Globalization.UnicodeCategory.Format);
+ static readonly string[] KeyFolders = [".ssh", ".aws", ".azure", ".gnupg", ".kube", ".docker", ".claude", "Credentials", "Protect"];
+ // Keys and Still's own data stay on this computer whatever an AI is told: only the person can pick them. A link is judged by where it leads.
+ static bool OffLimitsFile(string path)
+ {
+  string real;
+  try { real = File.ResolveLinkTarget(path, true)?.FullName ?? path; } catch (Exception ex) when (ex is FileNotFoundException or DirectoryNotFoundException) { real = path; } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { return true; }
+  return new[] { path, real }.Any(p => p.Split('\\', '/').Any(part => KeyFolders.Contains(part, StringComparer.OrdinalIgnoreCase)) || Within(p, App.DataRoot) || Within(p, App.ProfileHome));
+  static bool Within(string p, string root) => root.Length > 0 && p.StartsWith(Path.TrimEndingDirectorySeparator(root) + "\\", StringComparison.OrdinalIgnoreCase);
+ }
  /// What an agent may open: web pages, and files inside its companion's working folder (a builder tests what it made there).
  internal const string SampleHost = "sample.still.internal"; // Shell/sample, mapped into every tab
  static string WebUrl(string input, string engine, string folder = "")
  {
+  if (input.Trim() is var text && (text.StartsWith(@"\\") || text.StartsWith("//") || text.StartsWith(@"\/") || text.StartsWith(@"/\"))) throw new InvalidOperationException("Agents can only open http and https pages" + (folder.Length > 0 ? ", and files in your working folder." : "."));
   var url = ResolveAddress(input, engine);
   if (Uri.TryCreate(url, UriKind.Absolute, out var u) && u.IsFile && folder.Length > 0 && Path.GetFullPath(u.LocalPath).StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(folder)) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) return u.AbsoluteUri;
   if (u == null || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages" + (folder.Length > 0 ? ", and files in your working folder." : "."));
@@ -1330,22 +1342,30 @@ public partial class MainWindow
     var (w, t, core) = await AgentPage(who, args);
     string[] files = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("paths", out var p)
      ? p.ValueKind == JsonValueKind.Array ? p.EnumerateArray().Select(x => x.ValueKind == JsonValueKind.String ? x.GetString() ?? "" : "").ToArray() : [p.ValueKind == JsonValueKind.String ? p.GetString() ?? "" : ""] : [];
-    files = files.Where(f => f.Trim().Length > 0).Select(f => Path.GetFullPath(Environment.ExpandEnvironmentVariables(f.Trim().Trim('"')))).Distinct().Take(12).ToArray();
+    files = files.Select(f => f.Trim().Trim('"')).Where(f => f.Length > 0).Distinct().ToArray();
     if (files.Length == 0) return Fail("Pass paths: the full paths of the files to attach.");
-    if (files.FirstOrDefault(f => !File.Exists(f)) is { } missing) return Fail("There's no file at " + missing);
+    if (files.Length > 12) return Fail("Attach at most 12 files at a time.");
+    if (files.Any(f => !LocalFilePath(f))) return Fail("Pass full paths of files on this computer, like C:\\Users\\you\\report.pdf.");
+    files = files.Select(Path.GetFullPath).Distinct().ToArray();
+    if (files.Any(OffLimitsFile)) return Fail("Still doesn't let an AI attach files from that folder. The user can attach it themselves.");
     object input;
+    string site = Host(t.Url);
     if (Id(args).Length + S(args, "selector").Length > 0) {
      var found = await core.EvaluateInOwnWorld("((o)=>{" + PageJs + FileInputJs + "})(" + JsonSerializer.Serialize(new { id = Id(args), selector = S(args, "selector") }) + ")", byValue: false);
      if (found.ValueKind != JsonValueKind.Object || found.TryGetProperty("exceptionDetails", out _) || !found.TryGetProperty("result", out var res) || Str(res, "subtype") != "node" || !res.TryGetProperty("objectId", out var obj)) return Fail("That isn't a file upload field. Click the page's upload button instead, then call upload_file without an id.");
      input = new { files, objectId = obj.GetString() };
-    } else if (t.AgentUpload is UploadRequest picker && picker.Core == core) input = new { files = picker.Multiple ? files : files[..1], backendNodeId = picker.Node };
-    else return Fail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.");
+    } else if (t.AgentUpload is UploadRequest picker && picker.Core == core) {
+     if (!picker.Multiple && files.Length > 1) return Fail("This file picker takes one file.");
+     input = new { files, backendNodeId = picker.Node };
+    } else return Fail("No file picker is open. Click the page's upload button first (Still catches the picker for you), or pass the id of a file input.");
     string names = string.Join(", ", files.Select(Path.GetFileName));
-    string ask = "upload " + Clip(names, 120) + " to " + Host(t.Url);
+    string ask = "upload " + (files.Length == 1 ? "this file: " : files.Length + " files: ") + string.Join(", ", files) + " to " + site;
     switch (await AskUser(who, ask, quick)) {
      case false: return Fail("The user didn't allow this upload. Don't try again unless they ask.");
      case null: return Fail("Waiting for the user to allow the upload: Still shows Allow and Block at the top of its window. Tell the user, then call upload_file again.");
     }
+    if (Host(t.Url) != site) return Fail("The page went to another site while the user was being asked, so nothing was attached.");
+    if (files.FirstOrDefault(f => !File.Exists(f)) is { } missing) return Fail("There's no file at " + missing);
     step.Live();
     await core.CallDevToolsProtocolMethodAsync("DOM.setFileInputFiles", JsonSerializer.Serialize(input));
     t.AgentUpload = null;
