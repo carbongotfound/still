@@ -364,6 +364,7 @@ def main():
         cancel_at_the_end(process)
         one_at_a_time(process)
         only_what_was_shown(process)
+        no_site_no_rule(process)
         steady_buttons(process)
         only_once(process)
         check_comes_first(process)
@@ -463,6 +464,7 @@ def once_per_chat(process):
     until(lambda: cards(process), 30)
     press(process, "Always on this site")
     check(until(lambda: any(r["Site"] == "127.0.0.1" and r["Action"] == "interact" and r["Mode"] == "always" for r in rules()), 10), "Always allow saves a rule for the site")
+    check(all(r["Companion"] == "maya" for r in rules() if r["Mode"] == "always" and r["Site"] == "127.0.0.1"), f"...for the companion who asked, not everyone ({rules()})")
     idle(process)
     ask(process, f"CART {SITE} 1 d")
     until(lambda: calls("CART " + SITE + " 1 d"), 30)
@@ -608,6 +610,24 @@ def one_at_a_time(process):
     check(f"/hit/wish?k=q" not in HITS, "A click still waiting its turn when you press Stop never happens")
     send(process, "permReset")
     until(lambda: not rules(), 10)
+
+
+def no_site_no_rule(process):
+    # A page that made itself a blob: has no site, so there's nothing for "Always on this site" to mean.
+    before = rules()
+    blob = "location.href = URL.createObjectURL(new Blob(['<!doctype html><title>Blob</title><button id=buy>Buy</button>'], { type: 'text/html' }))"
+    send(process, "new", url=SITE + "/shop")
+    until(lambda: rpc(process, "eval", script="document.title") == "Maple Market", 15)
+    rpc(process, "eval", script=blob)
+    until(lambda: rpc(process, "eval", script="document.title") == "Blob", 15)
+    tab = rpc(process)["activeId"]
+    ask(process, plan("blob", {"name": "click", "arguments": {"tabId": tab, "selector": "#buy"}}))
+    card = until(lambda: cards(process), 20)
+    choices = js(process, "[...document.querySelectorAll('.approve-card .approve-actions button')].map(b => b.innerText.trim())") or []
+    check(card and "Allow once" in choices and "Always on this site" not in choices, f"A page with no site doesn't offer Always on this site ({choices})")
+    press(process, "Deny")
+    idle(process)
+    check(rules() == before, "...and nothing was saved")
 
 
 def only_what_was_shown(process):

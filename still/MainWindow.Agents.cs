@@ -948,8 +948,8 @@ public partial class MainWindow
   }
   if (granted && action != "sensitive") { if (action == "interact") Audit(run.Chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat"); return null; }
   string answer = await Approve(run, what, site, action, why, countdown: granted);
-  if (answer == "always" && run.Chat.Ephemeral) answer = "chat"; // an incognito chat writes no site rules
-  if (answer == "always") SetPermission(site, action, "", "always");
+  if (answer == "always" && (run.Chat.Ephemeral || site.Length == 0)) answer = "chat"; // an incognito chat writes no site rules, and a page with no site has none to write
+  if (answer == "always") foreach (var companion in up.Chain) SetPermission(site, action, companion, "always"); // who the card named, and whoever they're helping: not everyone
   if (answer == "chat" && !up.Root.Allowed.Contains(key)) up.Root.Allowed.Add(key);
   step.Allowed = answer is "always" or "chat" or "once";
   Audit(run.Chat, what, site, answer switch {

@@ -1103,8 +1103,8 @@ extension Browser {
   }
   if granted && action != "sensitive" { if action == "interact" { audit(run.chat, what, site, mode == "always" ? "Allowed by your settings" : "Allowed in this chat") }; return nil }
   var answer = await approve(run, what, site, action, why, countdown: granted)
-  if answer == "always" && run.chat.ephemeral { answer = "chat" } // an incognito chat writes no site rules
-  if answer == "always" { setPermission(site, action, "", "always") }
+  if answer == "always" && (run.chat.ephemeral || site.isEmpty) { answer = "chat" } // an incognito chat writes no site rules, and a page with no site has none to write
+  if answer == "always" { for companion in up?.chain ?? [run.chat.companion] { setPermission(site, action, companion, "always") } } // who the card named, and whoever they're helping: not everyone
   if let root = up?.root, answer == "chat" && !root.allowed.contains(key) { root.allowed.append(key) }
   step.allowed = ["always", "chat", "once"].contains(answer)
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
