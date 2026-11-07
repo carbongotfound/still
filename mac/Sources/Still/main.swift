@@ -195,6 +195,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var appearanceObserver: NSKeyValueObservation?
  var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found, cookies: [HTTPCookie])?
  var importBusy = false, importError = "", importDone = ""
+ var importPicked = false // a folder chosen by hand, not a browser Still found: nothing vouches for what it says
  var importBlocked: (name: String, folder: URL)? // macOS kept Still out of this browser's folder: the panel offers to choose it
  // Windows (Windows.swift)
  let windowId = newId()
@@ -495,7 +496,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    picker.canChooseDirectories = true; picker.canChooseFiles = false
    picker.directoryURL = blocked?.folder
    picker.message = blocked.map { "Click Open to let Still read \($0.name)'s bookmarks and history." } ?? "Choose a browser profile folder, such as Chrome's Default folder or ~/Library/Safari."
-   picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(blocked?.folder.standardizedFileURL == url.standardizedFileURL ? blocked!.name : url.lastPathComponent, url) } }
+   picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { self.reviewImport(blocked?.folder.standardizedFileURL == url.standardizedFileURL ? blocked!.name : url.lastPathComponent, url, picked: blocked?.folder.standardizedFileURL != url.standardizedFileURL) } }
   case "externalFullDisk": NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles")!)
   case "externalCancel": if !importBusy { pendingImport = nil; importError = ""; importBlocked = nil; publishImport() }
   case "externalConfirm": finishImport(bookmarks: data["bookmarks"] as? Bool ?? false, history: data["history"] as? Bool ?? false, passwords: data["passwords"] as? Bool ?? false, cookies: data["cookies"] as? Bool ?? false, autofill: data["autofill"] as? Bool ?? false)
@@ -886,7 +887,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let blocked = importBlocked { external["blocked"] = blocked.name }
   if let preview = pendingImport {
    external["preview"] = ["id": preview.id, "name": preview.name, "bookmarks": preview.bookmarks.count, "history": preview.history.count,
-                          "passwords": preview.logins.logins.count, "cookies": preview.cookies.count, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings]
+                          "passwords": preview.logins.logins.count, "cookies": preview.cookies.count, "cookiesLocked": false, "skipped": preview.logins.skipped, "warnings": preview.logins.warnings, "picked": importPicked,
+                          "sites": importPicked ? Array(NSOrderedSet(array: preview.logins.logins.map { hostName($0.origin) }).array.prefix(8)) : []]
   }
   var data: [String: Any] = ["external": external]
   if let batch = importBatch {
@@ -897,8 +899,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  /// Reads bookmarks, history, saved passwords and (from Chromium browsers) cookies for review first.
- func reviewImport(_ name: String, _ folder: URL) {
+ func reviewImport(_ name: String, _ folder: URL, picked: Bool = false) {
   guard !importBusy else { return }
+  importPicked = picked
   importBusy = true; importError = ""; importDone = ""; pendingImport = nil; importBlocked = nil
   publishImport()
   DispatchQueue.global(qos: .userInitiated).async {

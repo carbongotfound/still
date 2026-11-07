@@ -193,7 +193,7 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   done(["asks": qaAuthAsks, "answer": qaAuthAnswer])
  case "stageImport":
   do { try b.prepareImport(text("kind"), URL(fileURLWithPath: text("path"))); done(["ok": true]) } catch { done(["error": error.localizedDescription]) }
- case "stageExternalProfile": b.reviewImport(request["name"] as? String ?? "Opera GX", URL(fileURLWithPath: text("path"))); done(["ok": true])
+ case "stageExternalProfile": b.reviewImport(request["name"] as? String ?? "Opera GX", URL(fileURLWithPath: text("path")), picked: request["picked"] as? Bool == true); done(["ok": true])
  case "stageExtension", "stageStorePackage", "shellCdp", "pageCdp":
   done(["error": "\(op) needs WebView2 (extensions or DevTools), so the Mac app has no such step"])
  default: done(["error": "unknown operation or no page"])

@@ -285,13 +285,24 @@ def chrome_profile(folder):
 
     class Blob(ctypes.Structure):
         _fields_ = [("cbData", wt.DWORD), ("pbData", ctypes.POINTER(ctypes.c_char))]
-    plain = b"Chrome-dpapi-77"
-    buf = ctypes.create_string_buffer(plain, len(plain))
-    out = Blob()
-    assert ctypes.windll.crypt32.CryptProtectData(ctypes.byref(Blob(len(plain), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))), None, None, None, None, 0, ctypes.byref(out))
-    sealed = ctypes.string_at(out.pbData, out.cbData)
-    ctypes.windll.kernel32.LocalFree(out.pbData)
+
+    def protect(plain):
+        buf = ctypes.create_string_buffer(plain, len(plain))
+        out = Blob()
+        assert ctypes.windll.crypt32.CryptProtectData(ctypes.byref(Blob(len(plain), ctypes.cast(buf, ctypes.POINTER(ctypes.c_char)))), None, None, None, None, 0, ctypes.byref(out))
+        got = ctypes.string_at(out.pbData, out.cbData)
+        ctypes.windll.kernel32.LocalFree(out.pbData)
+        return got
+    sealed = protect(b"Chrome-dpapi-77")
     folder.mkdir(parents=True)
+    db = sqlite3.connect(folder / "Cookies")
+    db.execute("CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT)")
+    db.execute("INSERT INTO meta VALUES ('version', '24')")
+    db.execute("CREATE TABLE cookies (host_key TEXT, name TEXT, value TEXT, encrypted_value BLOB, path TEXT, expires_utc INTEGER, is_secure INTEGER, is_httponly INTEGER, samesite INTEGER, has_expires INTEGER)")
+    db.execute("INSERT INTO cookies VALUES ('chrome.example', 'own', '', ?, '/', 0, 0, 0, 1, 0)", (protect(hashlib.sha256(b"chrome.example").digest() + b"here"),))
+    db.execute("INSERT INTO cookies VALUES ('moved.example', 'moved', '', ?, '/', 0, 0, 0, 1, 0)", (protect(hashlib.sha256(b"chrome.example").digest() + b"another site's"),))
+    db.commit()
+    db.close()
     (folder / "Bookmarks").write_text(json.dumps({"roots": {"bookmark_bar": {"children": [{"type": "url", "name": "Chrome page", "url": "https://chrome.example/"}]}}}))
     db = sqlite3.connect(folder / "Login Data")
     db.execute("CREATE TABLE logins (origin_url TEXT, username_value TEXT, password_value BLOB, blacklisted_by_user INTEGER)")
@@ -326,13 +337,14 @@ def mac_chrome_profile(folder):
     host, later = b"127.0.0.1", int((time.time() + 86400 + 11_644_473_600) * 1_000_000)
     db.execute("INSERT INTO cookies VALUES ('127.0.0.1', 'chromesid', '', ?, '/', ?, 0, 0, 1, 1)", (seal(hashlib.sha256(host).digest() + b"Session-keychain-55"),later))
     db.execute("INSERT INTO cookies VALUES ('127.0.0.1', 'chromehttp', '', ?, '/', 0, 0, 1, -1, 0)", (seal(hashlib.sha256(host).digest() + b"server-only"),))
+    db.execute("INSERT INTO cookies VALUES ('moved.example', 'moved', '', ?, '/', 0, 0, 0, 1, 0)", (seal(hashlib.sha256(host).digest() + b"another site's"),))
     db.commit()
     db.close()
 
 
-def stage_profile(process, path, name):
+def stage_profile(process, path, name, picked=False):
     js(process, "window.__tools.import = null")
-    rpc(process, "stageExternalProfile", path=str(path), name=name)
+    rpc(process, "stageExternalProfile", path=str(path), name=name, picked=picked)
     return until(lambda: js(process, "window.__tools.import?.external?.preview ?? null"), 15)
 
 
@@ -627,6 +639,13 @@ def main():
         else:
             chrome = RUN / "chrome"
             chrome_profile(chrome)
+            external = stage_profile(process, chrome, "Chrome") or {}
+            check(external.get("cookies") == 1 and external.get("skipped", 0) >= 1, f"A sealed cookie that isn't its site's own stays behind ({external.get('cookies')} cookies)")
+            check(not external.get("picked"), "A browser Still found isn't treated as a folder you picked")
+            send(process, "externalCancel")
+            hand = stage_profile(process, chrome, "chrome", picked=True) or {}
+            check(hand.get("picked") is True and "chrome.example" in hand.get("sites", []), f"A folder you picked says which sites its passwords are for ({hand.get('sites')})")
+            send(process, "externalCancel")
             external = stage_profile(process, chrome, "Chrome") or {}
             check(external.get("passwords") == 2 and any("locked to the browser" in w and "Export your passwords" in w for w in external.get("warnings", [])),
                   "Chrome passwords import, and app-bound ones point to Chrome's own CSV export")

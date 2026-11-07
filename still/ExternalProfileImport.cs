@@ -202,8 +202,11 @@ public sealed class ExternalProfileImport : IDisposable
    if(value.Length==0&&!reader.IsDBNull(3)){
     var plain=Decrypt((byte[])reader[3]);
     if(plain==null){locked++;continue;}
-    int skip=version>=24&&plain.Length>=32?32:0;
-    value=Encoding.UTF8.GetString(plain,skip,plain.Length-skip);CryptographicOperations.ZeroMemory(plain);
+    // That prefix ties a sealed value to its site. Without it, this might be another site's, moved here.
+    bool own=version>=24&&plain.Length>=32&&CryptographicOperations.FixedTimeEquals(plain.AsSpan(0,32),SHA256.HashData(Encoding.UTF8.GetBytes(host)));
+    if(own)value=Encoding.UTF8.GetString(plain,32,plain.Length-32);
+    CryptographicOperations.ZeroMemory(plain);
+    if(!own){Skipped++;continue;}
    }
    bool session=reader.GetInt64(9)==0;DateTime expires=now;
    if(!session){

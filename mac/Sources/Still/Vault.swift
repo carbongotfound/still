@@ -434,8 +434,9 @@ enum BrowserLogins {
   if value.isEmpty {
    let sealed = Array(row[3])
    guard sealed.starts(with: Array("v10".utf8)), let plain = cbc(CCAlgorithm(kCCAlgorithmAES), key, [UInt8](repeating: 0x20, count: 16), Array(sealed.dropFirst(3))) else { return nil }
-   // Since Chromium's cookie database version 24, a value starts with SHA-256 of its host.
-   value = String(decoding: (Int(text(10)) ?? 0) >= 24 && plain.count >= 32 ? plain.dropFirst(32) : plain[...], as: UTF8.self)
+   // Since Chromium's cookie database version 24, a value starts with SHA-256 of its host. That ties it to its site: without it, it might be another site's, moved here.
+   guard (Int(text(10)) ?? 0) >= 24, plain.count >= 32, Array(plain.prefix(32)) == Array(SHA256.hash(data: row[0])) else { return nil }
+   value = String(decoding: plain.dropFirst(32), as: UTF8.self)
   }
   guard (1...255).contains(text(0).count), text(1).count <= 4096, value.count <= 4096 else { return nil }
   var properties: [HTTPCookiePropertyKey: Any] = [.domain: text(0), .path: text(4).isEmpty ? "/" : text(4), .name: text(1), .value: value]

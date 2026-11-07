@@ -10,12 +10,14 @@ public partial class MainWindow
  bool externalImportBusy;
  string externalImportPath="";
  int externalImportGeneration;
+ bool externalImportPicked; // a folder chosen by hand, not a browser Still found: nothing vouches for what it says
  readonly Dictionary<string,(string Name,string Path)> externalSources=[];
  object ExternalImportData()=>new{
   busy=externalImportBusy,error=externalImportError,done=externalImportDone,profile=ProfileCatalog.CurrentName(),
   sources=externalSources.Select(s=>new{id=s.Key,name=s.Value.Name}),
   preview=externalImport==null?null:new{id=externalImport.Id,name=externalImportName,bookmarks=externalImport.Bookmarks.Count,history=externalImport.History.Count,
-   passwords=externalImport.Logins.Count,cookies=externalImport.Cookies.Count,cookiesLocked=externalImport.CookiesLocked,skipped=externalImport.Skipped,warnings=externalImport.Warnings}
+   passwords=externalImport.Logins.Count,cookies=externalImport.Cookies.Count,cookiesLocked=externalImport.CookiesLocked,skipped=externalImport.Skipped,warnings=externalImport.Warnings,picked=externalImportPicked,
+   sites=externalImportPicked?externalImport.Logins.Select(l=>Host(l.Origin)).Distinct().Take(8).ToList():[]}
  };
  void DiscoverExternalProfiles()
  {
@@ -44,12 +46,13 @@ public partial class MainWindow
   if(externalImportBusy)return;
   _=Dispatcher.BeginInvoke(async()=>{
    var picker=new OpenFolderDialog{Title="Choose a browser profile folder"};
-   if(picker.ShowDialog(this)==true)await PrepareExternalProfile(picker.FolderName,Path.GetFileName(picker.FolderName));
+   if(picker.ShowDialog(this)==true)await PrepareExternalProfile(picker.FolderName,Path.GetFileName(picker.FolderName),picked:true);
   });
  }
- async Task PrepareExternalProfile(string path,string name)
+ async Task PrepareExternalProfile(string path,string name,bool picked=false)
  {
   if(externalImportBusy)return;
+  externalImportPicked=picked;
   int generation=++externalImportGeneration;
   externalImport?.Dispose();externalImport=null;importBatch=null;externalImportError="";externalImportDone="";externalImportBusy=true;
   await PublishBrowserTools("import");

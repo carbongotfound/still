@@ -46,9 +46,9 @@ function ExternalImport({data,send}:{data:ToolData;send:Send}){
 function ExternalReview({preview,busy,send}:{preview:NonNullable<NonNullable<ToolData["external"]>["preview"]>;busy:boolean;send:Send}){
  const [bookmarks,setBookmarks]=useState(preview.bookmarks>0)
  const [history,setHistory]=useState(preview.history>0)
- const [passwords,setPasswords]=useState(preview.passwords>0)
- const [cookies,setCookies]=useState(preview.cookies>0)
- const [autofill,setAutofill]=useState(true)
+ const [passwords,setPasswords]=useState(preview.passwords>0&&!preview.picked)
+ const [cookies,setCookies]=useState(preview.cookies>0&&!preview.picked)
+ const [autofill,setAutofill]=useState(!preview.picked)
  const rows:[string,string,number,boolean,(v:boolean)=>void][]=[
   ["Bookmarks","including Speed Dial; folders are flattened",preview.bookmarks,bookmarks,setBookmarks],
   ["History","recent pages, used for address suggestions",preview.history,history,setHistory],
@@ -56,6 +56,7 @@ function ExternalReview({preview,busy,send}:{preview:NonNullable<NonNullable<Too
   ["Cookies & sign-ins","keeps you signed in to your sites",preview.cookies,cookies,setCookies]]
  return <form className="extension-review" onSubmit={e=>{e.preventDefault();send("externalConfirm",{id:preview.id,bookmarks,history,passwords,cookies,autofill})}}>
   <strong>Review import from {preview.name}</strong>
+  {preview.picked&&<p className="tool-caption picked-warning">You picked this folder yourself. Turn on passwords and sign-ins only if you trust where it came from: they'll work on the sites the folder names{preview.sites?.length?`, such as ${preview.sites.join(", ")}`:""}.</p>}
   {rows.map(([label,note,count,value,set])=><div className="setting-row" key={label}><div><strong>{label}</strong><p>{count.toLocaleString()} · {note}</p></div><Switch aria-label={"Import "+label} checked={value} onCheckedChange={set} disabled={busy||!count}/></div>)}
   {passwords&&<div className="setting-row"><div><strong>Fill passwords automatically</strong><p>Sign-in forms fill themselves on matching sites, and new logins are offered for saving.</p></div><Switch aria-label="Fill imported passwords automatically" checked={autofill} onCheckedChange={setAutofill} disabled={busy}/></div>}
   {preview.cookiesLocked&&<div className="import-locked"><p><strong>Sign-ins are locked.</strong> {preview.name} keeps its cookies locked while it's open. Close it to bring your signed-in sessions (Google, YouTube, Discord…) with you.</p><Button type="button" variant="outline" size="sm" disabled={busy} onClick={()=>send("externalCloseSource")}>Close {preview.name.split(" · ")[0]} and include sign-ins</Button></div>}

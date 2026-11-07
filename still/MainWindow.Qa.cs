@@ -67,7 +67,7 @@ public partial class MainWindow
        if (op == "stageExtension") { await StageExtension(doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
-       if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,doc.RootElement.TryGetProperty("name", out var source) ? source.GetString()! : "Opera GX");return "{\"ok\":true}"; }
+       if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,doc.RootElement.TryGetProperty("name", out var source) ? source.GetString()! : "Opera GX",doc.RootElement.TryGetProperty("picked", out var chosen) && chosen.GetBoolean());return "{\"ok\":true}"; }
        if (op == "shellEval" && shellView?.CoreWebView2 is { } ui) return await ui.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "shellCdp" && shellView?.CoreWebView2 is { } dev) return await dev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
        if (op == "pageCdp" && active?.View?.CoreWebView2 is { } pageDev) return await pageDev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
