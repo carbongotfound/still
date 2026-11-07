@@ -624,7 +624,7 @@ extension Browser {
   }
  }
 
- func handleAgent(_ line: String, _ reply: @escaping (String) -> Void) { Task { @MainActor in reply(await self.agentCall(line)) } }
+ func handleAgent(_ line: String, _ reply: @escaping (String) -> Void) { Task { @MainActor in reply(redactReply(await self.agentCall(line))) } }
 
  @MainActor func agentCall(_ line: String) async -> String {
   guard let root = jsonObject(line), let tool = root["tool"] as? String else { return agentFail("Invalid request.") }

@@ -1,6 +1,7 @@
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using System.Text.Json.Nodes;
 using System.Text.RegularExpressions;
 using System.Windows;
 using Microsoft.Web.WebView2.Core;
@@ -231,11 +232,37 @@ public partial class MainWindow
  static string RedactLogins(string url,string text)
  {
   if(!Uri.TryCreate(url,UriKind.Absolute,out var uri)||uri.Scheme is not("https" or "http"))return text;
-  foreach(var v in Vault.Read().Where(v=>v.Origin==Origin(uri))){
-   if(v.Password.Length>=4)text=text.Replace(v.Password,"[hidden]");
+  return Redact(Vault.Read().Where(v=>v.Origin==Origin(uri)),text);
+ }
+ static string Redact(IEnumerable<LoginEntry> logins,string text)
+ {
+  foreach(var v in logins){
+   if(v.Password.Length>=4)text=text.Replace(v.Password,"[hidden]").Replace(Clip60(v.Password),"[hidden]"); // as saved, and as a page's line shows it
    if(v.Username.Length>0)text=text.Replace(" ="+Clip60(v.Username)," =[saved login, hidden]");
   }
   return text;
+ }
+ /// All an AI gets back passes here, errors too, for the logins of every site open now: a reply can be about a page that has just moved on.
+ string RedactReply(string reply)
+ {
+  var open=Windows.SelectMany(w=>w.tabs).Select(t=>Uri.TryCreate(t.Url,UriKind.Absolute,out var u)&&u.Scheme is "https" or "http"?Origin(u):"").ToHashSet();
+  var logins=Vault.Read().Where(v=>open.Contains(v.Origin)).ToList();
+  if(logins.Count==0)return reply;
+  try{
+   if(JsonNode.Parse(reply) is not{}root)return Redact(logins,reply);
+   Walk(root);
+   return root.ToJsonString(ReplyJson);
+  }catch(JsonException){return Redact(logins,reply);}
+  void Walk(JsonNode? node)
+  {
+   if(node is JsonObject o)foreach(var k in o.Select(p=>p.Key).ToList()){
+    if(k=="image")continue;
+    if(o[k] is JsonValue v&&v.TryGetValue<string>(out var s))o[k]=Redact(logins,s);else Walk(o[k]);
+   }
+   else if(node is JsonArray a)for(int i=0;i<a.Count;i++){
+    if(a[i] is JsonValue v&&v.TryGetValue<string>(out var s))a[i]=Redact(logins,s);else Walk(a[i]);
+   }
+  }
  }
  /// Fingerprints of this site's saved usernames and passwords, so a screenshot can mask fields that show them.
  static int[] LoginPrints(string url)

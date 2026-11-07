@@ -659,6 +659,16 @@ def main():
               "After the user signs in, what the AI reads hides the saved login")
         ok, found = agent.call("find", tabId=tab, text="Lighthouse-Keeper-43")
         check("Lighthouse" not in found and "No buttons, links or fields match" in found, "find can't search for a saved password")
+        # An error's look at the page hides them too, even clipped short or with the spaces closed up.
+        wordy = "Marble  Harbor " * 6
+        send(process, "vaultSave", origin=SITE, username="wordy@example.com", password=wordy.strip())
+        until(lambda: entry(process, SITE, "wordy@example.com"), 5)
+        page(process, f"document.body.insertAdjacentHTML('beforeend', '<div id=shown><input value=\"Lighthouse-Keeper-43\"><input value=\"{wordy.strip()}\"></div>')")
+        ok, said = agent.call("click", tabId=tab, selector="#no-such-thing", seconds=30)
+        check(not ok and "The page now" in said and "[hidden]" in said and "Lighthouse" not in said and "Marble" not in said, f"An error's look at the page hides saved passwords ({said[-200:]!r})")
+        page(process, "document.querySelector('#shown').remove()")
+        send(process, "vaultDelete", id=entry(process, SITE, "wordy@example.com")["id"])
+        until(lambda: not entry(process, SITE, "wordy@example.com"), 5)
         page(process, "window.__masks = 0; new MutationObserver(r => __masks += r.length).observe(document.querySelector('#user'), { attributes: true, attributeFilter: ['style'] })")
         ok, _ = agent.call("screenshot", tabId=tab)
         check(ok and page(process, "window.__masks") >= 2 and not page(process, "document.querySelector('#user').getAttribute('style')"),

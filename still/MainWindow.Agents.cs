@@ -93,7 +93,7 @@ public partial class MainWindow
    using var reader = new StreamReader(pipe, Encoding.UTF8, false, 4096, true);
    using var writer = new StreamWriter(pipe, new UTF8Encoding(false), 4096, true) { AutoFlush = true };
    while (await reader.ReadLineAsync() is { } line)
-    await writer.WriteLineAsync(await Application.Current.Dispatcher.InvokeAsync(() => Home.HandleAgent(line)).Task.Unwrap());
+    await writer.WriteLineAsync(await Application.Current.Dispatcher.InvokeAsync(async () => Home.RedactReply(await Home.HandleAgent(line))).Task.Unwrap());
   } catch (Exception ex) when (ex is IOException or ObjectDisposedException or InvalidOperationException or TaskCanceledException) { }
  }
  internal static string AgentPipe(string instance) => instance.Replace("Local\\", "") + "-agent";

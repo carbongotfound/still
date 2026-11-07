@@ -338,12 +338,29 @@ func clip60(_ s: String) -> String {
 /// password for it is cut out of the text.
 func redactLogins(_ url: String, _ text: String) -> String {
  guard let site = URL(string: url), isLoginOrigin(site), let origin = authority(site) else { return text }
+ return redact(Vault.read().filter { $0.origin == origin }, text)
+}
+func redact(_ logins: [Login], _ text: String) -> String {
  var text = text
- for v in Vault.read() where v.origin == origin {
-  if v.password.count >= 4 { text = text.replacingOccurrences(of: v.password, with: "[hidden]") }
+ for v in logins {
+  if v.password.count >= 4 { text = text.replacingOccurrences(of: v.password, with: "[hidden]").replacingOccurrences(of: clip60(v.password), with: "[hidden]") } // as saved, and as a page's line shows it
   if !v.username.isEmpty { text = text.replacingOccurrences(of: " =" + clip60(v.username), with: " =[saved login, hidden]") }
  }
  return text
+}
+/// All an AI gets back passes here, errors too, for the logins of every site open now: a reply can be about a page that has just moved on.
+@MainActor func redactReply(_ reply: String) -> String {
+ let open = Set(browsers.flatMap(\.tabs).compactMap { URL(string: $0.url).flatMap { isLoginOrigin($0) ? authority($0) : nil } })
+ let logins = Vault.read().filter { open.contains($0.origin) }
+ if logins.isEmpty { return reply }
+ func walk(_ value: Any) -> Any {
+  if let text = value as? String { return redact(logins, text) }
+  if let list = value as? [Any] { return list.map(walk) }
+  if let map = value as? [String: Any] { return Dictionary(uniqueKeysWithValues: map.map { ($0.key, $0.key == "image" ? $0.value : walk($0.value)) }) }
+  return value
+ }
+ guard let data = reply.data(using: .utf8), let parsed = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return redact(logins, reply) }
+ return jsonText(walk(parsed) as? [String: Any] ?? parsed)
 }
 /// Fingerprints of this site's saved usernames and passwords, so a screenshot can mask fields that show them (MaskJs).
 func loginPrints(_ url: String) -> [Int32] {
