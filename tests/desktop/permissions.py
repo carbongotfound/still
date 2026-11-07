@@ -145,6 +145,9 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.page(FRAMED.replace("{SRC}", OTHER + "/inner?" + self.path.split("?", 1)[-1]))
         if self.path.startswith("/inner"):
             return self.page(INNER)
+        if self.path.startswith("/wait"):
+            time.sleep(3)  # a page that takes its time to arrive
+            return self.page("<!doctype html><title>Waited</title><p>Here")
         if self.path.startswith("/slow"):
             HITS.append("/slow")
             time.sleep(4)  # the click waits for the page, and holds its turn
@@ -379,6 +382,7 @@ def main():
         outside_once(process)
         upload_card(process)
         titles(process)
+        address(process)
         uploads(process)
         asked_in_app(process)
         settings(process)
@@ -841,6 +845,26 @@ def titles(process):
     until(lambda: not rpc(process, "eval", script="location.pathname.startsWith('/evil-title')"), 20)
     note = said(home=True, companion="maya", tabs=[tab])
     check(forged not in note and quoted in note and "](" + SITE not in note, f"...and so does an attached tab's, which doesn't read as the user's words ({note[-200:]!r})")
+
+
+def address(process):
+    # The address names the page on screen. A load that hasn't arrived doesn't change it, or the site the checks go by.
+    send(process, "new", url=SITE + "/shop")
+    until(lambda: rpc(process, "eval", script="document.title") == "Maple Market", 15)
+    def url():
+        state = rpc(process)
+        return next(t["Url"] for t in state["tabs"] if t["Id"] == state["activeId"])
+    rpc(process, "eval", script=f"location.href = {json.dumps(OTHER + '/wait')}")
+    time.sleep(1.5)
+    check(url().startswith(SITE + "/shop"), f"A page's load that hasn't arrived doesn't take the address ({url()})")
+    check(until(lambda: url().startswith(OTHER + "/wait"), 15), f"...and it does when it arrives ({url()})")
+    rpc(process, "eval", script="location.href = 'about:blank'")
+    check(until(lambda: url() == "about:blank", 10), f"A page that turns blank doesn't keep the address it had ({url()})")
+    if not MAC:  # the Mac says a load failed with a notice, and stays on the page
+        send(process, "new", url=SITE + "/shop")
+        until(lambda: rpc(process, "eval", script="document.title") == "Maple Market", 15)
+        rpc(process, "eval", script="location.href = 'http://127.0.0.1:1/gone'")
+        check(until(lambda: url() == "http://127.0.0.1:1/gone", 20), f"A load that fails shows the address that failed on its error page ({url()})")
 
 
 def uploads(process):

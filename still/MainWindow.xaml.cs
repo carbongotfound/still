@@ -441,10 +441,10 @@ public partial class MainWindow : Window
    }
    if(Uri.TryCreate(tab.Url,UriKind.Absolute,out var previous)&&previous.Host!=uri.Host)tab.Favicon="";
    tab.Loading = true; tab.Reader = false; tab.HideToken = null; tab.Blocked = 0;tab.Secure=false;tab.CertificateError=false;
-   if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.Url = e.Uri; tab.ShowingError = false; }
+   if (uri.Scheme is "http" or "https" or "file" or "view-source" or "edge") { tab.PendingUrl = e.Uri; tab.ShowingError = false; } // the address stays with the page on screen until the new one arrives
    if (tab == Shown) UpdateChrome();
   };
-  core.SourceChanged += (_, _) => { if (Off()) return;  if (!tab.Reader && !tab.ShowingError && core.Source != "about:blank") tab.Url = core.Source; ApplySound(tab); if (tab == Shown) UpdateChrome(); SaveLater(); };
+  core.SourceChanged += (_, _) => { if (Off()) return;  if (!tab.Reader && !tab.ShowingError && (core.Source != "about:blank" || tab.HadPage)) { tab.Url = core.Source; tab.HadPage = true; } ApplySound(tab); if (tab == Shown) UpdateChrome(); SaveLater(); };
   core.ContentLoading += (_, _) => { if (Off() || tab.InUse == "") return; tab.InUse = ""; ShellPublish(); }; // a new document has nothing on yet
   core.ScreenCaptureStarting += (_, e) => { if (!Off() && SiteRule(tab, "ScreenShare") == "Deny") e.Cancel = true; };
   core.DocumentTitleChanged += (_, _) => { if (Off()) return; 
@@ -462,7 +462,7 @@ public partial class MainWindow : Window
    if(navId!=tab.NavigationId)return;
    // Cancelling a certificate error can leave the previous document displayed.
    // Keep the address tied to that document, not to the failed destination.
-   var failedUrl=tab.Url;
+   var failedUrl=tab.PendingUrl??tab.Url;tab.PendingUrl=null;
    bool becameDownload=!ok&&DateTime.UtcNow-tab.DownloadStartedAt<TimeSpan.FromSeconds(10);
    // Any HTTP answer (404/401/500 JSON from an API, etc.) is the site's real response and stays on screen;
    // WebView2 still reports those as "not successful". Only failures with no response at all get an error page.

@@ -665,8 +665,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    view.observe(\.title) { [weak self, weak tab] view, _ in
     if let title = view.title, !title.isEmpty { tab?.title = title; self?.schedulePublish() }
    },
-   view.observe(\.url) { [weak self, weak tab] view, _ in
-    if let url = view.url?.absoluteString { tab?.url = url; self?.schedulePublish(); self?.saveLater() }
+   view.observe(\.url) { [weak self, weak tab] view, _ in // while a load is under way this names where it's headed: the address waits for didCommit
+    if !view.isLoading, let url = view.url?.absoluteString { tab?.url = url; self?.schedulePublish(); self?.saveLater() }
    },
    view.observe(\.isLoading) { [weak self, weak tab] view, _ in tab?.loading = view.isLoading; self?.schedulePublish() },
    view.observe(\.canGoBack) { [weak self] _, _ in self?.schedulePublish() },
@@ -1090,12 +1090,14 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func webView(_ view: WKWebView, didCommit navigation: WKNavigation!) {
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
   if hostName(tab.url) != hostName(view.url?.absoluteString ?? "") { tab.favicon = "" }
+  if let url = view.url?.absoluteString { tab.url = url; saveLater() }
   tab.reader = false; tab.hideToken = nil; tab.loginFilled = false; tab.loginApi = ""
   schedulePublish()
  }
 
  func webView(_ view: WKWebView, didFinish navigation: WKNavigation!) {
   guard let tab = tabs.first(where: { $0.view === view }) else { return }
+  if let url = view.url?.absoluteString, url != tab.url { tab.url = url; schedulePublish(); saveLater() } // the page changed its own address while loading
   if tab.restoreScroll > 0 { view.evaluateJavaScript("scrollTo(0, \(tab.restoreScroll))"); tab.restoreScroll = 0 }
   updateFavicon(tab)
   applySound(tab, page: true)

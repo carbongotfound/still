@@ -46,6 +46,8 @@ public sealed class BrowserTab
  [JsonIgnore] public DateTime LastActive { get; set; } = DateTime.UtcNow;
  [JsonIgnore] public bool CertificateError { get; set; }
  [JsonIgnore] public bool ShowingError { get; set; }
+ [JsonIgnore] public string? PendingUrl { get; set; } // where the tab is headed, until a page arrives or the load fails
+ [JsonIgnore] public bool HadPage { get; set; } // after a real page, a blank one is what's on screen, not the tab's start
  [JsonIgnore] public DateTime DownloadStartedAt { get; set; }
  [JsonIgnore] public int ActiveDownloads { get; set; }
  [JsonIgnore] public double RestoreScroll { get; set; }
