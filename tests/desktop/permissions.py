@@ -8,6 +8,7 @@ the cards like a person would.
   QUEUE <url>       a click on a link to a slow page (it holds the page's turn), and a second one waiting behind it
   SWAP <url>        clicks #swap on a page that turns it into something else while the card waits (see TRICKY)
   KEY <url>         presses Enter in a field: the page moves the focus while the card waits
+  FRAME <url>       clicks into another site's frame, then presses a key there
   LATER <url>       clicks Add to cart, then a moment later Save for later: a second step arrives under a waiting card
 
 Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
@@ -83,6 +84,10 @@ if (how === 'focus') document.getElementById('field').focus();
 // A page that swaps on the press itself, past every check before it.
 if (how === 'press') b.addEventListener('pointerdown', () => { b.type = 'submit'; b.textContent = 'Place order'; }, true);
 </script>"""
+# A page with another site's frame in it: Still can't look inside, the frame counts what it gets.
+FRAMED = """<!doctype html><meta charset=utf-8><title>Framed</title><iframe id=inner src="{SRC}" style="width:420px;height:200px;border:0"></iframe>"""
+INNER = """<!doctype html><meta charset=utf-8><title>Inner</title><style>body{margin:0}button{width:100%;height:190px}</style><button id=b>Pay</button>
+<script>const tell = w => fetch('/hit/' + w + location.search, { method: 'POST' }); b.onclick = () => tell('innerclick'); addEventListener('keydown', () => tell('innerkey'));</script>"""
 # The live run's page: one checkout that needs a code only you have.
 MUG = SHOP.split("<main>")[0].replace("Maple Market</title>", "Trail mug - Maple Market</title>") + """<main><section><div class=pic></div><h2>Trail mug</h2><p>$18 each</p></section>
 <section><h2>Checkout</h2><form id=checkout method=post action=/buy><p><label>Quantity <input id=qty name=qty type=number min=1 value=1></label></p>
@@ -96,6 +101,10 @@ class Handler(http.server.BaseHTTPRequestHandler):
             return self.page(TRICKY)
         if self.path.startswith("/go"):
             return self.page("go" if GO.get(self.path.split("?", 1)[-1]) else "wait")
+        if self.path.startswith("/framed"):
+            return self.page(FRAMED.replace("{SRC}", OTHER + "/inner?" + self.path.split("?", 1)[-1]))
+        if self.path.startswith("/inner"):
+            return self.page(INNER)
         if self.path.startswith("/slow"):
             HITS.append("/slow")
             time.sleep(4)  # the click waits for the page, and holds its turn
@@ -198,6 +207,10 @@ FAKE = textwrap.dedent(r'''
         both = [threading.Thread(target=call, args=("click",), kwargs={"selector": "#cart"}), threading.Thread(target=lambda: (time.sleep(4), call("click", selector="#wish")))]
         for t in both: t.start()
         for t in both: t.join()
+    elif m := re.search(r"FRAME (\S+)", tag):
+        call("open_tab", url=m[1])
+        call("click", selector="#inner")
+        call("press_key", key="ArrowDown")
     elif m := re.search(r"KEY (\S+)", tag):
         call("open_tab", url=m[1])
         call("press_key", key="Enter")
@@ -264,6 +277,13 @@ def capture(process, name):
     (OUT / f"{name}.png").write_bytes((PROFILE / f"{name}.png").read_bytes())
 
 
+def marked_sites():
+    try:
+        return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get("SensitiveSites", [])
+    except (OSError, ValueError, KeyError):  # being replaced right now
+        return []
+
+
 def rules():
     try:
         return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get("Permissions", [])
@@ -294,9 +314,11 @@ def main():
         one_at_a_time(process)
         only_what_was_shown(process)
         steady_buttons(process)
+        only_once(process)
         approve_all(process)
         keys_and_help(process)
         outside(process)
+        outside_once(process)
         settings(process)
         process = crash_resume(process)
         errors = rpc(process).get("shellErrors") or js(process, "window.__shellErrors")
@@ -673,6 +695,52 @@ def steady_buttons(process):
     send(process, "permSensitive", site="127.0.0.1", on=False)
 
 
+def only_once(process):
+    """An action can't be approved twice, and approved once it happens once."""
+    send(process, "permReset")
+    until(lambda: not rules(), 10)
+    many = "(b => { b.click(); b.click(); b.click() })([...document.querySelectorAll(%s)].find(b => b.innerText.trim() === %s))"
+
+    before = len(ORDERS)
+    ask(process, f"ORDER {SITE} v")
+    until(lambda: cards(process) and "Sam" in cards(process)[0], 30)
+    press(process, "Allow once")
+    until(lambda: cards(process) and "Place order" in cards(process)[0], 30)
+    time.sleep(.7)
+    js(process, many % (json.dumps(".approve-actions button"), json.dumps("Allow once")))
+    until(lambda: len(ORDERS) > before, 15)
+    idle(process)
+    check(len(ORDERS) == before + 1, f"Allow once pressed three times at once places one order ({len(ORDERS) - before})")
+
+    ask(process, f"PAIR {SITE}/shop?k=d x")
+    until(lambda: len(cards(process)) == 2, 30)
+    time.sleep(.7)
+    js(process, many % (json.dumps(".approve-all button"), json.dumps("Approve all (2)")))
+    until(lambda: "/hit/wish?k=d" in HITS and "/hit/cart?k=d" in HITS, 15)
+    idle(process)
+    check(HITS.count("/hit/cart?k=d") == 1 and HITS.count("/hit/wish?k=d") == 1, "Approve all pressed three times at once runs each step once")
+
+    ask(process, f"PAIR {SITE}/shop?k=e y")
+    until(lambda: len(cards(process)) == 2, 30)
+    send(process, "permAnswer", answer="once")
+    time.sleep(1.5)
+    check(len(cards(process)) == 2 and "/hit/cart?k=e" not in HITS and "/hit/wish?k=e" not in HITS, "An answer that doesn't name its card does nothing")
+    send(process, "aiStop")
+    idle(process)
+    check("/hit/cart?k=e" not in HITS and "/hit/wish?k=e" not in HITS, "...and Stop still ends them")
+
+    send(process, "permSet", site="127.0.0.1", action="interact", companion="", mode="always")
+    ask(process, f"FRAME {SITE}/framed?k=f z")
+    until(lambda: "/hit/innerkey?k=f" in HITS, 30)
+    idle(process)
+    time.sleep(1)
+    check(HITS.count("/hit/innerclick?k=f") == 1, f"A click into another site's frame lands once ({HITS.count('/hit/innerclick?k=f')})")
+    check(HITS.count("/hit/innerkey?k=f") == 1, f"A key pressed there arrives once ({HITS.count('/hit/innerkey?k=f')})")
+    clicked = next((c for c in calls(f"FRAME {SITE}/framed?k=f z") if c["tool"] == "click"), {})
+    check("can't say" in clicked.get("text", "") and "didn't reach" not in clicked.get("text", ""), f"It says it can't tell, not that the click missed ({clicked.get('text', '')[:120]})")
+    send(process, "permSet", site="127.0.0.1", action="interact", companion="", mode="")
+
+
 def approve_all(process):
     send(process, "permReset")
     until(lambda: not rules(), 10)
@@ -772,6 +840,52 @@ def outside(process):
     finally:
         agent.close()
         send(process, "permSet", site="127.0.0.1", action="interact", companion="", mode="")
+
+
+def outside_once(process):
+    """Another AI app asking in the bar: one yes lets one step through, for the control it was about, whether the step was
+    still waiting (the user is here) or calls again after the answer (the user counted as away)."""
+    agent = Mcp(EXE, "Probe", PROFILE)
+    try:
+        bar = lambda: "wants to click" in (js(process, "document.body.innerText") or "")
+        query = f"do=quiet&k={uuid.uuid4().hex[:6]}"
+        tricky = json.loads(agent.call("open_tab", url=f"{SITE}/tricky?{query}")[1])["tabId"]
+        agent.call("open_tab", url=SITE + "/shop?k=p")
+        send(process, "permSensitive", site="127.0.0.1", on=True)  # after opening them: on a marked site, opening a tab asks too
+        check(until(lambda: "127.0.0.1" in marked_sites(), 10), "The site is marked sensitive")
+        hits = lambda: HITS.count("/hit/cart?k=p")
+        two = [call_async(agent, "click", selector="#cart"), call_async(agent, "click", selector="#cart")]
+        check(until(bar, 30), "Two steps at once ask in the bar")
+        time.sleep(.5)
+        send(process, "agentAnswer", allow=True)
+        time.sleep(3)
+        if not hits():
+            agent.call("click", selector="#cart", seconds=20)
+        check(hits() == 1, f"One yes: one click ({hits()})")
+        spare = call_async(agent, "click", selector="#cart")
+        check(until(bar, 15), "Anything more asks for itself")
+        send(process, "agentAnswer", allow=False)
+        for call in [*two, spare]:
+            call.get(timeout=60)
+        time.sleep(1)
+        check(hits() == 1, f"No: nothing more ({hits()})")
+
+        before = len(ORDERS)
+        pending = call_async(agent, "click", selector="#swap", tabId=tricky)
+        check(until(bar, 30), "A step on a page that's about to change asks in the bar")
+        GO[query] = True
+        check(until(lambda: f"/hit/changed?{query}" in HITS, 10), "...and it changes while the bar waits")
+        send(process, "agentAnswer", allow=True)
+        time.sleep(2)
+        again = call_async(agent, "click", selector="#swap", tabId=tricky)
+        check(until(bar, 15), "The button changed while it asked: yes to the old button doesn't count, it asks again")
+        check(len(ORDERS) == before, "...and nothing was ordered")
+        send(process, "agentAnswer", allow=False)
+        pending.get(timeout=60); again.get(timeout=60)
+        check(len(ORDERS) == before, "No: still nothing ordered")
+    finally:
+        agent.close()
+        send(process, "permSensitive", site="127.0.0.1", on=False)
 
 
 def settings(process):

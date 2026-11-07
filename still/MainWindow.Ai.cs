@@ -633,8 +633,8 @@ public partial class MainWindow
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
     break; }
    case "permAnswer" when S("answer") == "cancel" && S("id") == wentAhead: Toast("Too late to cancel. That step had already gone ahead."); break;
-   case "permAnswer" when runs.GetValueOrDefault(S("run") is { Length: > 0 } permRun ? permRun : ShownChat?.Id ?? "") is { } asking: // a card's answer; no id: Approve all
-    foreach (var card in asking.Approvals.Where(c => S("id").Length > 0 ? c.Id == S("id") : c.Until == null).ToList())
+   case "permAnswer" when runs.GetValueOrDefault(S("run") is { Length: > 0 } permRun ? permRun : ShownChat?.Id ?? "") is { } asking: // a card's answer, for that card alone
+    foreach (var card in asking.Approvals.Where(c => c.Id == S("id")).ToList())
      card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" or "connect" ? S("answer") : "deny");
     break;
    case "permSet" when PermissionActions.Contains(S("action")): SetPermission(SiteOf(S("site")), S("action"), S("companion"), S("mode")); PublishAiEverywhere(); break;

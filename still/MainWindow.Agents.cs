@@ -205,16 +205,29 @@ public partial class MainWindow
 
  /// Asks the user in the agent bar ("" = may this agent control Still). Null: no answer yet; the question stays up.
  /// now: don't wait for the answer (the agent asks the user elsewhere, see NeedsConfirm).
- static async Task<bool?> AskUser(string client, string ask, bool now = false)
+ static async Task<bool?> AskUser(string client, string ask, bool now = false, Task? until = null)
  {
-  if (lastAnswer.Client == client && lastAnswer.Ask == ask && DateTime.UtcNow - lastAnswer.At < TimeSpan.FromMinutes(2)) return lastAnswer.Allow; // answered after the agent stopped waiting
-  var deadline = Task.Delay(TimeSpan.FromSeconds(now ? 0 : 45)); // shorter than MCP apps' own tool timeouts
+  if (TakeAnswer(client, ask) is { } said) return said; // answered after the agent stopped waiting
+  var deadline = until ?? Task.Delay(TimeSpan.FromSeconds(now ? 0 : 45)); // shorter than MCP apps' own tool timeouts
   while (agentApproval is { } other && !(askClient == client && askText == ask))
    if (now || await Task.WhenAny(other.Task, deadline) == deadline) return null;
   if (agentApproval == null) { agentApproval = new(TaskCreationOptions.RunContinuationsAsynchronously); askClient = client; askText = ask; PublishAll(); }
   var pending = agentApproval;
-  return await Task.WhenAny(pending.Task, deadline) == pending.Task ? pending.Task.Result : null;
+  if (await Task.WhenAny(pending.Task, deadline) != pending.Task) return null;
+  if (!pending.Task.Result || ask.Length == 0) return pending.Task.Result;
+  return TakeAnswer(client, ask) == true ? true : await AskUser(client, ask, now, deadline); // another step took that yes: this one asks for itself
  }
+ /// A yes is for one step: whichever takes it first, of those waiting on the question or calling again after it. A no stands
+ /// for all of them, and so does letting an app in (ask "").
+ static bool? TakeAnswer(string client, string ask)
+ {
+  if (lastAnswer.Client != client || lastAnswer.Ask != ask || DateTime.UtcNow - lastAnswer.At >= TimeSpan.FromMinutes(2)) return null;
+  bool allow = lastAnswer.Allow;
+  if (allow && ask.Length > 0) lastAnswer = default;
+  return allow;
+ }
+ /// A question's words: what follows them in ask ties a yes to the control it was about, and isn't for reading.
+ static string AskShown(string ask) => ask.Split('\0')[0];
  void AnswerAgent(bool allow)
  {
   if (agentApproval is not { } pending) return;
@@ -241,7 +254,7 @@ public partial class MainWindow
   foreach (var old in confirmCodes.Where(c => c.Value.Until < DateTime.UtcNow).Select(c => c.Key).ToList()) confirmCodes.Remove(old);
   string code = Convert.ToHexString(RandomNumberGenerator.GetBytes(3)).ToLowerInvariant();
   confirmCodes[code] = (client, ask, DateTime.UtcNow.AddMinutes(10));
-  string question = ask.Length == 0 ? $"Allow {client} to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : $"Allow {client} to {ask}?";
+  string question = ask.Length == 0 ? $"Allow {client} to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : $"Allow {client} to {AskShown(ask)}?";
   return JsonSerializer.Serialize(new { ok = false, confirm = new { code, question },
    error = waiting + $" If the user isn't at Still, ask them in your chat instead: \"{question}\" Then call user_confirmed with code \"{code}\" and allow true or false, as they answer. Never answer for the user." }, ReplyJson);
  }
@@ -251,7 +264,7 @@ public partial class MainWindow
    return Fail("That code isn't valid anymore (the user may have answered in Still). Call the tool again.");
   bool allow = B(args, "allow");
   if (agentApproval != null && askClient == c.Client && askText == c.Ask) AnswerAgent(allow); else Settle(c.Client, c.Ask, allow);
-  Toast($"{c.Client} was {(allow ? "allowed" : "turned down")} {(c.Ask.Length == 0 ? "to use Still" : "to " + c.Ask)}, answered through its chat.");
+  Toast($"{c.Client} was {(allow ? "allowed" : "turned down")} {(c.Ask.Length == 0 ? "to use Still" : "to " + AskShown(c.Ask))}, answered through its chat.");
   return Reply(new { done = allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask." });
  }
  [StructLayout(LayoutKind.Sequential)] struct LastInput { public uint Size, Time; }
@@ -267,7 +280,7 @@ public partial class MainWindow
  /// The agent bar's question, or the AI at work for the pill: the one in the page on screen, else the latest.
  object? AgentData()
  {
-  if (agentApproval != null) return new { client = askClient, pending = true, action = "", ask = askText, paused = false };
+  if (agentApproval != null) return new { client = askClient, pending = true, action = "", ask = AskShown(askText), paused = false };
   string? shown = Shown?.Id;
   var at = AtWork().OrderByDescending(w => agentTabs.GetValueOrDefault(w.Key) == shown).ThenByDescending(w => w.Value.Seen).FirstOrDefault();
   return at.Value is { } me ? new { client = me.Name, pending = false, action = me.Action, ask = "", paused = me.Paused, signIn = me.SignIn, tab = agentTabs.GetValueOrDefault(at.Key), key = at.Key,
@@ -422,9 +435,11 @@ public partial class MainWindow
   const stateOf = e => !e ? '' : JSON.stringify([e.checked, e.value, e.open, e.selectedIndex, e.control?.checked, e.control?.value]);
   const typable = e => !!e && (e.isContentEditable || e.localName === 'textarea' || e.localName === 'select' || e.localName === 'input' && !/^(button|submit|reset|image|checkbox|radio|file|color|range)$/.test(e.type));
   const watch = (e, hit, expect) => {
+   // Input going into a frame from another site never shows up here, and there's no telling: it counts as arrived, and goes once.
+   const sealed = /^i?frame$/.test((hit || e)?.localName);
    window[WATCH]?.stop();
    const d = e ? e.ownerDocument : document, at = new Set([window, d.defaultView, e?.getRootNode?.()].filter(Boolean));
-   const W = { e, n: 0, got: false, reached: false, pressed: false, keyed: false, missed: '', submitted: false, invalid: '', blocked: '', sent: false, through: false };
+   const W = { e, n: 0, got: sealed, reached: sealed, pressed: sealed, keyed: sealed, missed: '', submitted: false, invalid: '', blocked: '', sent: false, through: false };
    const hits = ev => { const path = ev.composedPath(); return !e || path.includes(e) || !!hit && path.includes(hit); };
    // The last check, as Still's own input arrives. Not what was approved, or not on it: the input stops here, the page never gets
    // it, and the step goes back to asking. blocked 'before': nothing reached the page yet. 'during': part of it did. The page's own
@@ -832,7 +847,7 @@ public partial class MainWindow
   if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again
   if (run == null) {
    if (granted) return null;
-   string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site;
+   string ask = char.ToLowerInvariant(what[0]) + what[1..] + " on " + site + (step.Print.Length > 0 ? "\0" + step.Print : "");
    switch (await AskUser(who, ask, quick)) {
     case false: return Fail("The user said no to this. Don't try it again unless they ask.");
     case null: return NeedsConfirm(who, ask, $"Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call {tool} again.");

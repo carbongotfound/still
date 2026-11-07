@@ -701,7 +701,7 @@ extension Browser {
  /// Asks the user in the agent bar ("" = may this agent control Still). Nil: no answer yet; the question stays up.
  /// now: don't wait for the answer (the agent asks the user elsewhere, see needsConfirm).
  func askUser(_ client: String, _ ask: String, now: Bool, until: Date? = nil, _ done: @escaping (Bool?) -> Void) {
-  if let last = lastAnswer, last.client == client, last.ask == ask, Date().timeIntervalSince(last.at) < 120 { done(last.allow); return } // answered after the agent stopped waiting
+  if let said = takeAnswer(client, ask) { done(said); return } // answered after the agent stopped waiting
   let deadline = until ?? Date().addingTimeInterval(now ? 0 : 45) // shorter than MCP apps' own tool timeouts
   let wait = Once<Bool?>()
   if approvalWaiters != nil && !(askClient == client && askText == ask) {
@@ -709,11 +709,23 @@ extension Browser {
    wait.action = { [weak self] _ in self?.askUser(client, ask, now: false, until: deadline, done) } // another question is up: ask once it's answered
   } else {
    if approvalWaiters == nil { approvalWaiters = []; askClient = client; askText = ask; publishEverywhere() }
-   wait.action = done
+   wait.action = { [weak self] said in
+    guard let self, said == true, !ask.isEmpty else { done(said); return }
+    if self.takeAnswer(client, ask) == true { done(true) } else { self.askUser(client, ask, now: now, until: deadline, done) } // another step took that yes: this one asks for itself
+   }
   }
   approvalWaiters?.append(wait)
   DispatchQueue.main.asyncAfter(deadline: .now() + max(0, deadline.timeIntervalSinceNow)) { wait.fire(nil) }
  }
+ /// A yes is for one step: whichever takes it first, of those waiting on the question or calling again after it. A no stands
+ /// for all of them, and so does letting an app in (ask "").
+ func takeAnswer(_ client: String, _ ask: String) -> Bool? {
+  guard let last = lastAnswer, last.client == client, last.ask == ask, Date().timeIntervalSince(last.at) < 120 else { return nil }
+  if last.allow && !ask.isEmpty { lastAnswer = nil }
+  return last.allow
+ }
+ /// A question's words: what follows them in ask ties a yes to the control it was about, and isn't for reading.
+ func shown(_ ask: String) -> String { ask.components(separatedBy: "\0")[0] }
  @MainActor func askUser(_ client: String, _ ask: String, now: Bool) async -> Bool? {
   await withCheckedContinuation { done in askUser(client, ask, now: now) { done.resume(returning: $0) } }
  }
@@ -746,7 +758,7 @@ extension Browser {
   confirmCodes = confirmCodes.filter { $0.value.until > Date() }
   let code = String((0..<6).map { _ in "0123456789abcdef".randomElement()! })
   confirmCodes[code] = (client: client, ask: ask, until: Date().addingTimeInterval(600))
-  let question = ask.isEmpty ? "Allow \(client) to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : "Allow \(client) to \(ask)?"
+  let question = ask.isEmpty ? "Allow \(client) to use your Still browser? It can open, read and click pages, but never private tabs, passwords or cookies." : "Allow \(client) to \(shown(ask))?"
   return jsonText(["ok": false, "confirm": ["code": code, "question": question],
                    "error": waiting + " If the user isn't at Still, ask them in your chat instead: \"\(question)\" Then call user_confirmed with code \"\(code)\" and allow true or false, as they answer. Never answer for the user."])
  }
@@ -758,13 +770,13 @@ extension Browser {
   }
   let allow = argFlag(args, "allow")
   if approvalWaiters != nil && askClient == ask.client && askText == ask.ask { answerAgent(allow) } else { settle(ask.client, ask.ask, allow) }
-  toast("\(ask.client) was \(allow ? "allowed" : "turned down") \(ask.ask.isEmpty ? "to use Still" : "to " + ask.ask), answered through its chat.")
+  toast("\(ask.client) was \(allow ? "allowed" : "turned down") \(ask.ask.isEmpty ? "to use Still" : "to " + shown(ask.ask)), answered through its chat.")
   return agentOk(["done": allow ? "The user allowed it. Call the tool again now." : "The user said no. Don't try again unless they ask."])
  }
 
  /// The agent bar's question, or the AI at work for the pill: the one in the page on screen, else the latest.
  func agentData() -> [String: Any]? {
-  if approvalWaiters != nil { return ["client": askClient, "pending": true, "action": "", "ask": askText, "paused": false] }
+  if approvalWaiters != nil { return ["client": askClient, "pending": true, "action": "", "ask": shown(askText), "paused": false] }
   let shownId = shown?.id
   guard let (key, me) = atWork().max(by: { a, b in
    let x = agentTabs[a.key] == shownId, y = agentTabs[b.key] == shownId
@@ -962,7 +974,7 @@ extension Browser {
   if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
   guard let run else {
    if granted { return nil }
-   let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site
+   let ask = what.prefix(1).lowercased() + what.dropFirst() + " on " + site + (step.print.isEmpty ? "" : "\0" + step.print)
    switch await askUser(who, ask, now: quick) {
    case .some(false): return agentFail("The user said no to this. Don't try it again unless they ask.")
    case nil: return needsConfirm(who, ask, "Waiting for the user to allow it: Still shows Allow and Block at the top of its window. Tell the user, then call \(tool) again.")
@@ -1299,11 +1311,11 @@ extension Browser {
   switch op {
   case "agentTakeOver": takeOver(argFlag(data, "on"), argText(data, "key"))
   case "agentStop": stopAgent(argText(data, "key"))
-  case "permAnswer": // a card's answer; no id: Approve all
+  case "permAnswer": // a card's answer, for that card alone
    let id = argText(data, "id"), answer = argText(data, "answer")
    if answer == "cancel" && id == wentAhead { toast("Too late to cancel. That step had already gone ahead."); break }
    guard let asking = runs[argText(data, "run").isEmpty ? shownChat?.id ?? "" : argText(data, "run")] else { break }
-   for card in asking.approvals where id.isEmpty ? card.until == nil : card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) ? answer : "deny") }
+   for card in asking.approvals where card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) ? answer : "deny") }
   case "permSet":
    guard permissionActions.contains(argText(data, "action")) else { break }
    setPermission(siteOf(argText(data, "site")), argText(data, "action"), argText(data, "companion"), argText(data, "mode")); publishAiEverywhere()
