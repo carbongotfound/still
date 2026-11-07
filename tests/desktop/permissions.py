@@ -375,6 +375,7 @@ def main():
         keys_and_help(process)
         outside(process)
         outside_once(process)
+        upload_card(process)
         uploads(process)
         asked_in_app(process)
         settings(process)
@@ -798,6 +799,23 @@ def steady_buttons(process):
     press(process, "Deny")
     idle(process)
     send(process, "permSensitive", site="127.0.0.1", on=False)
+
+
+def upload_card(process):
+    # The card for a site's own file button. File names are left unread: the card lists the person's recent files.
+    send(process, "navigate", url=SITE + "/upload")
+    until(lambda: rpc(process, "eval", script="location.pathname + document.readyState") == "/uploadcomplete", 15)
+    rpc(process, "eval", script="document.querySelector('input').style.cssText = 'display:block;width:200px;height:60px'")
+    at = rpc(process, "eval", script="(r => [r.x + 20, r.y + 20])(document.querySelector('input').getBoundingClientRect())")
+    for kind in ("mousePressed", "mouseReleased"):
+        rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
+    check(until(lambda: js(process, "!!document.querySelector('.upload-card')"), 15, .02), "A site's file button opens the card")
+    check(js(process, "document.querySelector('.upload-tile.is-open').disabled") is True, "Nothing on the card takes a click the moment it opens")
+    check(js(process, "document.querySelector('.upload-site')?.innerText") == "127.0.0.1 wants a file", "The card says who wants a file")
+    check(until(lambda: js(process, "document.querySelector('.upload-tile.is-open').disabled") is False, 3), "...and it's ready a moment later")
+    js(process, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+    until(lambda: not js(process, "!!document.querySelector('.upload-card')"), 5)
+    check(rpc(process, "eval", script="document.querySelector('input').files.length") in (0, None), "Escape attaches nothing")
 
 
 def uploads(process):

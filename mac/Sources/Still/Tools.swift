@@ -266,7 +266,7 @@ extension Browser {
      guard self.upload === request else { return }
      request.files = (copied.map { [$0] } ?? []) + files
      func card(_ thumbs: Bool) -> [String: Any] {
-      ["kind": "upload", "data": ["id": request.id, "multiple": request.multiple, "anchor": anchor, "files": request.files.enumerated().map { index, file -> [String: Any] in
+      ["kind": "upload", "data": ["id": request.id, "site": hostName(tab.url), "multiple": request.multiple, "anchor": anchor, "files": request.files.enumerated().map { index, file -> [String: Any] in
        let image = Browser.imageTypes.contains(file.pathExtension.lowercased())
        return ["id": index, "name": index == 0 && copied != nil ? "Copied image" : file.lastPathComponent, "copied": index == 0 && copied != nil,
                "type": file.pathExtension.uppercased(), "thumb": thumbs && image ? Browser.thumbnail(file) ?? NSNull() as Any : NSNull()]

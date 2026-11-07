@@ -79,7 +79,7 @@ public partial class MainWindow
   upload = request;
   var anchor = await UploadAnchor(tab, core);
   if (upload != request) return;
-  object Card(bool thumbs) => new { kind = "upload", data = new { id = request.Id, multiple, anchor, files = request.Files.Select((path, i) => new {
+  object Card(bool thumbs) => new { kind = "upload", data = new { id = request.Id, site = Host(tab.Url), multiple, anchor, files = request.Files.Select((path, i) => new {
    id = i, name = i == 0 && copied != null ? "Copied image" : Path.GetFileName(path), copied = i == 0 && copied != null,
    type = Path.GetExtension(path).TrimStart('.').ToUpperInvariant(), thumb = thumbs && ImageTypes.Contains(Path.GetExtension(path).ToLowerInvariant()) ? Thumbnail(path) : null }).ToArray() } };
   ShellSend(Card(false));
