@@ -75,7 +75,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 
 - ✅ **Password manager (Windows)**: save, update, fill, delete, never-save list; vault encrypted with DPAPI (`Vault.cs`, `MainWindow.Passwords.cs`, `Assets/LoginObserver.js`).
 - ✅ **Password manager (Mac)**: same features, one Keychain item per profile (`Vault.swift`).
-- ✅ **Key in the field**: login fields get a fill button for this exact site's saved logins; optional auto sign-in.
+- 🚧 (security/fixes) **Key in the field**: login fields get a fill button for this exact site's saved logins; optional auto sign-in fills at your first click in a real, visible field, never as the page opens.
 - ✅ **Strong passwords**: suggests one for new accounts and saves it immediately so it's never lost.
 - ✅ **Two-step sign-ins**: remembers the username from step one for the password step.
 - ✅ **Insecure pages**: filling on non-https asks first; auto sign-in stays off there (localhost excepted).

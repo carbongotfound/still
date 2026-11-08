@@ -122,6 +122,10 @@ extension Browser {
   case "fill":
    guard let entry = Vault.read().first(where: { $0.id == text("id") && $0.origin == origin }), !agentDriving(tab), secureOrigin(current) || data["confirmed"] as? Bool == true else { return }
    fillSavedLogin(entry, tab) { tab.loginFilled = $0 }
+  case "auto":
+   let only = Vault.read().filter { $0.origin == origin }
+   guard secureOrigin(current), autoFill, only.count == 1, !tab.loginFilled, !agentDriving(tab) else { return }
+   callLogin(tab, "auto", ["username": only[0].username, "password": only[0].password]) { tab.loginFilled = $0 }
   case "generated": saveGenerated(tab, origin, current.host ?? origin, text("username"), text("password"))
   case "username": if (1...1024).contains(text("username").count) { tab.loginUsername = (origin, text("username"), Date()) }
   case "manage": openPanel("passwords", "")
@@ -130,15 +134,11 @@ extension Browser {
   }
  }
 
- /// Tells the page which logins this site has (usernames only), whether it's insecure, and fills one for auto sign-in.
+ /// Tells the page which logins this site has (usernames only), whether it's insecure, and whether auto sign-in may fill at the first touch.
  func offerLogins(_ tab: Tab, _ origin: String, _ form: String, _ secure: Bool) {
   let entries = Vault.read().filter { $0.origin == origin }.sorted { $0.username < $1.username }
-  var data: [String: Any] = ["accounts": entries.map { ["id": $0.id, "username": $0.username] }, "warn": !secure]
-  if secure && autoFill && entries.count == 1 && ["login", "username"].contains(form) && !tab.loginFilled && !agentDriving(tab) {
-   data["fill"] = ["username": entries[0].username, "password": entries[0].password]
-   tab.loginFilled = true
-  }
-  callLogin(tab, "show", data)
+  let auto = secure && autoFill && entries.count == 1 && ["login", "username"].contains(form) && !tab.loginFilled && !agentDriving(tab)
+  callLogin(tab, "show", ["accounts": entries.map { ["id": $0.id, "username": $0.username] }, "warn": !secure, "auto": auto])
  }
 
  func fillSavedLogin(_ entry: Login, _ tab: Tab, _ done: @escaping (Bool) -> Void) {

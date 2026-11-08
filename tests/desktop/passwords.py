@@ -54,6 +54,7 @@ PAGES = {
     "/step1": ("Sign in", '<form method=get action=/step2><input id=user name=identifier autocomplete=username aria-label=Email placeholder=Email><button id=go>Next</button></form>'),
     "/step2": ("Enter your password", '<form method=post action=/welcome><input id=pw type=password autocomplete=current-password aria-label=Password><button id=go>Sign in</button></form>'),
     "/frame": ("A page with a sign-in frame", '<p>The frame below is another site.</p><iframe id=f src="{other}/login" style="width:420px;height:320px;border:1px solid #ccc"></iframe>'),
+    "/ghost": ("Sign in", '<form method=post action=/welcome><input id=user name=username autocomplete=username style="opacity:.01"><input id=pw name=password type=password autocomplete=current-password style="opacity:.01"><button id=go>Sign in</button></form>'),
     "/welcome": ("Welcome back", "<p>You're signed in.</p>"),
 }
 
@@ -451,7 +452,7 @@ def main():
         pick(process, "#user", 1, grace)
         check(until(lambda: values(process, "#user", "#pw") == ["grace@example.com", "Compiler-Admiral-06"], 5), "Picking the second login fills that one")
 
-        # Auto sign-in: one saved login fills by itself; with two, it never guesses.
+        # Auto sign-in: one saved login fills at the first touch; with two, it never guesses.
         send(process, "passwordPermission", feature="fill", enabled=True)
         time.sleep(.5)
         go(process, SITE + "/login")
@@ -459,7 +460,17 @@ def main():
         send(process, "vaultDelete", id=grace["id"])
         time.sleep(.5)
         go(process, SITE + "/login")
-        check(until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5), "Auto sign-in fills the only login as the page opens")
+        time.sleep(1)
+        check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in doesn't fill as the page opens")
+        page(process, "document.querySelector('#pw').focus(); document.querySelector('#pw').click()")
+        time.sleep(1)
+        check(values(process, "#user", "#pw") == ["", ""], "...and the page's own script can't set it off")
+        click(process, "#user")
+        check(until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5), "Your first click in the field fills the only login")
+        go(process, SITE + "/ghost")
+        click(process, "#pw")
+        time.sleep(1)
+        check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in leaves a field nobody can see alone, even at a click")
 
         # Cross-site frames: a sign-in form from another site inside this page gets nothing.
         send(process, "vaultSave", origin=OTHER, username="frame@example.com", password="Frame-Never-Fill-1")

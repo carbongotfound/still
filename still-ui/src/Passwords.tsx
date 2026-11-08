@@ -59,7 +59,7 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
  }, [])
  const options = data.passwordOptions
  const toggle = (feature: "save" | "fill", enabled: boolean) => enabled && feature === "fill"
-  ? ask("Turn on auto sign-in?", "When a site has one saved login, Still fills it as soon as the page opens. You still press Sign in yourself.", () => send("passwordPermission", { feature, enabled }))
+  ? ask("Turn on auto sign-in?", "When a site has one saved login, Still fills it the first time you click its sign-in field. You still press Sign in yourself.", () => send("passwordPermission", { feature, enabled }))
   : send("passwordPermission", { feature, enabled })
  const words = filter.trim().toLowerCase()
  useGone()
@@ -75,7 +75,7 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
   {data.offer && <LoginReview key={data.offer.id} offer={data.offer} send={send} />}
   <div className="password-options">
    <div className="setting-row"><div><strong>Offer to save passwords</strong><p>Still asks after you sign in, make an account or change a password.</p></div><Switch aria-label="Offer to save passwords" checked={!!options?.save} onCheckedChange={v => toggle("save", v)} /></div>
-   <div className="setting-row"><div><strong>Auto sign-in</strong><p>Fills your login as the page opens when a site has just one saved.</p></div><Switch aria-label="Auto sign-in" checked={!!options?.fill} onCheckedChange={v => toggle("fill", v)} /></div>
+   <div className="setting-row"><div><strong>Auto sign-in</strong><p>Fills your login at your first click in the field when a site has just one saved.</p></div><Switch aria-label="Auto sign-in" checked={!!options?.fill} onCheckedChange={v => toggle("fill", v)} /></div>
   </div>
   <div className="tool-toolbar"><Input aria-label="Search passwords" placeholder="Search passwords" value={filter} onChange={e => setFilter(e.target.value)} />
    <Button variant="outline" onClick={() => setDraft({ id: "", origin: currentOrigin, username: "", password: "" })}><Plus />Add</Button>

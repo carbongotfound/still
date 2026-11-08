@@ -12,7 +12,7 @@
   const value = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   const random = crypto.getRandomValues.bind(crypto);
   const api = '__stillLogin' + [...random(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
-  let timer, signature = '', lastSubmission = 0, accounts = [], warn = false, host, root, open = null, armed = '', suggestion = '';
+  let timer, signature = '', lastSubmission = 0, accounts = [], warn = false, auto = false, host, root, open = null, armed = '', suggestion = '';
   const visible = e => e.getClientRects().length && !e.disabled && !e.readOnly;
   const fields = scope => [...scope.querySelectorAll('input')].filter(visible);
   const text = e => ['text', 'email', 'tel', ''].includes(e.type);
@@ -39,6 +39,22 @@
   }
   function schedule() { if (!document.hidden && !timer) timer = setTimeout(() => { timer = null; check(); }, 350); }
   function set(e, v) { if (!e) return; value.set.call(e, v); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }
+  // A field a person can see and means to use: big enough, solid enough, and the thing at its centre.
+  function real(e) {
+    const r = e.getBoundingClientRect(), s = getComputedStyle(e);
+    if (r.width < 24 || r.height < 10 || s.visibility !== 'visible') return false;
+    for (let a = e; a; a = a.parentElement) if (+getComputedStyle(a).opacity < .5) return false;
+    const top = e.getRootNode().elementFromPoint?.(r.left + r.width / 2, r.top + r.height / 2);
+    return !!top && (top === e || e.contains(top));
+  }
+  // Auto sign-in waits for this, so a page can't collect a login with nobody there, or into a field nobody can see.
+  function touched(e) {
+    if (!auto || !e.isTrusted || e.type === 'keyup' && e.key !== 'Tab') return;
+    const form = scan();
+    if (!form || !['login', 'username'].includes(form.kind) || !(e.target === form.user || form.pw.includes(e.target)) || !real(e.target)) return;
+    auto = false;
+    report('auto');
+  }
   // Fills the username, and the password unless this is a username-only step. onlyEmpty: never overwrite what's typed.
   function fill(login, onlyEmpty) {
     const form = scan(); if (!form || form.kind === 'signup') return false;
@@ -175,17 +191,17 @@
     report('submitted', { username, password, current: fresh && current ? value.get.call(current) : '', form: form.kind });
   }
   Object.defineProperty(window, api, { value: Object.freeze({
-    // From Still: the logins saved for this site, whether the page is insecure, and a login to fill now (auto sign-in).
+    // From Still: the logins saved for this site, whether the page is insecure, and whether auto sign-in is on here.
     show(data) {
-      accounts = data.accounts || []; warn = !!data.warn;
-      if (data.fill) fill(data.fill, true);
-      else if (document.activeElement && !open) focused(document.activeElement); // a field focused before Still answered
+      accounts = data.accounts || []; warn = !!data.warn; auto = !!data.auto;
+      if (document.activeElement && !open) focused(document.activeElement); // a field focused before Still answered
     },
     fill(login) { return fill(login, false); },
+    auto(login) { return fill(login, true); },
   }) });
   const observer = new MutationObserver(schedule);
   observer.observe(document, { childList: true, subtree: true, attributes: true, attributeFilter: ['type'] });
-  const listen = [['DOMContentLoaded', check], ['focusin', check], ['focusin', e => focused(e.target)], ['submit', submitted], ['click', submitted], ['keydown', submitted],
+  const listen = [['DOMContentLoaded', check], ['focusin', check], ['focusin', e => focused(e.target)], ['pointerdown', touched], ['keyup', touched], ['submit', submitted], ['click', submitted], ['keydown', submitted],
     ['keydown', e => { if (e.key === 'Escape') close(); }], ['scroll', () => place()],
     ['input', e => { if (open?.menu && e.target === open.field && e.isTrusted) { open.menu.remove(); open.menu = null; } }], // typing hides the list; the key brings it back
     ['focusout', e => { if (open && e.target === open.field) setTimeout(() => { if (open && document.activeElement !== open.field) close(); }, 150); }]];

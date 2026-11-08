@@ -7,7 +7,7 @@ using System.Windows;
 using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 namespace Still;
-// Saved logins in pages (LoginObserver.js): the key in a field, auto sign-in, strong passwords for new accounts, and
+// Saved logins in pages (LoginObserver.js): the key in a field, auto sign-in at the first touch, strong passwords for new accounts, and
 // the Save / Update prompt after signing in. Never in private tabs. AIs never get any of it: they can't fill while
 // they drive a tab, what they read is redacted (RedactLogins), and a sign-in page pauses them for the user.
 public partial class MainWindow
@@ -52,6 +52,12 @@ public partial class MainWindow
      if(entry==null||AgentDriving(tab)||!SecureOrigin(current)&&!confirmed)return;
      tab.LoginFilled=await FillSavedLogin(entry,tab);break;
     }
+    case "auto":{
+     var only=Vault.Read().Where(v=>v.Origin==origin).ToArray();
+     if(SecureOrigin(current)&&Prefs.AutoFillPasswords&&only.Length==1&&!tab.LoginFilled&&!AgentDriving(tab)&&!tab.CertificateError&&tab.LoginApi.Length>0)
+      tab.LoginFilled=await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.auto("+JsonSerializer.Serialize(new{username=only[0].Username,password=only[0].Password})+")??false")=="true";
+     break;
+    }
     case "generated":await SaveGenerated(tab,origin,current.Host,S("username"),S("password"));break;
     case "username":if(S("username").Length is >0 and <=1024)tab.LoginUsername=(origin,S("username"),DateTime.UtcNow);break;
     case "manage":ShellOpen("passwords");break;
@@ -59,14 +65,13 @@ public partial class MainWindow
    }
   }catch(JsonException){}catch(InvalidOperationException){}
  }
- /// Tells the page which logins this site has (usernames only), whether it's insecure, and fills one for auto sign-in.
+ /// Tells the page which logins this site has (usernames only), whether it's insecure, and whether auto sign-in may fill at the first touch.
  async Task OfferLogins(BrowserTab tab,CoreWebView2 core,string origin,string form,bool secure)
  {
   try{
    var entries=Vault.Read().Where(v=>v.Origin==origin).OrderBy(v=>v.Username).ToArray();
-   object? fill=null;
-   if(secure&&Prefs.AutoFillPasswords&&entries.Length==1&&form is "login" or "username"&&!tab.LoginFilled&&!AgentDriving(tab)){fill=new{username=entries[0].Username,password=entries[0].Password};tab.LoginFilled=true;}
-   await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.show("+JsonSerializer.Serialize(new{accounts=entries.Select(v=>new{id=v.Id,username=v.Username}),warn=!secure,fill})+")");
+   bool auto=secure&&Prefs.AutoFillPasswords&&entries.Length==1&&form is "login" or "username"&&!tab.LoginFilled&&!AgentDriving(tab);
+   await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.show("+JsonSerializer.Serialize(new{accounts=entries.Select(v=>new{id=v.Id,username=v.Username}),warn=!secure,auto})+")");
   }catch(Exception ex){if(!closing&&!tab.Closed)App.Log(new InvalidOperationException("Login detection could not complete.",ex));}
  }
  async Task<bool> FillSavedLogin(LoginEntry entry,BrowserTab tab)
