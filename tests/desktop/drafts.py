@@ -7,12 +7,14 @@ Windows; Cmd on the Mac) undo and redo step by step in every box, through switch
 Run: python tests/desktop/drafts.py artifacts/Still-QA/Still.exe
 Out: artifacts/drafts-*/
 """
+import http.server
 import json
 import os
 from pathlib import Path
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import uuid
 
@@ -29,6 +31,17 @@ sys.stdin.read()
 print(json.dumps({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()}), flush=True)
 print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", "text": "Okay."}]}}), flush=True)
 '''
+class PageDrafts(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b"<!doctype html><title>Form</title><form action=/sent><textarea id=note name=note rows=4></textarea><textarea id=apikey aria-label='Your API Key' rows=2></textarea></form>"
+        if self.path.startswith("/sent"):
+            body = b"<!doctype html><title>Sent</title><p>Sent</p>"
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
 HOME, CHAT, SIDE = ".home-compose [role=textbox]", ".chat-view [role=textbox][aria-label=Message]", ".ai-sidebar [role=textbox][aria-label=Message]"
 SECRET = "Incognito words " + uuid.uuid4().hex[:10]
 results = []
@@ -372,6 +385,34 @@ try:
     check(not on_disk(SECRET), "...and nothing of it is on disk")
     rpc(p, "closeWindow", id=wid); time.sleep(1)
 
+    # In a page: what the draft keeper leaves in the tab's own storage.
+    server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), PageDrafts)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{server.server_port}"
+    def in_page(sel, words):
+        rpc(p, "eval", script=f"(e => {{ e.value = {json.dumps(words)}; e.dispatchEvent(new InputEvent('input', {{ bubbles: true, composed: true }})) }})(document.querySelector({json.dumps(sel)}))")
+        time.sleep(.2)
+    def kept():
+        return rpc(p, "eval", script="sessionStorage.getItem('__stillDraft') ?? ''") or ""
+    send(p, "new", url=base + "/form")
+    until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')"), 15)
+    in_page("#note", "A long note that the draft keeper should keep for me")
+    check("A long note" in kept(), "A page's long text is kept in the tab")
+    rpc(p, "eval", script="document.querySelector('form').requestSubmit()")
+    until(lambda: "sent" in str(rpc(p, "eval", script="location.pathname")), 10)
+    check(not kept(), "Sending the form forgets it")
+    send(p, "navigate", url=base + "/form")
+    until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')"), 15)
+    in_page("#apikey", "words that are long enough to be kept but the box says secret")
+    check(not kept(), "A box named for a secret keeps nothing, whatever the case of its name")
+    in_page("#note", "my key is sk8aB3dE6gH9jK2mN5pQ8rT1vW4yZ7 and more words")
+    check(not kept(), "A long run of letters and digits isn't kept")
+    in_page("#note", "-----BEGIN PRIVATE KEY-----\nabc")
+    check(not kept(), "Nor is a private key's header")
+    in_page("#note", "An ordinary note, https://example.com/a-link and all, is still kept")
+    check("An ordinary note" in kept(), "Ordinary text with a link is still kept")
+    rpc(p, "eval", script="sessionStorage.removeItem('__stillDraft')")
+
     # Save drafts off: asks first, deletes every draft, and then nothing comes back.
     new_tab(p)
     check(settings_switch(p) == "true", "Save drafts is on")
@@ -389,6 +430,11 @@ try:
     check(text(p, HOME) == "Home words to keep and more" and not (PROFILE / "ai" / "drafts").exists(), "With it off, typing keeps nothing")
     js(p, "location.reload()"); time.sleep(1.5); until(lambda: box(p, HOME) is not None, 15)
     check(box(p, HOME) is not None and text(p, HOME) == "" and not hint(p, ".home-compose"), f"...and after a refresh nothing comes back ({box(p, HOME)!r})")
+    send(p, "new", url=base + "/form")
+    until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')"), 15)
+    in_page("#note", "A long note written with Save drafts turned off")
+    check(not kept(), "With it off, a new tab's pages keep nothing either")
+    new_tab(p)
     typed(p, HOME, "Typed while off")
     open_chat(p, "chat2"); typed(p, CHAT, "Chat typed while off")
 finally:

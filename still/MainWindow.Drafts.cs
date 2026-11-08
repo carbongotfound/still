@@ -10,8 +10,12 @@ public partial class MainWindow
  (() => {
   if (window.top !== window || !/^https?:$/.test(location.protocol)) return;
   const KEY = '__stillDraft', MIN = 25, MAX_AGE = 6 * 3600e3;
+  const named = e => [e.autocomplete, e.getAttribute('name'), e.id, e.getAttribute('aria-label'), e.getAttribute('placeholder')].join(' ');
+  const secretName = /cc-|card|cvc|cvv|one-time|otp|password|passwd|pwd|passphrase|secret|token|api.?key|private.?key/i;
   const editable = e => e && (e.isContentEditable || e.tagName === 'TEXTAREA'
-   || (e.tagName === 'INPUT' && /^(text|)$/.test(e.type) && !/cc-|one-time|password|search/.test(e.autocomplete + e.name + e.id)));
+   || (e.tagName === 'INPUT' && /^(text|)$/.test(e.type) && !/search/i.test(named(e)))) && !secretName.test(named(e));
+  // A key's header, or one long run of letters and digits: never kept, whatever the box is called.
+  const secretText = t => /-----BEGIN [A-Z ]+-----/.test(t) || /(?:^|\s)(?=\S*\d)(?=\S*[A-Za-z])[\w+\/=.-]{24,}(?:\s|$)/.test(t);
   const root = e => e.isContentEditable ? e.closest('[contenteditable]:not([contenteditable=false])') || e : e;
   const text = e => e.isContentEditable ? e.innerText.trim() : e.value;
   const name = e => [e.tagName, e.id, e.getAttribute('name'), e.getAttribute('aria-label'), e.getAttribute('placeholder')].join('|');
@@ -23,11 +27,12 @@ public partial class MainWindow
    const e = ev.composedPath?.()[0] || ev.target;
    if (!editable(e)) return;
    field = root(e); const t = text(field);
-   if (t.length >= MIN || t.includes('\n')) { saved = t; write({ text: t, field: name(field), path: location.pathname, at: Date.now() }); }
+   if (secretText(t)) { saved = ''; write(null); }
+   else if (t.length >= MIN || t.includes('\n')) { saved = t; write({ text: t, field: name(field), path: location.pathname, at: Date.now() }); }
    else if (!t.trim()) { saved = ''; write(null); } // emptied by the user: nothing to keep
   }, true);
-  // Sent (the page emptied the box itself) or submitted: forget it. Still there when the page goes away: keep it.
-  addEventListener('submit', () => { if (field && !text(field).trim()) write(null) }, true);
+  // Submitted: forget it, it's been sent. Still there when the page goes away without that: keep it.
+  addEventListener('submit', () => { saved = ''; write(null) }, true);
   addEventListener('pagehide', () => { if (field && field.isConnected && !text(field).trim() && saved) write(null) });
   // Offered on the next two pages at most (a reload, then maybe one more step), and only within 6 hours.
   if (!draft?.text || Date.now() - draft.at > MAX_AGE || draft.offered >= 2) { if (draft) write(null); return; }

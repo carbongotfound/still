@@ -421,7 +421,7 @@ extension Browser {
  func addPageScripts(_ tab: Tab, _ controller: WKUserContentController) {
   func add(_ source: String) { if !source.isEmpty { controller.addUserScript(WKUserScript(source: source, injectionTime: .atDocumentStart, forMainFrameOnly: true, in: stillWorld)) } }
   add(pageShim)
-  if !tab.isPrivate { add(draftScript) }
+  if !tab.isPrivate && pref("SaveDrafts", true) { add(draftScript) }
   add(loginScript(tab))
   add(hiddenScript(tab))
  }

@@ -408,7 +408,7 @@ public partial class MainWindow : Window
    await InstallAudioReroute(core);
    await core.AddScriptToExecuteOnDocumentCreatedAsync(MemoryActivityScript);
    await core.AddScriptToExecuteOnDocumentCreatedAsync(StoreButtonScript);
-   if (!tab.Private) await core.AddScriptToExecuteOnDocumentCreatedAsync(DraftScript);
+   if (!tab.Private && Prefs.SaveDrafts) await core.AddScriptToExecuteOnDocumentCreatedAsync(DraftScript);
    WireView(tab, view, core);
    core.Navigate(tab.Url);
    StartupMetrics.Mark("page-navigation");
