@@ -30,10 +30,11 @@ export const CompanionContext = createContext<Companion | undefined>(undefined)
 
 // Another AI app working in Still wears its maker's look, when there is one.
 export const agentFace = (name = "") => /claude/i.test(name) ? "claude" : /gpt|openai|codex/i.test(name) ? "chatgpt" : /grok/i.test(name) ? "grok" : ""
+const own = <T,>(table: Record<string, T>, key?: string) => key != null && Object.hasOwn(table, key) ? table[key] : undefined // a pasted "constructor" isn't a look
 export function lookOf(c?: Companion): Look {
  if (!c) return DEFAULT_LOOK
  if (c.look) { // a role's companion saved before the blobs, or holding the prop its role had, gets the role's own look
-  const role = c.crew && ROLE_LOOKS[c.crew]
+  const role = own(ROLE_LOOKS, c.crew)
   if (role) try {
    const o = JSON.parse(c.look)
    if (isOld(o)) return role
@@ -41,9 +42,9 @@ export function lookOf(c?: Companion): Look {
   } catch { /* not JSON: parseLook falls back */ }
   return parseLook(c.look)
  }
- if (c.crew && ROLE_LOOKS[c.crew]) return ROLE_LOOKS[c.crew]
- if (!c.id && AGENT_LOOKS[c.face]) return AGENT_LOOKS[c.face]
- const hue = HUES[c.color] ?? HUES[BEFORE[c.color]]
+ const look = own(ROLE_LOOKS, c.crew) ?? (c.id ? undefined : own(AGENT_LOOKS, c.face))
+ if (look) return look
+ const hue = own(HUES, c.color) ?? own(HUES, own(BEFORE, c.color))
  return hue ? { ...DEFAULT_LOOK, color: hue } : DEFAULT_LOOK
 }
 /// The companion's color, used as its accent while you work with it.

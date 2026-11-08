@@ -222,6 +222,21 @@ def main():
         check(until(lambda: mates().get("Pasty", {}).get("Job") == "Checks prices.", 5) and until(lambda: not shown(p, ".companion-library"), 3), "Pasting a shared companion adds them and closes the library")
         check(until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now") and until(lambda: not shown(p, ".joined-card"), 3), "and says Pasty joined")
 
+        # Odd looks in a share file are no look at all, in the review and once hired, at every size.
+        check(open_library(p), "The library opens for an odd one")
+        click(p, ".library-more .role-head", "Paste a shared companion")
+        until(lambda: shown(p, ".library-paste textarea"), 3)
+        paste(p, ".library-paste textarea", json.dumps({**share, "name": "Oddly", "crew": "constructor"}))
+        until(lambda: shown(p, ".shared-review"), 5)
+        check(shown(p, ".shared-review") and not rpc(p)["shellErrors"], "A shared companion with an odd look shows like any other")
+        click(p, ".shared-review button", "Hire")
+        until(lambda: "Oddly" in mates(), 5)
+        until(lambda: shown(p, ".joined-card"), 3) and click(p, ".joined-card button", "Not now")
+        time.sleep(.5)
+        check("Oddly" in mates() and not rpc(p)["shellErrors"] and js(p, "!!document.querySelector('#root > *')"), f"...and takes nothing down once hired ({rpc(p)['shellErrors']})")
+        send(p, "companionDelete", id=mates()["Oddly"]["Id"])
+        until(lambda: "Oddly" not in mates(), 5)
+
         # Make your own opens the companion editor on a new companion. The Companions page's button opens the library too.
         open_library(p)
         click(p, ".library-more .role-head", "Make your own")
