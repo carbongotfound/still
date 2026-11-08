@@ -813,8 +813,11 @@ def main():
         send(process, "aiSend", text="REMEMBER: Loves maple syrup pancakes forever", home=True, companion="rosa")
         said = until(lambda: results.exists() and json.loads(results.read_text(encoding="utf-8").splitlines()[0]), 30) or {}
         memory = PROFILE / "companions" / "rosa" / "memory.json"
-        check(said.get("error") and "saved passwords" in said.get("text", "") and (not memory.exists() or "pancakes" not in memory.read_text(encoding="utf-8")),
-              "A companion can't remember a saved password")
+        check(said.get("error") and "Still never keeps those" in said.get("text", "") and "saved password" not in said.get("text", "") and (not memory.exists() or "pancakes" not in memory.read_text(encoding="utf-8")),
+              f"A companion can't remember a saved password, and isn't told that's what it was ({said.get('text')!r})")
+        send(process, "aiSend", text="REMEMBER: " + "several guesses here " * 20 + "maple syrup pancakes forever", home=True, companion="rosa")
+        said = until(lambda: results.exists() and len(rows := results.read_text(encoding="utf-8").splitlines()) > 1 and json.loads(rows[1]), 30) or {}
+        check(said.get("error") and "characters" in said.get("text", "") and "Still never keeps those" not in said.get("text", ""), f"A list of guesses is just too long ({said.get('text')!r})")
         errors = rpc(process).get("shellErrors")
         check(not errors, "No interface errors" + (f" ({errors})" if errors else ""))
     except Exception as error:

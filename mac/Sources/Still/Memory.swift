@@ -583,8 +583,8 @@ enum CompanionMemory {
 
 /// Why something can't go into memory, or nil if it can: secrets, what the AI typed into a form, anything from a private tab.
 func memoryRefuses(_ run: ChatRun?, _ text: String) -> String? {
- if CompanionMemory.secret(text) { return CompanionMemory.refused }
- if Vault.read().contains(where: { $0.password.count >= 4 && text.contains($0.password) }) { return "That's one of your saved passwords. Still never keeps those." }
+ // One answer for anything secret, so a refusal doesn't confirm a guess at a saved password.
+ if CompanionMemory.secret(text) || Vault.read().contains(where: { $0.password.count >= 4 && text.contains($0.password) }) { return CompanionMemory.refused }
  if run?.typed.contains(where: { text.range(of: $0, options: .caseInsensitive) != nil }) == true { return "That's something typed into a form on a page. Still doesn't keep form data." }
  for t in browsers.flatMap(\.tabs) where t.isPrivate {
   let host = hostName(t.url)
@@ -650,7 +650,7 @@ func memoryTool(_ who: String, _ tool: String, _ args: [String: Any]) -> String 
   if run.chat.noMemory { return agentFail("This chat is off the record: the user asked you not to remember it.") }
   if !me.capture { return agentFail("The user turned off memory for \(me.name) in Settings, so nothing new is kept. Tell them if they ask you to remember something.") }
   let fact = tidy(argText(args, "fact"))
-  if let why = memoryRefuses(run, fact) { return agentFail(why) }
+  if CompanionMemory.squash(fact).count <= CompanionMemory.maxFact, let why = memoryRefuses(run, fact) { return agentFail(why) }
   let msg = run.chat.messages.lastIndex { $0.role == "user" } ?? -1
   let heard = CompanionMemory.stems(msg >= 0 ? run.chat.messages[msg].text : ""), stems = CompanionMemory.stems(fact)
   let again = !stems.isEmpty && Double(stems.filter(heard.contains).count) / Double(stems.count) >= 0.6 // the user just said it themselves

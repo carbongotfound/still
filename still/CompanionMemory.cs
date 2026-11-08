@@ -498,8 +498,8 @@ public partial class MainWindow
  /// Why something can't go into memory, or null if it can: secrets, what the AI typed into a form, anything from a private tab.
  static string? MemoryRefuses(ChatRun? run, string text)
  {
-  if (CompanionMemory.Secret(text)) return CompanionMemory.Refused;
-  if (Vault.Read().Any(v => v.Password.Length >= 4 && text.Contains(v.Password, StringComparison.Ordinal))) return "That's one of your saved passwords. Still never keeps those.";
+  // One answer for anything secret, so a refusal doesn't confirm a guess at a saved password.
+  if (CompanionMemory.Secret(text) || Vault.Read().Any(v => v.Password.Length >= 4 && text.Contains(v.Password, StringComparison.Ordinal))) return CompanionMemory.Refused;
   if (run?.Typed.Any(t => text.Contains(t, StringComparison.OrdinalIgnoreCase)) == true) return "That's something typed into a form on a page. Still doesn't keep form data.";
   foreach (var t in Windows.SelectMany(w => w.tabs).Where(t => t.Private))
    if (t.Title.Length >= 4 && t.Title != "Private tab" && text.Contains(t.Title, StringComparison.OrdinalIgnoreCase) || Host(t.Url) is { Length: > 3 } host && text.Contains(host, StringComparison.OrdinalIgnoreCase))
@@ -526,8 +526,8 @@ public partial class MainWindow
    case "remember": {
     if (run.Chat.NoMemory) return Fail("This chat is off the record: the user asked you not to remember it.");
     if (!me.Capture) return Fail($"The user turned off memory for {me.Name} in Settings, so nothing new is kept. Tell them if they ask you to remember something.");
-    string fact = S(args, "fact").Trim();
-    if (MemoryRefuses(run, fact) is { } why) return Fail(why);
+    string fact = CompanionMemory.Squash(S(args, "fact"));
+    if (fact.Length <= CompanionMemory.MaxFact && MemoryRefuses(run, fact) is { } why) return Fail(why); // too long goes first: one try is one guess, not a list of them
     int msg = run.Chat.Messages.FindLastIndex(m => m.Role == "user");
     var heard = CompanionMemory.Stems(msg >= 0 ? run.Chat.Messages[msg].Text : ""); var stems = CompanionMemory.Stems(fact);
     bool again = stems.Count > 0 && (double)stems.Count(heard.Contains) / stems.Count >= .6; // the user just said it themselves
