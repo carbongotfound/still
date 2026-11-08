@@ -1848,7 +1848,12 @@ enum Mcp {
   var args = args, folder = support
   let name = args["profile"] as? String ?? "", temp = name.lowercased() == "temp"
   args["profile"] = nil
-  if temp { folder = openTemp(client) }
+  if temp {
+   // The user's own Still decides first: AI control off, a block, or a question to answer, all come back as they are.
+   let answer = call(client, "list_tabs", [:], elicit: elicit, cancelled: cancelled)
+   if (try? JSONSerialization.jsonObject(with: Data(answer.utf8)) as? [String: Any])?["ok"] as? Bool == false { return answer }
+   folder = openTemp(client)
+  }
   else if !name.isEmpty {
    guard let profile = Profiles.read().first(where: { $0.name.lowercased() == name.lowercased() || $0.id == name }) else { return agentFail("No Still profile is named \"\(name)\". Use list_profiles.") }
    folder = Profiles.folder(profile.id)

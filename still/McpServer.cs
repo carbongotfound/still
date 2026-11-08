@@ -182,7 +182,12 @@ internal static class McpServer
   if (tool == "list_profiles") return ListProfiles(instance);
   string name = args is JsonObject o && o["profile"]?.GetValue<string>() is { Length: > 0 } n ? n : "";
   (args as JsonObject)?.Remove("profile");
-  if (name.Equals("temp", StringComparison.OrdinalIgnoreCase)) instance = TempInstance(client);
+  if (name.Equals("temp", StringComparison.OrdinalIgnoreCase)) {
+   // The user's own Still decides first: AI control off, a block, or a question to answer, all come back as they are.
+   string answer = Call(instance, client, "list_tabs", new JsonObject(), cancel, elicit);
+   if (JsonNode.Parse(answer)?["ok"]?.GetValue<bool>() == false) return answer;
+   instance = TempInstance(client);
+  }
   else if (name.Length > 0) {
    var profile = ProfileCatalog.Read().FirstOrDefault(p => string.Equals(p.Name, name, StringComparison.OrdinalIgnoreCase) || p.Id == name);
    if (profile == null) return JsonSerializer.Serialize(new { ok = false, error = $"No Still profile is named \"{name}\". Use list_profiles." });

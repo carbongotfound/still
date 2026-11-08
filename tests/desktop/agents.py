@@ -121,6 +121,14 @@ try:
     ok, text = first.call("list_tabs")
     check(ok and "temp-tab" not in text, "The temporary window is separate from the profile")
 
+    # The user's own Still decides who gets one.
+    newcomer = Mcp("Probe Temp", profile); clients.append(newcomer)
+    pending = call_async(newcomer, "list_tabs", profile="temp")
+    until(lambda: "Probe Temp" in shell_text(process))
+    send(process, "agentAnswer", allow=False)
+    ok, text = pending.get(timeout=60)
+    check(not ok, f"An app that hasn't been let in gets no temporary window ({text[:70]!r})")
+
     # Block holds for the rest of the session.
     second = Mcp("Probe Two", profile); clients.append(second)
     pending = call_async(second, "list_tabs")
@@ -150,6 +158,8 @@ try:
     time.sleep(1)
     ok, text = first.call("list_tabs")
     check(not ok and text.startswith("AI control is turned off."), "Switch off refuses agents with the existing message")
+    ok, text = first.call("list_tabs", seconds=30, profile="temp")
+    check(not ok and text.startswith("AI control is turned off."), "...and the temporary window with it")
     check(not rpc(process)["shellErrors"], "No interface JavaScript errors")
     rpc(process, "quit")
     process.wait(timeout=15)
