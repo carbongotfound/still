@@ -233,6 +233,19 @@ art()
 plain_window()
 looks()
 blinks()
+def decoder_lets_go():
+    """Once a companion's model is in, the model decoder gives its memory back."""
+    process, _ = window({"AiHarness": "claude", "Companions": CREW})
+    try:
+        send(process, "new")
+        check(until(lambda: js(process, "!!document.querySelector('.home-face canvas[data-live]')"), 30), "The New Tab's companion is drawn live")
+        check(until(lambda: js(process, "window.stillStage?.decoding === false"), 20), "...and once its model is in, the model decoder is gone")
+        check(not rpc(process).get("shellErrors"), "...with no interface errors")
+    finally:
+        quit(process)
+
+
+decoder_lets_go()
 quit(gallery("Light"))
 quit(gallery("Dark"))
 if "--gifs" in sys.argv:

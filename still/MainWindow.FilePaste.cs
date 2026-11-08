@@ -134,6 +134,7 @@ public partial class MainWindow
    image.Freeze();
    var encoder = new JpegBitmapEncoder { QualityLevel = 82 }; encoder.Frames.Add(BitmapFrame.Create(image));
    using var output = new MemoryStream(); encoder.Save(output);
+   if (thumbnails.Count >= 64) thumbnails.Clear();
    return thumbnails[key] = "data:image/jpeg;base64," + Convert.ToBase64String(output.ToArray());
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or NotSupportedException or InvalidOperationException or ArgumentException or COMException) { return null; }
  }

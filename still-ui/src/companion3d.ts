@@ -3,7 +3,7 @@ import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js"
 import { mergeVertices } from "three/addons/utils/BufferGeometryUtils.js"
 import { HOLD, hasAccent, isV2, lookKey, type Look } from "./look"
 import { STATES, clock, pointer, slots, type Frame, type MascotState, type Slot } from "./Mascot"
-import { Rigged, bounds, model, rigFor, zoned, type Zones } from "./rig"
+import { Rigged, bounds, decoding, model, rigFor, zoned, type Zones } from "./rig"
 export { onRigReady, model as preload } from "./rig"
 
 // The companions as soft blobs, built here from code: no model files. A body is a sphere pushed into a silhouette
@@ -852,6 +852,8 @@ export function start() {
  raf = requestAnimationFrame(tick)
 }
 export const stop = () => cancelAnimationFrame(raf)
+
+;(window as unknown as { stillStage: unknown }).stillStage = { get decoding() { return decoding() } } // for the tests
 
 // Where each state's picture is taken, in seconds into its loop.
 const STILL_AT: Partial<Record<MascotState, number>> = { idle: .3, working: .3, needs: .55, done: .3, error: .5, thinking: .5, talking: .2, pointing: .3 }

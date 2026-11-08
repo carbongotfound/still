@@ -39,19 +39,22 @@ const models = new Map<string, Model | Promise<unknown>>()
 const ready = new Set<() => void>()
 /// Calls back each time a model finishes loading.
 export const onRigReady = (f: () => void) => { ready.add(f) }
-let loader: GLTFLoader | null = null
+let loader: GLTFLoader | null = null, draco: DRACOLoader | null = null, loading = 0
 
 /// The model, once loaded; until then null, and it starts loading.
 export function model(id: string): Model | null {
  const m = models.get(id)
  if (m && !(m instanceof Promise)) return m
  if (!m) {
-  loader ??= new GLTFLoader().setDRACOLoader(new DRACOLoader().setDecoderConfig({ type: "wasm" }))
+  loader ??= new GLTFLoader().setDRACOLoader(draco = new DRACOLoader().setDecoderConfig({ type: "wasm" }).setWorkerLimit(1))
+  loading++
   models.set(id, loader.loadAsync(url(id)).then(g => { models.set(id, prepare(id, g)) }, e => { failed.add(id); console.error(`The companion ${id} couldn't load`, e) })
-   .then(() => ready.forEach(f => f())))
+   .then(() => { if (!--loading) { draco?.dispose(); draco = loader = null } ready.forEach(f => f()) }))
  }
  return null
 }
+
+export const decoding = () => !!draco
 
 function prepare(id: string, g: GLTF): Model {
  const clips = new Map(g.animations.map(c => [c.name, c]))

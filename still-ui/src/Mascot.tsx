@@ -32,7 +32,7 @@ export const useMascotVersion = useVersion
 const seen = new IntersectionObserver(entries => { for (const e of entries) for (const s of slots.values()) if (s.canvas === e.target) s.visible = e.isIntersecting })
 addEventListener("pointermove", e => { pointer.x = e.clientX; pointer.y = e.clientY }, { passive: true })
 
-const webgl = (() => { try { return !!document.createElement("canvas").getContext("webgl2") } catch { return false } })()
+const webgl = (() => { try { const gl = document.createElement("canvas").getContext("webgl2"); gl?.getExtension("WEBGL_lose_context")?.loseContext(); return !!gl } catch { return false } })()
 const reduce = matchMedia("(prefers-reduced-motion: reduce)")
 const useReduced = () => useSyncExternalStore(l => { reduce.addEventListener("change", l); return () => reduce.removeEventListener("change", l) }, () => reduce.matches)
 
