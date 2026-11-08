@@ -27,10 +27,11 @@ public partial class MainWindow
  {
   if(tab.Private||tab.View?.CoreWebView2 is not{} core)return;
   if(tab.LoginScriptId!=null)core.RemoveScriptToExecuteOnDocumentCreated(tab.LoginScriptId);
-  tab.LoginToken=Guid.NewGuid().ToString("N");tab.LoginApi="";
+  // Before each new document's own scripts only: anything run in a page already going could hand them the token. So the
+  // token lasts as long as the tab, for the helper already in the page. A changed setting reaches that page at its next load.
+  if(tab.LoginToken.Length==0)tab.LoginToken=Guid.NewGuid().ToString("N");
   string js=(await AppContent.ReadAsset("LoginObserver.js")).Replace("__STILL_LOGIN_CONFIG__",JsonSerializer.Serialize(new{token=tab.LoginToken,capture=Prefs.OfferPasswordSave||Prefs.OfferPasswordUpdate}));
   tab.LoginScriptId=await core.AddScriptToExecuteOnDocumentCreatedAsync(js);
-  await core.RunAsync(js);
  }
  async Task ReceiveLogin(BrowserTab tab,CoreWebView2WebMessageReceivedEventArgs e)
  {

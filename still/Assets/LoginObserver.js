@@ -10,6 +10,7 @@
   const make = Document.prototype.createElement.bind(document), shadow = Element.prototype.attachShadow;
   const setText = Object.getOwnPropertyDescriptor(Node.prototype, 'textContent').set;
   const value = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
+  const formAction = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'action').get;
   const random = crypto.getRandomValues.bind(crypto);
   const api = '__stillLogin' + [...random(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
   let timer, signature = '', lastSubmission = 0, accounts = [], warn = false, auto = false, host, root, open = null, armed = '', suggestion = '';
@@ -32,7 +33,8 @@
     const user = fields(document).find(x => userish(x) && !searchy(x));
     return user ? { kind: 'username', user, pw: [], fresh: [], scope: user.form || document } : null;
   }
-  function report(action, extra = {}) { post({ kind: 'still-login', token: config.token, origin: location.origin, action, ...extra }); }
+  // toJSON: a page's Object.prototype.toJSON would be handed this message, token and all, when it's sent.
+  function report(action, extra = {}) { post({ kind: 'still-login', token: config.token, origin: location.origin, action, ...extra, toJSON: undefined }); }
   function check() {
     const form = scan(), now = form ? form.kind + form.pw.length : '';
     if (now !== signature) { signature = now; if (form) report('detected', { form: form.kind, api }); }
@@ -55,12 +57,15 @@
     auto = false;
     report('auto');
   }
+  const foreign = address => { try { return new URL(address, location.href).origin !== location.origin; } catch { return true; } };
+  // Where this form would send what's in it: its own address (a field named "action" can't stand in for it) or one of its buttons'.
+  const leaves = scope => scope instanceof HTMLFormElement && (foreign(formAction.call(scope)) || [...document.querySelectorAll('[formaction]')].some(b => b.form === scope && foreign(b.getAttribute('formaction'))));
   // Fills the username, and the password unless this is a username-only step. onlyEmpty: never overwrite what's typed.
   function fill(login, onlyEmpty) {
     const form = scan(); if (!form || form.kind === 'signup') return false;
     const p = form.pw.find(x => !form.fresh.includes(x));
     if (onlyEmpty && (p && value.get.call(p) || form.user && value.get.call(form.user) && value.get.call(form.user) !== login.username)) return false;
-    if (form.scope.action && new URL(form.scope.action, location.href).origin !== location.origin) return false;
+    if (leaves(form.scope)) return false;
     if (login.username) set(form.user, login.username);
     if (p) set(p, login.password);
     close();
@@ -71,7 +76,7 @@
     const letters = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789!@#$%&*-_+';
     for (;;) {
       let out = '';
-      while (out.length < length) for (const b of random(new Uint8Array(64))) if (b < 204 && out.length < length) out += letters[b % 68];
+      while (out.length < length) for (const b of random(new Uint8Array(64))) if (b < 201 && out.length < length) out += letters[b % letters.length];
       if (/[A-Z]/.test(out) && /[a-z]/.test(out) && /\d/.test(out) && /[^A-Za-z\d]/.test(out)) return out;
     }
   }
@@ -174,7 +179,7 @@
     if (!e.isTrusted || Date.now() - lastSubmission < 1500) return;
     const form = scan(); if (!form) return;
     const { scope } = form;
-    if (form.scope.action && new URL(form.scope.action, location.href).origin !== location.origin) return;
+    if (leaves(scope)) return;
     if (e.type === 'submit' && e.target !== scope) return;
     if (e.type === 'click') {
       const b = e.target.closest?.('button,input[type=submit],input[type=image],[role=button]');

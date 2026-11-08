@@ -55,6 +55,12 @@ PAGES = {
     "/step2": ("Enter your password", '<form method=post action=/welcome><input id=pw type=password autocomplete=current-password aria-label=Password><button id=go>Sign in</button></form>'),
     "/frame": ("A page with a sign-in frame", '<p>The frame below is another site.</p><iframe id=f src="{other}/login" style="width:420px;height:320px;border:1px solid #ccc"></iframe>'),
     "/ghost": ("Sign in", '<form method=post action=/welcome><input id=user name=username autocomplete=username style="opacity:.01"><input id=pw name=password type=password autocomplete=current-password style="opacity:.01"><button id=go>Sign in</button></form>'),
+    "/trap": ("Sign in", '<form method=post action=/welcome><input id=user name=username autocomplete=username><input id=pw name=password type=password autocomplete=current-password><button id=go>Sign in</button></form>'
+              '<script>window.__stolen=[];if(window.chrome?.webview){const real=chrome.webview.postMessage;chrome.webview.postMessage=function(m){__stolen.push(JSON.stringify(m));return real.call(this,m)}}'
+              'const bind=Function.prototype.bind;Function.prototype.bind=function(...a){__stolen.push("bind");return bind.apply(this,a)};'
+              'Object.prototype.toJSON=function(){if(this.token)__stolen.push(this.token);return this};</script>'),
+    "/stands-in": ("Sign in", '<form method=post action="{other}/welcome"><input type=hidden name=action value=/welcome><input id=user name=username autocomplete=username><input id=pw name=password type=password autocomplete=current-password><button id=go>Sign in</button></form>'),
+    "/button-away": ("Sign in", '<form method=post action=/welcome><input id=user name=username autocomplete=username><input id=pw name=password type=password autocomplete=current-password><button id=go formaction="{other}/welcome">Sign in</button></form>'),
     "/welcome": ("Welcome back", "<p>You're signed in.</p>"),
 }
 
@@ -471,6 +477,41 @@ def main():
         click(process, "#pw")
         time.sleep(1)
         check(values(process, "#user", "#pw") == ["", ""], "Auto sign-in leaves a field nobody can see alone, even at a click")
+
+        # A page's own scripts: a changed setting doesn't run the helper again in a page already going, where they could catch it.
+        send(process, "passwordPermission", feature="fill", enabled=False)
+        go(process, SITE + "/trap")
+        click(process, "#user")
+        time.sleep(.3)
+        send(process, "passwordPermission", feature="fill", enabled=True)
+        time.sleep(.5)
+        send(process, "passwordPermission", feature="fill", enabled=False)
+        time.sleep(.8)
+        page(process, "document.querySelector('#pw').insertAdjacentHTML('afterend', '<input type=password autocomplete=new-password>')")
+        time.sleep(.8)
+        check(page(process, "__stolen.filter(x => x !== 'bind' && /[0-9a-f]{32}/.test(x)).length") == 0 and page(process, "__stolen.includes('bind')") is False, "A changed setting gives a page's own scripts nothing to catch")
+        go(process, SITE + "/login")
+        at = pick(process, "#user", 0, ada)
+        check(until(lambda: values(process, "#user", "#pw") == ["ada@example.com", "Lighthouse-Keeper-43"], 5), "...and the helper works as before after it")
+        send(process, "passwordPermission", feature="fill", enabled=True)
+        time.sleep(.5)
+
+        # Where a form really sends what's in it. A field named "action" can't stand in for its address, nor one button's address go unseen.
+        send(process, "passwordPermission", feature="fill", enabled=False)
+        time.sleep(.3)
+        for where, name in (("/stands-in", "A field named action can't hide where a form goes"), ("/button-away", "A button that sends it to another site counts")):
+            go(process, SITE + where)
+            pick(process, "#user", 0, ada)
+            time.sleep(1)
+            check(values(process, "#user", "#pw") == ["", ""], name)
+        send(process, "passwordPermission", feature="fill", enabled=True)
+        time.sleep(.5)
+
+        # Strong passwords: the length asked for, every character from the list.
+        helper_source = (ROOT / "still" / "Assets" / "LoginObserver.js").read_text(encoding="utf-8")
+        strong = helper_source[helper_source.index("function strong"):helper_source.index("  function ui()")]
+        bad = page(process, "(() => { const random = crypto.getRandomValues.bind(crypto); " + strong + " let bad = 0; for (let i = 0; i < 400; i++) { const p = strong(20); if (p.length !== 20 || /undefined/.test(p)) bad++; } return bad })()")
+        check(bad == 0, f"A strong password is exactly as long as asked, with nothing odd in it ({bad} of 400 weren't)")
 
         # Cross-site frames: a sign-in form from another site inside this page gets nothing.
         send(process, "vaultSave", origin=OTHER, username="frame@example.com", password="Frame-Never-Fill-1")
