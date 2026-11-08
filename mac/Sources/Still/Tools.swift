@@ -617,6 +617,11 @@ var currentVersion: String {
  #endif
  return Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
 }
+/// What a page reads after the engine's own part: this Mac's real Safari version, never a fixed one (sites turn away a browser that looks old), then Still's name.
+var browserName: String {
+ let safari = Bundle(path: "/Applications/Safari.app")?.infoDictionary?["CFBundleShortVersionString"] as? String
+ return (safari.map { "Version/\($0) " } ?? "") + "Safari/605.1.15 Still/\(currentVersion)"
+}
 /// The release line, "2.10" for 2.10.3: What's New is per release.
 var releaseLine: String { currentVersion.split(separator: ".").prefix(2).joined(separator: ".") }
 /// "v1.2.3" → [1, 2, 3], padded to three parts.

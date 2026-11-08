@@ -68,7 +68,7 @@ extension Browser {
    let config = WKWebViewConfiguration()
    config.websiteDataStore = store ?? pageStore // the profile's own website data, as in its tabs (never a private tab's)
    config.mediaTypesRequiringUserActionForPlayback = .all // never a sound
-   config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
+   config.applicationNameForUserAgent = browserName
    config.preferences.isFraudulentWebsiteWarningEnabled = true
    let created = WKWebView(frame: NSRect(x: 0, y: 0, width: 1280, height: 900), configuration: config)
    created.navigationDelegate = Lookup.helper

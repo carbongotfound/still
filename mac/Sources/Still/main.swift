@@ -639,7 +639,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   let config = configuration ?? WKWebViewConfiguration()
   if configuration == nil {
    config.websiteDataStore = tab.isPrivate ? privateStore : tab.engine == "Companion" ? companionStore : pageStore
-   config.applicationNameForUserAgent = "Version/17.4 Safari/605.1.15"
+   config.applicationNameForUserAgent = browserName
    config.mediaTypesRequiringUserActionForPlayback = []
    config.preferences.isFraudulentWebsiteWarningEnabled = true
    if #available(macOS 12.3, *) { config.preferences.isElementFullscreenEnabled = true }
