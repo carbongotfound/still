@@ -155,6 +155,8 @@ extension Browser {
   guard (8...8192).contains(password.count), username.count <= 1024 else { return }
   var entries = Vault.read()
   var index = username.isEmpty ? entries.firstIndex { $0.id == tab.generatedLogin } : entries.firstIndex { $0.origin == origin && $0.username == username }
+  // Over another saved password it waits for the form to be sent and the Update bar: a click on the suggestion isn't a yes to replacing that login.
+  if let index, entries[index].id != tab.generatedLogin, entries[index].password != password { toast("Strong password filled in. Still will ask before replacing your saved one."); return }
   if index == nil { entries.append(Login(origin: origin, username: username)); index = entries.count - 1 }
   entries[index!].password = password
   Vault.write(entries)

@@ -594,6 +594,27 @@ def main():
         time.sleep(2)
         check(not bar(process), "Signing up with the suggestion asks nothing more")
 
+        # Over a login that's already saved, the suggestion waits for the form and the Update bar.
+        send(process, "vaultSave", origin=SITE, username="kept@example.com", password="Kept-Password-41")
+        kept = until(lambda: entry(process, SITE, "kept@example.com"), 5)
+        go(process, SITE + "/signup")
+        type_into(process, "#user", "kept@example.com")
+        page(process, "document.activeElement?.blur()")
+        click(process, "#pw")
+        at = until(lambda: menu_item(process, "#pw", 0, **{"data-generate": "1"}), 5)
+        if at:
+            click_at(process, *at)
+        made = until(lambda: values(process, "#pw")[0], 5) or ""
+        check(made and reveal(process, kept) == "Kept-Password-41", "The suggestion doesn't replace a saved password")
+        check(until(lambda: "Still will ask before replacing" in text(process), 3), "and Still says it will ask")
+        click(process, "#go")
+        said = until(lambda: bar(process), 8) or ""
+        check("Update" in said, f"Sending the form brings the Update bar ({said[:60]!r})")
+        if said:
+            bar_button(process, "Not now")
+        check(reveal(process, kept) == "Kept-Password-41", "and Not now leaves the old one")
+        send(process, "vaultDelete", id=kept["id"])
+
         # Never for this site.
         def sign_in_elsewhere():
             go(process, OTHER + "/login")

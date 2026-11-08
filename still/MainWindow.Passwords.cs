@@ -84,12 +84,14 @@ public partial class MainWindow
   if(tab.View?.CoreWebView2 is not{} core||tab.CertificateError||tab.LoginApi.Length==0||!IsLoginOrigin(core.Source,out var site)||Origin(site)!=entry.Origin)return false;
   return await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.fill("+JsonSerializer.Serialize(new{username=entry.Username,password=entry.Password})+")??false")=="true";
  }
- /// A strong password Still suggested and the user took: saved at once, so it's never lost.
+ /// A strong password Still suggested and the user took: saved at once, so it's never lost. Over another saved password,
+ /// it waits for the form to be sent and the Update bar: a click on the suggestion isn't a yes to replacing that login.
  async Task SaveGenerated(BrowserTab tab,string origin,string host,string username,string password)
  {
   if(password.Length is <8 or >8192||username.Length>1024)return;
   var entries=Vault.Read();
   var entry=username.Length>0?entries.FirstOrDefault(v=>v.Origin==origin&&v.Username==username):entries.FirstOrDefault(v=>v.Id==tab.GeneratedLogin);
+  if(entry!=null&&entry.Id!=tab.GeneratedLogin&&entry.Password!=password){Toast("Strong password filled in. Still will ask before replacing your saved one.");return;}
   if(entry==null){entry=new LoginEntry{Origin=origin,Username=username};entries.Add(entry);}
   entry.Password=password;Vault.Write(entries);tab.GeneratedLogin=entry.Id;
   if(panel=="passwords")await PublishBrowserTools("passwords");
