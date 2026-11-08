@@ -143,7 +143,7 @@ public partial class MainWindow
    var step = new AgentStep();
    SemaphoreSlim? turn = null;
    try {
-    int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => 30000 };
+    int limit = tool switch { "ask_user" or "run_plugin_action" or "ask_companion" => 660_000, "wait_for" => (int)Math.Clamp(N(args, "timeoutMs", 10000), 100, 30000) + 5000, "upload_file" => 60000, _ => App.IsTemp ? 80000 : 30000 };
     // An approval is for what the card showed. The page can change while it waits, so once it's this call's turn Still looks
     // again, and if it's not the same any more it goes back to asking. The same goes for what happens during the step itself.
     for (int tries = 0; ; tries++) {

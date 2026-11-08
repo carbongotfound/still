@@ -117,7 +117,7 @@ try:
     # "temp" opens a throwaway window the caller is already allowed in.
     ok, text = first.call("open_tab", seconds=90, url=URL + "/temp-tab", profile="temp")
     listed_ok, listed = first.call("list_tabs", seconds=60, profile="temp")
-    check(ok and listed_ok and "temp-tab" in listed, "profile=temp opens a temporary window")
+    check(ok and listed_ok and "temp-tab" in listed, f"profile=temp opens a temporary window ({text[:120]!r}, {listed[:120]!r})")
     ok, text = first.call("list_tabs")
     check(ok and "temp-tab" not in text, "The temporary window is separate from the profile")
 

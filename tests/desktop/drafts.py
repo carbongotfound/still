@@ -395,7 +395,7 @@ try:
     def kept():
         return rpc(p, "eval", script="sessionStorage.getItem('__stillDraft') ?? ''") or ""
     send(p, "new", url=base + "/form")
-    until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')"), 15)
+    until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')") is True, 15)
     in_page("#note", "A long note that the draft keeper should keep for me")
     check("A long note" in kept(), "A page's long text is kept in the tab")
     rpc(p, "eval", script="document.querySelector('form').requestSubmit()")
