@@ -821,6 +821,10 @@ def main():
         ok, _ = agent.call("screenshot", tabId=tab)
         check(ok and page(process, "window.__masks") >= 2 and not page(process, "document.querySelector('#user').getAttribute('style')"),
               "A screenshot masks fields that show a saved login, then puts them back")
+        page(process, "window.__seen = 0; window.__real = {}; for (const k of ['includes', 'some', 'map']) { const real = __real[k] = Array.prototype[k]; Array.prototype[k] = function (...a) { __seen++; return real.apply(this, a) } }")
+        ok, _ = agent.call("screenshot", tabId=tab)
+        seen = page(process, "(() => { const n = __seen; Object.assign(Array.prototype, __real); return n })()")
+        check(ok and seen == 0, f"A page's own scripts can't watch a screenshot look for saved logins ({seen})")
         started = time.monotonic()
         ok, said = agent.call("type", tabId=tab, selector="#pw", text="guessing")
         check(not ok and "never type or see passwords" in said and time.monotonic() - started < 5 and values(process, "#pw") == ["Lighthouse-Keeper-43"],
