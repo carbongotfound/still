@@ -603,6 +603,7 @@ def main():
         click(process, "#pw")
         at = until(lambda: menu_item(process, "#pw", 0, **{"data-generate": "1"}), 5)
         if at:
+            time.sleep(.7)
             click_at(process, *at)
         made = until(lambda: values(process, "#pw")[0], 5) or ""
         check(made and reveal(process, kept) == "Kept-Password-41", "The suggestion doesn't replace a saved password")

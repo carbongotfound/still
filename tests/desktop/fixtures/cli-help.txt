@@ -10,7 +10,7 @@ Tools:
   read_attachment id= offset= profile=
       Read a file the user attached to their message, by the id Still gave you: text and code come back as text (20000 characters at a time), PDFs as their text, images as the image itself.
   read_url url= offset= profile=
-      Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there.
+      Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there. It reads signed out (the reply says signedOut) unless the user named the site or you've used it in this chat; open_tab it to see it signed in.
   open_tab url= background= profile=
       Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.
   navigate url= tabId= profile=
@@ -45,7 +45,5 @@ Tools:
       Answer the alert, confirm, prompt or "leave page?" dialog the page is paused on (other tools tell you when one opens).
   upload_file paths= id= tabId= profile=
       Attach files to the file picker the page just opened (click its upload button first), or to a file input by id. Still asks the user to allow it.
-  user_confirmed code= allow= profile=
-      Only when Still told you to check with the user: after asking them in your chat, pass the code and their answer. Never answer for the user.
   screenshot tabId= profile=
       PNG of the visible part of a tab. Costs far more tokens than read_page or find: use it only when how the page looks matters.
