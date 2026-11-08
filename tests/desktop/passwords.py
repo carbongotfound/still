@@ -826,6 +826,10 @@ def main():
         agent.close()
         agent = None
 
+        if not MAC:  # test builds never touch the clipboard, so this reads what would go on it
+            clip = rpc(process, "passwordClip")
+            check(all(clip.get(k) == 0 for k in ("ExcludeClipboardContentFromMonitorProcessing", "CanIncludeInClipboardHistory", "CanUploadToCloudClipboard")) and "UnicodeText" in clip, f"A copied password is marked to stay out of clipboard history and the cloud ({clip})")
+
         # Companions' memory never keeps a saved password.
         results = BIN / "results.jsonl"
         send(process, "new")

@@ -56,6 +56,7 @@ public partial class MainWindow
         order = tabs.Select(t => t.Id) });
        if (op == "eval" && (doc.RootElement.TryGetProperty("tab", out var evalTab) ? tabs.FirstOrDefault(t => t.Id == evalTab.GetString()) : Shown ?? active)?.View?.CoreWebView2 is { } core) return await (doc.RootElement.TryGetProperty("world", out _) ? core.RunInOwnWorld(doc.RootElement.GetProperty("script").GetString() ?? "") : core.RunAsync(doc.RootElement.GetProperty("script").GetString() ?? "")); // the page in view, or a given tab
        if (op == "linkArgs") return JsonSerializer.Serialize(App.LinkArgs(doc.RootElement.GetProperty("args").EnumerateArray().Select(a => a.GetString()!).ToArray()));
+       if (op == "passwordClip") { var clip = PasswordClip("x"); return JsonSerializer.Serialize(clip.GetFormats(false).ToDictionary(f => f, f => clip.GetData(f) is MemoryStream m ? BitConverter.ToInt32(m.ToArray(), 0) : -1)); }
        if (op == "managementProfile") return JsonSerializer.Serialize(new { profile = (await ManagementCore()).Profile.ProfileName });
        if (op == "keyboardHolder") return JsonSerializer.Serialize(new { hidden = tabs.Any(t => t.View is { IsVisible: false, IsKeyboardFocusWithin: true }) });
        if (op == "keyboardToHidden") {

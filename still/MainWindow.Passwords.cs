@@ -97,6 +97,13 @@ public partial class MainWindow
   if(panel=="passwords")await PublishBrowserTools("passwords");
   Toast("Strong password saved for "+host+".");
  }
+ /// A password for the clipboard, marked so Windows' clipboard history, cloud clipboard and clipboard watchers leave it out.
+ internal static DataObject PasswordClip(string password)
+ {
+  var data=new DataObject(DataFormats.UnicodeText,password);
+  foreach(var no in new[]{"ExcludeClipboardContentFromMonitorProcessing","CanIncludeInClipboardHistory","CanUploadToCloudClipboard"})data.SetData(no,new MemoryStream(new byte[4]));
+  return data;
+ }
  async Task OfferToSave(BrowserTab tab,string origin,string username,string password,string current)
  {
   if(!Prefs.OfferPasswordSave&&!Prefs.OfferPasswordUpdate||password.Length is <1 or >8192||username.Length>1024||Prefs.NeverSavePasswords.Contains(origin))return;
@@ -191,7 +198,7 @@ public partial class MainWindow
     else if(op=="vaultEdit")ShellSend(new{kind="vaultEditing",id=entry.Id,origin=entry.Origin,username=entry.Username,password=entry.Password});
     else{
 #if !STILL_QA
-     Clipboard.SetText(entry.Password);copiedPassword=entry.Password;_=ClearPasswordClipboard(entry.Password,++clipboardVersion); // test builds never touch the clipboard
+     Clipboard.SetDataObject(PasswordClip(entry.Password),true);copiedPassword=entry.Password;_=ClearPasswordClipboard(entry.Password,++clipboardVersion); // test builds never touch the clipboard
 #endif
      Toast("Password copied. Your clipboard clears in 30 seconds.");
     }
