@@ -10,7 +10,7 @@ No critical issues were found. Two medium-risk issues were found and fixed in 1.
 
 | # | Severity | Issue | Fix |
 |---|---|---|---|
-| 1 | Medium | **Auto-fill could target hidden fields.** Automatic password fill accepted any rendered password field on the matching origin, including a tiny, transparent or covered field. A malicious script running on that site (for example through XSS or a compromised ad script) could plant one and read the filled password. | Fill now requires a real, visible field: at least 24×10 px, opacity ≥ 0.5, `visibility: visible`, not covered by another element when on screen, and not disabled or read-only. The same rule applies to the username field. |
+| 1 | Medium | **Auto-fill could target hidden fields.** Automatic password fill accepted any rendered password field on the matching origin, including a tiny, transparent or covered field. A malicious script running on that site (for example through XSS or a compromised ad script) could plant one and read the filled password. | Fill now requires a real, visible field: at least 24×10 px, opacity ≥ 0.5, `visibility: visible`, not covered by another element when on screen, and not disabled or read-only. The same rule applies to the username field. Auto sign-in also waits for a person's click or key in that field. |
 | 2 | Low | **Import leftovers after a crash.** If Still crashed mid-import, snapshot copies of the source browser's still-encrypted `Login Data` / `Cookies` databases could stay in the profile folder. | Leftover snapshots are deleted when Still starts and before each import. |
 
 ## Reviewed and found sound
