@@ -53,6 +53,10 @@ public partial class MainWindow
      if(entry==null||AgentDriving(tab)||!SecureOrigin(current)&&!confirmed)return;
      tab.LoginFilled=await FillSavedLogin(entry,tab);break;
     }
+    case "accounts":
+     if(!AgentDriving(tab))await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.list("+JsonSerializer.Serialize(new{accounts=Vault.Read().Where(v=>v.Origin==origin).OrderBy(v=>v.Username).Select(v=>new{id=v.Id,username=v.Username})})+")");
+     break;
+    case "covered":Toast("This page is covering Still's list of logins, so nothing was filled. You can fill from Passwords instead.");break;
     case "auto":{
      var only=Vault.Read().Where(v=>v.Origin==origin).ToArray();
      if(SecureOrigin(current)&&Prefs.AutoFillPasswords&&only.Length==1&&!tab.LoginFilled&&!AgentDriving(tab)&&!tab.CertificateError&&tab.LoginApi.Length>0)
@@ -66,13 +70,13 @@ public partial class MainWindow
    }
   }catch(JsonException){}catch(InvalidOperationException){}
  }
- /// Tells the page which logins this site has (usernames only), whether it's insecure, and whether auto sign-in may fill at the first touch.
+ /// Tells the page whether this site has saved logins, whether it's insecure, and whether auto sign-in may fill at the first touch.
  async Task OfferLogins(BrowserTab tab,CoreWebView2 core,string origin,string form,bool secure)
  {
   try{
    var entries=Vault.Read().Where(v=>v.Origin==origin).OrderBy(v=>v.Username).ToArray();
    bool auto=secure&&Prefs.AutoFillPasswords&&entries.Length==1&&form is "login" or "username"&&!tab.LoginFilled&&!AgentDriving(tab);
-   await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.show("+JsonSerializer.Serialize(new{accounts=entries.Select(v=>new{id=v.Id,username=v.Username}),warn=!secure,auto})+")");
+   await core.RunAsync("window["+JsonSerializer.Serialize(tab.LoginApi)+"]?.show("+JsonSerializer.Serialize(new{saved=entries.Length>0,warn=!secure,auto})+")");
   }catch(Exception ex){if(!closing&&!tab.Closed)App.Log(new InvalidOperationException("Login detection could not complete.",ex));}
  }
  async Task<bool> FillSavedLogin(LoginEntry entry,BrowserTab tab)

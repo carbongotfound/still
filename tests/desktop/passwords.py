@@ -206,12 +206,13 @@ def has_key(process):
     return shadow(process, **{"aria-label": "Saved passwords"}) is not None
 
 
-def pick(process, field, index, login, warned=False):
+def pick(process, field, index, login, warned=False, wait=.7):
     """Opens the menu under a field and clicks one of its logins."""
     page(process, "document.activeElement?.blur()")
     click(process, field)
     at = until(lambda: menu_item(process, field, index, warned, **{"data-id": login["id"]}), 5)
     if at:
+        time.sleep(wait)
         click_at(process, *at)
     return at
 
@@ -458,6 +459,28 @@ def main():
         pick(process, "#user", 1, grace)
         check(until(lambda: values(process, "#user", "#pw") == ["grace@example.com", "Compiler-Admiral-06"], 5), "Picking the second login fills that one")
 
+        # The page itself: focusing a field gets it no names, and a list it hides or covers fills nothing.
+        go(process, SITE + "/login")
+        page(process, "document.querySelector('#user').focus()")
+        time.sleep(.8)
+        check(not has_key(process), "A field the page focuses by itself shows no saved accounts")
+        go(process, SITE + "/login")
+        pick(process, "#user", 0, ada, wait=0)
+        time.sleep(.6)
+        check(values(process, "#user", "#pw") == ["", ""], "A click the moment the list appears fills nothing")
+        tricks = [("still-passwords{opacity:0!important}", "A list the page made see-through fills nothing"), ("body{opacity:.05}", "A list on a page faded out fills nothing")]
+        if not MAC:  # Safari can't tell about something laid over the list that lets clicks through
+            tricks.append((None, "A list with something laid over it fills nothing"))
+        for rule, name in tricks:
+            go(process, SITE + "/login")
+            page(process, f"document.head.insertAdjacentHTML('beforeend', '<style>{rule}</style>')" if rule else
+                 "document.documentElement.insertAdjacentHTML('beforeend', '<div style=\"position:fixed;inset:0;z-index:2147483647;background:#fff;pointer-events:none\"></div>')")
+            pick(process, "#user", 0, ada)
+            time.sleep(.6)
+            check(values(process, "#user", "#pw") == ["", ""], name)
+            if "see-through" in name:
+                check("covering" in (until(lambda: js(process, "document.body.innerText.includes('covering') ? 'covering' : ''"), 3) or ""), "...and Still says why")
+
         # Auto sign-in: one saved login fills at the first touch; with two, it never guesses.
         send(process, "passwordPermission", feature="fill", enabled=True)
         time.sleep(.5)
@@ -560,6 +583,7 @@ def main():
         click(process, "#pw")
         at = until(lambda: menu_item(process, "#pw", 0, **{"data-generate": "1"}), 5)
         if at:
+            time.sleep(.7)
             click_at(process, *at)
         made = until(lambda: values(process, "#pw")[0], 5) or ""
         strong = len(made) == 20 and any(c.isupper() for c in made) and any(c.islower() for c in made) and any(c.isdigit() for c in made) and any(not c.isalnum() for c in made)

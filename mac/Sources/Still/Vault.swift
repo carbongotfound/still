@@ -122,6 +122,10 @@ extension Browser {
   case "fill":
    guard let entry = Vault.read().first(where: { $0.id == text("id") && $0.origin == origin }), !agentDriving(tab), secureOrigin(current) || data["confirmed"] as? Bool == true else { return }
    fillSavedLogin(entry, tab) { tab.loginFilled = $0 }
+  case "accounts":
+   guard !agentDriving(tab) else { return }
+   callLogin(tab, "list", ["accounts": Vault.read().filter { $0.origin == origin }.sorted { $0.username < $1.username }.map { ["id": $0.id, "username": $0.username] }])
+  case "covered": toast("This page is covering Still's list of logins, so nothing was filled. You can fill from Passwords instead.")
   case "auto":
    let only = Vault.read().filter { $0.origin == origin }
    guard secureOrigin(current), autoFill, only.count == 1, !tab.loginFilled, !agentDriving(tab) else { return }
@@ -134,11 +138,11 @@ extension Browser {
   }
  }
 
- /// Tells the page which logins this site has (usernames only), whether it's insecure, and whether auto sign-in may fill at the first touch.
+ /// Tells the page whether this site has saved logins, whether it's insecure, and whether auto sign-in may fill at the first touch.
  func offerLogins(_ tab: Tab, _ origin: String, _ form: String, _ secure: Bool) {
   let entries = Vault.read().filter { $0.origin == origin }.sorted { $0.username < $1.username }
   let auto = secure && autoFill && entries.count == 1 && ["login", "username"].contains(form) && !tab.loginFilled && !agentDriving(tab)
-  callLogin(tab, "show", ["accounts": entries.map { ["id": $0.id, "username": $0.username] }, "warn": !secure, "auto": auto])
+  callLogin(tab, "show", ["saved": !entries.isEmpty, "warn": !secure, "auto": auto])
  }
 
  func fillSavedLogin(_ entry: Login, _ tab: Tab, _ done: @escaping (Bool) -> Void) {

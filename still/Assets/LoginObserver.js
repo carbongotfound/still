@@ -12,8 +12,15 @@
   const value = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value');
   const formAction = Object.getOwnPropertyDescriptor(HTMLFormElement.prototype, 'action').get;
   const random = crypto.getRandomValues.bind(crypto);
+  const { apply } = Reflect, rectOf = Element.prototype.getBoundingClientRect, styleOf = getComputedStyle, cssOf = CSSStyleDeclaration.prototype.getPropertyValue;
+  const parentOf = Object.getOwnPropertyDescriptor(Node.prototype, 'parentElement').get, atPoint = Document.prototype.elementFromPoint;
+  const css = (e, name) => apply(cssOf, styleOf(e), [name]);
+  // Chromium can tell when anything at all lies over the list or fades it. Safari can't, so there the checks below are all there is.
+  const visibleOf = Object.getOwnPropertyDescriptor(IntersectionObserverEntry.prototype, 'isVisible')?.get;
+  let clear = false;
+  const watcher = visibleOf ? new IntersectionObserver(seen => { clear = apply(visibleOf, seen[seen.length - 1], []); }, { trackVisibility: true, delay: 100 }) : null;
   const api = '__stillLogin' + [...random(new Uint8Array(8))].map(b => b.toString(16).padStart(2, '0')).join('');
-  let timer, signature = '', lastSubmission = 0, accounts = [], warn = false, auto = false, host, root, open = null, armed = '', suggestion = '';
+  let timer, signature = '', lastSubmission = 0, accounts = [], warn = false, auto = false, saved = false, asked = false, touchedAt = -1e9, host, root, open = null, armed = '', suggestion = '';
   const visible = e => e.getClientRects().length && !e.disabled && !e.readOnly;
   const fields = scope => [...scope.querySelectorAll('input')].filter(visible);
   const text = e => ['text', 'email', 'tel', ''].includes(e.type);
@@ -43,19 +50,22 @@
   function set(e, v) { if (!e) return; value.set.call(e, v); e.dispatchEvent(new Event('input', { bubbles: true })); e.dispatchEvent(new Event('change', { bubbles: true })); }
   // A field a person can see and means to use: big enough, solid enough, and the thing at its centre.
   function real(e) {
-    const r = e.getBoundingClientRect(), s = getComputedStyle(e);
-    if (r.width < 24 || r.height < 10 || s.visibility !== 'visible') return false;
-    for (let a = e; a; a = a.parentElement) if (+getComputedStyle(a).opacity < .5) return false;
-    const top = e.getRootNode().elementFromPoint?.(r.left + r.width / 2, r.top + r.height / 2);
-    return !!top && (top === e || e.contains(top));
+    const r = apply(rectOf, e, []);
+    if (r.width < 24 || r.height < 10 || css(e, 'visibility') !== 'visible') return false;
+    for (let a = e; a; a = apply(parentOf, a, [])) if (+css(a, 'opacity') < .5) return false;
+    return apply(atPoint, document, [r.left + r.width / 2, r.top + r.height / 2]) === e;
   }
-  // Auto sign-in waits for this, so a page can't collect a login with nobody there, or into a field nobody can see.
+  // Account names and auto sign-in wait for this, so a page can't collect them with nobody there, or through a field nobody can see.
   function touched(e) {
-    if (!auto || !e.isTrusted || e.type === 'keyup' && e.key !== 'Tab') return;
+    if (!e.isTrusted) return;
     const form = scan();
-    if (!form || !['login', 'username'].includes(form.kind) || !(e.target === form.user || form.pw.includes(e.target)) || !real(e.target)) return;
-    auto = false;
-    report('auto');
+    if (!form || !(e.target === form.user || form.pw.includes(e.target)) || !real(e.target)) return;
+    touchedAt = performance.now();
+    reach(form);
+  }
+  function reach(form) {
+    if (saved && !asked) { asked = true; report('accounts'); }
+    if (auto && ['login', 'username'].includes(form.kind)) { auto = false; report('auto'); }
   }
   const foreign = address => { try { return new URL(address, location.href).origin !== location.origin; } catch { return true; } };
   // Where this form would send what's in it: its own address (a field named "action" can't stand in for it) or one of its buttons'.
@@ -128,7 +138,11 @@
     if (!open || !open.field.isConnected || !visible(open.field)) { close(); return; }
     const r = open.field.getBoundingClientRect();
     open.key.style.left = Math.max(0, r.right - 30) + 'px'; open.key.style.top = (r.top + (r.height - 24) / 2) + 'px';
-    if (open.menu) { open.menu.style.left = Math.max(4, Math.min(r.left, innerWidth - open.menu.offsetWidth - 4)) + 'px'; open.menu.style.top = (r.bottom + 6) + 'px'; }
+    if (open.menu) {
+      const left = Math.max(4, Math.min(r.left, innerWidth - open.menu.offsetWidth - 4)) + 'px', top = (r.bottom + 6) + 'px';
+      if (open.menu.style.left !== left || open.menu.style.top !== top) open.moved = performance.now();
+      open.menu.style.left = left; open.menu.style.top = top;
+    }
   }
   function menu() {
     if (!open || open.menu) return;
@@ -145,6 +159,14 @@
     }
     const foot = el('button', 'foot'); setText.call(foot, open.fresh ? 'Still saves it for you. Manage passwords' : 'Manage passwords'); foot.dataset.manage = '1'; m.append(foot);
     root.append(m); place();
+    watcher?.disconnect(); clear = false; watcher?.observe(m);
+  }
+  // A click on the list counts only if a person could see what they clicked: it stayed put for a moment, it's what's under the
+  // mouse, and nothing on the way up to the page's root fades or warps it.
+  function unhidden(e) {
+    if (watcher && !clear || apply(atPoint, document, [e.clientX, e.clientY]) !== host) return false;
+    for (let a = host; a; a = apply(parentOf, a, [])) if (+css(a, 'opacity') < .9 || css(a, 'mix-blend-mode') !== 'normal' || ['filter', 'transform', 'clip-path'].some(p => css(a, p) !== 'none')) return false;
+    return true;
   }
   function show(field, fresh) {
     if (!accounts.length && !fresh || fresh && field.maxLength > 0 && field.maxLength < 8) return;
@@ -159,6 +181,8 @@
     const b = e.target.closest?.('button'); if (!b || !e.isTrusted || !open) return;
     if (b.dataset.toggle) { if (open.menu) { open.menu.remove(); open.menu = null; } else menu(); return; }
     if (b.dataset.manage) { report('manage'); close(); return; }
+    if (performance.now() - open.moved < 500) return;
+    if (!unhidden(e)) { report('covered'); return; }
     if (b.dataset.generate) {
       const form = scan(); if (!form) return;
       for (const f of form.fresh) set(f, suggestion);
@@ -196,10 +220,17 @@
     report('submitted', { username, password, current: fresh && current ? value.get.call(current) : '', form: form.kind });
   }
   Object.defineProperty(window, api, { value: Object.freeze({
-    // From Still: the logins saved for this site, whether the page is insecure, and whether auto sign-in is on here.
+    // From Still: whether this site has saved logins, whether the page is insecure, and whether auto sign-in is on here.
     show(data) {
-      accounts = data.accounts || []; warn = !!data.warn; auto = !!data.auto;
-      if (document.activeElement && !open) focused(document.activeElement); // a field focused before Still answered
+      saved = !!data.saved; warn = !!data.warn; auto = !!data.auto; asked = false;
+      if (!saved) accounts = [];
+      if (performance.now() - touchedAt < 2000) { const form = scan(); if (form) reach(form); } // a field touched just before Still answered
+      if (document.activeElement && !open) focused(document.activeElement);
+    },
+    // The names of this site's accounts, once a person has touched a field.
+    list(data) {
+      accounts = data.accounts || [];
+      if (document.activeElement && !open) focused(document.activeElement);
     },
     fill(login) { return fill(login, false); },
     auto(login) { return fill(login, true); },
