@@ -2,6 +2,8 @@
 
 **Date:** 2026-09-24 · **Scope:** the full source in this repository · **Type:** internal code review. This is **not** an independent third-party audit.
 
+**Since then:** in November 2026 an AI-assisted code scan looked at Still 2.10's Windows and Mac source. It isn't an independent audit either: it read part of the source and didn't cover the macOS platform itself. Its fixes come with the release after 2.10.1. [SECURITY.md](../SECURITY.md) describes Still as it is now.
+
 ## Summary
 
 No critical issues were found. Two medium-risk issues were found and fixed in 1.4.1. All npm and NuGet dependencies had zero known vulnerabilities (`npm audit`, `dotnet list package --vulnerable`) on the review date.

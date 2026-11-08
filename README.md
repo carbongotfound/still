@@ -159,7 +159,7 @@ Still updates itself on Windows and the Mac. It checks for a new version when it
 
 ## Code signing policy
 
-**Status:** Applied to SignPath Foundation for free code signing of Windows builds; approval pending. Windows releases are not signed yet.
+**Status:** SignPath Foundation turned down the application for free code signing, because the project doesn't have enough public visibility yet. Windows releases are not signed.
 
 <!-- Use this line once SignPath Foundation approves the application: Free code signing provided by SignPath.io, certificate by SignPath Foundation -->
 
