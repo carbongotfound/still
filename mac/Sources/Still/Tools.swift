@@ -259,7 +259,8 @@ extension Browser {
     }
    }
    let types = Browser.acceptedTypes(request.accept)
-   let copied = (types == nil || types!.contains("png")) ? self.saveClipboardImage() : nil
+   let png = types == nil || types!.contains("png"), jpeg = !png && types!.contains("jpg") // a JPEG if that's all the site takes
+   let copied = png || jpeg ? self.saveClipboardImage(jpeg: jpeg) : nil
    DispatchQueue.global(qos: .userInitiated).async {
     let files = Browser.recentFiles(types)
     DispatchQueue.main.async {
@@ -324,19 +325,25 @@ extension Browser {
   thumbnails[key] = url
   return url
  }
- /// The copied image as a PNG the site can upload. Old pastes are cleaned up after a day.
- func saveClipboardImage() -> URL? {
+ /// What's copied, as files: copied files as they are, a copied picture saved as a PNG.
+ func copiedFiles() -> [URL] {
+  let urls = NSPasteboard.general.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+  let real = urls.filter { var folder: ObjCBool = false; return FileManager.default.fileExists(atPath: $0.path, isDirectory: &folder) && !folder.boolValue }
+  return real.isEmpty ? saveClipboardImage().map { [$0] } ?? [] : real
+ }
+ /// The copied image as a file the site can upload. Old pastes are cleaned up after a day.
+ func saveClipboardImage(jpeg: Bool = false) -> URL? {
   let board = NSPasteboard.general
   guard board.availableType(from: [.png, .tiff]) != nil, let image = NSImage(pasteboard: board), let tiff = image.tiffRepresentation,
-        let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else { return nil }
+        let encoded = NSBitmapImageRep(data: tiff)?.representation(using: jpeg ? .jpeg : .png, properties: jpeg ? [.compressionFactor: 0.92] : [:]) else { return nil }
   let folder = support.appendingPathComponent("Clipboard")
   try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
   for old in (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: [.creationDateKey])) ?? []
   where ((try? old.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? Date()) < Date().addingTimeInterval(-86400) { try? FileManager.default.removeItem(at: old) }
   let stamp = DateFormatter()
   stamp.dateFormat = "yyyy-MM-dd HHmmss"
-  let file = folder.appendingPathComponent("Pasted image \(stamp.string(from: Date())).png")
-  return (try? png.write(to: file)) == nil ? nil : file
+  let file = folder.appendingPathComponent("Pasted image \(stamp.string(from: Date())).\(jpeg ? "jpg" : "png")")
+  return (try? encoded.write(to: file)) == nil ? nil : file
  }
 
  /// The card's answer: the picked files, "Open a file", or nothing (closed).

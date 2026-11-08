@@ -1045,6 +1045,13 @@ extension Browser {
    let kept = (data["ids"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }
    var seen = Set<String>()
    send(["kind": "attached", "to": s("to"), "files": kept.filter { seen.insert($0.id).inserted }.prefix(maxFiles).map { ["id": $0.id, "name": $0.name, "size": $0.size] }, "error": ""])
+  case "aiPasteImage": // the + menu, or a paste the box can't read itself
+   let to = s("to"), quiet = b("quiet")
+   DispatchQueue.main.async { [self] in
+    let copied = copiedFiles()
+    if copied.isEmpty { if !quiet { toast("There's no image copied right now.") }; return }
+    attach(to, copied.prefix(maxFiles).map { url in (url.lastPathComponent, ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize).map(Int64.init) ?? 0, { try? Data(contentsOf: url) }) })
+   }
   case "aiAttach": // dropped or pasted in the box
    let dropped = s("data")
    guard !dropped.isEmpty else { break }

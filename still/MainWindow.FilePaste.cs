@@ -29,6 +29,14 @@ public partial class MainWindow
  [StructLayout(LayoutKind.Sequential)] struct POINT { public int X, Y; }
  // Checks formats without opening the clipboard, so another app holding it can never freeze Still.
  static bool HasClipboardImage() => IsClipboardFormatAvailable(2 /*CF_BITMAP*/) || IsClipboardFormatAvailable(8 /*CF_DIB*/) || IsClipboardFormatAvailable(17 /*CF_DIBV5*/);
+ // What's copied, as files: copied files as they are, a copied picture saved as a PNG.
+ static List<string> CopiedFiles()
+ {
+  try {
+   if (Clipboard.ContainsFileDropList()) return [.. Clipboard.GetFileDropList().Cast<string>().Where(File.Exists)];
+  } catch (COMException ex) { App.Log(ex); return []; }
+  return HasClipboardImage() && SaveClipboardImage() is { } saved ? [saved] : [];
+ }
 
  async Task SetupFilePaste(BrowserTab tab, CoreWebView2 core)
  {
@@ -71,8 +79,9 @@ public partial class MainWindow
   }
   var types = AcceptedTypes(accept);
   CancelUpload();
-  // The copied image leads the bar, saved as a PNG so picking it is instant.
-  string? copied = (types == null || types.Contains(".png")) && HasClipboardImage() ? SaveClipboardImage() : null;
+  // The copied image leads the bar, saved as a PNG (a JPEG if that's all the site takes) so picking it is instant.
+  bool png = types == null || types.Contains(".png"), jpeg = !png && types!.Contains(".jpg");
+  string? copied = (png || jpeg) && HasClipboardImage() ? SaveClipboardImage(jpeg) : null;
   var files = await Task.Run(() => RecentFiles(types));
   var request = new UploadRequest(Guid.NewGuid().ToString("N"), tab, core, node, multiple, accept, copied == null ? files : [copied, .. files]);
   if (tab != active || closing || !shellReady) { Browse(request); return; }
@@ -154,16 +163,16 @@ public partial class MainWindow
   catch (Exception ex) { App.Log(ex); Toast("Couldn't attach the file. Try again."); }
  }
 
- // Writes the clipboard image to a PNG the site can upload. Old pastes are cleaned up after a day.
- static string? SaveClipboardImage()
+ // Writes the clipboard image to a file the site can upload. Old pastes are cleaned up after a day.
+ static string? SaveClipboardImage(bool jpeg = false)
  {
   try {
    if (Clipboard.GetImage() is not { } image) return null;
    string dir = Path.Combine(App.DataRoot, "Clipboard");
    Directory.CreateDirectory(dir);
    foreach (var old in new DirectoryInfo(dir).EnumerateFiles().Where(f => f.CreationTimeUtc < DateTime.UtcNow.AddDays(-1))) try { old.Delete(); } catch (IOException) { }
-   string file = Path.Combine(dir, "Pasted image " + DateTime.Now.ToString("yyyy-MM-dd HHmmss") + ".png");
-   var encoder = new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
+   string file = Path.Combine(dir, "Pasted image " + DateTime.Now.ToString("yyyy-MM-dd HHmmss") + (jpeg ? ".jpg" : ".png"));
+   BitmapEncoder encoder = jpeg ? new JpegBitmapEncoder { QualityLevel = 92 } : new PngBitmapEncoder(); encoder.Frames.Add(BitmapFrame.Create(image));
    using (var stream = File.Create(file)) encoder.Save(stream);
    return file;
   } catch (Exception ex) when (ex is COMException or IOException or UnauthorizedAccessException or NotSupportedException) { App.Log(ex); return null; }

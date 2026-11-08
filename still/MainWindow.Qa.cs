@@ -26,6 +26,28 @@ public partial class MainWindow
    }
   });
  }
+ System.Windows.DataObject? qaClipboard;
+ /// The computer's real clipboard, for real paste tests: "save" copies what's on it and "restore" puts that back.
+ bool QaClipboard(JsonElement r)
+ {
+  string Text(string k) => r.TryGetProperty(k, out var v) ? v.GetString() ?? "" : "";
+  try {
+   switch (Text("what")) {
+    case "save":
+     var now = System.Windows.Clipboard.GetDataObject(); qaClipboard = new();
+     foreach (var f in now?.GetFormats(false) ?? [])
+      if (now!.GetData(f, false) is (string or string[] or MemoryStream or System.Windows.Media.Imaging.BitmapSource) and var kept) qaClipboard.SetData(f, kept, false);
+     break;
+    case "restore":
+     if (qaClipboard?.GetFormats(false).Length > 0) System.Windows.Clipboard.SetDataObject(qaClipboard, true); else System.Windows.Clipboard.Clear();
+     break;
+    case "image": System.Windows.Clipboard.SetImage(System.Windows.Media.Imaging.BitmapFrame.Create(new MemoryStream(Convert.FromBase64String(Text("data"))), System.Windows.Media.Imaging.BitmapCreateOptions.None, System.Windows.Media.Imaging.BitmapCacheOption.OnLoad)); break;
+    case "text": System.Windows.Clipboard.SetText(Text("text")); break;
+    case "file": System.Windows.Clipboard.SetFileDropList([Text("path")]); break;
+   }
+   return true;
+  } catch (System.Runtime.InteropServices.COMException) { return false; } // another app has it for a moment: ask again
+ }
  /// One test request. With "window" (a window's id) it runs in that window: an incognito window's own interface, say.
  async Task<string> QaReply(string line)
  {
@@ -69,6 +91,7 @@ public partial class MainWindow
        if (op == "stageStorePackage") { await StageStorePackage(await File.ReadAllBytesAsync(doc.RootElement.GetProperty("path").GetString()!),doc.RootElement.GetProperty("id").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageImport") { await PrepareImport(doc.RootElement.GetProperty("kind").GetString()!,doc.RootElement.GetProperty("path").GetString()!);return "{\"ok\":true}"; }
        if (op == "stageExternalProfile") { await PrepareExternalProfile(doc.RootElement.GetProperty("path").GetString()!,doc.RootElement.TryGetProperty("name", out var source) ? source.GetString()! : "Opera GX",doc.RootElement.TryGetProperty("picked", out var chosen) && chosen.GetBoolean());return "{\"ok\":true}"; }
+       if (op == "clipboard") return JsonSerializer.Serialize(new { ok = QaClipboard(doc.RootElement) });
        if (op == "shellEval" && shellView?.CoreWebView2 is { } ui) return await ui.ExecuteScriptAsync(doc.RootElement.GetProperty("script").GetString() ?? "");
        if (op == "shellCdp" && shellView?.CoreWebView2 is { } dev) return await dev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());
        if (op == "pageCdp" && active?.View?.CoreWebView2 is { } pageDev) return await pageDev.CallDevToolsProtocolMethodAsync(doc.RootElement.GetProperty("method").GetString()!,doc.RootElement.GetProperty("parameters").GetRawText());

@@ -622,6 +622,11 @@ public partial class MainWindow
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
     if (picker.ShowDialog(this) == true) Attach(S("to"), picker.FileNames.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
     break; }
+   case "aiPasteImage": { // the + menu, or a paste the box can't read itself
+    var copiedNow = CopiedFiles();
+    if (copiedNow.Count > 0) Attach(S("to"), copiedNow.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
+    else if (!B("quiet")) Toast("There's no image copied right now.");
+    break; }
    case "aiAttach" when S("data") is { Length: > 0 } dropped: // dropped or pasted in the box
     Attach(S("to"), [(S("name"), dropped.Length / 4L * 3, () => Convert.FromBase64String(dropped))]); break;
    case "aiReattach" when data.ValueKind == JsonValueKind.Object && data.TryGetProperty("ids", out var keptIds) && keptIds.ValueKind == JsonValueKind.Array: // a draft's files, the ones still here

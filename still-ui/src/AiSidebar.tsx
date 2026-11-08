@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -337,6 +337,14 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const me = useId()
  const partsRef = useRef(parts), filesRef = useRef(files)
  useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
+ useEffect(() => { // Ctrl+V (Cmd+V on the Mac) with no box in focus: a copied picture lands in the box on show
+  const key = (e: KeyboardEvent) => {
+   if (e.key.toLowerCase() !== "v" || !(MAC ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.defaultPrevented || disabled || !box.current?.checkVisibility()) return
+   if ((e.target as Element | null)?.closest?.("input, textarea, select, [contenteditable=true], [role=textbox], [role=dialog]")) return
+   e.preventDefault(); send("aiPasteImage", { to: me, quiet: true })
+  }
+  document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key)
+ })
  const pending = useRef<(() => void) | null>(null), timer = useRef(0)
  const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
  const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
@@ -476,7 +484,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   let p: unknown = null
   try { p = JSON.parse(e.clipboardData.getData(KEPT)) } catch { /* from somewhere else: plain text */ }
   if (Array.isArray(p)) insert(markup(p.map(x => typeof x === "string" ? x : live(x, known) ?? String((x as Mention)?.name ?? "")), known))
-  else document.execCommand("insertText", false, e.clipboardData.getData("text/plain"))
+  else if (e.clipboardData.getData("text/plain")) document.execCommand("insertText", false, e.clipboardData.getData("text/plain"))
+  else send("aiPasteImage", { to: me, quiet: true }) // a picture the box can't read here: Still reads the clipboard itself
  }
  const dragging = (e: { dataTransfer: DataTransfer }) => e.dataTransfer.types.includes("Files")
  return <InputGroup className={"composer" + (dropping ? " is-drop" : "")} style={{ "--hue": hueOf(companion) } as CSSProperties}
@@ -510,6 +519,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    <DropdownMenu onOpenChange={add.measure}><DropdownMenuTrigger asChild disabled={disabled}><InputGroupButton ref={add.ref} className="composer-add" size="icon-xs" variant="ghost" aria-label="Add files, a skill or a tab"><Plus /></InputGroupButton></DropdownMenuTrigger>
     <DropdownMenuContent {...add.props} className="w-72" onCloseAutoFocus={e => e.preventDefault()}>
      <DropdownMenuItem onSelect={() => send("aiPickFiles", { to: me })}><Paperclip />Add files<span className="menu-hint">or drop them here</span></DropdownMenuItem>
+     <DropdownMenuItem onSelect={() => send("aiPasteImage", { to: me })}><ClipboardPaste />Paste copied image<span className="menu-hint">or {MAC ? "⌘V" : "Ctrl+V"}</span></DropdownMenuItem>
      <DropdownMenuSeparator />
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}

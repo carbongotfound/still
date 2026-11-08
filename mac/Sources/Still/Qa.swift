@@ -11,6 +11,7 @@ func qaEnv(_ name: String) -> String? { isQa ? ProcessInfo.processInfo.environme
 private var qaServing = false
 var qaServed: [String] = [] // the still:// files the shell loaded, in order
 private var qaShellErrors: [String] = []
+private var qaClipboard: [[(NSPasteboard.PasteboardType, Data)]] = []
 
 /// The shell's uncaught errors and rejections, which the tests check stay empty.
 private final class QaErrors: NSObject, WKScriptMessageHandler {
@@ -181,6 +182,19 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
  case "menu": // a click on a menu bar item, by its menu's title and its own (one with no shortcut, like AI > Add a Model…)
   let menu = NSApp.mainMenu?.items.first { ($0.submenu?.title ?? $0.title) == text("menu") }?.submenu // the title is the submenu's
   if let menu, let i = menu.items.firstIndex(where: { $0.title == text("item") }) { menu.performActionForItem(at: i); done(["ok": true]) } else { done(["ok": false]) }
+ case "clipboard": // the computer's real clipboard, for real paste tests: "save" copies what's on it and "restore" puts that back
+  let board = NSPasteboard.general
+  switch text("what") {
+  case "save": qaClipboard = (board.pasteboardItems ?? []).map { item in item.types.compactMap { type in item.data(forType: type).map { (type, $0) } } }
+  case "restore":
+   board.clearContents()
+   board.writeObjects(qaClipboard.map { saved in let item = NSPasteboardItem(); for (type, data) in saved { item.setData(data, forType: type) }; return item })
+  case "image": board.clearContents(); board.setData(Data(base64Encoded: text("data")) ?? Data(), forType: .png)
+  case "text": board.clearContents(); board.setString(text("text"), forType: .string)
+  case "file": board.clearContents(); board.writeObjects([URL(fileURLWithPath: text("path")) as NSURL])
+  default: break
+  }
+  done(["ok": true])
  case "quit":
   done(["ok": true])
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { NSApp.terminate(nil) } // after the reply is on its way

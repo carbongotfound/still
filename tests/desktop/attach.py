@@ -7,17 +7,19 @@ Run: python tests/desktop/attach.py artifacts/Still-QA/Still.exe
 Out: artifacts/attach-*/ (attach-*.png in the profile folder)
 """
 import base64
+import http.server
 import json
 import os
 from pathlib import Path
 import re
 import sys
 import textwrap
+import threading
 import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("attach-" + uuid.uuid4().hex[:8])
@@ -106,6 +108,113 @@ def files_js(spec):
 
 def chips(p, box):
     return js(p, f"[...document.querySelectorAll('{box} .composer .file-chip')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
+
+
+class UploadPage(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        box = "display:block;width:200px;height:60px"
+        body = f"<!doctype html><title>Up</title><input id=jpg type=file accept='image/jpeg' style='{box}'><input id=any type=file accept='image/*' style='{box}'>".encode()
+        self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
+
+
+def real_clipboard(p):
+    """A real paste, so the computer's real clipboard: what was on it goes back right after."""
+    picture = base64.b64encode(PNG).decode()
+    home = ".home-compose"
+    message = f"{home} [aria-label=Message]"
+
+    def board(what, **a):
+        return until(lambda: rpc(p, "clipboard", what=what, **a).get("ok"), 5)
+
+    def keys():
+        if MAC:
+            rpc(p, "key", key="V", mods="Control", post=True)
+            return
+        for kind, commands in (("rawKeyDown", ["paste"]), ("keyUp", [])):
+            rpc(p, "shellCdp", method="Input.dispatchKeyEvent", parameters={"type": kind, "key": "v", "code": "KeyV", "windowsVirtualKeyCode": 86, "modifiers": 2, "commands": commands})
+
+    def clear():
+        js(p, f"document.querySelectorAll('{home} .file-chip button[aria-label^=Remove]').forEach(b => b.click())")
+        until(lambda: not chips(p, home), 3)
+
+    def menu():
+        js(p, f"document.querySelector('{home} .composer-add').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
+        until(lambda: js(p, "!!document.querySelector('[role=menu]')"), 5)
+        js(p, "[...document.querySelectorAll('[role=menuitem]')].find(i => i.innerText.includes('Paste copied image')).click()")
+        until(lambda: not js(p, "!!document.querySelector('[role=menu]')"), 3)
+
+    send(p, "new")
+    until(lambda: js(p, f"!!document.querySelector('{message}')"), 10)
+    time.sleep(.4)
+    check(board("save"), "What's on the clipboard is kept to put back")
+    try:
+        board("image", data=picture)
+        js(p, f"document.querySelector('{message}').focus()")
+        keys()
+        got = until(lambda: chips(p, home), 10) or []
+        check(len(got) == 1 and ".png " in got[0], f"A real paste of a copied picture adds it to the box ({got})")
+        board("text", text="Just some words")
+        keys()
+        check(until(lambda: "Just some words" in (js(p, f"document.querySelector('{message}').innerText") or ""), 5) and len(chips(p, home)) == 1, "Copied words still paste as words")
+        clear()
+
+        js(p, f"document.querySelector('{message}').blur()")
+        board("image", data=picture)
+        keys()
+        got = until(lambda: chips(p, home), 10) or []
+        check(len(got) == 1 and ".png " in got[0], f"With no box in focus a copied picture lands in the box on show ({got})")
+        clear()
+
+        menu()
+        got = until(lambda: chips(p, home), 10) or []
+        check(len(got) == 1 and ".png " in got[0], f"+ > Paste copied image adds it ({got})")
+        clear()
+        file = RUN / "copied notes.txt"
+        file.write_bytes(NOTES.encode())
+        board("file", path=str(file))
+        menu()
+        got = until(lambda: chips(p, home), 10) or []
+        check(got == [f"copied notes.txt {len(NOTES.encode())} B"], f"...and takes a copied file as well ({got})")
+        clear()
+        board("text", text="Not a picture")
+        menu()
+        toast = until(lambda: "no image copied" in (js(p, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' ')") or "") , 5)
+        check(toast and not chips(p, home), "With no picture copied it says so and adds nothing")
+
+        board("image", data=picture)
+        js(p, f"document.querySelector('{message}').focus()")
+        keys()
+        until(lambda: chips(p, home), 10)
+        done = len(lines("results.jsonl"))
+        js(p, f"document.querySelector('{message}').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
+        until(lambda: len(lines("results.jsonl")) > done, 30)
+        row = (lines("results.jsonl")[done:] or [{}])[-1]
+        check(row.get("type") == "image" and row.get("mime") == "image/png", f"A pasted picture reaches the AI as an image ({row.get('type')})")
+
+        # A site's own file button: the copied picture comes first, in a type the site takes.
+        server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), UploadPage)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        send(p, "new", url=f"http://127.0.0.1:{server.server_port}/")
+        until(lambda: rpc(p, "eval", script="document.readyState === 'complete' && !!document.querySelector('#any')") is True, 15)
+        for which, ext, start in (("jpg", ".jpg", "data:image/jpeg;base64,/9j/"), ("any", ".png", "data:image/png;base64,iVBOR")):
+            at = rpc(p, "eval", script=f"(r => [r.x + 20, r.y + 20])(document.querySelector('#{which}').getBoundingClientRect())")
+            for kind in ("mousePressed", "mouseReleased"):
+                rpc(p, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
+            until(lambda: js(p, "!!document.querySelector('.upload-card')"), 15)
+            first = js(p, "document.querySelector('.upload-tile .upload-name')?.innerText")
+            until(lambda: js(p, "document.querySelector('.upload-tile.is-open').disabled") is False, 3)
+            js(p, "document.querySelector('.upload-tile').click()")
+            until(lambda: rpc(p, "eval", script=f"document.querySelector('#{which}').files.length") == 1, 10)
+            name = rpc(p, "eval", script=f"document.querySelector('#{which}').files[0]?.name ?? ''") or ""
+            rpc(p, "eval", script=f"window.__read = ''; (r => {{ r.onload = () => window.__read = r.result; r.readAsDataURL(document.querySelector('#{which}').files[0]) }})(new FileReader())")
+            read = until(lambda: rpc(p, "eval", script="window.__read"), 5) or ""
+            check(first == "Copied" and name.endswith(ext) and read.startswith(start), f"A file button for {which} offers the copied picture first, as {ext} ({first!r}, {name!r}, {read[:30]!r})")
+        server.shutdown()
+    finally:
+        check(board("restore"), "What was on the clipboard goes back")
 
 
 def main():
@@ -218,6 +327,7 @@ def main():
         p = launch(EXE, PROFILE)
         until(lambda: js(p, "!!document.body.innerText.length"), 20)
         check(until(lambda: not any((PROFILE / "ai" / "attachments").iterdir()), 5), "...and is gone once it's more than 7 days old")
+        real_clipboard(p)
     finally:
         try:
             rpc(p, "quit")
