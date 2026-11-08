@@ -468,11 +468,24 @@ extension Browser {
     }
     try walk(try JSONSerialization.jsonObject(with: Data(contents.utf8)), 0)
    } else {
-    let pattern = try NSRegularExpression(pattern: "<a\\s+[^>]*href\\s*=\\s*[\"']([^\"']+)[\"'][^>]*>(.*?)</a>", options: [.caseInsensitive, .dotMatchesLineSeparators])
+    // One tag at a time: a file of almost-links can't send a search back over the whole thing, again and again.
+    let pattern = try NSRegularExpression(pattern: "^\\s[^>]*?href\\s*=\\s*[\"']([^\"']+)[\"']", options: [.caseInsensitive])
     let source = contents as NSString
-    for match in pattern.matches(in: contents, range: NSRange(location: 0, length: source.length)) {
-     let title = source.substring(with: match.range(at: 2)).replacingOccurrences(of: "<[^>]+>", with: "", options: .regularExpression)
-     try bookmark(Browser.htmlDecode(source.substring(with: match.range(at: 1))), Browser.htmlDecode(title))
+    var at = 0
+    while at < source.length {
+     let open = source.range(of: "<a", options: .caseInsensitive, range: NSRange(location: at, length: source.length - at))
+     if open.location == NSNotFound { break }
+     let end = source.range(of: ">", range: NSRange(location: open.location, length: source.length - open.location))
+     if end.location == NSNotFound { break }
+     at = end.location + 1
+     let tag = source.substring(with: NSRange(location: open.location + 2, length: end.location - open.location - 2))
+     guard let match = pattern.firstMatch(in: tag, range: NSRange(location: 0, length: (tag as NSString).length)) else { continue }
+     let close = source.range(of: "</a>", options: .caseInsensitive, range: NSRange(location: at, length: source.length - at))
+     if close.location == NSNotFound { break }
+     var title = "", inTag = false
+     for ch in source.substring(with: NSRange(location: at, length: close.location - at)) { if ch == "<" { inTag = true } else if ch == ">" { inTag = false } else if !inTag { title.append(ch) } }
+     try bookmark(Browser.htmlDecode((tag as NSString).substring(with: match.range(at: 1))), Browser.htmlDecode(title))
+     at = close.location + 4
     }
    }
   default: throw stillError("Unknown import type.")

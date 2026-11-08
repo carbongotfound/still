@@ -695,6 +695,16 @@ def main():
         found = entry(process, "https://csv.example", "csvuser")
         check(preview.get("logins") == 1 and found and reveal(process, found) == "maple syrup pancakes forever", "Importing a password CSV adds its logins")
 
+        # A file of almost-links is read quickly, and the real link in it is found.
+        (RUN / "marks.html").write_text("<a " * 300000 + '<A ICON="x" HREF="https://marks.example/a">Marked <b>page</b></A><a href=\'https://marks.example/b\' add_date="1">Other</a>', encoding="utf-8")
+        js(process, "window.__tools.import = null")
+        started = time.monotonic()
+        rpc(process, "stageImport", kind="bookmarks", path=str(RUN / "marks.html"))
+        preview = until(lambda: js(process, "window.__tools.import?.preview ?? null"), 10) or {}
+        check(time.monotonic() - started < 8, f"A file of almost-links doesn't hold Still up ({time.monotonic() - started:.1f} s)")
+        if MAC:  # Windows gives up on such a file after a moment instead
+            check(preview.get("bookmarks") == 2, f"and its real links are found ({preview})")
+
         # A hand-made Firefox key with an absurd IV is simply not read.
         def der(tag, *parts):
             body = b"".join(parts)
