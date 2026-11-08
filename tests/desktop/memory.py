@@ -154,6 +154,8 @@ def main():
         # Forget.
         _, said = ask(process, "FORGET: aisle seats")
         check("aisle seats" in said.get("text", "") and not any("aisle seats" in f["Text"] and f["Kind"] != "chat" for f in facts()), "forget forgets it")
+        backup = PROFILE / "companions" / "maya" / "memory.json.bak"
+        check(not backup.exists() or "aisle seats" not in backup.read_text(encoding="utf-8"), "and its backup file doesn't hold it either")
 
         # Knowledge files: Maya came with her role's three, empty, and her chats start out with them. update_knowledge
         # rewrites one, keeping its name, and the next chat knows it. Only her own files, and never off the record.

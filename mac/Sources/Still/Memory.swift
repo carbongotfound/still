@@ -286,6 +286,7 @@ enum CompanionMemory {
   for f in gone { bury(id, f.text, f.subject) }
   cache[id] = list.filter { f in !gone.contains { $0 === f } }
   if !save(id) { cache[id] = list; tombCache[id] = nil; why = "Still couldn't save the change: the memory file couldn't be written. Nothing was forgotten."; return nil }
+  _ = save(id) // twice: the first write's backup still held what was just forgotten
   saveTombs(id)
   changed(id, "The user had you forget \(gone.count) \(gone.count == 1 ? "memory" : "memories") (id \(gone.map(\.id).joined(separator: ", "))). Disregard what you knew from \(gone.count == 1 ? "it" : "them").", "")
   return gone
@@ -306,7 +307,7 @@ enum CompanionMemory {
   for f in gone { bury(id, f.text, f.subject) }
   cache[id] = list.filter { f in !gone.contains { $0 === f } }
   let s = summaries(id); s.list.removeAll { $0.chat == chat }; s.skip[chat] = Date()
-  let ok = save(id) && saveSummaries(id); saveTombs(id)
+  let ok = save(id) && saveSummaries(id); _ = save(id); _ = saveSummaries(id); saveTombs(id) // twice: the first write's backup still held it
   if !gone.isEmpty { changed(id, "The user had you forget what you learned in one chat (\(gone.count) \(gone.count == 1 ? "memory" : "memories")). Disregard it.", "") }
   return ok
  }
@@ -315,7 +316,7 @@ enum CompanionMemory {
   for f in of(id) { bury(id, f.text, f.subject) }
   cache[id] = []
   let s = summaries(id); for x in s.list { s.skip[x.chat] = Date() }; s.list = []; s.from = Date()
-  let ok = save(id) && saveSummaries(id); saveTombs(id)
+  let ok = save(id) && saveSummaries(id); _ = save(id); _ = saveSummaries(id); saveTombs(id) // twice: the first write's backup still held it
   changed(id, "The user cleared your memory of them. Disregard everything you knew from memory and earlier memory notes; what they say from now on still counts.", "")
   return ok
  }

@@ -225,6 +225,7 @@ static partial class CompanionMemory
   foreach (var f in gone) Bury(id, f.Text, f.Subject);
   list.RemoveAll(gone.Contains);
   if (!Save(id)) { list.AddRange(gone); why = "Still couldn't save the change: the memory file couldn't be written. Nothing was forgotten."; return null; }
+  Save(id); // twice: the first write's backup still held what was just forgotten
   SaveTombs(id);
   Changed(id, $"The user had you forget {gone.Count} {(gone.Count == 1 ? "memory" : "memories")} (id {string.Join(", ", gone.Select(f => f.Id))}). Disregard what you knew from {(gone.Count == 1 ? "it" : "them")}.", "");
   return gone;
@@ -247,7 +248,7 @@ static partial class CompanionMemory
   foreach (var f in gone) Bury(id, f.Text, f.Subject);
   list.RemoveAll(gone.Contains);
   var store = Summaries(id); store.List.RemoveAll(s => s.Chat == chat); store.Skip[chat] = DateTime.UtcNow;
-  bool ok = Save(id) & SaveSummaries(id); SaveTombs(id);
+  bool ok = Save(id) & SaveSummaries(id); Save(id); SaveSummaries(id); SaveTombs(id); // twice: the first write's backup still held it
   if (gone.Count > 0) Changed(id, $"The user had you forget what you learned in one chat ({gone.Count} {(gone.Count == 1 ? "memory" : "memories")}). Disregard it.", "");
   return ok;
  }
@@ -258,7 +259,7 @@ static partial class CompanionMemory
   foreach (var f in list) Bury(id, f.Text, f.Subject);
   list.Clear();
   var store = Summaries(id); foreach (var s in store.List) store.Skip[s.Chat] = DateTime.UtcNow; store.List.Clear(); store.From = DateTime.UtcNow;
-  bool ok = Save(id) & SaveSummaries(id); SaveTombs(id);
+  bool ok = Save(id) & SaveSummaries(id); Save(id); SaveSummaries(id); SaveTombs(id); // twice: the first write's backup still held it
   Changed(id, "The user cleared your memory of them. Disregard everything you knew from memory and earlier memory notes; what they say from now on still counts.", "");
   return ok;
  }
