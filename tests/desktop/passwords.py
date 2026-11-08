@@ -613,6 +613,8 @@ def main():
         if said:
             bar_button(process, "Not now")
         check(reveal(process, kept) == "Kept-Password-41", "and Not now leaves the old one")
+        emptied = until(lambda: js(process, "(b => !!b && [...b.querySelectorAll('input')].every(i => !i.value) && !!b.closest('[inert]'))(document.querySelector('.save-login'))"), 3)
+        check(emptied, "and the bar lets go of the password and can't be reached by the keyboard")
         send(process, "vaultDelete", id=kept["id"])
 
         # Never for this site.

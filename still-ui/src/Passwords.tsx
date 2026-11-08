@@ -26,8 +26,13 @@ export function SaveLoginBar({ offer, send }: { offer?: LoginOffer; send: Send }
  const [username, setUsername] = useState(offer?.username ?? "")
  const [password, setPassword] = useState(offer?.password ?? "")
  if (offer && offer.id !== shown?.id) { setShown(offer); setUsername(offer.username); setPassword(offer.password ?? "") } // a new offer: no frame with the old one
+ useEffect(() => { // once the bar has slid away it holds nothing, and the keyboard can't reach it
+  if (offer) return
+  const later = setTimeout(() => { setShown(undefined); setUsername(""); setPassword("") }, 400)
+  return () => clearTimeout(later)
+ }, [offer])
  const site = shown ? host(shown.origin) : ""
- return <div className={cn("permission-wrap", offer && "is-open")}><form className="permission-bar save-login" role="alertdialog" aria-label={shown?.update ? "Update password" : "Save password"} aria-hidden={!offer}
+ return <div className={cn("permission-wrap", offer && "is-open")} inert={!offer}><form className="permission-bar save-login" role="alertdialog" aria-label={shown?.update ? "Update password" : "Save password"} aria-hidden={!offer}
   onSubmit={e => { e.preventDefault(); if (offer) send("loginAccept", { id: offer.id, username, password }) }}>
   <KeyRound /><span>{shown?.update ? <>Update your password for <b>{site}</b>?</> : <>Save your password for <b>{site}</b>?</>}</span>
   <Input aria-label="Username" placeholder="Username" className="save-login-user" value={username} maxLength={1024} disabled={!offer} onChange={e => setUsername(e.target.value)} />
