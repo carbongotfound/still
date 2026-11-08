@@ -159,7 +159,6 @@ function Interview({ who, send, onClose, onDone, making, onMade }: { who: Compan
  const kept = useDraft<HTMLInputElement>("setup." + who.id) // what's typed to them is kept as a draft until it's sent
  const answer = (t: string) => { if (!t.trim() || waiting) return; kept.done(); send("setupAnswer", { text: t.trim() }); setText("") }
  const say = (placeholder: string) => <form className="ob-say" onSubmit={e => { e.preventDefault(); answer(text) }}>
-  {kept.hint}
   <input ref={kept.ref} {...kept.props} aria-label={placeholder} placeholder={placeholder} maxLength={2000} value={text} onChange={e => setText(e.target.value)} />
   <Button type="submit" size="icon-sm" aria-label="Send" disabled={!text.trim() || waiting}><ArrowUp /></Button>
  </form>

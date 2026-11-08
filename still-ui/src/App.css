@@ -527,12 +527,6 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .composer-drop { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:inherit; pointer-events:none; font-weight:600;
  background:color-mix(in oklab,var(--hue,#5c7a76) 16%,var(--card)); color:var(--foreground); } .composer-drop svg { width:16px; height:16px; }
 .menu-hint { margin-left:auto; font-size:11px; color:var(--muted-foreground); }
-/* Draft restored: a box that came back with what was typed before, with Discard. */
-.draft-addon[data-slot] { padding:8px 12px 0; }
-.draft-hint { display:flex; align-items:center; gap:8px; font-size:12px; color:var(--muted-foreground); }
-.draft-hint button { padding:1px 8px; border-radius:6px; font:inherit; font-weight:600; color:var(--foreground); background:color-mix(in oklab,var(--foreground) 7%,transparent); }
-.draft-hint button:hover { background:color-mix(in oklab,var(--foreground) 12%,transparent); }
-.draft-hint button:focus-visible { outline:2px solid var(--ring); outline-offset:1px; }
 .composer[data-slot=input-group]:has(:disabled) { opacity:1; background:var(--card); } .ai-send svg { width:15px; height:15px; } .ai-send[aria-label=Stop] svg { width:11px; height:11px; fill:currentColor; }
 /* Chats and setup scroll by wheel, trackpad and keys with no scrollbar; once scrolled, the top edge fades (fadeTop). */
 .ai-log, .ai-pane, .ob-talk, .ob-chat { scrollbar-width:none; } .ai-log::-webkit-scrollbar, .ai-pane::-webkit-scrollbar, .ob-talk::-webkit-scrollbar, .ob-chat::-webkit-scrollbar { display:none; }

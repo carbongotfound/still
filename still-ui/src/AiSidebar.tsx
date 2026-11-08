@@ -24,7 +24,7 @@ import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
 import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
-import { DraftHint, adopt, appliers, change, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
+import { adopt, appliers, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean; billing?: string }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
@@ -334,7 +334,6 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
  const [dropping, setDropping] = useState(false)
- const [restored, setRestored] = useState(false) // the box came back with a draft: Draft restored, with Discard
  const me = useId()
  const partsRef = useRef(parts), filesRef = useRef(files)
  useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
@@ -390,7 +389,6 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   if (el) el.innerHTML = markup(p, knownRef.current)
   if (el && draft) adopt(draft, el, kept)
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
-  setRestored(!!(kept?.text.trim() || kept?.files?.length))
   setFiles([])
   if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
   if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); const s = getSelection(); s?.selectAllChildren(el); s?.collapseToEnd() }
@@ -410,7 +408,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   const el = box.current; if (!el) return
   dress(el, known)
   const p = read(el), t = textOf(p)
-  setParts(p); save(p, files); setPick(0); setShut(null); setRestored(false); onTyping?.(!!t.trim())
+  setParts(p); save(p, files); setPick(0); setShut(null); onTyping?.(!!t.trim())
  }
  const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
  const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
@@ -420,11 +418,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   flush(); sending(draft); unsent.current = files
   onSubmit(message, attached, files.map(f => f.id), draft)
   if (box.current) box.current.innerHTML = ""
-  setParts([]); setBefore(""); setFiles([]); setRestored(false); onTyping?.(false)
- }
- const discard = () => { // Discard on Draft restored: the box empties, as a step to undo, and the draft goes
-  const el = box.current; if (!el) return
-  change(el, []); setFiles([]); pending.current = null; clearTimeout(timer.current); keepDraft(draft, null); setRestored(false); el.focus()
+  setParts([]); setBefore(""); setFiles([]); onTyping?.(false)
  }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
@@ -491,7 +485,6 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
-  {restored && <InputGroupAddon align="block-start" className="draft-addon"><DraftHint onDiscard={discard} /></InputGroupAddon>}
   {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
    {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
   </InputGroupAddon>}
@@ -546,7 +539,6 @@ function QuestionCard({ q, companion, send, draft }: { q: { text: string; option
   {q.page && <div className="ask-help"><strong>Help with this page</strong><Button size="sm" variant="outline" onClick={() => send("aiHelpPage", { id: q.page })}>Open the page</Button></div>}
   <div className="ask-q"><Face companion={companion} size={22} /><p>{q.text}</p></div>
   {q.options.length > 0 && <div className="ask-options">{q.options.map((o, i) => <button key={i} className="ask-option" onClick={() => answer(o)}><kbd>{i + 1}</kbd><span>{o}</span></button>)}</div>}
-  {kept.hint}
   <form className="ask-own" onSubmit={e => { e.preventDefault(); if (own.trim()) answer(own) }}>
    <input ref={kept.ref} {...kept.props} aria-label="Your answer" placeholder={q.kickoff ? "Or tell me what you're deciding…" : "Or write your own answer…"} value={own} onChange={e => setOwn(e.target.value)} />
    <Button type="button" variant="ghost" size="sm" onClick={() => answer("")}>Skip</Button>

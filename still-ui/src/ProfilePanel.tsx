@@ -254,7 +254,6 @@ function RoutineForm({ id, who, onAdd }: { id: string; who: string; onAdd: (r: R
  const [text, setText] = useState(""), [time, setTime] = useState("09:00"), [days, setDays] = useState(WEEKDAYS)
  const kept = useDraft<HTMLTextAreaElement>("routine." + id) // kept as a draft until the routine is added
  return <form className="profile-routine" onSubmit={e => { e.preventDefault(); if (!text.trim() || !days.length) return; onAdd({ id: newId(), text: text.trim(), time, days, on: true }); kept.done(); setText("") }}>
-  {kept.hint}
   <textarea ref={kept.ref} {...kept.props} rows={2} maxLength={2000} aria-label="What to do" placeholder={`What should ${who || "they"} do? For example: "Every morning, sum up my unread email in five bullets."`} value={text} onChange={e => setText(e.target.value)} />
   <div className="profile-routine-row">
    <div className="profile-days" role="group" aria-label="Days">{DAYS.map((d, i) => <button type="button" key={i} aria-pressed={days.includes(i)} aria-label={DAY_NAMES[i]} onClick={() => setDays(days.includes(i) ? days.filter(x => x !== i) : [...days, i].sort())}>{d}</button>)}</div>

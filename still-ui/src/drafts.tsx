@@ -1,4 +1,4 @@
-import { useLayoutEffect, useRef, useState } from "react"
+import { useLayoutEffect, useState } from "react"
 import { MAC } from "@/lib/utils"
 import { read, textOf, units, type Part } from "./Mention"
 import type { Attached } from "./AiSidebar"
@@ -132,8 +132,6 @@ function move(el: HTMLElement, by: number) {
  if (to < 0 || to >= h.steps.length) return
  h.at = to; apply(el, h.steps[to])
 }
-/// Puts new contents in a box as one step to undo (Discard, a draft coming back).
-export function change(el: HTMLElement, v: Part[] | string) { settle(el); apply(el, { v, c: typeof v === "string" ? v.length : units(v) }); settle(el) }
 /// A new chat's box got the chat's key: its steps go with it.
 export function rekey(was: string, now: string) { const h = histories.get(was); if (h) { histories.delete(was); histories.set(now, h) } }
 /// A box (data-history) showing what was kept under its key: its steps come back too. The memory of this run wins.
@@ -193,25 +191,16 @@ const flushAll = () => { for (const t of [...timers.values()]) { clearTimeout(t.
 addEventListener("beforeunload", flushAll)
 document.addEventListener("focusout", e => { const el = boxOf(e.target); const t = el?.dataset.history && timers.get(el.dataset.history); if (t) { clearTimeout(t.id); t.run() } }, true)
 
-/// Shown when a box came back with what was typed before.
-export const DraftHint = ({ onDiscard }: { onDiscard: () => void }) => <div className="draft-hint" role="status">Draft restored
- <button type="button" onMouseDown={e => e.preventDefault()} onClick={onDiscard}>Discard</button></div>
-
-/// A plain box (input or textarea) that keeps a draft under `key`: spread `props` on it, show `hint`, call `done` once
-/// what's in it is sent. Its draft comes back when it shows, with the Draft restored hint until it's changed.
+/// A plain box (input or textarea) that keeps a draft under `key`: spread `props` on it, call `done` once what's in it
+/// is sent. Its draft comes back quietly when it shows.
 export function useDraft<T extends HTMLInputElement | HTMLTextAreaElement>(key: string | undefined) {
- const [el, ref] = useState<T | null>(null), base = useRef("") // the box can show later than the hook (a step of setup)
- const [restored, setRestored] = useState(false)
+ const [el, ref] = useState<T | null>(null) // the box can show later than the hook (a step of setup)
  useLayoutEffect(() => {
   if (!el || !key) return
   const d = readDraft(key)
-  base.current = el.value
-  if (d?.text && d.text !== el.value) { apply(el, { v: d.text, c: d.text.length }); setRestored(true) } // eslint-disable-line react-hooks/set-state-in-effect
+  if (d?.text && d.text !== el.value) apply(el, { v: d.text, c: d.text.length })
   adopt(key, el, d)
-  const hide = () => { if (!applying) setRestored(false) }
-  el.addEventListener("input", hide); return () => { el.removeEventListener("input", hide); const t = timers.get(key); if (t) { clearTimeout(t.id); t.run() } }
+  return () => { const t = timers.get(key); if (t) { clearTimeout(t.id); t.run() } }
  }, [key, el])
- const discard = () => { if (!el || !key) return; change(el, base.current); cancel(key); keepDraft(key, null); setRestored(false); el.focus() }
- return { ref, props: key ? { "data-history": key, "data-draft": "" } : {}, hint: restored ? <DraftHint onDiscard={discard} /> : null,
-  done: () => { if (key) { cancel(key); keepDraft(key, null) } setRestored(false) } }
+ return { ref, props: key ? { "data-history": key, "data-draft": "" } : {}, done: () => { if (key) { cancel(key); keepDraft(key, null) } } }
 }

@@ -1,5 +1,5 @@
 """Drafts and undo. What's typed in a message box and not sent comes back after leaving, a refresh, closing the tab or
-Still being killed, with a Draft restored hint and Discard. Send clears it once Still takes the message; a send that
+Still being killed, quietly. Send clears it once Still takes the message; a send that
 fails keeps it and puts the text back. Settings > Save drafts (on by default) turns it off after a confirm, deleting
 every draft, and then nothing comes back. A private window keeps nothing on disk. Ctrl+Z, Ctrl+Shift+Z (and Ctrl+Y on
 Windows; Cmd on the Mac) undo and redo step by step in every box, through switching chats and a restart.
@@ -114,8 +114,8 @@ def clip(p, sel, kind, words=""):
     time.sleep(.3)
 
 
-def hint(p, scope):
-    return ev(p, f"document.querySelector({json.dumps(scope + ' .draft-hint')})?.innerText ?? ''") or ""
+def notice(p):
+    return ev(p, "document.body.innerText.includes('Draft restored') || document.body.innerText.includes('Discard')")
 
 
 def draft(key):
@@ -222,11 +222,10 @@ try:
     # The New Tab box: kept while typing, back after a refresh with the hint, and after closing the tab.
     typed(p, HOME, "Home words to keep")
     check(until(lambda: draft_text("home") == "Home words to keep", 3), f"Typing in the New Tab box keeps a draft in Still's files ({draft_text('home')!r})")
-    check(not hint(p, ".home-compose"), "No Draft restored hint while typing")
     js(p, "location.reload()"); time.sleep(1.5)
     until(lambda: box(p, HOME) is not None, 15)
     check(text(p, HOME) == "Home words to keep", f"After a refresh the New Tab box has it back ({box(p, HOME)!r})")
-    check("Draft restored" in hint(p, ".home-compose") and "Discard" in hint(p, ".home-compose"), f"...with the Draft restored hint and Discard ({hint(p, '.home-compose')!r})")
+    check(not notice(p), "...with no notice about it")
     focus_end(p, HOME); press(p, "z")
     check(text(p, HOME) == "", f"Ctrl+Z right after the draft came back takes back the last step ({box(p, HOME)!r})")
     press(p, "z", shift=True)
@@ -311,10 +310,10 @@ os.utime(STALE, (time.time() - 8 * 86400,) * 2)
 p = launch()
 try:
     new_tab(p)
-    check(text(p, HOME) == "Home words to keep" and "Draft restored" in hint(p, ".home-compose"), f"After Still is killed and opens again, the New Tab draft is back with the hint ({box(p, HOME)!r})")
+    check(text(p, HOME) == "Home words to keep" and not notice(p), f"After Still is killed and opens again, the New Tab draft is back, with no notice ({box(p, HOME)!r})")
     check(not STALE.exists(), "A draft not touched for 7 days is gone when Still starts")
     open_chat(p, "chat1")
-    check(text(p, CHAT) == "alpha beta gamma" and "Draft restored" in hint(p, ".chat-view"), f"...and the chat's ({box(p, CHAT)!r})")
+    check(text(p, CHAT) == "alpha beta gamma" and not notice(p), f"...and the chat's ({box(p, CHAT)!r})")
     focus_end(p, CHAT); press(p, "z")
     check(text(p, CHAT) == "alpha beta", f"Undo history survives the restart ({box(p, CHAT)!r})")
     press(p, "z", shift=True)
@@ -329,12 +328,12 @@ try:
     check(text(p, CHAT) == OLD and until(lambda: draft_text("chat.chat9") == OLD, 3), f"A draft the interface kept before 2.10 moves to Still's files ({box(p, CHAT)!r})")
     check(js(p, "localStorage.getItem('still.draft.chat.chat9')") is None, "...and leaves the page's storage")
 
-    # Discard, then undo.
+    # Emptying the box by hand forgets the words (their undo steps stay), and undo brings them back.
     open_chat(p, "chat1")
-    ev(p, "document.querySelector('.chat-view .draft-hint button').click()"); time.sleep(.8)
-    check(text(p, CHAT) == "" and draft("chat.chat1") is None and not hint(p, ".chat-view"), f"Discard empties the box and deletes the draft ({box(p, CHAT)!r}, {draft('chat.chat1')})")
+    select_all(p, CHAT); ev(p, "document.execCommand('delete')"); time.sleep(.8)
+    check(text(p, CHAT) == "" and not (draft("chat.chat1") or {}).get("text", "").strip(), f"Emptying the box forgets the draft's words ({box(p, CHAT)!r}, {draft('chat.chat1')})")
     focus_end(p, CHAT); press(p, "z")
-    check(text(p, CHAT) == "alpha beta gamma", f"Ctrl+Z right after Discard brings it back ({box(p, CHAT)!r})")
+    check(text(p, CHAT) == "alpha beta gamma", f"Ctrl+Z right after brings it back ({box(p, CHAT)!r})")
     check(until(lambda: draft_text("chat.chat1") == "alpha beta gamma", 3), "...and it's kept again")
 
     # Send clears it once Still takes it.
@@ -354,7 +353,7 @@ try:
     js(p, "location.reload()"); time.sleep(1.5); until(lambda: box(p, CHAT) is not None or box(p, HOME) is not None, 15)
     js(p, "dispatchEvent(new CustomEvent('still-profile', { detail: { id: 'maya', tab: 'routines' } }))")
     until(lambda: box(p, WHAT) is not None, 10)
-    check(js(p, f"document.querySelector({json.dumps(WHAT)}).value") == "Every morning, check the weather" and "Draft restored" in hint(p, ".profile-panel"), "...back after a refresh, with the hint")
+    check(js(p, f"document.querySelector({json.dumps(WHAT)}).value") == "Every morning, check the weather" and not notice(p), "...back after a refresh, with no notice")
     ev(p, f"document.querySelector({json.dumps(WHAT)}).focus()"); press(p, "z")
     check(js(p, f"document.querySelector({json.dumps(WHAT)}).value") == "", "Ctrl+Z works in it right after it came back")
     press(p, "z", shift=True)
@@ -429,7 +428,7 @@ try:
     time.sleep(1)
     check(text(p, HOME) == "Home words to keep and more" and not (PROFILE / "ai" / "drafts").exists(), "With it off, typing keeps nothing")
     js(p, "location.reload()"); time.sleep(1.5); until(lambda: box(p, HOME) is not None, 15)
-    check(box(p, HOME) is not None and text(p, HOME) == "" and not hint(p, ".home-compose"), f"...and after a refresh nothing comes back ({box(p, HOME)!r})")
+    check(box(p, HOME) is not None and text(p, HOME) == "" , f"...and after a refresh nothing comes back ({box(p, HOME)!r})")
     send(p, "new", url=base + "/form")
     until(lambda: rpc(p, "eval", script="!!document.querySelector('#note')"), 15)
     in_page("#note", "A long note written with Save drafts turned off")
