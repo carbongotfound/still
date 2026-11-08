@@ -7,6 +7,8 @@ It is scripted by the last user message:
   LOOP                      call list_tabs forever (for step caps)
   SLOW                      stream the answer slowly (for Stop)
   RATE                      answer 429 with Retry-After: 7
+  NANWAIT                   answer 429 with Retry-After: nan
+  HUGE                      report the largest token counts there are
 With no directive it streams "Hello from the fake model." in pieces. A tool is matched by name or by suffix
 ("still_list_tabs", "mcp_still_list_tabs" and "mcp__still__list_tabs" all match list_tabs).
 
@@ -106,6 +108,8 @@ class Fake:
                     return self.json(404, {"error": {"message": "not found"}})
                 if model not in MODELS and not model.startswith("gemini"):
                     return self.json(404, {"error": {"type": "not_found_error", "message": "model: %s not found" % model}})
+                if "NANWAIT" in text:
+                    return self.json(429, {"error": {"type": "rate_limit_error", "message": "Rate limit reached"}}, {"Retry-After": "nan"})
                 if "RATE" in text:
                     return self.json(429, {"error": {"type": "rate_limit_error", "message": "Rate limit reached"}}, {"Retry-After": "7"})
                 calls = [(m.group(1), json.loads(m.group(2) or "{}")) for m in re.finditer(r"^CALL (\w+) ?(\{.*\})?\s*$", text, re.M)]
@@ -126,7 +130,7 @@ class Fake:
                     if "SLOW" in text:
                         answer = ["word%d " % i for i in range(60)]
                 stream = body.get("stream") or ":stream" in self.path
-                usage = (1200 + len(json.dumps(body)) // 4, 40 + 7 * len(answer))
+                usage = (2**63 - 1, 2**63 - 1) if "HUGE" in text else (1200 + len(json.dumps(body)) // 4, 40 + 7 * len(answer))
                 return getattr(self, kind)(model, answer, turn, stream, usage, "SLOW" in text)
 
             def openai(self, model, answer, calls, stream, usage, slow):

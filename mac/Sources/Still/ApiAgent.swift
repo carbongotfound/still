@@ -353,7 +353,7 @@ final class ApiRun: AgentRun {
  }
  static func retryAfter(_ r: HTTPURLResponse?) -> TimeInterval {
   let h = (r?.value(forHTTPHeaderField: "Retry-After") ?? "").trimmingCharacters(in: .whitespaces)
-  var wait = Double(h) ?? 20
+  var wait = Double(h).flatMap { $0.isFinite ? $0 : nil } ?? 20 // "nan" is a number to Double, and traps when it's turned into nanoseconds
   if Double(h) == nil, !h.isEmpty {
    let f = DateFormatter(); f.locale = Locale(identifier: "en_US_POSIX"); f.dateFormat = "EEE, dd MMM yyyy HH:mm:ss zzz"
    if let d = f.date(from: h) { wait = d.timeIntervalSinceNow }

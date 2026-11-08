@@ -483,7 +483,7 @@ enum BrowserLogins {
         kdf.next(0x06) != nil, var p = kdf.seq(), let salt = p.next(0x04), let count = p.next(0x02), count.count <= 4,
         var cipher = scheme.seq(), cipher.next(0x06) != nil, let iv = cipher.next(0x04), let data = outer.next(0x04) else { return nil } // Firefox before 75 used 3DES here
   let iterations = count.reduce(0) { $0 << 8 | Int($1) }
-  guard (1...10_000_000).contains(iterations) else { return nil }
+  guard (1...10_000_000).contains(iterations), iv.count <= 127 else { return nil }
   let key = pbkdf2(Array(Insecure.SHA1.hash(data: globalSalt)), salt, iterations, CCPseudoRandomAlgorithm(kCCPRFHmacAlgSHA256), 32)
   return cbc(CCAlgorithm(kCCAlgorithmAES), key, [0x04, UInt8(iv.count)] + iv, data) // NSS uses the DER-encoded IV
  }

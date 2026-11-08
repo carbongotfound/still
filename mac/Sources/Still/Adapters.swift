@@ -890,7 +890,7 @@ enum AgentStream {
   }
  }
  static func isTrue(_ value: Any?) -> Bool { (value as? NSNumber).map { CFGetTypeID($0) == CFBooleanGetTypeID() && $0.boolValue } ?? false }
- static func long(_ value: Any?) -> Int64 { (value as? NSNumber)?.int64Value ?? 0 }
+ static func long(_ value: Any?) -> Int64 { min(max((value as? NSNumber)?.int64Value ?? 0, 0), 1 << 40) } // token counts: adding them up can't overflow
  static func percent(_ window: Any?) -> String {
   guard let used = ((window as? [String: Any])?["utilization"] as? NSNumber)?.doubleValue else { return "?" }
   return "\(Int((used * 100).rounded(.toNearestOrEven)))%"

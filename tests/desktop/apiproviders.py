@@ -193,6 +193,15 @@ def main():
         check("Try again after" in t and time.monotonic() - started >= 13, "After two waits it stops and says when to try (%.0fs)" % (time.monotonic() - started))
         idle(p)
 
+        # What a provider sends can't bring Still down, however odd.
+        t = ask(p, "NANWAIT please", 60, until_text="is limiting requests") or ""
+        check("is limiting requests" in t and p.poll() is None, "A wait that isn't a number is a normal rate limit")
+        send(p, "aiStop")
+        idle(p)
+        ask(p, "HUGE one")
+        ask(p, "HUGE two")
+        check(p.poll() is None and rpc(p).get("tabs") is not None, "Token counts too big to add up leave Still running")
+
         # A model it doesn't offer falls back to the first, with a note.
         save(p, "Fake OpenAI", models=["fake-small", "gone-model"])
         until(lambda: len((provider("Fake OpenAI") or {}).get("Models", [])) == 2, 10)

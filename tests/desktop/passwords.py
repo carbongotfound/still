@@ -672,6 +672,21 @@ def main():
         found = entry(process, "https://csv.example", "csvuser")
         check(preview.get("logins") == 1 and found and reveal(process, found) == "maple syrup pancakes forever", "Importing a password CSV adds its logins")
 
+        # A hand-made Firefox key with an absurd IV is simply not read.
+        def der(tag, *parts):
+            body = b"".join(parts)
+            return bytes([tag]) + (bytes([len(body)]) if len(body) < 128 else bytes([0x82, len(body) >> 8, len(body) & 255])) + body
+        odd = RUN / "firefox-odd"
+        shutil.copytree(FIXTURES / "firefox-profile", odd)
+        pbes2, pbkdf2, aes = bytes.fromhex("2a864886f70d01050d"), bytes.fromhex("2a864886f70d01050c"), bytes.fromhex("60864801650304012a")
+        item = der(0x30, der(0x30, der(6, pbes2), der(0x30, der(0x30, der(6, pbkdf2), der(0x30, der(4, b"s" * 32), der(2, b"\x01"))), der(0x30, der(6, aes), der(4, b"i" * 300)))), der(4, b"d" * 32))
+        db = sqlite3.connect(odd / "key4.db")
+        db.execute("UPDATE metaData SET item2=? WHERE id='password'", (item,))
+        db.commit()
+        db.close()
+        stage_profile(process, odd, "Firefox")
+        check(process.poll() is None and rpc(process).get("tabs") is not None, "A Firefox key made to crash the import leaves Still running")
+
         # Import from Firefox (a fixture profile without a primary password), and one with a primary password.
         fox = RUN / "firefox"
         shutil.copytree(FIXTURES / "firefox-profile", fox)
