@@ -26,7 +26,16 @@ public partial class MainWindow
   void Name() => popup.Title = Host(core.Source) + (string.IsNullOrWhiteSpace(core.DocumentTitle) ? "" : " · " + core.DocumentTitle);
   core.SourceChanged += (_, _) => Name(); core.DocumentTitleChanged += (_, _) => Name();
   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(popup.Close);
-  core.NewWindowRequested += (_, e2) => { e2.Handled = true; string link = e2.Uri; Dispatcher.BeginInvoke(async () => await NewTab(link, opener.Private, false, opener.Engine)); };
+  GateAppLinks(core, () => opener);
+  // What it opens goes by the same rule as a tab's pop-ups: a real click or the site's Allow, and web pages only.
+  core.NewWindowRequested += (_, e2) => {
+   e2.Handled = true; string link = e2.Uri; bool clicked = e2.IsUserInitiated;
+   Dispatcher.BeginInvoke(async () => {
+    if (!link.StartsWith("http://", StringComparison.OrdinalIgnoreCase) && !link.StartsWith("https://", StringComparison.OrdinalIgnoreCase)) return;
+    if (!clicked && SiteRule(opener, "Popups") != "Allow") { if (SiteRule(opener, "Popups") != "Deny") PopupBlocked(opener, link); return; }
+    await NewTab(link, opener.Private, false, opener.Engine);
+   });
+  };
  }
 
  async void PopupBlocked(BrowserTab tab, string uri)

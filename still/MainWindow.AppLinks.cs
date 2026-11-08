@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.IO;
+using Microsoft.Web.WebView2.Core;
 using Microsoft.Win32;
 namespace Still;
 
@@ -12,6 +13,16 @@ public partial class MainWindow
   "ms-officecmd", "ms-cxh", "ms-cxh-full", "ms-appinstaller", "ms-excel", "ms-word", "ms-powerpoint", "ms-access", "ms-visio",
   "ms-project", "ms-publisher", "ms-spd", "ms-infopath", "ms-diagcab", "ms-rd", "microsoft-edge", "microsoft-edge-holographic", "stillurl" };
  string lastAppLink = ""; DateTime lastAppLinkAt;
+
+ /// A pop-up, side panel or extension view: a link to an app asks in the tab in front, like one from a tab.
+ void GateAppLinks(CoreWebView2 core, Func<BrowserTab?> tab)
+ {
+  core.LaunchingExternalUriScheme += (_, e) => { e.Cancel = true; var uri = e.Uri; var from = e.InitiatingOrigin; var clicked = e.IsUserInitiated; Dispatcher.BeginInvoke(() => { if (tab() is { } t) OpenAppLink(t, uri, from, clicked); }); };
+  core.NavigationStarting += (_, e) => {
+   if (!Uri.TryCreate(e.Uri, UriKind.Absolute, out var u) || u.Scheme is "http" or "https" or "about" or "data" or "blob" or "file" or "chrome-extension" or "view-source" or "edge") return;
+   e.Cancel = true; var link = e.Uri; var clicked = e.IsUserInitiated; Dispatcher.BeginInvoke(() => { if (tab() is { } t) OpenAppLink(t, link, "", clicked); });
+  };
+ }
 
  async void OpenAppLink(BrowserTab tab, string uri, string from, bool clicked)
  {

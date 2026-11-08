@@ -118,6 +118,7 @@ public partial class MainWindow
     WebHost.Children.Add(extensionBridge);
     var env = await App.BrowserEnvironment; var options = env.CreateCoreWebView2ControllerOptions(); options.ProfileName = "Default";
     await extensionBridge.EnsureCoreWebView2Async(env, options);
+    GateAppLinks(extensionBridge.CoreWebView2, () => Shown);
     extensionBridge.CoreWebView2.WebMessageReceived += (_, e) => {
      try { using var doc = JsonDocument.Parse(e.WebMessageAsJson); if (doc.RootElement.GetProperty("kind").GetString() == "still-extension-click") bridgeReply?.TrySetResult(doc.RootElement.Clone()); }
      catch (Exception ex) when (ex is JsonException or KeyNotFoundException or InvalidOperationException) { }
@@ -149,6 +150,7 @@ public partial class MainWindow
   } catch (Exception ex) { App.Log(ex); CloseSidePanel(); Toast("Couldn't open the side panel."); return; }
   if (sidePanelView != view) return;
   var core = view.CoreWebView2;
+  GateAppLinks(core, () => Shown);
   core.Settings.AreDefaultContextMenusEnabled = true;
   core.NewWindowRequested += (_, e) => { e.Handled = true; string link = e.Uri; Dispatcher.BeginInvoke(async () => await NewTab(link, false, false)); };
   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(() => { if (sidePanelView == view) CloseSidePanel(); });

@@ -43,6 +43,7 @@ public partial class MainWindow
    // reload (Google reloads itself on a first visit), finishes as aborted and isn't this page's result. A reload that
    // fails after the page loaded (one answered with no content) leaves the loaded page showing.
    ulong latest = 0; bool? ok = null; bool shown = false, committed = false; string? refused = null;
+   void NoApps(object? s, CoreWebView2LaunchingExternalUriSchemeEventArgs e) => e.Cancel = true; // nobody's looking at this page, so nothing it asks for opens an app
    void Started(object? s, CoreWebView2NavigationStartingEventArgs e)
    {
     latest = e.NavigationId; ok = null; committed = false;
@@ -58,6 +59,7 @@ public partial class MainWindow
    }
    void Committed(object? s, CoreWebView2ContentLoadingEventArgs e) => committed = true;
    void Done(object? s, CoreWebView2NavigationCompletedEventArgs e) { if (e.NavigationId != latest) return; shown |= e.IsSuccess; ok = shown; }
+   core.LaunchingExternalUriScheme += NoApps;
    core.NavigationStarting += Started; core.NavigationCompleted += Done; core.ContentLoading += Committed;
    if (hop != null) { core.AddWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All); core.WebResourceRequested += Asked; }
    try {
@@ -70,6 +72,7 @@ public partial class MainWindow
     if (refused != null) throw new InvalidOperationException(refused);
     if (ok != true) throw new InvalidOperationException("The page didn't load.");
    } finally {
+    core.LaunchingExternalUriScheme -= NoApps;
     core.NavigationStarting -= Started; core.NavigationCompleted -= Done; core.ContentLoading -= Committed;
     if (hop != null) { core.WebResourceRequested -= Asked; core.RemoveWebResourceRequestedFilter("*", CoreWebView2WebResourceContext.Document, CoreWebView2WebResourceRequestSourceKinds.All); }
    }

@@ -134,6 +134,10 @@ def link_args(process):
 class Page(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
         body = b"<!doctype html><title>Links</title><p>Links</p><a id=go style='display:block;width:200px;height:40px;background:#ccc'>Open</a>"
+        if self.path.startswith("/popup"):
+            body = b"<!doctype html><title>Popup</title><script>setTimeout(() => location.href = decodeURIComponent(location.search.slice(1)), 400)</script>"
+        if self.path.startswith("/popup-opens"):
+            body = b"<!doctype html><title>Popup</title><script>setTimeout(() => window.open('/from-popup'), 400)</script>"
         if self.path.startswith("/frame"):
             body = b"<!doctype html><title>Frame</title><script>location.href = decodeURIComponent(location.search.slice(1))</script>"
         self.send_response(200); self.send_header("Content-Type", "text/html"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
@@ -208,6 +212,32 @@ def app_link(process):
         check(until(lambda: "wants to" in bar(process), 15), "After forgetting, the site asks again")
         answer("Block")
         until(lambda: "wants to" not in bar(process), 5)
+
+        # A pop-up window of its own goes through the same question.
+        lines = len(log.read_text(encoding="utf-8").splitlines())
+        tabs = len(rpc(process)["tabs"])
+
+        def popup(path):
+            rpc(process, "eval", script="document.querySelector('#go').onclick = e => { e.preventDefault(); window.__w = window.open(" + json.dumps(path) + ", '', 'width=320,height=240') }")
+            at = rpc(process, "eval", script="(r => [r.x + 20, r.y + 10])(document.querySelector('#go').getBoundingClientRect())")
+            for kind in ("mousePressed", "mouseReleased"):
+                rpc(process, "pageCdp", method="Input.dispatchMouseEvent", parameters={"type": kind, "x": at[0], "y": at[1], "button": "left", "clickCount": 1})
+        popup("/popup?" + urllib.parse.quote(f"{SCHEME}:popup", safe=""))
+        said = until(lambda: bar(process) if "wants to" in bar(process) else "", 15) or ""
+        check("wants to" in said, f"A link to an app from a pop-up window asks in Still's bar ({said[:60]!r})")
+        time.sleep(1)
+        check(len(log.read_text(encoding="utf-8").splitlines()) == lines, "...and nothing has started yet")
+        answer("Block")
+        until(lambda: "wants to" not in bar(process), 5)
+        rpc(process, "eval", script="window.__w?.close()")
+        popup("/popup-opens")
+        said = until(lambda: bar(process) if "pop-ups" in bar(process) else "", 15) or ""
+        check("pop-ups" in said and len(rpc(process)["tabs"]) == tabs, f"A pop-up window can't open a tab without a click: it asks, like a tab ({said[:60]!r})")
+        answer("Block")
+        until(lambda: "pop-ups" not in bar(process), 5)
+        time.sleep(1)
+        check(len(rpc(process)["tabs"]) == tabs, f"...and Block opens nothing ({len(rpc(process)['tabs'])} of {tabs})")
+        rpc(process, "eval", script="window.__w?.close(); document.querySelector('#go').onclick = null")
 
         go('stillurl:one" --temp "two')
         time.sleep(2)

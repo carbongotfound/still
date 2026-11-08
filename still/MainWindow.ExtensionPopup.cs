@@ -31,6 +31,7 @@ public partial class MainWindow
    await view.EnsureCoreWebView2Async(environment, options);
   } catch (Exception ex) { App.Log(ex); if (!closed) popup.Close(); Toast("Couldn't open the extension."); return; }
   if (closed || view.CoreWebView2 is not { } core) return;
+  GateAppLinks(core, () => Shown);
   core.Settings.AreDefaultContextMenusEnabled = true;
   core.NewWindowRequested += (_, e) => { e.Handled = true; string link = e.Uri; Dispatcher.BeginInvoke(async () => { popup.Close(); await NewTab(link, false, false); }); };
   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(() => { if (!closed) popup.Close(); });
