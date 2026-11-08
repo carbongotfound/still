@@ -200,7 +200,7 @@ def mouse(p, kind, x, y, **more):
 
 def drag_select(p, sel):
     """Selects the last element's text with the mouse, from its first character to its last."""
-    box = js(p, "(e => { if (!e) return null; const r = document.createRange(); r.selectNodeContents(e); const q = [...r.getClientRects()].filter(q => q.width)"
+    box = js(p, "(e => { if (!e) return null; const r = document.createRange(); r.selectNodeContents(e); (s => s && r.setEndBefore(s))(e.querySelector(':scope > .msg-files, :scope > .ai-msg-actions')); const q = [...r.getClientRects()].filter(q => q.width)"
                 "; if (!q.length) return null; const a = q[0], z = q.at(-1); return [a.left + 1, a.top + a.height / 2, z.right - 1, z.top + z.height / 2] })"
                 f"([...document.querySelectorAll({json.dumps(sel)})].pop())")
     if not box:

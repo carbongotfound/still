@@ -302,6 +302,16 @@ enum CompanionMemory {
  }
 
  /// Forget this chat: its summary and everything learned in it, and it isn't summarized again unless it changes.
+ /// The reply from this message on was replaced: what it saved goes, and whatever that had replaced comes back. Something it only said again stays.
+ static func forgetFrom(_ id: String, _ chat: String, _ from: Int) {
+  let list = of(id), gone = list.filter { $0.chat == chat && $0.msg >= from && $0.at.timeIntervalSince($0.created) < 1 }
+  guard !gone.isEmpty else { return }
+  for f in gone { if let back = list.first(where: { $0.id == f.supersedes }), !gone.contains(where: { $0 === back }) { back.status = "active"; back.supersededBy = "" } }
+  cache[id] = list.filter { f in !gone.contains { $0 === f } }
+  _ = save(id)
+  changed(id, "The user replaced a message and forgot its reply. Disregard what that reply saved (\(gone.count) \(gone.count == 1 ? "memory" : "memories")).", "")
+ }
+
  @discardableResult static func forgetChat(_ id: String, _ chat: String) -> Bool {
   let list = of(id), gone = versions(list, list.filter { $0.chat == chat })
   for f in gone { bury(id, f.text, f.subject) }

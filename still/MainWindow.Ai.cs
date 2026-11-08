@@ -12,6 +12,7 @@ public sealed class AiMessage
  public string Role { get; set; } = "";
  public string Text { get; set; } = "";
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public List<AiFile>? Files { get; set; }
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] public bool Answer { get; set; } // the user's answer to the AI's question, not a prompt of their own
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  // A step's Status: working or failed, and none once it worked.
@@ -511,7 +512,7 @@ public partial class MainWindow
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
    .SelectMany(r => r.Approvals.Select(a => new { id = a.Id, run = r.Chat.Id, who = r.Chat.Companion, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until })),
@@ -609,6 +610,23 @@ public partial class MainWindow
     Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
     await run;
     break; }
+   case "aiEdit" when ShownChat is { } editing && S("text").Trim() is { Length: > 0 and <= 20000 } rewritten: {
+    // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
+    int prompt = editing.Messages.FindLastIndex(m => m.Role == "user" && m.Who == null && !m.Answer);
+    if (prompt < 0 || editing.Messages[prompt].Text != S("was")) { Toast("That isn't your latest message anymore."); break; }
+    if (runs.TryGetValue(editing.Id, out var going)) {
+     going.Queue.Clear(); StopRun(going);
+     for (int i = 0; i < 300 && runs.ContainsKey(editing.Id); i++) await Task.Delay(50);
+     if (runs.ContainsKey(editing.Id)) { Toast("That chat is still stopping. Try again in a moment."); break; }
+    }
+    var keptFiles = editing.Messages[prompt].Files;
+    editing.Messages.RemoveRange(prompt, editing.Messages.Count - prompt);
+    // A new session, so the AI forgets the reply, and whatever it does again is asked again. What it read stays counted: the words before this message may carry it.
+    editing.Session = null; editing.Started = false; editing.Sessions = null; editing.Allowed.Clear(); editing.Known.Clear();
+    CompanionMemory.ForgetFrom(editing.Companion, editing.Id, prompt);
+    ForgetTask(editing.Id);
+    await RunAi(editing, keptFiles is { Count: > 0 } ? rewritten + FilesNote(keptFiles) : rewritten, rewritten, files: keptFiles);
+    break; }
    case "aiSend": Sent(false, S("text").Trim().Length > 20000 ? "Messages can be up to 20,000 characters. Yours is still in the box." : "Write a message first."); break;
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Setup: "pending" } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0)
     && !AiChats.Any(c => c.Companion == fresh.Id && c.From == null && !c.Routine && (kickoffs.Contains(c.Id) || c.Messages.Any(m => m.Role == "user"))): {
@@ -637,7 +655,7 @@ public partial class MainWindow
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
     answering.Question = null;
     kickoffs.Remove(asked.Id); // what's worth keeping from the answer, the companion saves itself (Setup says how)
-    asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer } : new() { Role = "note", Text = "Skipped the question." });
+    asked.Messages.Add(answer.Length > 0 ? new() { Role = "user", Text = answer, Answer = true } : new() { Role = "note", Text = "Skipped the question." });
     q.Answer.TrySetResult(answer.Length > 0 ? "The user answered: " + answer : "The user skipped this question. Use your best judgment and say what you assumed.");
     break; }
    case "permAnswer" when S("answer") == "cancel" && S("id") == wentAhead: Toast("Too late to cancel. That step had already gone ahead."); break;

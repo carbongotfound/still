@@ -242,6 +242,17 @@ static partial class CompanionMemory
  }
 
  /// Forget this chat: its summary and everything learned in it, and it isn't summarized again unless it changes.
+ /// The reply from this message on was replaced: what it saved goes, and whatever that had replaced comes back. Something it only said again stays.
+ internal static void ForgetFrom(string id, string chat, int from)
+ {
+  var list = Of(id); var gone = list.Where(f => f.Chat == chat && f.Msg >= from && f.At - f.Created < TimeSpan.FromSeconds(1)).ToList();
+  if (gone.Count == 0) return;
+  foreach (var f in gone) if (list.FirstOrDefault(o => o.Id == f.Supersedes) is { } back && !gone.Contains(back)) { back.Status = "active"; back.SupersededBy = ""; }
+  list.RemoveAll(gone.Contains);
+  Save(id);
+  Changed(id, $"The user replaced a message and forgot its reply. Disregard what that reply saved ({gone.Count} {(gone.Count == 1 ? "memory" : "memories")}).", "");
+ }
+
  internal static bool ForgetChat(string id, string chat)
  {
   var list = Of(id); var gone = Versions(list, list.Where(f => f.Chat == chat));

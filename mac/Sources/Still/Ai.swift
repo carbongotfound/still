@@ -1031,6 +1031,23 @@ extension Browser {
    aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
    go(appTab(), "chat:" + kick.id); v.chat = kick
    runAi(kick, activation(fresh, true), shown: "") // the title comes from its hello
+  case "aiEdit":
+   // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
+   let rewritten = tidy(s("text")), was = s("was")
+   guard let editing = shownChat, (1...20000).contains(rewritten.count) else { break }
+   guard let found = editing.messages.lastIndex(where: { $0.role == "user" && $0.who == nil && $0.answer != true }), editing.messages[found].text == was else { toast("That isn't your latest message anymore."); break }
+   if let going = runs[editing.id] { going.queue.removeAll(); stopRun(going) }
+   Task { @MainActor [self] in
+    for _ in 0..<300 where runs[editing.id] != nil { try? await Task.sleep(nanoseconds: 50_000_000) }
+    if runs[editing.id] != nil { toast("That chat is still stopping. Try again in a moment."); return }
+    let kept = editing.messages[found].files ?? []
+    editing.messages.removeSubrange(found...)
+    // A new session, so the AI forgets the reply, and whatever it does again is asked again. What it read stays counted: the words before this message may carry it.
+    editing.session = nil; editing.started = false; editing.sessions = nil; editing.allowed = []; editing.known = []
+    CompanionMemory.forgetFrom(editing.companion, editing.id, found)
+    forgetTask(editing.id)
+    runAi(editing, kept.isEmpty ? rewritten : rewritten + filesNote(kept), shown: rewritten, files: kept)
+   }
   case "aiPickFiles":
    DispatchQueue.main.async { [self] in
     let picker = NSOpenPanel()
@@ -1061,7 +1078,9 @@ extension Browser {
    let answer = String(tidy(s("text")).prefix(2000))
    answering.question = nil
    kickoffs.remove(answering.chat.id) // what's worth keeping from the answer, the companion saves itself (Setup says how)
-   answering.chat.messages.append(answer.isEmpty ? AiMessage("note", "Skipped the question.") : AiMessage("user", answer))
+   let said = answer.isEmpty ? AiMessage("note", "Skipped the question.") : AiMessage("user", answer)
+   if !answer.isEmpty { said.answer = true }
+   answering.chat.messages.append(said)
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
    guard let chat = myChats.first(where: { $0.id == s("id") }) else { break }
@@ -1573,7 +1592,7 @@ extension Browser {
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
-    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
+    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "role": c.role, "personality": c.personality, "length": c.length, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "setup": c.setup == "pending" ? "pending" : "done", "capture": c.capture, "joinSection": !c.joinKept && joinSection(c.instructions) != nil,

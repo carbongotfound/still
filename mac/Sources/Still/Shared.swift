@@ -19,6 +19,7 @@ extension AiFile {
 final class AiMessage: Codable {
  var role = "", text = ""
  var files: [AiFile]?
+ var answer: Bool? // the user's answer to the AI's question, not a prompt of their own
  // A companion's own line in a chat that isn't its own (old team chats), or the companion who asked (a "user" message).
  // An ask/tell card: who messaged whom, how it's going (working, replied, failed, stopped), the reply and the chat it's in.
  // A step's status: working or failed, and none once it worked.

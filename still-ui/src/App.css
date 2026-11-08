@@ -459,6 +459,18 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-msg { overflow-wrap:anywhere; line-height:1.6; }
 .ai-msg.is-user { align-self:flex-end; max-width:min(560px,85%); margin:18px 0 10px; padding:11px 18px; border-radius:20px 20px 6px 20px; background:var(--muted); white-space:pre-wrap; }
 .ai-msg.is-user:first-child { margin-top:0; }
+.ai-msg.is-user { position:relative; }
+.ai-msg-actions { position:absolute; top:100%; right:2px; z-index:1; display:flex; align-items:center; gap:2px; padding-top:2px; font-size:12px; white-space:nowrap; opacity:0; transition:opacity .12s; }
+.ai-msg.is-user:hover .ai-msg-actions, .ai-msg-actions:focus-within, .ai-msg.is-resetting .ai-msg-actions { opacity:1; }
+.ai-msg.is-resetting { margin-bottom:38px; }
+.ai-msg-actions > span { padding-right:4px; color:var(--muted-foreground); }
+.ai-msg-actions button:not([data-slot]) { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; color:var(--muted-foreground); background:var(--background); }
+.ai-msg-actions button:not([data-slot]):hover { color:var(--foreground); background:var(--muted); }
+.ai-msg-actions svg { width:14px; height:14px; }
+.ai-msg.is-editing { width:min(560px,85%); }
+.ai-edit-box { display:block; width:100%; padding:4px 0; resize:none; font:inherit; color:inherit; background:none; border:0; outline:0; }
+.ai-edit-note { margin:6px 0 8px; font-size:12px; color:var(--muted-foreground); white-space:normal; }
+.ai-edit-actions { display:flex; justify-content:flex-end; gap:6px; }
 .ai-msg.is-note { color:var(--muted-foreground); font-size:12px; display:flex; gap:6px; align-items:center; }
 .ai-turn { position:relative; display:flex; flex-direction:column; gap:12px; padding-left:52px; }
 /* A turn's 30px avatar sits left of its first line, 12px from the content, which every later card and paragraph lines

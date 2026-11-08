@@ -1,5 +1,5 @@
 import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Plus, Rabbit, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, type LucideIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -49,7 +49,7 @@ export type AiState = {
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean } // stock: one Still ships (Reset puts it back)
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
@@ -325,6 +325,25 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 // into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
+// One of your messages: Copy on any, Edit and Reset on the latest. Either one forgets what came after it and runs it again.
+function MyMessage({ m, known, send, latest }: { m: Message; known: Known; send: Send; latest: boolean }) {
+ const [editing, setEditing] = useState<string | null>(null), [resetting, setResetting] = useState(false)
+ const again = (text: string) => { send("aiEdit", { was: m.text, text }); setEditing(null); setResetting(false) }
+ if (editing !== null && latest) return <div className="ai-msg is-user is-editing">
+  <textarea className="ai-edit-box" aria-label="Edit your message" autoFocus rows={Math.min(8, editing.split("\n").length + 1)} value={editing} onChange={e => setEditing(e.target.value)}
+   onKeyDown={e => { if (e.key === "Escape") setEditing(null); else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (editing.trim()) again(editing.trim()) } }} />
+  <p className="ai-edit-note">Sending replaces the reply below and stops anything still running. What it already did on websites stays done.</p>
+  <div className="ai-edit-actions"><Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button size="sm" disabled={!editing.trim()} onClick={() => again(editing.trim())}>Send</Button></div>
+ </div>
+ return <div className={"ai-msg is-user" + (resetting ? " is-resetting" : "")}><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}
+  <div className="ai-msg-actions">{resetting && latest
+   ? <><span>Forget the reply and run this again?</span><Button size="sm" variant="ghost" onClick={() => setResetting(false)}>Cancel</Button><Button size="sm" onClick={() => again(m.text)}>Reset</Button></>
+   : <><Tip label="Copy"><button type="button" aria-label="Copy message" onClick={() => navigator.clipboard?.writeText(m.text).then(() => toast("Copied."), () => toast("Couldn't copy that."))}><Copy /></button></Tip>
+    {latest && <Tip label="Edit"><button type="button" aria-label="Edit message" onClick={() => setEditing(m.text)}><Pencil /></button></Tip>}
+    {latest && <Tip label="Reset: forget the reply and run this again"><button type="button" aria-label="Reset message" onClick={() => setResetting(true)}><RotateCcw /></button></Tip>}</>}
+  </div>
+ </div>
+}
 export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[], draft?: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
  const drafted = useRef(draft)
@@ -686,6 +705,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m); else items.push({ role: "steps", steps: [m], who: m.who }) }
   else items.push(m)
  }
+ const latestPrompt = messages.findLast(m => m.role === "user" && !m.who && !m.answer)
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more). A teammate's line has its face.
@@ -741,7 +761,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
-    if (m.role === "user") return <div key={i} className="ai-msg is-user"><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}</div>
+    if (m.role === "user") return <MyMessage key={i} m={m} known={known} send={send} latest={m === latestPrompt} />
     if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, choice } = choicesOf(m.text)
