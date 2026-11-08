@@ -172,6 +172,8 @@ def everything():
             ran = until(lambda: [c for c in calls(bin, app) if c["run"]], 20)
             seen = sorted({k for c in calls(bin, app) for k in c["keys"]})
             check(ran and not seen, f"{app} ran and saw no API keys, in its checks or its run ({seen})")
+            if app == "chatgpt":
+                check(ran and "features.shell_tool=false" in ran[0]["args"] and "features.unified_exec=false" in ran[0]["args"], "ChatGPT runs with its own shell off")
     finally:
         stop(p)
 

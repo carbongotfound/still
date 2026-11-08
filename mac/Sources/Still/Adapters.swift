@@ -513,6 +513,7 @@ final class ChatGptAdapter: AgentAdapter {
   args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660"] // ask_user waits for the user
   let servers: String = r.mcp.map(quoted).joined(separator: ",")
   args += ["-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + servers + "]"]
+  for own in ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "in_app_browser", "multi_agent", "image_generation"] { args += ["-c", "features.\(own)=false"] } // like the other apps: Still's tools and nothing else
   if !r.model.isEmpty { args += ["-c", "model=" + quoted(r.model)] }
   if !r.effort.isEmpty { args += ["-c", "model_reasoning_effort=" + quoted(r.effort)] }
   if r.resume, let session = r.session { args.append(session) }

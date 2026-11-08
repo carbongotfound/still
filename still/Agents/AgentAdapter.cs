@@ -200,6 +200,7 @@ sealed class ChatGptAdapter : AgentAdapter
   static string Q(string v) => "'" + v + "'";
   List<string> args = ["exec", .. r.Resume ? new[] { "resume" } : [], .. r.Forget ? new[] { "--ephemeral" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
    "-c", "mcp_servers.still.command=" + Q(Environment.ProcessPath!), "-c", "mcp_servers.still.args=[" + string.Join(",", r.Mcp.Select(Q)) + "]"];
+  foreach (string own in new[] { "shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "in_app_browser", "multi_agent", "image_generation" }) args.AddRange(["-c", "features." + own + "=false"]); // like the other apps: Still's tools and nothing else
   if (r.Model.Length > 0) args.AddRange(["-c", "model=" + Q(r.Model)]);
   if (r.Effort.Length > 0) args.AddRange(["-c", "model_reasoning_effort=" + Q(r.Effort)]);
   if (r.Resume) args.Add(r.Session!);
