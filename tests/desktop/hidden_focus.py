@@ -1,18 +1,22 @@
-"""A page a companion opens out of sight never takes the keyboard from the page in front of you. Local pages only.
+"""A page a companion opens out of sight never takes the keyboard from the page in front of you, and a screenshot of it
+leaves it there. Local pages only.
 
 Real keys aren't sent: this reads who holds the keyboard. On Windows the test window may not be in front, so what's checked
 there is the page in front keeping its focus and its caret.
 
 Run: python tests/desktop/hidden_focus.py <Still.exe or Still.app/Contents/MacOS/Still>
 """
+import base64
 import http.server
 import json
 from pathlib import Path
 import shutil
+import struct
 import sys
 import threading
 import time
 import uuid
+import zlib
 
 sys.path.insert(0, str(Path(__file__).parent))
 from qa import MAC, ROOT, js, launch, rpc, send, until  # noqa: E402
@@ -24,9 +28,11 @@ PROFILE = RUN / "profile"
 FAILED = []
 PAGES = {
     "/front": """<!doctype html><title>Front</title><input id=note autofocus>
-<script>window.__blurs = 0; addEventListener('blur', () => __blurs++); note.addEventListener('blur', () => __blurs++)</script>""",
+<script>window.__blurs = 0; addEventListener('blur', () => __blurs++); note.addEventListener('blur', () => __blurs++)
+window.__hides = 0; addEventListener('visibilitychange', () => __hides++)</script>""",
     "/busy": """<!doctype html><title>Busy</title><input id=a autofocus><iframe srcdoc="<input autofocus><script>setInterval(() => { focus(); document.querySelector('input').focus() }, 100)</script>"></iframe>
 <script>setInterval(() => { focus(); a.focus(); top.focus(); a.click() }, 100)</script>""",
+    "/shot": "<!doctype html><title>Shot</title><html style='background:#e00'>",
 }
 
 
@@ -47,6 +53,27 @@ def check(ok, name):
     print(("PASS " if ok else "FAIL ") + name, flush=True)
     if not ok:
         FAILED.append(name)
+
+
+def red(data):
+    """The picture's top row is the page's red, not a blank: an 8-bit RGB or RGBA PNG, its first row unfiltered by hand."""
+    try:
+        png = base64.b64decode(data)
+        width, _, depth, kind = struct.unpack(">IIBB", png[16:26])
+        packed, i = b"", 8
+        while i < len(png):
+            size, name = struct.unpack(">I4s", png[i:i + 8])
+            if name == b"IDAT":
+                packed += png[i + 8:i + 8 + size]
+            i += 12 + size
+        raw, step = zlib.decompress(packed), {2: 3, 6: 4}[kind]
+        row = bytearray(raw[1:1 + width * step])
+        for x in range(step, len(row)):  # no row above: Sub and Paeth add the pixel to the left, Average half of it
+            row[x] = (row[x] + {1: row[x - step], 4: row[x - step], 3: row[x - step] // 2}.get(raw[0], 0)) % 256
+        r, g, b = row[step * 10:step * 10 + 3]
+        return depth == 8 and r > 180 and g < 80 and b < 80
+    except Exception:
+        return False
 
 
 def holder(process):
@@ -89,6 +116,19 @@ def main():
             who = rpc(process, "keyboardToHidden")
             check(who["tried"] and not who["took"] and not who["hidden"], f"Even when asked, a page out of sight can't take the keyboard ({who})")
             check(rpc(process, "eval", script="__blurs") == blurs, "...and asking leaves the note alone")
+            # A screenshot of a page out of sight pictures it there: the page in front never leaves the screen.
+            ok, opened = agent.call("open_tab", url=site + "/shot")
+            shot = json.loads(opened)["tabId"] if ok else ""
+            agent.call("read_page", tabId=shot)
+            rpc(process, "eval", script="__hides = 0")
+            reply = agent.request("tools/call", {"name": "screenshot", "arguments": {"tabId": shot}})["result"]
+            image = next((c.get("data", "") for c in reply.get("content", []) if c.get("type") == "image"), "")
+            check(not reply.get("isError") and red(image), "A screenshot of a page out of sight shows that page")
+            hides = rpc(process, "eval", script="__hides")
+            if MAC:
+                check(rpc(process, "state")["activeId"] == front and hides == 0, f"...and the page in front stays in front ({hides} hides)")
+            else:  # Windows draws a page only while it's on screen: it shows for a moment, then the page in front is back
+                check(rpc(process, "state")["activeId"] == front, "...and the page in front is back in front")
         finally:
             agent.close()
     finally:

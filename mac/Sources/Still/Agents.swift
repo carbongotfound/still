@@ -1225,18 +1225,16 @@ extension Browser {
     let found = try await agentJs(view, agentScripts["Find"] ?? "", ["text": argText(args, "text")])
     did(who, "Looked for \"" + argText(args, "text") + "\""); return agentOk(["text": redactLogins(view.url?.absoluteString ?? "", found as? String ?? "")])
    case "screenshot":
-    let (browser, tab, view) = try await agentPage(who, args)
-    // A page only paints while it's on screen: show it for a moment, then give the user their tab back.
-    let previous = browser.active
-    if tab !== previous { browser.select(tab); try? await Task.sleep(nanoseconds: 300_000_000) }
+    let (_, _, view) = try await agentPage(who, args)
     let prints = loginPrints(view.url?.absoluteString ?? "") // fields showing a saved login are masked in the picture
     if !prints.isEmpty, (try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": true])) as? Bool != true {
-     if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
      return agentFail("Couldn't hide the saved login on this page, so no screenshot was taken.")
     }
-    let shot: (NSImage?, Error?) = await withCheckedContinuation { done in view.takeSnapshot(with: nil) { done.resume(returning: ($0, $1)) } }
+    // Drawn by the page as it is now, not from the screen, so a page out of sight stays there and the user keeps their tab
+    let config = WKSnapshotConfiguration()
+    config.afterScreenUpdates = false
+    let shot: (NSImage?, Error?) = await withCheckedContinuation { done in view.takeSnapshot(with: config) { done.resume(returning: ($0, $1)) } }
     if !prints.isEmpty { _ = try? await agentJs(view, agentScripts["Mask"] ?? "", ["prints": prints, "on": false]) }
-    if let previous, previous !== tab, !previous.closed, browser.active !== previous { browser.select(previous) }
     guard let image = shot.0, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) else {
      return agentFail("Couldn't take the screenshot" + (shot.1.map { ": " + $0.localizedDescription } ?? "."))
     }
