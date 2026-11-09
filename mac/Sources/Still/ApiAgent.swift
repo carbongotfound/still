@@ -164,7 +164,8 @@ final class ApiRun: AgentRun {
   runLock.lock(); let w = work, m = mcp; runLock.unlock()
   w?.cancel(); m?.end()
  }
- private func say(_ e: AgentEvent) { out.yield(e) }
+ private var hush = false // a summary being made: its text isn't the chat's
+ private func say(_ e: AgentEvent) { if hush, case .message = e { return }; out.yield(e) }
  private var helper: ApiMcp? { runLock.lock(); defer { runLock.unlock() }; return mcp }
  private func use(_ m: ApiMcp) { runLock.lock(); mcp = m; runLock.unlock() }
 
@@ -237,7 +238,8 @@ final class ApiRun: AgentRun {
    while true {
     if step == ApiRun.maxSteps { say(.note("Stopped after \(ApiRun.maxSteps) steps in one reply. Ask again to carry on.")); break }
     if p.paused { throw ApiFailure("paused: this month's spending reached your limit of $\(ApiRun.amount(p.limit)). Raise or turn off the limit in Settings → Models.") }
-    ApiRun.trim(&messages, context)
+    let summed = try await compact(root, key, model, &messages, context)
+    turnIn += summed.0; turnOut += summed.1
     let reply: Reply
     do { reply = try await call(root, key, model, messages, tools) }
     catch let f as ApiFailure where f.message == "model" {
@@ -282,11 +284,47 @@ final class ApiRun: AgentRun {
  }
 
  static let trimNote = "(Earlier parts of this chat were left out to fit the model's context.)"
+ static let summed = "(A summary of the earlier part of this chat, made to fit the model's context:)\n"
+ static func over(_ messages: [[String: Any]], _ context: Int) -> Bool { // guessing 4 characters a token
+  Double(((try? JSONSerialization.data(withJSONObject: messages)) ?? Data()).count / 4) > Double(context) * 0.7
+ }
+ static func starts(_ m: [String: Any]) -> Bool { m["role"] as? String == "user" && m["content"] is String } // a message of the user's, not tool results
+
+ /// Past 70% of the model's context, the model sums up everything between the first message (Still's instructions) and
+ /// the latest turn, and the summary takes their place. When it can't, or the latest turn alone is too long, trim leaves
+ /// out the oldest turns. Returns the tokens the summary took.
+ func compact(_ root: URL, _ key: String, _ model: String, _ messages: inout [[String: Any]], _ context: Int) async throws -> (Int64, Int64) {
+  guard ApiRun.over(messages, context) else { return (0, 0) }
+  var latest = messages.count - 1
+  while latest > 0 && !ApiRun.starts(messages[latest]) { latest -= 1 }
+  let earlier = latest > 1 ? Array(messages[1..<latest]) : []
+  var used: (Int64, Int64) = (0, 0)
+  if earlier.contains(where: { let s = $0["content"] as? String ?? ""; return !(s.hasPrefix(ApiRun.summed) || s == ApiRun.trimNote) }),
+     let data = try? JSONSerialization.data(withJSONObject: earlier), let json = String(data: data, encoding: .utf8) {
+   // Pictures and other long unbroken strings say nothing to a summary
+   let said = json.replacingOccurrences(of: "\"[^\"\\s]{300,}\"", with: "\"(left out)\"", options: .regularExpression)
+   hush = true
+   defer { hush = false }
+   do {
+    let reply = try await call(root, key, model, [["role": "user", "content": "Sum up this earlier part of a conversation between a user and you, an AI working in their browser, so you can carry on without it. Keep what they asked for and why, what you did and found, the pages, tabs and files involved, decisions made, and anything left to do. Plain text, under 300 words. The conversation, as JSON:\n" + said]], [])
+    used = (reply.input, reply.output)
+    say(.spent(input: reply.input, output: reply.output, cost: p.costOf(reply.input, reply.output), job: r.job))
+    let content = reply.message["content"]
+    let summary = ((content as? String) ?? (content as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined() ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+    if !summary.isEmpty {
+     messages.replaceSubrange(1..<latest, with: [["role": "assistant", "content": ApiRun.summed + summary]])
+     say(.note("This chat got long, so its earlier part was summed up to fit the model."))
+    }
+   } catch is ApiFailure {} // trim instead
+  }
+  ApiRun.trim(&messages, context)
+  return used
+ }
+
  /// Leaves out the oldest turns (never the first, which has Still's instructions, or the latest) once the conversation
- /// would pass 70% of the model's context, guessing 4 characters a token. A note takes their place.
+ /// would pass 70% of the model's context. A note takes their place.
  static func trim(_ messages: inout [[String: Any]], _ context: Int) {
-  func starts(_ m: [String: Any]) -> Bool { m["role"] as? String == "user" && m["content"] is String } // a message of the user's, not tool results
-  while Double(((try? JSONSerialization.data(withJSONObject: messages)) ?? Data()).count / 4) > Double(context) * 0.7 {
+  while over(messages, context) {
    let noted = messages.count > 1 && messages[1]["content"] as? String == trimNote
    let from = noted ? 2 : 1
    var next = from + 1

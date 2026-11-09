@@ -216,15 +216,19 @@ def main():
         send(p, "aiModel", harness=pid, model="", effort="")
         send(p, "aiAdvanced", on=False)
 
-        # Trimming: past 70% of the context, the oldest turns give way to a note.
-        first = next((r for r in fake.requests if r["user"].endswith("hello")), None)
-        save(p, "Fake OpenAI", models=["fake-small", "fake-large", "plain-model"], context=int(((first or {"chars": 40000})["chars"] / 4 + 2500) / .7))
-        time.sleep(1)
+        # Compaction: past 70% of the context, the model sums up the earlier part and the summary takes its place.
+        # The first message (Still's instructions and Turn 0) is always kept. After it, room for about a turn and a half, so a
+        # turn and the summary fit but two turns don't.
         send(p, "aiNew")
-        for i in range(5):
+        ask(p, "Turn 0: " + "lorem ipsum " * 250, 30)
+        first = [r for r in fake.requests if r["tools"]][-1]
+        save(p, "Fake OpenAI", models=["fake-small", "fake-large", "plain-model"], context=int((first["chars"] / 4 + 1300) / .7))
+        time.sleep(1)
+        for i in range(1, 5):
             ask(p, "Turn %d: " % i + "lorem ipsum " * 250, 30)
         body = json.dumps(fake.last)
-        check("Turn 4" in body and "Earlier parts of this chat were left out" in body and fake.last["messages"][0]["role"] == "user", "Long chats leave out their oldest turns, keeping the first message")
+        check("Turn 4" in body and "A summary of the earlier part of this chat" in body and not any("Turn %d" % i in body for i in (1, 2, 3)) and fake.last["messages"][0]["role"] == "user"
+              and "earlier part was summed up" in text(p), "Long chats sum up their earlier part, keeping the first message, and say so")
 
         # Spending and the monthly limit.
         send(p, "openPanel", name="settings", value="models")

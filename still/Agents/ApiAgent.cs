@@ -121,7 +121,8 @@ public sealed class ApiRun : AgentRun
  }
  public override void Cancel() { Cancelled = true; stop.Cancel(); mcp?.Dispose(); }
  public override void Dispose() { if (!stop.IsCancellationRequested) stop.Cancel(); mcp?.Dispose(); }
- void Say(AgentEvent e) => events.Writer.TryWrite(e);
+ bool hush; // a summary being made: its text isn't the chat's
+ void Say(AgentEvent e) { if (!(hush && e is AgentEvent.Message)) events.Writer.TryWrite(e); }
 
  /// The address Still may send a key to: https, or plain http only on this computer.
  public static Uri? Address(string url) =>
@@ -176,7 +177,8 @@ public sealed class ApiRun : AgentRun
     if (step == MaxSteps) { Say(new AgentEvent.Note($"Stopped after {MaxSteps} steps in one reply. Ask again to carry on.")); break; }
     if (p.Limit > 0 && p.Spent.GetValueOrDefault(ApiProvider.Month)?.Cost >= p.Limit)
      throw new ApiFailure($"paused: this month's spending reached your limit of ${p.Limit:0.##}. Raise or turn off the limit in Settings → Models.");
-    Trim(messages, context);
+    var (summedIn, summedOut) = await Compact(root, key, model, messages, context);
+    turnIn += summedIn; turnOut += summedOut;
     Reply reply;
     try { reply = await Call(root, key, model, messages, tools); }
     catch (ApiFailure f) when (f.Message == "model") {
@@ -217,13 +219,46 @@ public sealed class ApiRun : AgentRun
  }
  string Money(double cost) => p.Priced ? $", about ${cost:0.00##}" : "";
 
+ const string Note = "(Earlier parts of this chat were left out to fit the model's context.)", Summed = "(A summary of the earlier part of this chat, made to fit the model's context:)\n";
+ static bool Over(JsonArray messages, int context) => messages.ToJsonString().Length / 4 > context * 0.7; // guessing 4 characters a token
+ static bool Starts(JsonNode? m) => m?["role"]?.GetValue<string>() == "user" && m["content"] is JsonValue; // a message of the user's, not tool results
+
+ /// Past 70% of the model's context, the model sums up everything between the first message (Still's instructions) and
+ /// the latest turn, and the summary takes their place. When it can't, or the latest turn alone is too long, Trim leaves
+ /// out the oldest turns. Returns the tokens the summary took.
+ async Task<(long In, long Out)> Compact(Uri root, string key, string model, JsonArray messages, int context)
+ {
+  if (!Over(messages, context)) return (0, 0);
+  int latest = messages.Count - 1;
+  while (latest > 0 && !Starts(messages[latest])) latest--;
+  var earlier = messages.Skip(1).Take(Math.Max(0, latest - 1)).ToList();
+  long used = 0, made = 0;
+  if (earlier.Any(m => !(m?["content"] is JsonValue v && (v.ToString().StartsWith(Summed, StringComparison.Ordinal) || v.ToString() == Note)))) {
+   // Pictures and other long unbroken strings say nothing to a summary
+   string said = System.Text.RegularExpressions.Regex.Replace(new JsonArray(earlier.Select(m => m?.DeepClone()).ToArray()).ToJsonString(), "\"[^\"\\s]{300,}\"", "\"(left out)\"");
+   hush = true;
+   try {
+    var reply = await Call(root, key, model, [new JsonObject { ["role"] = "user", ["content"] = "Sum up this earlier part of a conversation between a user and you, an AI working in their browser, so you can carry on without it. Keep what they asked for and why, what you did and found, the pages, tabs and files involved, decisions made, and anything left to do. Plain text, under 300 words. The conversation, as JSON:\n" + said }], []);
+    used = reply.In; made = reply.Out;
+    Say(new AgentEvent.Spent(reply.In, reply.Out, p.CostOf(reply.In, reply.Out), r.Job));
+    string summary = (reply.Message["content"] switch { JsonValue v => v.ToString(), JsonArray parts => string.Concat(parts.Select(b => b?["text"]?.ToString())), _ => "" }).Trim();
+    if (summary.Length > 0) {
+     for (int i = latest - 1; i >= 1; i--) messages.RemoveAt(i);
+     messages.Insert(1, new JsonObject { ["role"] = "assistant", ["content"] = Summed + summary });
+     Say(new AgentEvent.Note("This chat got long, so its earlier part was summed up to fit the model."));
+    }
+   } catch (ApiFailure) { } // Trim instead
+   finally { hush = false; }
+  }
+  Trim(messages, context);
+  return (used, made);
+ }
+
  /// Leaves out the oldest turns (never the first, which has Still's instructions, or the latest) once the conversation
- /// would pass 70% of the model's context, guessing 4 characters a token. A note takes their place.
+ /// would pass 70% of the model's context. A note takes their place.
  internal static void Trim(JsonArray messages, int context)
  {
-  const string Note = "(Earlier parts of this chat were left out to fit the model's context.)";
-  static bool Starts(JsonNode? m) => m?["role"]?.GetValue<string>() == "user" && m["content"] is JsonValue; // a message of the user's, not tool results
-  while (messages.ToJsonString().Length / 4 > context * 0.7) {
+  while (Over(messages, context)) {
    bool noted = messages.Count > 1 && messages[1]?["content"] is JsonValue v && v.ToString() == Note;
    int from = noted ? 2 : 1, next = from + 1;
    while (next < messages.Count && !Starts(messages[next])) next++;
