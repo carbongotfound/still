@@ -121,6 +121,7 @@ public sealed class Preferences
  public List<string> ApprovedAgents { get; set; } = [];
  public List<SitePermission> Permissions { get; set; } = []; // on top of the defaults: read and navigate always, interact once per chat, sensitive every time
  public List<string> SensitiveSites { get; set; } = []; // every click or keystroke there counts as sensitive
+ public string NewSites { get; set; } = "balanced"; // after a chat reads the web, how careful going somewhere new is: "ask", "balanced" or "fewer" (Reach)
  public string NewTab { get; set; } = "companion"; // the new tab page: "companion" (your companion and ideas) or "sites" (search and your sites)
  public List<string> Interests { get; set; } = []; // what the user said they're into: ideas and chat starters come from these
  public string TabLayout { get; set; } = "Classic"; // Classic: tabs across the top. Modern: a sidebar down the left.

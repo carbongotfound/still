@@ -997,16 +997,25 @@ extension Browser {
   pref("Permissions", [[String: Any]]()).contains { ruleText($0, "Action") == action && ruleText($0, "Mode") == "always" && onSite(ruleText($0, "Site"), site) && (ruleText($0, "Companion").isEmpty || ruleText($0, "Companion") == who) }
  }
  /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
- /// whether going somewhere takes a yes. Nil: it doesn't.
+ /// whether going somewhere takes a yes. Nil: it doesn't. How careful is the user's pick (NewSites): "ask" asks before any
+ /// new site and any long address; "balanced" asks before a new site, and before a long address only off the sites the chat
+ /// knows or when it carries another address on; "fewer" asks only before a long address off them. Your own network always asks.
  @MainActor func reach(_ root: AiChat, _ tool: String, _ url: String, _ host: String) async -> (why: String, data: Bool)? {
   guard let u = URLComponents(string: url), ["http", "https"].contains(u.scheme?.lowercased() ?? "") else { return nil }
   let extra = (u.percentEncodedQuery?.count ?? 0) + (u.percentEncodedFragment?.count ?? 0)
-  if root.read > 0 && (extra > 200 || u.percentEncodedPath.count > 300) { return ("This address carries a lot of data: " + clipped(u.percentEncodedPath + (u.percentEncodedQuery.map { "?" + $0 } ?? "") + (u.percentEncodedFragment.map { "#" + $0 } ?? ""), 120), true) }
-  if beenTo(root, host) { return nil }
+  let known = beenTo(root, host), how = pref("NewSites", "balanced")
+  if root.read > 0 && (extra > 200 || u.percentEncodedPath.count > 300) && (!known || how == "ask" || onward(u)) { return ("This address carries a lot of data: " + clipped(u.percentEncodedPath + (u.percentEncodedQuery.map { "?" + $0 } ?? "") + (u.percentEncodedFragment.map { "#" + $0 } ?? ""), 120), true) }
+  if known { return nil }
   if await privateHost(host) { return ("This is on your own computer or network.", false) }
   // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
-  if root.read > 0 && (tool != "read_url" || root.read > 1 || extra > 60) { return ("A new site for this chat, after it read from the web.", false) }
+  if how != "fewer" && root.read > 0 && (tool != "read_url" || root.read > 1 || extra > 60) { return ("A new site for this chat, after it read from the web.", false) }
   return nil
+ }
+ /// An address inside the address, the way a site's redirect sends what it carries on to another.
+ func onward(_ u: URLComponents) -> Bool {
+  var s = u.percentEncodedPath + "?" + (u.percentEncodedQuery ?? "") + "#" + (u.percentEncodedFragment ?? "")
+  for _ in 0..<3 { s = s.removingPercentEncoding ?? s }
+  return s.contains("//")
  }
  /// What this step adds to what the chat has read, and where it has been.
  func exposed(_ run: ChatRun, _ tool: String, _ step: AgentStep) {
@@ -1460,7 +1469,10 @@ extension Browser {
    guard !marked.isEmpty else { break }
    prefs["SensitiveSites"] = pref("SensitiveSites", [String]()).filter { $0 != marked } + (argFlag(data, "on") ? [marked] : [])
    saveLater(); publishAiEverywhere()
-  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); saveLater(); publishAiEverywhere()
+  case "permNewSites":
+   guard ["ask", "balanced", "fewer"].contains(argText(data, "mode")) else { break }
+   prefs["NewSites"] = argText(data, "mode"); saveLater(); publishAiEverywhere()
+  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); prefs["NewSites"] = "balanced"; saveLater(); publishAiEverywhere()
   default: return false
   }
   return true
@@ -1478,7 +1490,7 @@ extension Browser {
    .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
   // The shown chat's cards, and those of the child tasks it started (they ask in the user's chat).
   let asking = shown.map { s in runs.values.filter { $0.chat === s || $0.chat.from != nil && exchangeOf($0.chat).root === s } } ?? []
-  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()),
+  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()), "newSites": pref("NewSites", "balanced"),
           "approvals": asking.flatMap { r in r.approvals.map { ["id": $0.id, "run": r.chat.id, "who": r.chat.companion, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] as [String: Any] } },
           "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
  }

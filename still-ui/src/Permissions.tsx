@@ -18,6 +18,12 @@ export type AuditEntry = { at: string; what: string; site: string; result: strin
 
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
+// After a chat reads the web, a page could send it somewhere new with what it read in the address.
+const NEW_SITES: Record<string, [string, string]> = {
+ ask: ["Ask first", "Once a chat has read the web, every new site asks, and so does any long address."],
+ balanced: ["Balanced", "Once a chat has read the web, every new site asks. A long address asks when it goes to a new site or carries another address."],
+ fewer: ["Fewer questions", "Only a long address to a new site asks, and anything on your own computer or network. A page a companion reads could send a little of it elsewhere."],
+}
 
 // Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
 export function useArmed(key: string) {
@@ -89,6 +95,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
  const [marked, setMarked] = useState("")
+ const newSites = ai.newSites && NEW_SITES[ai.newSites] ? ai.newSites : "balanced"
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
@@ -109,13 +116,17 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
    <Button type="submit" size="sm" variant="outline" disabled={!site.trim() && who === "all"}>Add</Button>
   </form>
   <Separator />
+  <div className="setting-row"><div><strong>New sites after reading the web</strong><p>{NEW_SITES[newSites][1]}</p></div>
+   <Select value={newSites} onValueChange={v => send("permNewSites", { mode: v })}><SelectTrigger size="sm" aria-label="New sites after reading the web"><SelectValue /></SelectTrigger>
+    <SelectContent>{Object.entries(NEW_SITES).map(([id, [text]]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select></div>
+  <Separator />
   <div className="setting-row"><div><strong>Sensitive sites</strong><p>Every click and keystroke on these sites asks you first, like a purchase does.</p></div></div>
   <div className="perm-sites">{(ai.sensitiveSites ?? []).map(s => <span key={s} className="perm-site">{s}<button aria-label={"Remove " + s} title="Remove" onClick={() => send("permSensitive", { site: s, on: false })}><X /></button></span>)}
    <form onSubmit={e => { e.preventDefault(); if (marked.trim()) send("permSensitive", { site: marked, on: true }); setMarked("") }}>
     <Input aria-label="Add a sensitive site" placeholder="Add a site, like mybank.com" value={marked} onChange={e => setMarked(e.target.value)} /><Button type="submit" size="sm" variant="outline" disabled={!marked.trim()}>Add</Button>
    </form></div>
   <Separator />
-  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, and sensitive steps ask every time.</p></div>
+  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, and new sites go back to Balanced.</p></div>
    <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
     body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>

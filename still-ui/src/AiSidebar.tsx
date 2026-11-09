@@ -42,7 +42,7 @@ export type AiState = {
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
  tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
- approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; chatSummaries?: boolean
+ approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; newSites?: string; chatSummaries?: boolean
  plugins?: PluginsState
  apis?: ApiState
 }

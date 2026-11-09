@@ -50,7 +50,8 @@ mark the site sensitive. Then they ask in the bar too, and Allow in this chat la
 ## Settings → AI permissions
 
 The four defaults, then your rules per site and per companion, each with Always allow / Allow in this chat / Ask
-every time and a remove button. Add a rule with a site, who, an action and a permission. Sensitive sites are chips
+every time and a remove button. Add a rule with a site, who, an action and a permission. New sites after reading the
+web: Ask first, Balanced (the default) or Fewer questions (`Reach`). Sensitive sites are chips
 with an add box. Reset all (asks once more) clears every rule and sensitive site.
 
 ## Tests

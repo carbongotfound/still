@@ -828,18 +828,24 @@ public partial class MainWindow
   || root.Messages.Any(m => m.Role == "user" && m.Who == null && HostWords.Matches(LinkTitles.Replace(m.Text.ToLowerInvariant(), "(")).Any(t => OnSite(t.Value.StartsWith("www.", StringComparison.Ordinal) ? t.Value[4..] : t.Value, host)));
  bool SiteAllows(string who, string site, string action) => Prefs.Permissions.Any(p => p.Action == action && p.Mode == "always" && OnSite(p.Site, site) && (p.Companion.Length == 0 || p.Companion == who));
  /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
- /// whether going somewhere takes a yes. Null: it doesn't.
+ /// whether going somewhere takes a yes. Null: it doesn't. How careful is the user's pick (Prefs.NewSites): "ask" asks before
+ /// any new site and any long address; "balanced" asks before a new site, and before a long address only off the sites the
+ /// chat knows or when it carries another address on; "fewer" asks only before a long address off them. Your own network
+ /// always asks.
  async Task<(string Why, bool Data)?> Reach(AiChat root, string tool, string url, string host)
  {
   if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) return null;
   int extra = u.Query.Length + u.Fragment.Length;
-  if (root.Read > 0 && (extra > 200 || u.AbsolutePath.Length > 300)) return ("This address carries a lot of data: " + Clip(u.PathAndQuery + u.Fragment, 120), true);
-  if (BeenTo(root, host)) return null;
+  bool known = BeenTo(root, host);
+  if (root.Read > 0 && (extra > 200 || u.AbsolutePath.Length > 300) && (!known || Prefs.NewSites == "ask" || Onward(u))) return ("This address carries a lot of data: " + Clip(u.PathAndQuery + u.Fragment, 120), true);
+  if (known) return null;
   if (await PrivateHost(host)) return ("This is on your own computer or network.", false);
   // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
-  if (root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
+  if (Prefs.NewSites != "fewer" && root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
   return null;
  }
+ /// An address inside the address, the way a site's redirect sends what it carries on to another.
+ static bool Onward(Uri u) { string s = u.PathAndQuery + u.Fragment; for (int i = 0; i < 3; i++) s = Uri.UnescapeDataString(s); return s.Contains("//"); }
  /// What this step adds to what the chat has read, and where it has been.
  static void Exposed(ChatRun run, string tool, AgentStep step)
  {

@@ -519,7 +519,7 @@ public partial class MainWindow
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
-  sensitiveSites = Prefs.SensitiveSites,
+  sensitiveSites = Prefs.SensitiveSites, newSites = Prefs.NewSites,
   plugins = PluginsPayload(), apis = ApiPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, role = c.Role, personality = c.Personality, length = c.Length, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    setup = c.Setup == "pending" ? "pending" : "done", capture = c.Capture, joinSection = !c.JoinKept && JoinSection(c.Instructions) != null,
@@ -667,7 +667,8 @@ public partial class MainWindow
    case "permSensitive" when SiteOf(S("site")) is { Length: > 0 } marked:
     Prefs.SensitiveSites.Remove(marked); if (B("on")) Prefs.SensitiveSites.Add(marked);
     SaveLater(); PublishAiEverywhere(); break;
-   case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); SaveLater(); PublishAiEverywhere(); break;
+   case "permNewSites" when S("mode") is "ask" or "balanced" or "fewer": Prefs.NewSites = S("mode"); SaveLater(); PublishAiEverywhere(); break;
+   case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); Prefs.NewSites = "balanced"; SaveLater(); PublishAiEverywhere(); break;
    case "chatOpen" when S("id") is { Length: > 0 } open && MyChats.Any(c => c.Id == open): await OpenChat(open, B("newTab")); break;
    case "aiKickoff" when B("home"): await Go(await AppTab(), "home:"); break; // Say hi to a companion that already said hello: the home, with them picked
    case "appHome" when S("view") is "" or "home" or "chats" or "companions" or "library" or "skills": await Go(await AppTab(), "home:" + (S("view") == "home" ? "" : S("view"))); break;
