@@ -306,7 +306,7 @@ public sealed class ApiRun : AgentRun
  async IAsyncEnumerable<JsonNode> Stream(HttpResponseMessage res)
  {
   using var reader = new StreamReader(await res.Content.ReadAsStreamAsync(stop.Token));
-  while (await reader.ReadLineAsync(stop.Token) is { } line) {
+  while (await reader.ReadLineAsync(stop.Token).AsTask().WaitAsync(TimeSpan.FromMinutes(5), stop.Token) is { } line) { // silent for 5 minutes ends it, as on the Mac
    if (!line.StartsWith("data:", StringComparison.Ordinal)) continue;
    string data = line[5..].Trim();
    if (data == "[DONE]") yield break;

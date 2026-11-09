@@ -1146,7 +1146,7 @@ public partial class MainWindow
    await foreach (var e in run.Events()) {
     said |= ApplyEvent(chat, cli, e);
     if (!named && e is not AgentEvent.Message && chat.Messages.Find(m => m.Role == "assistant") is { } hello) { named = true; NameFromHello(chat, hello.Text); }
-    PublishAiEverywhere();
+    if (e is AgentEvent.Message) PublishAiSoon(); else PublishAiEverywhere();
    }
    if (!named && chat.Messages.Find(m => m.Role == "assistant") is { } spoke) NameFromHello(chat, spoke.Text);
    chat.Started = chat.Session != null;
@@ -1299,6 +1299,9 @@ public partial class MainWindow
  }
 
  static void PublishAiEverywhere() { foreach (var w in Windows) w.PublishAi(); }
+ static bool aiPublishQueued;
+ /// A reply streams in a few characters at a time: the chat redraws at most ten times a second instead of for every piece
+ static async void PublishAiSoon() { if (aiPublishQueued) return; aiPublishQueued = true; await Task.Delay(100); aiPublishQueued = false; PublishAiEverywhere(); }
 
  /// Names a new chat from its first message, on the model picked in Settings (Chat titles): the quickest one of the
  /// chat's AI unless the user chose another. Off, in a private window, or if the AI doesn't answer, the chat keeps its

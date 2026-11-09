@@ -129,6 +129,8 @@ class Fake:
                     answer = ["Done. ", "Result: " + done_text(kind, body)[:120]] if calls else ["Hello ", "from the ", "fake model."]
                     if "SLOW" in text:
                         answer = ["word%d " % i for i in range(60)]
+                    if "TINY" in text:  # as fast as a fast model streams: a word at a time, no pause
+                        answer = ["w%d " % i for i in range(3000)]
                 stream = body.get("stream") or ":stream" in self.path
                 usage = (2**63 - 1, 2**63 - 1) if "HUGE" in text else (1200 + len(json.dumps(body)) // 4, 40 + 7 * len(answer))
                 return getattr(self, kind)(model, answer, turn, stream, usage, "SLOW" in text)
@@ -145,7 +147,7 @@ class Fake:
                 self.event({**base, "choices": [{"index": 0, "delta": {"role": "assistant", "content": ""}}]})
                 for piece in answer:
                     self.event({**base, "choices": [{"index": 0, "delta": {"content": piece}}]})
-                    time.sleep(.5 if slow else .02)
+                    time.sleep(.5 if slow else 0 if len(answer) > 100 else .02)
                 for i, (n, a) in enumerate(calls):
                     args = json.dumps(a)
                     self.event({**base, "choices": [{"index": 0, "delta": {"tool_calls": [{"index": i, "id": "call_%d_%d" % (i, time.time_ns() % 10**6), "type": "function", "function": {"name": n, "arguments": ""}}]}}]})

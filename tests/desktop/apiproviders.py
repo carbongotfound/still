@@ -216,6 +216,18 @@ def main():
         send(p, "aiModel", harness=pid, model="", effort="")
         send(p, "aiAdvanced", on=False)
 
+        # A reply in thousands of tiny pieces, the way fast models stream, leaves Still responsive: the chat redraws a few
+        # times a second, not for every piece.
+        send(p, "aiNew")
+        send(p, "aiSend", text="TINY")
+        worst, t, end = 0, "", time.monotonic() + 90
+        while time.monotonic() < end and "w2999" not in t:
+            start = time.monotonic()
+            t = text(p) or ""
+            worst = max(worst, time.monotonic() - start)
+        check("w2999" in t and worst < 1, "A reply streamed in thousands of tiny pieces leaves Still responsive (longest wait %.2fs)" % worst)
+        idle(p, 60)
+
         # Compaction: past 70% of the context, the model sums up the earlier part and the summary takes its place.
         # The first message (Still's instructions and Turn 0) is always kept. After it, room for about a turn and a half, so a
         # turn and the summary fit but two turns don't.

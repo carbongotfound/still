@@ -128,6 +128,13 @@ var browsers: [Browser] = [] // every open window, kept by main.swift
 var qaSystemTheme: String?
 
 func publishAiEverywhere() { for browser in browsers { browser.publishAi() } }
+var aiPublishQueued = false
+/// A reply streams in a few characters at a time: the chat redraws at most ten times a second instead of for every piece
+func publishAiSoon() {
+ if aiPublishQueued { return }
+ aiPublishQueued = true
+ DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { aiPublishQueued = false; publishAiEverywhere() }
+}
 func publishEverywhere() { for browser in browsers { browser.schedulePublish() } }
 
 /// Notes what the AI asked to do on a site and what happened, for the chat's activity list.

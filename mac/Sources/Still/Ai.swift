@@ -1475,7 +1475,7 @@ extension Browser {
    for await e in started.events() {
     if applyEvent(chat, cli, e) { said = true }
     if !named { if case .message = e {} else if let hello = chat.messages.first(where: { $0.role == "assistant" }) { named = true; nameFromHello(chat, hello.text) } }
-    publishAiEverywhere()
+    if case .message = e { publishAiSoon() } else { publishAiEverywhere() }
    }
    if !named, let spoke = chat.messages.first(where: { $0.role == "assistant" }) { nameFromHello(chat, spoke.text) }
    chat.started = chat.session != nil
