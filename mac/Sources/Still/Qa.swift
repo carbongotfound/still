@@ -258,15 +258,13 @@ private func qaInput(_ b: Browser, _ view: WKWebView, _ method: String, _ p: [St
    view.mouseDragged(with: drag)
    return true
   }
-  if kind == "mouseMoved" { // through the app's own event queue and tracking areas, as a real move arrives (the cursor stays put)
-   let screen = CGPoint(x: b.window.frame.minX + at.x, y: (NSScreen.screens.first?.frame.maxY ?? 0) - b.window.frame.minY - at.y)
-   guard let move = CGEvent(mouseEventSource: nil, mouseType: .mouseMoved, mouseCursorPosition: screen, mouseButton: .left) else { return false }
-   // macOS sends mouse moves only to the active app's key window (no hover in background windows), so hovering brings Still forward
-   if b.window.isKeyWindow { move.postToPid(getpid()) } else {
-    NSApp.activate(ignoringOtherApps: true)
-    b.window.makeKeyAndOrderFront(nil)
-    DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { move.postToPid(getpid()) }
-   }
+  if kind == "mouseMoved" {
+   // WebKit takes a plain move only from its tracking area, which a posted or handed-over one never reaches (macOS drops a
+   // posted move unless the app may control the computer), but it takes a drag handed straight to the view, in front or
+   // not. So a move goes as a drag with no press: hover follows it and nothing is dragged.
+   guard let move = NSEvent.mouseEvent(with: .leftMouseDragged, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+    windowNumber: b.window.windowNumber, context: nil, eventNumber: 0, clickCount: 0, pressure: 0) else { return false }
+   view.mouseDragged(with: move)
    return true
   }
   if kind == "mousePressed" || kind == "mouseReleased", let button = p["button"] as? String, button == "right" || button == "middle" {
@@ -373,7 +371,13 @@ private func qaPost(_ b: Browser, _ event: NSEvent) {
   qaForward = .now() + 0.25
  }
  qaQueued = max(qaForward, .now()) + 0.2
- DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) { NSApp.postEvent(event, atStart: false) }
+ DispatchQueue.main.asyncAfter(deadline: max(qaForward, .now())) {
+  if NSApp.isActive { NSApp.postEvent(event, atStart: false); return }
+  // macOS can keep Still in the background, and then a queued key reaches no window: it goes straight to the window's
+  // focused view, with Esc from a page handled as the key monitor would (watchKeys)
+  if event.type == .keyDown, event.keyCode == 53, (b.window.firstResponder as? NSView)?.isDescendant(of: b.shell) != true { b.escape() }
+  b.window.sendEvent(event)
+ }
 }
 
 // MARK: Capture

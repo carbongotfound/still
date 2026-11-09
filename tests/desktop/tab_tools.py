@@ -137,7 +137,7 @@ def run(process):
     def hover_buttons(i):
         r = json.loads(shell(process, "JSON.stringify((r=>({x:r.left+r.width/2,y:r.top+r.height/2}))(document.querySelector('[data-tab-id=\"%s\"]').getBoundingClientRect()))" % i))
         rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": r["x"], "y": r["y"]})
-        time.sleep(.8 if MAC else .3)  # the Mac first brings Still forward: only the active app gets hover
+        time.sleep(.3)
         return json.loads(shell(process, "JSON.stringify(" + VISIBLE % i + ")"))
     for layout in ["Classic", "Modern"]:
         send(process, "preference", key="tabLayout", value=layout)
@@ -148,7 +148,7 @@ def run(process):
         size = shell(process, "(r=>Math.round(r.width)+'x'+Math.round(r.height)+'@'+Math.round(document.querySelector('[data-tab-id=\"b\"]').getBoundingClientRect().right-r.right))(document.querySelector('[data-tab-id=\"b\"] .close-tab').getBoundingClientRect())")
         check(size == "22x22@6", f"{layout}: the X is 22 by 22 at the right edge ({size})")
         rpc(process, "shellCdp", method="Input.dispatchMouseEvent", parameters={"type": "mouseMoved", "x": 2, "y": 600})
-        time.sleep(.8 if MAC else .3)  # the Mac first brings Still forward: only the active app gets hover
+        time.sleep(.3)
         on, other = (json.loads(shell(process, "JSON.stringify(" + VISIBLE % i + ")")) for i in "ab")
         check(on == ["Close Page A"] and other == [], f"{layout}: the tab you're on keeps its X; the others show it only on hover ({on}, {other})")
         capture(process, f"tabs-hover-{layout.lower()}")

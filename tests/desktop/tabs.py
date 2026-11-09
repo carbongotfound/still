@@ -86,8 +86,10 @@ def click_new():
     for kind in ['mousePressed','mouseReleased']:
         rpc('shellCdp',method='Input.dispatchMouseEvent',parameters={'type':kind,'x':control['x'],'y':control['y'],'button':'left','clickCount':1})
     wait(lambda: len(rpc()['tabs']) == count + 1)
-    rpc('key',key='Escape',mods='None')
-    wait(lambda: evaluate(SELECTED))
+    # The tab opens its address panel; Esc shuts it. On the Mac Esc also has the interface shut the panel a moment later,
+    # which can land on the next tab's panel first: so Esc only if it's open, and done once none is.
+    if settled(lambda: rpc()['panel'] == 'address', 1): rpc('key',key='Escape',mods='None')
+    wait(lambda: not rpc()['panel'] and evaluate(SELECTED))
 
 # The Still app tab. A stand-in AI app: answers at once, or stays busy for two minutes when asked to.
 FAKE = r'''
@@ -175,11 +177,12 @@ def app_tab():
     # Open in new tab, by middle click and from the menu, still makes a tab; a chat open in a tab is focused, not shown twice.
     send('chatOpen', id='chat1'); at('chat:chat1'); send('appHome', view='chats'); at('home:chats')
     app = rpc()['activeId']
-    evaluate("[...document.querySelectorAll('.history-open')].find(e => e.innerText.includes('Chat 2')).dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true }))")
-    check(settled(lambda: len(tabs_now()) == count + 1) and any(t.get('ChatId') == 'chat2' for t in tabs_now()), 'A middle click opens a chat in a tab of its own')
+    wait(lambda: evaluate("(() => { const e = [...document.querySelectorAll('.history-open')].find(e => e.innerText.includes('Chat 2'));"
+                          " e?.dispatchEvent(new MouseEvent('auxclick', { button: 1, bubbles: true })); return !!e })()"))
+    check(settled(lambda: len(tabs_now()) == count + 1, 5) and any(t.get('ChatId') == 'chat2' for t in tabs_now()), 'A middle click opens a chat in a tab of its own')
     send('select', id=app); at('home:chats')
-    evaluate("(() => { const e = [...document.querySelectorAll('.history-open')].find(e => e.innerText.includes('Chat 3')), r = e.getBoundingClientRect();"
-             " e.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: r.x + 8, clientY: r.y + 8 })) })()")
+    wait(lambda: evaluate("(() => { const e = [...document.querySelectorAll('.history-open')].find(e => e.innerText.includes('Chat 3')), r = e?.getBoundingClientRect();"
+                          " e?.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, clientX: r.x + 8, clientY: r.y + 8 })); return !!e })()"))
     wait(lambda: click('[role=menuitem]', 'Open in new tab'))
     check(settled(lambda: len(tabs_now()) == count + 2) and any(t.get('ChatId') == 'chat3' for t in tabs_now()), "The menu's Open in new tab opens a chat in a tab of its own")
     send('select', id=app); at('home:chats')
