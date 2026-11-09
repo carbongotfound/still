@@ -97,8 +97,9 @@ public sealed class Companion
 
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
 /// invokes it as /id in a message (its body goes into that turn's prompt), or gives it to a companion, which sees only
-/// an index of its skills and loads one with load_skill when the task fits.
-public sealed partial record Skill(string Id, string Name, string Description, string When, string Body)
+/// an index of its skills and loads one with load_skill when the task fits. Source: where an imported one came from
+/// (MainWindow.SkillImport.cs); empty for Still's and the user's own.
+public sealed partial record Skill(string Id, string Name, string Description, string When, string Body, string Source = "")
 {
  internal static string Folder => Path.Combine(App.DataRoot, "skills");
  /// Setup: every companion's first chat loads it (RunAi), and only then. The user can edit and reset it, not delete it.
@@ -132,7 +133,7 @@ public sealed partial record Skill(string Id, string Name, string Description, s
     string id = Path.GetFileNameWithoutExtension(file), text = File.ReadAllText(file);
     if (Stock.TryGetValue(id, out var now) && OldStock.Contains(MainWindow.Fnv(text.ReplaceLineEndings("\n")))) File.WriteAllText(file, text = now);
     var (head, body) = Split(text);
-    list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body));
+    list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body, head.GetValueOrDefault("source", "")));
    }
    if (!list.Any(s => s.Id == SetupId) && Stock.TryGetValue(SetupId, out var setup)) { // every profile has Setup, even one whose file went missing
     Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, SetupId + ".md"), setup);
@@ -153,16 +154,18 @@ public sealed partial record Skill(string Id, string Name, string Description, s
  }
  /// Adds a skill file as it is, unless there's one by that id already (the user's own stays as it is).
  internal static void Add(string id, string text) { if (All.Any(s => s.Id == id)) return; Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, id + ".md"), text); all = null; }
- /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line.
- internal static string Save(string id, string name, string description, string when, string body)
+ /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line. An imported
+ /// skill keeps its source through edits.
+ internal static string Save(string id, string name, string description, string when, string body, string? source = null)
  {
   static string Line(string v, int max) => v.ReplaceLineEndings(" ").Trim() is var t && t.Length > max ? t[..max] : t;
+  source ??= All.FirstOrDefault(s => s.Id == id)?.Source ?? "";
   if (!All.Any(s => s.Id == id)) {
    string slug = Slug().Replace(name.ToLowerInvariant(), "-").Trim('-') is { Length: > 0 } sl ? (sl.Length > 40 ? sl[..40].Trim('-') : sl) : "skill";
    id = slug; for (int n = 2; All.Any(s => s.Id == id); n++) id = slug + "-" + n;
   }
   Directory.CreateDirectory(Folder);
-  File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
+  File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n{(source.Length > 0 ? $"source: {Line(source, 200)}\n" : "")}---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
   all = null; return id;
  }
  internal static void Delete(string id) { if (id != SetupId && All.Any(s => s.Id == id)) { File.Delete(Path.Combine(Folder, id + ".md")); all = null; } }
@@ -506,7 +509,7 @@ public partial class MainWindow
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, tiers = TiersOf(),
-  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited }),
+  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited, source = k.Source }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), @checked = aiChecked,
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
@@ -774,6 +777,8 @@ public partial class MainWindow
     try { Skill.Save(S("id"), skillName, S("description"), S("when"), S("body")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't save that skill."); App.Log(ex); }
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
+   case "skillImportLook": await SkillImportLook(S("link")); break;
+   case "skillImportAdd": SkillImportAdd(data.ValueKind == JsonValueKind.Object && data.TryGetProperty("keys", out var importKeys) ? importKeys : default); break;
    case "skillReset" when Skill.Stock.ContainsKey(S("id")):
     try { Skill.Reset(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't reset that skill."); App.Log(ex); }
     PublishAiEverywhere(); break;
@@ -1093,6 +1098,7 @@ public partial class MainWindow
   bool hadSetup = setupSkill != null && chat.Messages.Any(m => m.Role == "tool" && m.Text == "Used skill " + setupSkill.Name);
   bool setup = setupSkill != null && regular && who!.Setup == "pending" && !(hadSetup && chat.Started);
   var skills = Skill.Invoked(shown); // the user asked for these by name; a companion's own load with load_skill
+  if (skills.Any(k => k.Source.Length > 0) && ExchangeOf(chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // someone else's text, like a page
   if (setup) { skills.Insert(0, setupSkill!); who!.SetupChat = chat.Id; if (!kickoffs.Contains(chat.Id)) text = Activation(who, false) + "\n\n" + text; }
   foreach (var k in skills) if (k.Id != Skill.SetupId) Step(chat, "Used skill " + k.Name); else if (!hadSetup) chat.Messages.Add(new() { Role = "tool", Text = "Used skill " + k.Name }); // Setup's step shows even before a hello
   var list = ListOf(chat); list.Remove(chat); list.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();

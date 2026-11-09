@@ -8,6 +8,7 @@ shows as a card (the image only on Show image, fetched by Still within its limit
 close to the message box. Choices: every app is told about the choices block; a card offers one pick, several then
 Submit, a dropdown, or your own words; the pick goes back as your reply, and a card takes one answer. A block that isn't
 valid JSON stays as text. A reply has no Took line, its Copy shows on hover, and message text selects and copies. A tier saved before launch shows in Settings, as after a restart.
+A skill added from a link (it has a source) counts as reading from the web when it loads or is typed; Still's own don't.
 
 Usage: python tests/desktop/skills.py <QA exe>
 The fake AI app (its models: good and notonplan) answers the last line of its prompt:
@@ -262,7 +263,9 @@ def main():
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json",
         "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"], "models": ["good", "notonplan"]}))
-    crew = [{"Id": "nora", "Name": "Nora", "Job": "Researcher: reads several sources and cites them.", "Crew": "research", "Mode": "default"},
+    (PROFILE / "skills").mkdir(parents=True)
+    (PROFILE / "skills" / "from-web.md").write_text("---\nname: From the web\ndescription: Someone else's skill\nwhen: Testing\nsource: github.com/acme/kit\n---\n\nStep one from someone else.\n", encoding="utf-8")
+    crew = [{"Id": "nora", "Name": "Nora", "Job": "Researcher: reads several sources and cites them.", "Crew": "research", "Mode": "default", "Skills": ["from-web"]},
             {"Id": "jonah", "Name": "Jonah", "Job": "Sales: follow-ups and the pipeline.", "Crew": "sales", "Mode": "efficient"}]
     site = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Site)
     threading.Thread(target=site.serve_forever, daemon=True).start()
@@ -303,6 +306,14 @@ def main():
         check(theirs.get("error") and "You don't have a skill with the id" in theirs.get("text", ""), "A teammate's skill is refused: " + theirs.get("text", "")[:70])
         check(calls.get("nope", {}).get("error"), "and so is an id that doesn't exist")
         check(not any("Used skill Call brief" in s or "follow-up" in s for s in used), "and neither shows a step")
+
+        # A skill added from a link is someone else's text: once it loads, the chat counts as having read from the web.
+        check(chat(nora).get("Read", 0) == 0, "Loading one of Still's skills doesn't count as reading the web")
+        again(p, nora, "SKILL: from-web")
+        got = (lines("results.jsonl") or [{}])[-1]
+        fetched = next((c for c in got.get("calls", []) if c.get("id") == "from-web"), {})
+        check(not fetched.get("error") and "Step one from someone else" in fetched.get("text", ""), "A skill added from a link loads like any other")
+        check(chat(nora).get("Read", 0) >= 1, "and then the chat counts as having read from the web, so a new site asks first")
 
         # Typing /skill still brings the body in, with a step.
         n = len(lines("qa-prompts.jsonl"))
@@ -499,6 +510,8 @@ def main():
         rpc(p, "capture", name="skills-tiers.png")
         send(p, "aiTiersReset", harness="fake")
         check(until(lambda: not any(v.get("custom") for v in tiers(p).values()), 5), "Reset to defaults clears the picks")
+        typed = start(p, "jonah", "/from-web please")
+        check(chat(typed).get("Read", 0) >= 1, "Typing a skill added from a link counts the same")
         errors = rpc(p).get("shellErrors") or []
         check(not errors, "No interface errors" + (f": {errors[:1]}" if errors else ""))
     finally:

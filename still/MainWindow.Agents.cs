@@ -1183,6 +1183,7 @@ public partial class MainWindow
     string id = S(args, "id").Trim().TrimStart('/');
     if (mine == null || !mine.Skills.Contains(id) || Skill.All.FirstOrDefault(k => k.Id == id) is not { } skill)
      return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
+    if (skill.Source.Length > 0 && ExchangeOf(run!.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // someone else's text, like a page
     Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();
     return Reply(new { skill = skill.Name, instructions = skill.Body });
    }

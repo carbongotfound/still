@@ -1152,6 +1152,7 @@ extension Browser {
     guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }), mine.skills.contains(id), let skill = Skill.all.first(where: { $0.id == id }) else {
      return agentFail("You don't have a skill with the id \"\(id)\". Use an id from your skills listed at the start of the chat, or carry on without one.")
     }
+    if !skill.source.isEmpty { let root = exchangeOf(run.chat).root; root.read = max(root.read, 1) } // someone else's text, like a page
     chatStep(run.chat, "Used skill " + skill.name); publishAiEverywhere()
     return agentOk(["skill": skill.name, "instructions": skill.body])
    case "save_file":

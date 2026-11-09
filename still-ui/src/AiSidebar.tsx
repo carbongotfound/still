@@ -50,7 +50,7 @@ export type AiState = {
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
 export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean }
-export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean } // stock: one Still ships (Reset puts it back)
+export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string } // stock: one Still ships (Reset puts it back); source: where an added one came from
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
