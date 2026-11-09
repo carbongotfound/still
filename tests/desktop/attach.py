@@ -259,6 +259,17 @@ def main():
         got = until(lambda: len(chips(p, home)) == 3 and chips(p, home), 10) or chips(p, home)
         check(got[-1:] == [f"dot.png {len(PNG)} B"], f"Pasting an image adds it too ({got})")
 
+        # Long text: a file, not text in the box. Short text stays text.
+        paste_text = "(t => {{ const d = new DataTransfer(), box = document.querySelector('{0} [aria-label=Message]'); d.setData('text/plain', t); box.focus(); box.dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: d }})) }})({1})"
+        js(p, paste_text.format(home, json.dumps("Tide table, North Harbor. " * 40)))
+        got = until(lambda: len(chips(p, home)) == 4 and chips(p, home), 10) or chips(p, home)
+        typed = js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""
+        check(got[-1:] == ["Pasted text.txt 1.0 KB"] and "Tide table" not in typed, f"A long paste goes in as a file, Pasted text.txt ({got})")
+        js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove Pasted text.txt\"]').click()")
+        js(p, paste_text.format(home, json.dumps("Tide table")))
+        check(until(lambda: "Tide table" in (js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""), 5) and len(chips(p, home)) == 3, "A short one stays text in the box")
+        js(p, f"(t => {{ t.focus(); document.execCommand('selectAll'); document.execCommand('delete') }})(document.querySelector('{home} [aria-label=Message]'))")
+
         # Too big: says why, adds nothing.
         js(p, f"document.querySelector('{home} .composer').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: {files_js([('huge.png', 'image/png', 6 * 1024 * 1024)])} }}))")
         toast = until(lambda: js(p, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' ')"), 5) or ""

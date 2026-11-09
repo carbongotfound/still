@@ -342,7 +342,7 @@ const scrolls = new Map<string, number>()
 const FileChip = ({ file, onRemove }: { file: Attached; onRemove?: () => void }) => <span className="skill-chip file-chip" title={file.name}><FileIcon path={file.name} /><span>{file.name}</span><small>{sizeText(file.size)}</small>
  {onRemove && <button type="button" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}</span>
 // Limits match the host's (MainWindow.Ai.cs Attach): 10 files a message, files up to 10 MB, images up to 5 MB.
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10, LONG_PASTE = 1000 // characters: a longer paste goes in as a file
 const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `${f.name} is ${sizeText(f.size)}. ${IMAGE.test(f.name) ? "Images" : "Files"} can be up to ${IMAGE.test(f.name) ? 5 : 10} MB.` : ""
 
 // The message box. / picks a skill, # an open tab (never a private one) or a connected app, and @ a companion: each goes
@@ -527,6 +527,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   let p: unknown = null
   try { p = JSON.parse(e.clipboardData.getData(KEPT)) } catch { /* from somewhere else: plain text */ }
   if (Array.isArray(p)) insert(markup(p.map(x => typeof x === "string" ? x : live(x, known) ?? String((x as Mention)?.name ?? "")), known))
+  else if (e.clipboardData.getData("text/plain").length >= LONG_PASTE) take([new File([e.clipboardData.getData("text/plain")], "Pasted text.txt", { type: "text/plain" })])
   else if (e.clipboardData.getData("text/plain")) document.execCommand("insertText", false, e.clipboardData.getData("text/plain"))
   else send("aiPasteImage", { to: me, quiet: true }) // a picture the box can't read here: Still reads the clipboard itself
  }
