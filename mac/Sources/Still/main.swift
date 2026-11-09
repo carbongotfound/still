@@ -263,6 +263,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   config.userContentController.addUserScript(WKUserScript(source: bridge, injectionTime: .atDocumentStart, forMainFrameOnly: true))
   config.userContentController.addUserScript(WKUserScript(source: macStyle, injectionTime: .atDocumentEnd, forMainFrameOnly: true))
   shell = ShellView(frame: root.bounds, configuration: config)
+  shell.qaKeepDrawing()
   shell.autoresizingMask = [.width, .height]
   shell.navigationDelegate = self
   shell.setValue(false, forKey: "drawsBackground") // until the interface paints, the window's own color shows, not WebKit's white
@@ -645,6 +646,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if #available(macOS 12.3, *) { config.preferences.isElementFullscreenEnabled = true }
   }
   let view = PageView(frame: pageFrame, configuration: config)
+  view.qaKeepDrawing()
   config.userContentController.removeScriptMessageHandler(forName: "stillPage", contentWorld: stillWorld) // a pop-up shares its opener's
   config.userContentController.add(pageMessages, contentWorld: stillWorld, name: "stillPage")
   view.allowsBackForwardNavigationGestures = true

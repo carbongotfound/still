@@ -8,6 +8,17 @@ import WebKit
 func qaEnv(_ name: String) -> String? { isQa ? ProcessInfo.processInfo.environment[name] : nil }
 
 #if STILL_QA
+extension WKWebView {
+ /// A test window keeps drawing while something covers it (the Mac in use, say), so its animations finish and its text
+ /// reads as it would on screen. WebKit's own switch for it (SPI); without it, nothing changes.
+ func qaKeepDrawing() {
+  let set = Selector(("_setWindowOcclusionDetectionEnabled:"))
+  guard responds(to: set) else { return }
+  typealias Setter = @convention(c) (AnyObject, Selector, Bool) -> Void
+  unsafeBitCast(method(for: set), to: Setter.self)(self, set, false)
+ }
+}
+
 private var qaServing = false
 var qaServed: [String] = [] // the still:// files the shell loaded, in order
 private var qaShellErrors: [String] = []
@@ -403,5 +414,8 @@ private func qaCapture(_ b: Browser, _ name: String, _ scale: Double, _ done: @e
 #else
 extension Browser {
  func startQa() {}
+}
+extension WKWebView {
+ func qaKeepDrawing() {}
 }
 #endif
