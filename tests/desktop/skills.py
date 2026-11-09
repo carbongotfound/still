@@ -333,6 +333,7 @@ def main():
 
         # Choices: every app is told; a pick goes back as the reply, and a card takes one answer.
         check("one choices block" in first and "```choices" in first, "The first turn tells the AI how to offer choices, with an example")
+        check("Don't end a reply by asking whether the user wants more" in first and "start with `>> `" in first, "...and to end a reply with next steps, not by asking if you want more")
         n = len(chat(nora)["Messages"])
         check(option(p, "Check delivery times") and answered(nora, n) and users(nora)[-1] == "Check delivery times", f"Picking a next step sends it as your reply ({users(nora)[-1:]})")
         c = until(lambda: (c := card(p)) and c.get("done") and c, 5) or {}
