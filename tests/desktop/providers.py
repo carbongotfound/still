@@ -109,6 +109,18 @@ try:
     rpc(process, "shellEval", script="[...document.querySelectorAll('.byo-row')].find(r => r.innerText.includes('Fake missing')).querySelector('.byo-act').click()")
     check(until(lambda: "pip install not-a-real-agent" in text(process), 5), "Add shows the install command")
     rpc(process, "capture", name="onboarding.png")  # saved in the profile folder
+    # Set up goes straight to the app's own sign-in card, the list gone (no sign-in starts until Sign in is pressed).
+    rpc(process, "shellEval", script="[...document.querySelectorAll('.byo-row')].find(r => r.innerText.includes('Fake signed out')).querySelector('.byo-act').click()")
+    card = until(lambda: (t := text(process)) and "Sign in to Fake signed out" in t and t, 5)
+    check(card and not rpc(process, "shellEval", script="!!document.querySelector('.byo-row')"), f"Set up opens its sign-in card, closing the list ({(card or text(process))[:160]!r})")
+    send(process, "openPanel", name="settings", value="models")
+    until(lambda: rpc(process, "shellEval", script="!!document.querySelector('#set-ai .byo-row')"), 8)
+    send(process, "aiToggle")  # the side chat closed, with Settings open
+    rpc(process, "shellEval", script="document.querySelector('.byo-more[aria-expanded=false]')?.click()")
+    until(lambda: rpc(process, "shellEval", script="[...document.querySelectorAll('#set-ai .byo-row')].some(r => r.innerText.includes('Fake signed out'))"), 5)
+    rpc(process, "shellEval", script="[...document.querySelectorAll('#set-ai .byo-row')].find(r => r.innerText.includes('Fake signed out')).querySelector('.byo-act').click()")
+    check(until(lambda: not rpc(process, "shellEval", script="!!document.querySelector('.settings-dialog, .set-shell')") and "Sign in to Fake signed out" in text(process), 5),
+          "In Settings, Set up closes Settings and opens the side chat at its sign-in card")
 
     # A run, with API keys set in Still's environment.
     send(process, "aiHarness", harness="fake")

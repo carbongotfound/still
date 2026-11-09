@@ -131,9 +131,10 @@ function IconButton({ label, onClick, disabled, children }: { label: string; onC
 }
 
 // "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
-// and never by signing in. Add shows how to install one, Set up how to sign in or add a key. With send, the Compatible API
-// presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
-export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
+// and never by signing in. Add shows how to install one. Set up picks an app that signs in in the browser and goes to its
+// sign-in card (onSetUp leaves Settings for it); for one signed in from a terminal it shows the command. With send, the
+// Compatible API presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
+export function AiPicker({ ai, onPick, send, onSetUp }: { ai: AiState; onPick: (id: string) => void; send?: Send; onSetUp?: () => void }) {
  const [howTo, setHowTo] = useState("")
  const [adding, setAdding] = useState<string | null>(null) // the API preset whose form is open ("": any other)
  useEffect(() => { send?.("aiStatus") }, [send]) // a fresh look at what's installed and logged in (at most every 30 s)
@@ -154,21 +155,17 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
     <span className="byo-name"><strong>{h.name}{h.compatible && <> <Badge variant="outline" className="byo-tag" title="Built from its docs, not yet tested with the real app">Compatible</Badge></>}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
-   {setUp && (send || h.terminalSignIn) && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
+   {setUp && h.terminalSignIn && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
+   {setUp && !h.terminalSignIn && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { send("aiHarness", { harness: h.id, waitToSignIn: true }); onSetUp?.() }}>Set up</Button>}
    {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { const keys = document.getElementById("set-apis"); if (keys) keys.scrollIntoView({ behavior: "smooth", block: "start" }); else openModelSettings(send) }}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
    {s === "missing" && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Add<ChevronDown /></Button>}
-   {open && setUp && <div className="byo-how">
-    {h.terminalSignIn ? <>
-     <p>{h.app} signs in from a terminal. Run this in {SHELL}, finish signing in in the browser it opens, then come back:</p>
-     <code className="byo-cmd">{h.terminalSignIn}</code>
-     <div className="ai-row">
-      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
-      {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
-     </div>
-    </> : send && <>
-     <p>{h.app} is installed. Sign in with {h.maker || "your account"} in the browser it opens, then come back.</p>
-     <div className="ai-row"><Button size="sm" variant="outline" onClick={() => { onPick(h.id); send("aiLogin") }}>{h.maker ? `Sign in with ${h.maker}` : "Sign in"}</Button></div>
-    </>}
+   {open && setUp && h.terminalSignIn && <div className="byo-how">
+    <p>{h.app} signs in from a terminal. Run this in {SHELL}, finish signing in in the browser it opens, then come back:</p>
+    <code className="byo-cmd">{h.terminalSignIn}</code>
+    <div className="ai-row">
+     <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
+     {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
+    </div>
    </div>}
    {!!h.billing && <p className="byo-gaps byo-billing">{h.billing}</p>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
