@@ -94,7 +94,10 @@ FAKE = textwrap.dedent(r'''
     args = sys.argv[1:]
     if args[:1] == ["status"]: print("signed in"); sys.exit(0)
     if args[:1] == ["whoami"]: print("signed out"); sys.exit(0)  # the made-up app that isn't signed in
-    if args[:1] == ["login"]: open(os.path.join(here, "logins.txt"), "a").write("login\n"); sys.exit(0)  # its sign-in, which never finishes it
+    if args[:1] == ["login"]:  # its sign-in, which fails and says why, the way real apps do
+        open(os.path.join(here, "logins.txt"), "a").write("login\n")
+        print("Starting local login server on http://localhost:1455.", flush=True)
+        print("Error logging in: Port 127.0.0.1:1455 is already in use", file=sys.stderr); sys.exit(1)
     prompt = sys.stdin.read()
     with open(os.path.join(here, "prompts.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"prompt": prompt}) + "\n")
     site = open(os.path.join(here, "site.txt")).read().strip()
@@ -599,6 +602,8 @@ def connect(process, copy):
     check(until(lambda: (BIN / "logins.txt").exists(), 8), "Sign in starts it")
     check(until(lambda: "didn't finish" in card(process), 10) and buttons() == ["Sign in", "Retry"],
           f"A sign-in that doesn't finish stays here, with Retry ({card(process)!r}, {buttons()})")
+    check("didn't finish: Port 127.0.0.1:1455 is already in use. Try again." in card(process) and "Error logging in" not in card(process),
+          f"...and says the app's own reason ({card(process)!r})")
     pick_ai(process, "Fake agent")
     check(until(lambda: "Fake agent is ready, signed in." in card(process), 10) and foot(process)[-1] == "Continue", "Ready: a check, and Continue")
     check(not js(process, "document.querySelector('.ob-how')?.open"), "How this works starts closed")

@@ -1225,7 +1225,7 @@ public partial class MainWindow
  static bool aiChecked;
  static Process? aiSetupProcess;
  static bool aiSetupCancelled;
- static string aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "";
+ static string aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "", aiSignInSaid = "";
  string aiPending = ""; // asked before the AI was ready: runs once setup finishes
  /// Adds a companion, or saves the changes to one: the profile panel, the library and setup's hires. Returns it.
  Companion SaveCompanion(JsonElement data)
@@ -1382,6 +1382,19 @@ public partial class MainWindow
   await RunAi(aiChat, ask); PublishAi();
  }
 
+ /// The AI app's own reason when its sign-in fails ("Error logging in: Port 127.0.0.1:1455 is already in use"), shown with
+ /// Still's message so the user, and a bug report, can tell why. Links and long tokens are left out.
+ internal static string? SaidWhy(string line)
+ {
+  if (line.TrimStart().StartsWith("warning", StringComparison.OrdinalIgnoreCase) || !Regex.IsMatch(line, @"\b(error|fail(ed|s)?|denied|forbidden|not enabled|in use|unable)\b", RegexOptions.IgnoreCase)) return null;
+  string why = Regex.Replace(Regex.Replace(line, @"https?://\S+|\S{40,}", ""), @"^\s*[\w ]*error[\w ]*:\s*", "", RegexOptions.IgnoreCase);
+  why = Regex.Replace(why, @"\bCodex\b", "the ChatGPT app").Trim();
+  if (why.Length == 0) return null;
+  if (why.Length > 200) why = why[..200].TrimEnd() + "…";
+  why = char.ToUpperInvariant(why[0]) + why[1..];
+  return ".!?…".Contains(why[^1]) ? why : why + ".";
+ }
+
  static bool Official(AgentAdapter cli, string url) =>
   Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme == "https" && cli.Domains.Any(d => u.Host == d || u.Host.EndsWith("." + d));
 
@@ -1390,7 +1403,7 @@ public partial class MainWindow
  async Task AiSignIn(AgentAdapter cli)
  {
   if (aiSetupProcess != null || cli.SignIn.Length == 0 || FindCli(cli.Command) is not { } exe) return;
-  aiStatus[cli.Id] = "signingIn"; aiSignInUrl = aiSignInCode = aiError = ""; aiSetupCancelled = false; aiOpen = true; PublishAiEverywhere();
+  aiStatus[cli.Id] = "signingIn"; aiSignInUrl = aiSignInCode = aiSignInSaid = aiError = ""; aiSetupCancelled = false; aiOpen = true; PublishAiEverywhere();
   int tabsBefore = 0; Process? p = null;
   try {
    Directory.CreateDirectory(AiFolder);
@@ -1401,6 +1414,7 @@ public partial class MainWindow
    async Task Read(StreamReader r) {
     while (await r.ReadLineAsync() is { } raw) {
      string line = TerminalCodes().Replace(raw, "");
+     if (SaidWhy(line) is { } why) aiSignInSaid = why;
      if (aiSignInUrl.Length == 0 && Regex.Match(line, @"https://[^\s""'<>]+") is { Success: true } link && Official(cli, link.Value)) {
       aiSignInUrl = link.Value;
       if (Regex.Match(aiSignInUrl, @"user_code=([A-Za-z0-9-]+)") is { Success: true } c) aiSignInCode = c.Groups[1].Value;
@@ -1421,7 +1435,7 @@ public partial class MainWindow
   }
   await CheckAi(cli);
   if (aiStatus.GetValueOrDefault(cli.Id) == "ready") await RunPending();
-  else if (!aiSetupCancelled) aiError = $"Signing in to {cli.Name} didn't finish. Try again.";
+  else if (!aiSetupCancelled) aiError = $"Signing in to {cli.Name} didn't finish{(aiSignInSaid.Length > 0 ? ": " + aiSignInSaid : ".")} Try again.";
   PublishAiEverywhere();
  }
 

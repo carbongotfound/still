@@ -192,6 +192,21 @@ let crewJobs: [String: (job: String, tone: String)] = [
   "Precise and direct. Leads with the answer, then the evidence, and flags weak sources."),
 ]
 /// The first match of pattern in text, or its group.
+/// The AI app's own reason when its sign-in fails ("Error logging in: Port 127.0.0.1:1455 is already in use"), shown with
+/// Still's message so the user, and a bug report, can tell why. Links and long tokens are left out.
+func saidWhy(_ line: String) -> String? {
+ if line.trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("warning")
+  || line.range(of: #"\b(error|fail(ed|s)?|denied|forbidden|not enabled|in use|unable)\b"#, options: [.regularExpression, .caseInsensitive]) == nil { return nil }
+ var why = line.replacingOccurrences(of: #"https?://\S+|\S{40,}"#, with: "", options: .regularExpression)
+  .replacingOccurrences(of: #"^\s*[\w ]*error[\w ]*:\s*"#, with: "", options: [.regularExpression, .caseInsensitive])
+  .replacingOccurrences(of: #"\bCodex\b"#, with: "the ChatGPT app", options: .regularExpression)
+  .trimmingCharacters(in: .whitespaces)
+ if why.isEmpty { return nil }
+ if why.count > 200 { why = String(why.prefix(200)).trimmingCharacters(in: .whitespaces) + "…" }
+ why = why.prefix(1).uppercased() + why.dropFirst()
+ return ".!?…".contains(why.last!) ? why : why + "."
+}
+
 func matchText(_ pattern: String, _ text: String, _ group: Int = 0) -> String? {
  guard let rx = try? NSRegularExpression(pattern: pattern), let m = rx.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)), let r = Range(m.range(at: group), in: text) else { return nil }
  return String(text[r])
@@ -211,7 +226,7 @@ var aiCheckedAt = Date.distantPast
 var aiChecked = false
 var aiSetupProcess: Spawned?
 var aiSetupCancelled = false
-var aiSetupLine = "", aiSignInUrl = "", aiSignInCode = ""
+var aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "", aiSignInSaid = ""
 var chatsLoaded = false
 
 /// One window's AI state: the sidebar, the chat it shows (nil = a new, empty chat), and what was asked before the AI was ready.
@@ -1285,13 +1300,14 @@ extension Browser {
  /// login when the user approves; Still never sees a password, key or token.
  @MainActor func aiSignIn(_ cli: AgentAdapter) async {
   guard aiSetupProcess == nil, !cli.signIn.isEmpty, let exe = findCli(cli.command) else { return }
-  aiStatus[cli.id] = "signingIn"; aiSignInUrl = ""; aiSignInCode = ""; aiView.error = ""; aiSetupCancelled = false; aiView.open = true; publishAiEverywhere()
+  aiStatus[cli.id] = "signingIn"; aiSignInUrl = ""; aiSignInCode = ""; aiSignInSaid = ""; aiView.error = ""; aiSetupCancelled = false; aiView.open = true; publishAiEverywhere()
   do {
    try FileManager.default.createDirectory(atPath: aiFolder, withIntermediateDirectories: true)
    let p = try Spawned(exe, cli.signIn, folder: aiFolder, environment: AgentAdapter.environment(keeping: cli.kept)) // stdin stays open: some apps wait on it
    aiSetupProcess = p
    await waitSetupProcess(p) { [self] raw in
     let line = raw.replacingOccurrences(of: #"\x1b\[[0-9;?]*[A-Za-z]"#, with: "", options: .regularExpression)
+    if let why = saidWhy(line) { aiSignInSaid = why }
     if aiSignInUrl.isEmpty, let link = matchText(#"https://[^\s"'<>]+"#, line), official(cli, link) {
      aiSignInUrl = link
      if let code = matchText(#"user_code=([A-Za-z0-9-]+)"#, link, 1) { aiSignInCode = code }
@@ -1306,7 +1322,7 @@ extension Browser {
   } catch { NSLog("Still: sign-in: \(error)") }
   aiSetupProcess = nil; aiStatus[cli.id] = nil; aiSignInUrl = ""; aiSignInCode = ""
   await checkAi(cli)
-  if aiStatus[cli.id] == "ready" { runPending() } else if !aiSetupCancelled { aiView.error = "Signing in to \(cli.name) didn't finish. Try again." }
+  if aiStatus[cli.id] == "ready" { runPending() } else if !aiSetupCancelled { aiView.error = "Signing in to \(cli.name) didn't finish\(aiSignInSaid.isEmpty ? "." : ": " + aiSignInSaid) Try again." }
   publishAiEverywhere()
  }
 
