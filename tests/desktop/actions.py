@@ -93,7 +93,8 @@ def main():
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d" % server.server_address[1]
     PROFILE.mkdir(parents=True)
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "ApprovedAgents": ["Tester"]},
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "ApprovedAgents": ["Tester"],
+        "Permissions": [{"Site": "127.0.0.1", "Action": "sensitive", "Companion": "", "Mode": "always"}]},  # its Send buttons are the test's own
         "Tabs": [{"Id": "home", "Title": "Mine", "Url": url + "/next"}], "ActiveId": "home"}))
     p = launch(EXE, PROFILE)
     client = None

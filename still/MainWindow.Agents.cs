@@ -926,9 +926,9 @@ public partial class MainWindow
   var run = runs.GetValueOrDefault(who);
   if (again) { if (run != null) Audit(run.Chat, what, site, "The page changed, so Still asked again"); why = why.Length > 0 ? "The page changed since you were asked. " + why : "The page changed since you were asked."; }
   // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
-  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  // user's chat. Outside apps ask before a sensitive step; the rest goes unless you set a rule or marked the site sensitive.
   var up = run == null ? default : ExchangeOf(run.Chat);
-  string mode = run != null ? Delegation.Strictest(up.Chain.Select(c => PermissionMode(c, site, action) ?? DefaultPermission(action))) : PermissionMode("", site, action) ?? (marked ? "ask" : "always"), key = action + " " + site;
+  string mode = run != null ? Delegation.Strictest(up.Chain.Select(c => PermissionMode(c, site, action) ?? DefaultPermission(action))) : PermissionMode("", site, action) ?? (marked || action == "sensitive" ? "ask" : "always"), key = action + " " + site;
   bool data = false;
   if (run != null && url.Length > 0) {
    step.Goes = site;

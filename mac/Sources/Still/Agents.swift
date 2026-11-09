@@ -1083,9 +1083,9 @@ extension Browser {
   let run = runs[who]
   if again { if let run { audit(run.chat, what, site, "The page changed, so Still asked again") }; why = why.isEmpty ? "The page changed since you were asked." : "The page changed since you were asked. " + why }
   // A child task (a teammate asked it) acts only where everyone up the chain may, with the approvals given in the
-  // user's chat. Outside apps keep today's behavior: allowed unless you set a rule or marked the site sensitive.
+  // user's chat. Outside apps ask before a sensitive step; the rest goes unless you set a rule or marked the site sensitive.
   let up = run.map { exchangeOf($0.chat) }
-  var mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked ? "ask" : "always")
+  var mode = up.map { u in strictest(u.chain.map { permissionMode($0, site, action) ?? defaultPermission(action) }) } ?? permissionMode("", site, action) ?? (marked || action == "sensitive" ? "ask" : "always")
   let key = action + " " + site
   var data = false
   if let up, !url.isEmpty {

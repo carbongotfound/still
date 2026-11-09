@@ -1295,8 +1295,8 @@ def crash_resume(process):
 
 
 def outside(process):
-    """Another AI app (no chat) keeps today's behavior: allowed, unless a rule for everyone says to ask. Then it asks in
-    the bar at the top, once per site until Still closes."""
+    """Another AI app (no chat) asks in the bar at the top before a sensitive step. The rest is allowed unless a rule for
+    everyone says to ask; then it asks in the bar too, once per site until Still closes."""
     agent = Mcp(EXE, "Probe", PROFILE)
     try:
         pending = call_async(agent, "list_tabs")
@@ -1307,6 +1307,13 @@ def outside(process):
         started = time.monotonic()
         ok, text = agent.call("click", selector="#cart", seconds=20)
         check(ok and time.monotonic() - started < 5, "Without a rule an outside AI app clicks without asking, as before")
+        orders = len(ORDERS)
+        pending = call_async(agent, "click", selector="#order")
+        asked = until(lambda: "wants to click" in (js(process, "document.body.innerText") or ""), 30)
+        check(asked, "A purchase from an outside AI app asks in the bar first, with no rule")
+        send(process, "agentAnswer", allow=False)
+        ok, text = pending.get(timeout=60)
+        check(not ok and len(ORDERS) == orders, f"Block: the order never reaches the shop ({text[:80]!r})")
         send(process, "permSet", site="127.0.0.1", action="interact", companion="", mode="chat")
         pending = call_async(agent, "click", selector="#cart")
         asked = until(lambda: "wants to click" in (js(process, "document.body.innerText") or ""), 30)

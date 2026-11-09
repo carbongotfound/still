@@ -92,7 +92,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
-  <p className="tool-caption">Choose what your companions may do without asking. Sensitive steps are buying, sending, deleting, forms that send data, and password or payment fields. Allowed without asking, a sensitive step still waits 8 seconds so you can cancel it. AI apps you connect from outside Still only ask when a rule for everyone or a sensitive site says to.</p>
+  <p className="tool-caption">Choose what your companions may do without asking. Sensitive steps are buying, sending, deleting, forms that send data, and password or payment fields. Allowed without asking, a sensitive step still waits 8 seconds so you can cancel it. AI apps you connect from outside Still ask in the bar at the top before a sensitive step, and when a rule for everyone or a sensitive site says to.</p>
   <table className="perm-table"><thead><tr><th>Site</th><th>Who</th><th>Action</th><th>Permission</th><th><span className="sr-only">Remove</span></th></tr></thead>
    <tbody>{rules.map(r => <tr key={r.site + "|" + r.action + "|" + r.companion}>
     <td>{r.site || "Any site"}</td><td>{name(r.companion)}</td><td>{ACTIONS[r.action]}</td>

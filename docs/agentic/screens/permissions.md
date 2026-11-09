@@ -43,9 +43,9 @@ this site, everyone anywhere, then the defaults above. `list_tabs`, `ask_user` a
 
 ## Outside AI apps
 
-AI apps that connect to Still themselves (no chat) keep the behavior they had before: they are allowed unless you set
-a rule for everyone or mark the site sensitive. Then they ask in the bar at the top of the window, and Allow in this
-chat lasts until Still closes. This is the brief's rule, so nothing that drives Still today breaks.
+AI apps that connect to Still themselves (no chat) ask in the bar at the top of the window before a sensitive step,
+every time, unless a rule for everyone says otherwise. Everything else is allowed unless you set a rule for everyone or
+mark the site sensitive. Then they ask in the bar too, and Allow in this chat lasts until Still closes.
 
 ## Settings → AI permissions
 
