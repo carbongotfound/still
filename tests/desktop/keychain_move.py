@@ -1,6 +1,7 @@
-"""Mac: what an older Still kept in the Keychain comes over once into files encrypted for this Mac, and Still doesn't go
-back for it. The Keychain items are made for the test so any app may read them (security -A): macOS shows nothing, and
-they're deleted at the end. Also: a file this Mac can't open is kept beside the new one, never written over.
+"""Mac: Still reads the Keychain only when you import. Import > An older Still brings the logins and keys an older Still kept
+for this profile into files encrypted for this Mac; starting Still doesn't. The test build reads made-up items instead of
+the Keychain (STILL_QA_OLD_KEYCHAIN), so this never touches the Keychain or brings up a macOS question. Also: a file this
+Mac can't open is kept beside the new one, never written over.
 
 Run: python tests/desktop/keychain_move.py <the QA build's Still binary>
 """
@@ -8,18 +9,15 @@ import json
 import os
 from pathlib import Path
 import shutil
-import subprocess
 import sys
 import tempfile
 import time
-import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 from qa import MAC, js, launch, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 FAILED = []
-TAG = "StillQA-" + uuid.uuid4().hex[:6] + " "
 LISTEN = """window.__tools = {};
 window.chrome.webview.addEventListener('message', e => { const d = e.data; if (d?.kind === 'tools') __tools[d.name] = d.data })"""
 
@@ -30,19 +28,19 @@ def check(ok, name):
         FAILED.append(name)
 
 
-def keychain(*args):
-    return subprocess.run(["security", *args], capture_output=True, text=True)
-
-
 def logins(process):
     js(process, LISTEN)
     send(process, "refreshTools", name="passwords")
     return [v["username"] for v in until(lambda: js(process, "window.__tools.passwords?.vault ?? null"), 5) or []]
 
 
-def opened(profile, env=None):
+def toasts(process):
+    return js(process, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.textContent).join(' ')") or ""
+
+
+def opened(profile, old=None):
     (profile / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False}), encoding="utf-8")
-    return launch(EXE, profile, {**os.environ, "STILL_QA_POS": os.environ.get("STILL_QA_POS", "-1800,80"), **(env or {})})
+    return launch(EXE, profile, {**os.environ, **({"STILL_QA_OLD_KEYCHAIN": json.dumps(old)} if old is not None else {})})
 
 
 def close(process):
@@ -58,33 +56,32 @@ def main():
     if not MAC:
         print("PASSED (Mac only: Windows keeps DPAPI)")
         return 0
-    profile, other = (Path(tempfile.mkdtemp(prefix="still-keys-")).resolve() for _ in range(2))
+    # Not resolved: Still names a profile by its path as macOS standardizes it (/var/..., not /private/var/...).
+    profile, other = (Path(tempfile.mkdtemp(prefix="still-keys-")) for _ in range(2))
     home = str(profile)
     kim = {"id": "k1", "origin": "https://moved.example", "username": "kim@example.com", "password": "Moved-Over-91"}
-    items = [(TAG + "Still logins", home, json.dumps([kim])), (TAG + "Still Composio key", home, "ak_moved_over_1234"),
-             (TAG + "Still API key", home + "#api-moved1", "sk-moved-over-5678")]
+    lee = {"id": "k2", "origin": "https://moved.example", "username": "lee@example.com", "password": "Other-Profile-7"}
+    old = [["Still logins", home, json.dumps([kim])], ["Still Composio key", home, "ak_moved_over_1234"],
+           ["Still API key", home + "#api-moved1", "sk-moved-over-5678"],
+           ["Still logins", home + "-other", json.dumps([lee])], ["Still API key", home + "#../bad", "sk-not-this-one"]]
     secrets = [b"Moved-Over-91", b"ak_moved_over_1234", b"sk-moved-over-5678"]
+    files = [profile / "logins.sealed", profile / "composio.sealed", profile / "api-keys" / "api-moved1.sealed"]
     try:
-        for service, account, secret in items:
-            made = keychain("add-generic-password", "-A", "-s", service, "-a", account, "-w", secret)
-            check(made.returncode == 0, f"A test item for {service[len(TAG):]} is in the Keychain {made.stderr.strip()[:80]}")
-        p = opened(profile, {"STILL_QA_KEYCHAIN": TAG})
+        p = opened(profile, old)
         try:
-            files = [profile / "logins.sealed", profile / "composio.sealed", profile / "api-keys" / "api-moved1.sealed"]
-            check(until(lambda: all(f.exists() for f in files), 10), "At the first start the login, the Composio key and the API key come over into their files")
+            time.sleep(3)
+            check(not any(f.exists() for f in files), "Starting brings nothing over from the Keychain")
+            send(p, "importOldStill")
+            check(until(lambda: all(f.exists() for f in files), 10), "Import > An older Still brings over the login, the Composio key and the API key")
             check(all(s not in f.read_bytes() for f in files if f.exists() for s in secrets), "None of them is in plain text there")
             check(all(f.stat().st_mode & 0o077 == 0 for f in files if f.exists()), "Only the user can read the files")
-            check(logins(p) == ["kim@example.com"], "Still opens the moved login")
-            moved = (profile / "keychain-moved.txt").read_text(encoding="utf-8").splitlines() if (profile / "keychain-moved.txt").exists() else []
-            check(len(moved) == 3, f"It notes what came over ({len(moved)})")
-        finally:
-            close(p)
-        # The Keychain item changes; Still, started again, doesn't go back for it.
-        newer = json.dumps([kim, {"id": "k2", "origin": "https://moved.example", "username": "lee@example.com", "password": "Later-22"}])
-        keychain("add-generic-password", "-U", "-A", "-s", items[0][0], "-a", home, "-w", newer)
-        p = opened(profile, {"STILL_QA_KEYCHAIN": TAG})
-        try:
-            check(logins(p) == ["kim@example.com"], "Started again, Still doesn't read the Keychain again")
+            check(logins(p) == ["kim@example.com"], "Still opens the moved login, and not another profile's")
+            keys = sorted(f.name for f in (profile / "api-keys").iterdir()) if (profile / "api-keys").exists() else []
+            check(keys == ["api-moved1.sealed"], f"and only this profile's well-formed key ({keys})")
+            check(until(lambda: "Brought over 1 login and 2 keys from an older Still" in toasts(p), 5), f"It says what came over ({toasts(p)!r})")
+            send(p, "importOldStill")
+            check(until(lambda: "Nothing new came over" in toasts(p), 5), "Importing again brings nothing twice")
+            check(logins(p) == ["kim@example.com"], "and the login is there once")
         finally:
             close(p)
 
@@ -98,9 +95,6 @@ def main():
         finally:
             close(p)
     finally:
-        for service, account, _ in items:
-            keychain("delete-generic-password", "-s", service, "-a", account)
-        check(all(keychain("find-generic-password", "-s", s, "-a", a).returncode != 0 for s, a, _ in items), "The test's Keychain items are gone")
         for folder in (profile, other):
             shutil.rmtree(folder, ignore_errors=True)
     print("FAILED " + str(FAILED) if FAILED else "PASSED")

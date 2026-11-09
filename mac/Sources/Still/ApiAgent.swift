@@ -2,7 +2,6 @@
 // Agents/ApiAgent.cs and MainWindow.Api.cs). Labelled Compatible: Still checks these against its own fake server, never
 // against real endpoints. The key lives in a file encrypted for this Mac (Sealed) and only ever goes to the provider, in its auth header.
 import Foundation
-import Security
 
 struct ApiModel { var id: String, efforts: [String] }
 struct ApiUse { var input: Int64 = 0, output: Int64 = 0, cost = 0.0, calls = 0 }
@@ -87,16 +86,9 @@ enum ApiKeys {
   try? FileManager.default.removeItem(at: file(id))
   lock.lock(); known[id] = false; ends[id] = nil; refusedIds.remove(id); lock.unlock()
  }
- /// A profile is deleted or reset: every key it kept goes with it, and what an older Still kept for it in the Keychain.
+ /// A profile is deleted or reset: every key it kept goes with it. What an older Still kept for it in the Keychain stays.
  static func erase(_ profile: URL) {
   try? FileManager.default.removeItem(at: profile.appendingPathComponent("api-keys"))
-  if isQa { return }
-  let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still API key", kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
-  var out: CFTypeRef?
-  guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { return }
-  for account in items.compactMap({ $0[kSecAttrAccount as String] as? String }) where account.hasPrefix(profile.standardizedFileURL.path + "#") {
-   SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still API key", kSecAttrAccount as String: account] as CFDictionary)
-  }
  }
  /// The key's last four characters (none for a key under eight).
  static func end(_ id: String) -> String {

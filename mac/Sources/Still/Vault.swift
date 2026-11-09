@@ -40,41 +40,48 @@ enum Sealed {
   guard fm.createFile(atPath: next, contents: box, attributes: [.posixPermissions: 0o600]) else { return }
   rename(next, file.path)
  }
- /// What an older Still kept for this profile in the Keychain comes over once, at start. macOS asks once for each item, and
- /// a no is asked again at the next start. The Keychain items stay; Keychain Access can remove them. Test builds try it
- /// only with items made for the test (STILL_QA_KEYCHAIN names them).
- static func fromKeychain() {
-  let tag = isQa ? qaEnv("STILL_QA_KEYCHAIN") ?? "" : ""
-  guard !isQa || !tag.isEmpty else { return }
-  let home = support.standardizedFileURL.path, done = support.appendingPathComponent("keychain-moved.txt")
-  var moved = Set(((try? String(contentsOf: done, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init))
-  for kind in ["Still logins", "Still Composio key", "Still API key"] {
-   let service = tag + kind
-   let all: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
-   var out: CFTypeRef?
-   guard SecItemCopyMatching(all as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { continue }
-   for account in items.compactMap({ $0[kSecAttrAccount as String] as? String }) where !moved.contains(service + "\t" + account) {
-    let file: URL
-    if kind == "Still API key" {
-     let id = account.hasPrefix(home + "#") ? String(account.dropFirst(home.count + 1)) : ""
-     guard ApiKeys.idOk(id) else { continue }
-     file = ApiKeys.file(id)
-    } else {
-     guard account == home else { continue }
-     file = kind == "Still logins" ? Vault.file(support) : PluginKey.file
-    }
-    let one: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
-    var data: CFTypeRef?
-    guard SecItemCopyMatching(one as CFDictionary, &data) == errSecSuccess, let old = data as? Data else { continue } // a no: asked again next start
-    if kind == "Still logins" { // anything saved since a no stays too
-     let now = Vault.decode(read(file))
-     Vault.write(now + Vault.decode(old).filter { was in !now.contains { $0.id == was.id } })
-    } else if read(file) == nil { write(old, file) } // a key added since a no wins
+ /// Import > An older Still: the logins and keys an older Still kept for this profile in the Keychain, read only when the user
+ /// asks (macOS asks once for each item). Logins already here stay, and so does a key already added here. The Keychain items
+ /// stay; Keychain Access can remove them. Test builds read STILL_QA_OLD_KEYCHAIN ([[kind, account, text]]) instead, never the
+ /// Keychain. Reading can wait on macOS's question, so it's off the main thread; bringing over is on it. How many came over.
+ static func fromKeychain(_ items: [(String, String, Data)]) -> (logins: Int, keys: Int) {
+  let home = support.standardizedFileURL.path
+  var logins = 0, keys = 0
+  for (kind, account, old) in items {
+   if kind == "Still logins" {
+    let now = Vault.decode(read(Vault.file(support))), more = Vault.decode(old).filter { was in !now.contains { $0.id == was.id } }
+    if !more.isEmpty { Vault.write(now + more); logins += more.count }
+   } else {
+    let file = kind == "Still API key" ? ApiKeys.file(String(account.dropFirst(home.count + 1))) : PluginKey.file
+    guard read(file) == nil else { continue }
+    write(old, file); keys += 1
     if kind == "Still Composio key" { PluginKey.exists = true }
-    moved.insert(service + "\t" + account)
-    try? moved.sorted().joined(separator: "\n").write(to: done, atomically: true, encoding: .utf8)
    }
   }
+  return (logins, keys)
+ }
+ /// This profile's items: its logins and Composio key under the profile's folder, its API keys under folder#id.
+ static func oldKeychain() -> [(String, String, Data)] {
+  let home = support.standardizedFileURL.path
+  func mine(_ kind: String, _ account: String) -> Bool {
+   kind == "Still API key" ? account.hasPrefix(home + "#") && ApiKeys.idOk(String(account.dropFirst(home.count + 1))) : account == home
+  }
+  if isQa {
+   let rows = (try? JSONSerialization.jsonObject(with: Data((qaEnv("STILL_QA_OLD_KEYCHAIN") ?? "[]").utf8))) as? [[String]] ?? []
+   return rows.compactMap { $0.count == 3 && mine($0[0], $0[1]) ? ($0[0], $0[1], Data($0[2].utf8)) : nil }
+  }
+  var found: [(String, String, Data)] = []
+  for kind in ["Still logins", "Still Composio key", "Still API key"] {
+   let all: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: kind, kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
+   var out: CFTypeRef?
+   guard SecItemCopyMatching(all as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { continue }
+   for account in items.compactMap({ $0[kSecAttrAccount as String] as? String }) where mine(kind, account) {
+    let one: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: kind, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+    var data: CFTypeRef?
+    if SecItemCopyMatching(one as CFDictionary, &data) == errSecSuccess, let old = data as? Data { found.append((kind, account, old)) }
+   }
+  }
+  return found
  }
 }
 
@@ -86,10 +93,9 @@ enum Vault {
   guard let data = try? JSONEncoder().encode(entries) else { return }
   Sealed.write(data, file(support))
  }
- /// A deleted or reset profile's logins, and what an older Still kept for it in the Keychain.
+ /// A deleted or reset profile's logins. What an older Still kept for it in the Keychain stays (Keychain Access removes it).
  static func erase(_ folder: URL) {
   try? FileManager.default.removeItem(at: file(folder))
-  if !isQa { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still logins", kSecAttrAccount as String: folder.standardizedFileURL.path] as CFDictionary) }
  }
  /// 24 characters from the system's secure random generator, without look-alikes.
  static func generate() -> String {

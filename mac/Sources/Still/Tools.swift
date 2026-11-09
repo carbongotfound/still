@@ -93,6 +93,16 @@ extension Browser {
   case "importBookmarks": chooseImport("bookmarks")
   case "importConfirm": completeImport(text("id"), replace: flag("replace"))
   case "importCancel": importBatch = nil; publishBrowserTools("import")
+  case "importOldStill":
+   DispatchQueue.global().async {
+    let items = Sealed.oldKeychain()
+    DispatchQueue.main.async { [self] in
+     let (logins, keys) = Sealed.fromKeychain(items)
+     let what = [logins > 0 ? "\(logins) login\(logins == 1 ? "" : "s")" : nil, keys > 0 ? "\(keys) key\(keys == 1 ? "" : "s")" : nil].compactMap { $0 }
+     toast(what.isEmpty ? "Nothing new came over from an older Still." : "Brought over \(what.joined(separator: " and ")) from an older Still.")
+     publishBrowserTools("passwords")
+    }
+   }
   case "exportData": exportBrowserData()
   case "vaultGenerate": send(["kind": "vaultGenerated", "password": Vault.generate()])
   case "cookieDelete":

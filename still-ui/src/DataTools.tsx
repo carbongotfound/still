@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Switch } from "@/components/ui/switch"
 import type { ToolData } from "./BrowserTools"
+import { MAC } from "@/lib/utils"
 type Send=(op:string,payload?:Record<string,unknown>)=>void
 export function DataTools({pane,data,send}:{pane:string;data:ToolData;send:Send}){
  const [name,setName]=useState("")
@@ -34,7 +35,7 @@ function ExternalImport({data,send}:{data:ToolData;send:Send}){
  const preview=external?.preview
  return <section className="external-import" aria-label="Import from another browser">
   <div className="tool-copy"><strong>From another browser</strong><p>Opera GX, Opera, Chrome, Edge, Brave, Vivaldi, or Firefox. Brings bookmarks, history, saved passwords, and signed-in sessions into {external?.profile??"this profile"}. The source browser can stay open.</p></div>
-  <div className="external-sources">{external?.sources?.map(source=><Button key={source.id} variant="outline" size="sm" disabled={external.busy} onClick={()=>send("externalReview",{id:source.id})}><Import/>{source.name}</Button>)}<Button variant="outline" size="sm" disabled={external?.busy} onClick={()=>send("externalChoose")}><FolderOpen/>Choose profile folder</Button></div>
+  <div className="external-sources">{external?.sources?.map(source=><Button key={source.id} variant="outline" size="sm" disabled={external.busy} onClick={()=>send("externalReview",{id:source.id})}><Import/>{source.name}</Button>)}<Button variant="outline" size="sm" disabled={external?.busy} onClick={()=>send("externalChoose")}><FolderOpen/>Choose profile folder</Button>{MAC&&<Button variant="outline" size="sm" disabled={external?.busy} title="Logins and keys an older Still kept in the Keychain. macOS asks once for each." onClick={()=>send("importOldStill")}><KeyRound/>An older Still</Button>}</div>
   {external?.busy&&<p role="status" className="import-progress"><Loader2 className="animate-spin"/>Reading your browser data…</p>}
   {external?.error&&<p role="alert" className="import-error">{external.error}</p>}
   {external?.blocked&&!external.busy&&<div className="tool-toolbar"><Button size="sm" onClick={()=>send("externalChoose",{blocked:true})}><FolderOpen/>Choose {external.blocked}'s folder</Button><Button size="sm" variant="ghost" onClick={()=>send("externalFullDisk")}>Open Full Disk Access</Button></div>}

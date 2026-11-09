@@ -8,7 +8,6 @@
 // run_plugin_action), so no app's actions sit in their context until they need that app: reads go ahead, anything else
 // asks the user first.
 import AppKit
-import Security
 
 struct PluginAccount { let id: String, slug: String, name: String }
 /// One app in Composio's catalog. auth: managed (Composio signs in to it), none (nothing to sign in to) or custom (needs the user's own app at Composio).

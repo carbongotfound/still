@@ -1277,7 +1277,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   if isQa && qaSystemTheme == nil { qaSystemTheme = ProcessInfo.processInfo.environment["STILL_QA_SYSTEM_THEME"] ?? "Dark" }
   if Profiles.holdRunningLock() { Children.sweep() }
   loadStore()
-  Sealed.fromKeychain() // before anything reads a saved login or key
   let browser = Browser()
   restoreOtherWindows()
   browser.window.makeKeyAndOrderFront(nil) // the main window, with last time's active tab, in front
