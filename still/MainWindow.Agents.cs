@@ -1009,7 +1009,7 @@ public partial class MainWindow
    if (title.Length > 1 && char.IsLower(title[1])) title = char.ToLowerInvariant(title[0]) + title[1..]; // "Pricing research" reads as "about pricing research"; "SEO audit" stays
    return name.Length == 0 ? "" : title.Length == 0 ? name : name + " about " + Clip(title, 50);
   }
-  if (tool is "run_plugin_action" or "get_plugin_tools" or "find_plugins" or "list_connected_plugins") return "";
+  if (tool is "run_plugin_action" or "get_plugin_tools" or "find_plugins" or "list_connected_plugins" or "run_plugin_program") return "";
   string url = S(args, "url");
   if (url.Length == 0 && agentTabs.TryGetValue(who, out var id)) url = FindTab(id)?.Url ?? "";
   return Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? Host(url) : "";
@@ -1176,6 +1176,7 @@ public partial class MainWindow
    case "ask_companion" or "tell_companion" or "list_companions": return await Exchange(who, tool, args);
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget" or "update_knowledge" or "read_knowledge" or "open_memory_source": return Remembering(who, tool, args);
+   case "run_plugin_program": return await PluginProgram(who, args);
    case "load_skill": {
     // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
     var run = runs.GetValueOrDefault(who);
@@ -1185,7 +1186,8 @@ public partial class MainWindow
      return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
     if (skill.Source.Length > 0 && ExchangeOf(run!.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // someone else's text, like a page
     Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();
-    return Reply(new { skill = skill.Name, instructions = skill.Body });
+    return Reply(new { skill = skill.Name, instructions = skill.Body, plugin = skill.Plugin.Length == 0 ? null : new { id = skill.Plugin, programs = Programs(skill.Plugin),
+     howTo = "Run these with run_plugin_program: this plugin id, the program's path from this list and its arguments. Where the steps run one in a terminal, like python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/x.py\" <link>, call run_plugin_program with scripts/x.py and [\"<link>\"] instead. Other terminal commands aren't available." } });
    }
    case "save_file": {
     if (Incognito(who)) return Fail(KeepsNothing);

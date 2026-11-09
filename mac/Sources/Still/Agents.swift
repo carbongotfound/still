@@ -87,7 +87,7 @@ func targetOf(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
   if title.count > 1, title.dropFirst().first?.isLowercase == true { title = title.prefix(1).lowercased() + title.dropFirst() } // "Pricing research" reads as "about pricing research"; "SEO audit" stays
   return name.isEmpty ? "" : title.isEmpty ? name : name + " about " + clipped(title, 50)
  }
- if ["run_plugin_action", "get_plugin_tools", "find_plugins", "list_connected_plugins"].contains(tool) { return "" }
+ if ["run_plugin_action", "get_plugin_tools", "find_plugins", "list_connected_plugins", "run_plugin_program"].contains(tool) { return "" }
  var url = argText(args, "url")
  if url.isEmpty, let id = agentTabs[who] { url = findTab(id)?.tab.url ?? "" }
  guard let scheme = URL(string: url)?.scheme, scheme == "http" || scheme == "https" else { return "" }
@@ -1146,6 +1146,7 @@ extension Browser {
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget", "update_knowledge", "read_knowledge", "open_memory_source": return memoryTool(who, tool, args)
+   case "run_plugin_program": return await pluginProgram(who, args)
    case "load_skill":
     // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
     let id = tidy((args["id"] as? String ?? "")).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
@@ -1154,7 +1155,9 @@ extension Browser {
     }
     if !skill.source.isEmpty { let root = exchangeOf(run.chat).root; root.read = max(root.read, 1) } // someone else's text, like a page
     chatStep(run.chat, "Used skill " + skill.name); publishAiEverywhere()
-    return agentOk(["skill": skill.name, "instructions": skill.body])
+    if skill.plugin.isEmpty { return agentOk(["skill": skill.name, "instructions": skill.body]) }
+    return agentOk(["skill": skill.name, "instructions": skill.body, "plugin": ["id": skill.plugin, "programs": pluginPrograms(skill.plugin),
+     "howTo": "Run these with run_plugin_program: this plugin id, the program's path from this list and its arguments. Where the steps run one in a terminal, like python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/x.py\" <link>, call run_plugin_program with scripts/x.py and [\"<link>\"] instead. Other terminal commands aren't available."] as [String: Any]])
    case "save_file":
     let reply = saveFile(who, args)
     if let done = (jsonObject(reply)?["result"] as? [String: Any])?["done"] as? String, let space = done.firstIndex(of: " "), let end = done.range(of: " in the user's Library") {
@@ -1471,7 +1474,10 @@ extension Browser {
   case "permNewSites":
    guard ["ask", "balanced", "fewer"].contains(argText(data, "mode")) else { break }
    prefs["NewSites"] = argText(data, "mode"); saveLater(); publishAiEverywhere()
-  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); prefs["NewSites"] = "balanced"; saveLater(); publishAiEverywhere()
+  case "permPluginPrograms":
+   guard ["ask", "auto"].contains(argText(data, "mode")) else { break }
+   prefs["PluginPrograms"] = argText(data, "mode"); saveLater(); publishAiEverywhere()
+  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); prefs["NewSites"] = "balanced"; prefs["PluginPrograms"] = "ask"; prefs["PluginsAllowed"] = [String](); saveLater(); publishAiEverywhere()
   default: return false
   }
   return true
@@ -1489,7 +1495,7 @@ extension Browser {
    .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
   // The shown chat's cards, and those of the child tasks it started (they ask in the user's chat).
   let asking = shown.map { s in runs.values.filter { $0.chat === s || $0.chat.from != nil && exchangeOf($0.chat).root === s } } ?? []
-  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()), "newSites": pref("NewSites", "balanced"),
+  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()), "newSites": pref("NewSites", "balanced"), "pluginPrograms": pref("PluginPrograms", "ask"),
           "approvals": asking.flatMap { r in r.approvals.map { ["id": $0.id, "run": r.chat.id, "who": r.chat.companion, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] as [String: Any] } },
           "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
  }
@@ -1660,6 +1666,9 @@ enum Mcp {
        [str("file", "The file's id, like \"deals\""), str("text", "The file's full new text, in Markdown"), str("version", "The version read_knowledge gave you")], ["file", "text", "version"]),
   tool("forget", "Forget something: pass its id from recall (that forgets every version of it), or words that every memory to forget contains. If more than three match, nothing is forgotten and you get the list to check with the user. Use it when the user asks you to forget something.", [str("id", "The memory's id"), str("about", "Or: words in the memories to forget")], []),
   tool("load_skill", "Load one of your skills, listed at the start of the chat, by its id: you get its full steps to follow. Call it before you start whenever a skill's line describes the task, and skip it when none does. Only your own skills load.", [str("id", "The skill's id from your list, like \"pitch\"")], ["id"]),
+  tool("run_plugin_program", "Run a program that comes with one of your plugins (load_skill lists them), like scripts/watch.py, with its arguments. It runs on the user's computer and Still may ask the user first, so wait for it. You get its exit code and output. Programs only: no shell commands.",
+       [str("plugin", "The plugin's id, from load_skill"), str("program", "The program's path inside the plugin, from load_skill"),
+        ("args", ["type": "array", "items": ["type": "string"], "description": "Its arguments, one per item (optional)"] as [String: Any]), num("timeout", "Seconds before Still stops it: 120 if left out, 600 at most")], ["plugin", "program"]),
   tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
         str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),

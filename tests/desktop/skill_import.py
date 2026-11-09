@@ -1,10 +1,12 @@
-"""Skills from a link: a GitHub repository or an npm package, against a fake GitHub and npm (STILL_QA_SKILL_HUB).
+"""Plugins and skills from a link: a GitHub repository or an npm package, against a fake GitHub and npm (STILL_QA_SKILL_HUB).
 
-Look shows each SKILL.md found, with its name and description read the way such files write them, and says what won't
-come over: commands it runs, the other files in its folder, a file too big to bring. Only the ticked ones are added, as
-skills that keep where they came from, also after an edit. Nothing but the SKILL.md files is ever fetched. A sub-folder
-or a SKILL.md link brings just that skill, a package brings its own, a second look marks what's already added, and a
-wrong link, a missing or private repository, GitHub's limit and a repository without skills each say so.
+Add a plugin from a link sits at the top of Skills & plugins. Look shows each SKILL.md found, with its name and
+description read the way such files write them, and says what comes with it: the programs in its folder, or a file too
+big to bring. Only the ticked ones are added, as skills that keep where they came from, also after an edit. A skill
+without programs brings only its SKILL.md. A plugin (.claude-plugin/plugin.json) brings its files into the profile's
+plugins folder, a path that would leave it skipped, and its skills name it. A sub-folder or a SKILL.md link brings just
+that skill, a package brings its own, a second look marks what's already added, and a wrong link, a missing or private
+repository, GitHub's limit and a repository without skills each say so.
 
 Run: python tests/desktop/skill_import.py <QA exe> [--shots]   (--shots keeps a picture of the list in artifacts/)
 """
@@ -64,6 +66,11 @@ FILES = {"raw.githubusercontent.com/acme/kit/HEAD/skills/plain/SKILL.md": PLAIN,
          "cdn.jsdelivr.net/npm/@acme/skills@1.2.0/skills/tidy/SKILL.md": TIDY}
 
 
+WATCH = "---\nname: Watch\ndescription: Watches a video\n---\n\nRun python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/hello.py\" <link>.\n"
+VIDEO = {".claude-plugin/plugin.json": '{"name": "Video Kit"}', "skills/watch/SKILL.md": WATCH, "scripts/hello.py": "print('hello')\n",
+         "scripts/setup.py": "print('setup')\n", "a/../../evil.py": "print('evil')\n"}
+
+
 def tree(entries):
     return {"sha": "abc", "truncated": False, "tree": [{"path": p, "type": "blob", "size": s} for p, s in entries] + [{"path": "skills", "type": "tree"}]}
 
@@ -75,6 +82,10 @@ class Hub(http.server.BaseHTTPRequestHandler):
         status, body = 404, {"message": "Not Found"}
         if path in ("api.github.com/repos/acme/kit/git/trees/HEAD?recursive=1", "api.github.com/repos/acme/kit/git/trees/main?recursive=1"):
             status, body = 200, tree(KIT)
+        elif path == "api.github.com/repos/acme/video/git/trees/HEAD?recursive=1":
+            status, body = 200, tree([(k, len(v)) for k, v in VIDEO.items()])
+        elif path.startswith("raw.githubusercontent.com/acme/video/HEAD/") and path[42:] in VIDEO:
+            status, body = 200, VIDEO[path[42:]]
         elif path == "api.github.com/repos/acme/empty/git/trees/HEAD?recursive=1":
             status, body = 200, tree([("README.md", 10)])
         elif path.startswith("api.github.com/repos/acme/limited/"):
@@ -144,9 +155,11 @@ def main():
         until(lambda: js(p, "!!document.querySelector(\".home-page[aria-label='Skills & plugins']\")"), 5)
 
         # The dialog: look at a repository, see what's there and what won't come over.
-        check(click_text(p, ".plug-all", "Add from a link") and until(lambda: js(p, "!!document.querySelector('.skill-dialog [aria-label=\"Skills link\"]')"), 5),
-              "Skills & plugins has Add from a link, which asks for a link")
-        type_into(p, ".skill-dialog [aria-label='Skills link']", "https://github.com/acme/kit")
+        heads = js(p, "[...document.querySelectorAll('.plug-all')].map(b => b.innerText.trim())") or []
+        check("Add from a link" not in heads, f"The Skills section's own link is gone ({heads})")
+        check(click_text(p, ".home-page-head .plug-all", "Add a plugin from a link") and until(lambda: js(p, "!!document.querySelector('.skill-dialog [aria-label=\"Plugin link\"]')"), 5),
+              "Skills & plugins has Add a plugin from a link at the top, which asks for a link")
+        type_into(p, ".skill-dialog [aria-label='Plugin link']", "https://github.com/acme/kit")
         click_text(p, ".skill-dialog button[type=submit]", "Look")
         found = until(lambda: (r := rows(p)) and len(r) == 2 and r, 20) or rows(p)
         names = [r["text"].split("\n")[0] for r in found]
@@ -154,8 +167,8 @@ def main():
         plain = found[0]["text"] if found else ""
         runner = found[1]["text"] if len(found) > 1 else ""
         check("Turns rough notes into a tidy summary. Keeps every number." in plain, "A quoted name and a description on the lines under it read right")
-        check("runs commands on your computer" in runner and "2 more files" in runner, "The one that runs commands says so, and that its other files stay behind")
-        check("runs commands" not in plain and "more file" not in plain, "The plain one has no such notes")
+        check("comes with 1 program (run.sh)" in runner and "trust where it's from" in runner, f"The one with a program says it comes with it ({runner[-160:]!r})")
+        check("program" not in plain and "more file" not in plain, "The plain one has no such notes")
         check(all(r["on"] for r in found) and "From github.com/acme/kit" in (js(p, "document.querySelector('.skill-import-list')?.innerText") or ""),
               "Both start ticked, under where they're from")
         if "--shots" in sys.argv:
@@ -172,9 +185,25 @@ def main():
         text = added.read_text(encoding="utf-8") if added.exists() else ""
         check("source: github.com/acme/kit" in text and "2. Write the summary." in text and "name: Plain notes" in text, "as a skill that keeps where it came from")
         check(not any("runner" in f.name for f in skills.glob("*.md")), "and not the unticked one")
-        check(not any(s.endswith(("run.sh", "reference.md", "README.md")) or "skills/big/" in s for s in SEEN), "Only SKILL.md files were ever fetched: no scripts or other files")
+        check(not any(s.endswith(("run.sh", "reference.md", "README.md")) or "skills/big/" in s for s in SEEN), "Only SKILL.md files were fetched: the unticked one's program stayed behind")
         check(until(lambda: "From github.com/acme/kit" in (js(p, "[...document.querySelectorAll('.skill-row')].find(r => r.innerText.includes('Plain notes'))?.innerText") or ""), 5),
               "Its row on the page says where it's from")
+
+        # A plugin: its files come into the profile's plugins folder, and its skill names it.
+        video = look(p, "https://github.com/acme/video")
+        notes = " ".join((video.get("skills") or [{}])[0].get("notes", []))
+        check([k["name"] for k in video.get("skills", [])] == ["Watch"] and "program" in notes, f"A plugin's skill says it comes with programs ({notes[:120]!r})")
+        send(p, "skillImportAdd", keys=[0])
+        root = profile / "plugins" / "video-kit"
+        check(until(lambda: (root / "scripts" / "hello.py").exists() and (skills / "watch.md").exists(), 10), "Adding it brings the plugin's files into plugins/video-kit")
+        check((root / "scripts" / "setup.py").exists() and (root / ".claude-plugin" / "plugin.json").exists() and (root / "skills" / "watch" / "SKILL.md").exists(), "all of them")
+        check(not list(profile.rglob("evil.py")) and not (profile.parent / "evil.py").exists(), "A path that would leave its folder is skipped")
+        check("plugin: video-kit" in (skills / "watch.md").read_text(encoding="utf-8") if (skills / "watch.md").exists() else False, "Its skill names the plugin")
+        check(not (profile / "plugins" / "video-kit.part").exists(), "No half-placed folder is left")
+        check(until(lambda: "with its programs" in (js(p, "[...document.querySelectorAll('.skill-row')].find(r => r.innerText.includes('Watch'))?.innerText") or ""), 5),
+              "Its row says it came with its programs")
+        send(p, "skillDelete", id="watch")
+        check(until(lambda: not root.exists(), 10), "Deleting its skill deletes the plugin's folder")
 
         # A second look marks what's already added.
         again = look(p, "github.com/acme/kit")

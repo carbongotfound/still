@@ -98,8 +98,9 @@ public sealed class Companion
 /// A skill: a Markdown file in the profile's skills folder, with front matter (name, description, when). The user
 /// invokes it as /id in a message (its body goes into that turn's prompt), or gives it to a companion, which sees only
 /// an index of its skills and loads one with load_skill when the task fits. Source: where an imported one came from
-/// (MainWindow.SkillImport.cs); empty for Still's and the user's own.
-public sealed partial record Skill(string Id, string Name, string Description, string When, string Body, string Source = "")
+/// (MainWindow.SkillImport.cs); empty for Still's and the user's own. Plugin: the folder of programs it came with
+/// (plugins/<id>), if any.
+public sealed partial record Skill(string Id, string Name, string Description, string When, string Body, string Source = "", string Plugin = "")
 {
  internal static string Folder => Path.Combine(App.DataRoot, "skills");
  /// Setup: every companion's first chat loads it (RunAi), and only then. The user can edit and reset it, not delete it.
@@ -133,7 +134,7 @@ public sealed partial record Skill(string Id, string Name, string Description, s
     string id = Path.GetFileNameWithoutExtension(file), text = File.ReadAllText(file);
     if (Stock.TryGetValue(id, out var now) && OldStock.Contains(MainWindow.Fnv(text.ReplaceLineEndings("\n")))) File.WriteAllText(file, text = now);
     var (head, body) = Split(text);
-    list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body, head.GetValueOrDefault("source", "")));
+    list.Add(new(id, head.GetValueOrDefault("name") is { Length: > 0 } n ? n : id, head.GetValueOrDefault("description", ""), head.GetValueOrDefault("when", ""), body, head.GetValueOrDefault("source", ""), head.GetValueOrDefault("plugin", "")));
    }
    if (!list.Any(s => s.Id == SetupId) && Stock.TryGetValue(SetupId, out var setup)) { // every profile has Setup, even one whose file went missing
     Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, SetupId + ".md"), setup);
@@ -155,17 +156,18 @@ public sealed partial record Skill(string Id, string Name, string Description, s
  /// Adds a skill file as it is, unless there's one by that id already (the user's own stays as it is).
  internal static void Add(string id, string text) { if (All.Any(s => s.Id == id)) return; Directory.CreateDirectory(Folder); File.WriteAllText(Path.Combine(Folder, id + ".md"), text); all = null; }
  /// Saves a skill under its id (a new one gets an id from its name). Front matter values stay on one line. An imported
- /// skill keeps its source through edits.
- internal static string Save(string id, string name, string description, string when, string body, string? source = null)
+ /// skill keeps its source and plugin through edits.
+ internal static string Save(string id, string name, string description, string when, string body, string? source = null, string? plugin = null)
  {
   static string Line(string v, int max) => v.ReplaceLineEndings(" ").Trim() is var t && t.Length > max ? t[..max] : t;
   source ??= All.FirstOrDefault(s => s.Id == id)?.Source ?? "";
+  plugin ??= All.FirstOrDefault(s => s.Id == id)?.Plugin ?? "";
   if (!All.Any(s => s.Id == id)) {
    string slug = Slug().Replace(name.ToLowerInvariant(), "-").Trim('-') is { Length: > 0 } sl ? (sl.Length > 40 ? sl[..40].Trim('-') : sl) : "skill";
    id = slug; for (int n = 2; All.Any(s => s.Id == id); n++) id = slug + "-" + n;
   }
   Directory.CreateDirectory(Folder);
-  File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n{(source.Length > 0 ? $"source: {Line(source, 200)}\n" : "")}---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
+  File.WriteAllText(Path.Combine(Folder, id + ".md"), $"---\nname: {Line(name, 60)}\ndescription: {Line(description, 300)}\nwhen: {Line(when, 300)}\n{(source.Length > 0 ? $"source: {Line(source, 200)}\n" : "")}{(plugin.Length > 0 ? $"plugin: {Line(plugin, 60)}\n" : "")}---\n\n{(body.Length > 20000 ? body[..20000] : body).Trim()}\n");
   all = null; return id;
  }
  internal static void Delete(string id) { if (id != SetupId && All.Any(s => s.Id == id)) { File.Delete(Path.Combine(Folder, id + ".md")); all = null; } }
@@ -509,7 +511,7 @@ public partial class MainWindow
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, tool = workers.GetValueOrDefault(r.Chat.Id)?.Tool, target = workers.GetValueOrDefault(r.Chat.Id)?.Target, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, tiers = TiersOf(),
-  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited, source = k.Source }),
+  skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited, source = k.Source, plugin = k.Plugin.Length > 0 }),
   model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), @checked = aiChecked,
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
@@ -522,7 +524,7 @@ public partial class MainWindow
   audit = shown?.Audit.TakeLast(100).Select(a => new { at = a.At, what = a.What, site = a.Site, result = a.Result }),
   permissions = PermissionActions.Select(a => new { site = "", action = a, companion = "", mode = Prefs.Permissions.FirstOrDefault(p => p.Action == a && p.Site.Length == 0 && p.Companion.Length == 0)?.Mode ?? DefaultPermission(a) })
    .Concat(Prefs.Permissions.Where(p => p.Site.Length > 0 || p.Companion.Length > 0).Select(p => new { site = p.Site, action = p.Action, companion = p.Companion, mode = p.Mode })),
-  sensitiveSites = Prefs.SensitiveSites, newSites = Prefs.NewSites,
+  sensitiveSites = Prefs.SensitiveSites, newSites = Prefs.NewSites, pluginPrograms = Prefs.PluginPrograms,
   plugins = PluginsPayload(), apis = ApiPayload(),
   companions = Companions.Select(c => new { id = c.Id, name = c.Name, face = c.Face, color = c.Color, look = c.Look, job = c.Job, ai = c.Ai, mode = c.Mode, skills = c.Skills, tone = c.Tone, role = c.Role, personality = c.Personality, length = c.Length, folder = c.Folder, crew = c.Crew, askName = c.AskName, pluginsOff = c.PluginsOff, instructions = c.Instructions, routines = c.Routines.Select(r => new { id = r.Id, text = r.Text, time = r.Time, days = r.Days, on = r.On }),
    setup = c.Setup == "pending" ? "pending" : "done", capture = c.Capture, joinSection = !c.JoinKept && JoinSection(c.Instructions) != null,
@@ -671,7 +673,8 @@ public partial class MainWindow
     Prefs.SensitiveSites.Remove(marked); if (B("on")) Prefs.SensitiveSites.Add(marked);
     SaveLater(); PublishAiEverywhere(); break;
    case "permNewSites" when S("mode") is "ask" or "balanced" or "fewer": Prefs.NewSites = S("mode"); SaveLater(); PublishAiEverywhere(); break;
-   case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); Prefs.NewSites = "balanced"; SaveLater(); PublishAiEverywhere(); break;
+   case "permPluginPrograms" when S("mode") is "ask" or "auto": Prefs.PluginPrograms = S("mode"); SaveLater(); PublishAiEverywhere(); break;
+   case "permReset": Prefs.Permissions.Clear(); Prefs.SensitiveSites.Clear(); Prefs.NewSites = "balanced"; Prefs.PluginPrograms = "ask"; Prefs.PluginsAllowed.Clear(); SaveLater(); PublishAiEverywhere(); break;
    case "chatOpen" when S("id") is { Length: > 0 } open && MyChats.Any(c => c.Id == open): await OpenChat(open, B("newTab")); break;
    case "aiKickoff" when B("home"): await Go(await AppTab(), "home:"); break; // Say hi to a companion that already said hello: the home, with them picked
    case "appHome" when S("view") is "" or "home" or "chats" or "companions" or "library" or "skills": await Go(await AppTab(), "home:" + (S("view") == "home" ? "" : S("view"))); break;
@@ -781,12 +784,14 @@ public partial class MainWindow
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
    case "skillImportLook": await SkillImportLook(S("link")); break;
-   case "skillImportAdd": SkillImportAdd(data.ValueKind == JsonValueKind.Object && data.TryGetProperty("keys", out var importKeys) ? importKeys : default); break;
+   case "skillImportAdd": await SkillImportAdd(data.ValueKind == JsonValueKind.Object && data.TryGetProperty("keys", out var importKeys) ? importKeys : default); break;
    case "skillReset" when Skill.Stock.ContainsKey(S("id")):
     try { Skill.Reset(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Toast("Couldn't reset that skill."); App.Log(ex); }
     PublishAiEverywhere(); break;
    case "skillDelete" when S("id") != Skill.SetupId:
+    string gonePlugin = Skill.All.FirstOrDefault(k => k.Id == S("id"))?.Plugin ?? "";
     try { Skill.Delete(S("id")); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { App.Log(ex); }
+    if (gonePlugin.Length > 0 && !Skill.All.Any(k => k.Plugin == gonePlugin)) PluginRemove(gonePlugin);
     if (Prefs.Companions.Count(c => c.Skills.Remove(S("id"))) > 0) SaveLater();
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
@@ -1486,7 +1491,7 @@ public partial class MainWindow
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
-   "load_skill" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "read_knowledge" => "Read a knowledge file", "open_memory_source" => "Checked where a memory came from", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
+   "load_skill" => "", "run_plugin_program" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "read_knowledge" => "Read a knowledge file", "open_memory_source" => "Checked where a memory came from", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
    _ => tool.Replace('_', ' ') + (arg.Length > 0 ? " " + arg : ""),
   };
   static string? o2(JsonNode? n, string k) => n?[k]?.ToString() is { Length: > 0 } v ? "“" + v + "”" : null;

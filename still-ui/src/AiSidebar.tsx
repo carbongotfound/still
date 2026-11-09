@@ -42,7 +42,7 @@ export type AiState = {
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
  tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
- approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; newSites?: string; chatSummaries?: boolean
+ approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; newSites?: string; pluginPrograms?: string; chatSummaries?: boolean
  plugins?: PluginsState
  apis?: ApiState
 }
@@ -50,7 +50,7 @@ export type AiState = {
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
 export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean }
-export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string } // stock: one Still ships (Reset puts it back); source: where an added one came from
+export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string; plugin?: boolean } // stock: one Still ships (Reset puts it back); source: where an added one came from; plugin: it came with programs
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; tool?: string; target?: string; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
 /// What a companion is doing right now, in the present tense: from the tool it's running and its target (a site, a

@@ -152,7 +152,7 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
   if (q && !found.length) return null
   const list = <div className="skill-list">{found.map(k => <div key={k.id} className="skill-row">
    <span className="skill-icon"><BookOpen /></span>
-   <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.source && " · From " + k.source}{k.description && " · " + k.description}</small></button>
+   <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.source && " · From " + k.source + (k.plugin ? ", with its programs" : "")}{k.description && " · " + k.description}</small></button>
    {k.id === "setup" ? <small className="skill-always">Every companion, on their first chat</small>
     : <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />}
    {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => resetSkill(send, k)}><RotateCcw /></button>}
@@ -163,15 +163,15 @@ export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
    : found.length ? list : <p className="home-empty skills-empty">Skills are short how-tos your companions follow: type / in a message to use one. <button className="plug-all" onClick={blank}>Write your first one</button></p>
  }
  return <>
-  <PluginsPage ai={ai} send={send} skills={skills} onNewSkill={blank} onAddSkills={() => setAdding(true)} />
+  <PluginsPage ai={ai} send={send} skills={skills} onNewSkill={blank} onAddPlugin={() => setAdding(true)} />
   {editing && <SkillEditor skill={editing} onClose={() => setEditing(null)} onSave={k => { send("skillSave", k); setEditing(null) }} />}
   {adding && <SkillImport send={send} onClose={() => setAdding(false)} />}
  </>
 }
 
 type FoundSkill = { key: number; name: string; description: string; body: string; notes: string[]; added: boolean }
-// Skills from a GitHub repository or an npm package: Still looks first, shows each SKILL.md it found with what won't come
-// over, and adds only the ones you tick, as text (MainWindow.SkillImport.cs, Mac SkillImport.swift).
+// A plugin or skills from a GitHub repository or an npm package: Still looks first, shows each SKILL.md it found with what
+// comes with it, and adds only the ones you tick, with a plugin's programs (MainWindow.SkillImport.cs, Mac SkillImport.swift).
 export function SkillImport({ send, onClose }: { send: Send; onClose: () => void }) {
  const [link, setLink] = useState("")
  const [busy, setBusy] = useState(false)
@@ -191,9 +191,9 @@ export function SkillImport({ send, onClose }: { send: Send; onClose: () => void
  const look = () => { if (!link.trim() || busy) return; setBusy(true); setFound(null); send("skillImportLook", { link: link.trim() }) }
  return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
   <DialogContent className="app-dialog skill-dialog">
-   <DialogHeader><DialogTitle>Add skills from a link</DialogTitle><DialogDescription>Paste a GitHub repository or an npm package. Still brings each skill's text, never its programs, and you choose which to add.</DialogDescription></DialogHeader>
+   <DialogHeader><DialogTitle>Add a plugin from a link</DialogTitle><DialogDescription>Paste a GitHub repository or an npm package: a plugin, or skills. Still shows what's in it, and you choose what to add.</DialogDescription></DialogHeader>
    <form className="companion-form" onSubmit={e => { e.preventDefault(); look() }}>
-    <label><span>Link</span><Input autoFocus aria-label="Skills link" placeholder="github.com/owner/repo or npm:package" value={link} onChange={e => { setLink(e.target.value); setFound(null) }} /></label>
+    <label><span>Link</span><Input autoFocus aria-label="Plugin link" placeholder="github.com/owner/repo or npm:package" value={link} onChange={e => { setLink(e.target.value); setFound(null) }} /></label>
     {busy && <p className="skill-import-note">Looking…</p>}
     {found?.error && <p className="skill-import-note is-error" role="alert">{found.error}</p>}
     {found?.skills && <div className="skill-import-list" aria-label="Skills found">

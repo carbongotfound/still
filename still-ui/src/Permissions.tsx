@@ -19,6 +19,10 @@ export type AuditEntry = { at: string; what: string; site: string; result: strin
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
 // After a chat reads the web, a page could send it somewhere new with what it read in the address.
+const PROGRAMS: Record<string, [string, string]> = {
+ ask: ["Ask each time", "Before a companion runs a program from a plugin you added, Still asks. Always for this plugin stops asking for that one."],
+ auto: ["Don't ask", "Companions run programs from plugins you added without asking, at your own risk. Setup still asks."],
+}
 const NEW_SITES: Record<string, [string, string]> = {
  ask: ["Ask first", "Once a chat has read the web, every new site asks, and so does any long address."],
  balanced: ["Balanced", "Once a chat has read the web, every new site asks. A long address asks when it goes to a new site or carries another address."],
@@ -46,14 +50,16 @@ export function Approvals({ list, companion, companions, send, incognito }: { li
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
    <div className="ask-q"><Face companion={mate(one)} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
    {!one && <div className="approve-all"><Button size="sm" variant="ghost" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" variant="outline" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "once"))}>Approve all ({asks.length})</Button></div>}
-   <ul className="approve-steps">{[...asks.slice(1), active].map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin") && "is-sensitive", !one && a === active && "is-active")}>
-    {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" ? <ShieldAlert /> : <ShieldCheck />}
+   <ul className="approve-steps">{[...asks.slice(1), active].map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin" || a.action === "program") && "is-sensitive", !one && a === active && "is-active")}>
+    {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" || a.action === "program" ? <ShieldAlert /> : <ShieldCheck />}
     <span><b>{a.what}</b><small>{[a.who && a.who !== companion?.id && mate(a)?.name, a.site, a.why].filter(Boolean).join(" · ")}</small></span>
     {!one && a !== active && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
    </li>)}</ul>
    <div className="approve-actions">{active.action === "connect"
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "connect")}>{active.what}</Button></>
-    : active.action === "plugin" // the user's own apps: once at a time, never "always"
+    : active.action === "program" // a plugin's program: once, or from now on for that plugin
+    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "always")}>Always for this plugin</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
+    : active.action === "plugin" // the user's own apps, and a plugin's setup: once at a time, never "always"
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
     : <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button>
      {incognito || !active.site ? <span /> : <Button size="sm" variant="outline" disabled={!ready} title={active.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(active.id, "always")}>Always on this site</Button>}
@@ -95,7 +101,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
  const [marked, setMarked] = useState("")
- const newSites = ai.newSites && NEW_SITES[ai.newSites] ? ai.newSites : "balanced"
+ const newSites = ai.newSites && NEW_SITES[ai.newSites] ? ai.newSites : "balanced", programs = ai.pluginPrograms === "auto" ? "auto" : "ask"
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
@@ -120,13 +126,17 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
    <Select value={newSites} onValueChange={v => send("permNewSites", { mode: v })}><SelectTrigger size="sm" aria-label="New sites after reading the web"><SelectValue /></SelectTrigger>
     <SelectContent>{Object.entries(NEW_SITES).map(([id, [text]]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select></div>
   <Separator />
+  <div className="setting-row"><div><strong>Plugin programs</strong><p>{PROGRAMS[programs][1]}</p></div>
+   <Select value={programs} onValueChange={v => send("permPluginPrograms", { mode: v })}><SelectTrigger size="sm" aria-label="Plugin programs"><SelectValue /></SelectTrigger>
+    <SelectContent>{Object.entries(PROGRAMS).map(([id, [text]]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select></div>
+  <Separator />
   <div className="setting-row"><div><strong>Sensitive sites</strong><p>Every click and keystroke on these sites asks you first, like a purchase does.</p></div></div>
   <div className="perm-sites">{(ai.sensitiveSites ?? []).map(s => <span key={s} className="perm-site">{s}<button aria-label={"Remove " + s} title="Remove" onClick={() => send("permSensitive", { site: s, on: false })}><X /></button></span>)}
    <form onSubmit={e => { e.preventDefault(); if (marked.trim()) send("permSensitive", { site: marked, on: true }); setMarked("") }}>
     <Input aria-label="Add a sensitive site" placeholder="Add a site, like mybank.com" value={marked} onChange={e => setMarked(e.target.value)} /><Button type="submit" size="sm" variant="outline" disabled={!marked.trim()}>Add</Button>
    </form></div>
   <Separator />
-  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, and new sites go back to Balanced.</p></div>
+  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, new sites go back to Balanced, and plugin programs ask each time again.</p></div>
    <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
     body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>

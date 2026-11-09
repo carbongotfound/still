@@ -181,7 +181,7 @@ function Group({ title, count, onAll, children }: { title: string; count?: numbe
 /// The Plugins page (Home.tsx's Skills & plugins): the title with connected apps, one search for apps and skills,
 /// category chips (the long tail under More), then Recommended and a section per category. `skills` is the page's
 /// skills list, shown with the apps.
-export function PluginsPage({ ai, send, skills, onNewSkill, onAddSkills }: { ai: AiState; send: Send; skills: (q: string) => ReactNode; onNewSkill: () => void; onAddSkills: () => void }) {
+export function PluginsPage({ ai, send, skills, onNewSkill, onAddPlugin }: { ai: AiState; send: Send; skills: (q: string) => ReactNode; onNewSkill: () => void; onAddPlugin: () => void }) {
  const p = ai.plugins, apps = usePluginData(send)
  const [find, setFind] = useState(""), [cat, setCat] = useState(""), [more, setMore] = useState(false)
  useEffect(() => { send("pluginRefresh") }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -194,7 +194,7 @@ export function PluginsPage({ ai, send, skills, onNewSkill, onAddSkills }: { ai:
  const hits = q ? known.filter(a => `${a.name} ${a.slug} ${a.cats.join(" ")}`.toLowerCase().includes(q)) : []
  const mine = known.filter(a => on.some(c => c.slug === a.slug)).concat(on.filter(c => !known.some(a => a.slug === c.slug)).map(c => ({ slug: c.slug, name: c.name, cats: [], auth: "managed" as const })))
  return <section className="home-page plug-page" aria-label="Skills & plugins">
-  <header className="home-page-head"><h1>Plugins</h1>
+  <header className="home-page-head"><h1>Plugins</h1><button className="plug-all" onClick={onAddPlugin}>Add a plugin from a link</button>
    <button className="plug-count" aria-pressed={cat === "connected"} onClick={() => pick(cat === "connected" ? "" : "connected")} aria-label={`${on.length} connected: show them`}><Stack on={on} />{on.length ? `${on.length} connected` : "None connected"}</button>
   </header>
   <label className="history-find"><Search /><input aria-label="Search apps and skills" placeholder="Search apps and skills..." value={find} onChange={e => setFind(e.target.value)} /></label>
@@ -218,7 +218,7 @@ export function PluginsPage({ ai, send, skills, onNewSkill, onAddSkills }: { ai:
   : cat ? <Group title={cat}><Tiles apps={inCat(cat)} ai={ai} send={send} /></Group>
   : <>
    <Group title={apps.length ? "Recommended" : "Apps you can connect"}><Tiles apps={apps.length ? known.filter(a => a.auth !== "custom").slice(0, 8) : known} ai={ai} send={send} /></Group>
-   <section className="plug-group" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2><span className="plug-head-acts"><button className="plug-all" onClick={onAddSkills}>Add from a link</button><button className="plug-all" onClick={onNewSkill}>New skill</button></span></div>{skills("")}</section>
+   <section className="plug-group" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2><span className="plug-head-acts"><button className="plug-all" onClick={onNewSkill}>New skill</button></span></div>{skills("")}</section>
    {cats.map(c => { const all = inCat(c); return <Group key={c} title={c} count={all.length} onAll={all.length > 4 ? () => pick(c) : undefined}><Tiles apps={all.slice(0, 4)} ai={ai} send={send} /></Group> })}
   </>}
 
