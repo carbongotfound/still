@@ -151,7 +151,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **Lookups without tabs**: `web_search` and `read_url` load in one hidden page, closed after a minute unused (`MainWindow.Lookup.cs`).
 - ✅ **AI tabs**: agents work in background tabs grouped under AI; tabs close 48 h after their chat goes quiet.
 - ✅ **AI cursor and glow**: a named arrow in the companion's color glides to each click; a glow frames the page in use.
-- ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs.
+- ✅ **Take over and Stop**: Take over pauses the agent while you drive; Stop cancels and releases its tabs. 🚧 (security/fixes) The chat marks the spot with a thin divider, Stopped by you (`AiSidebar.tsx` `ai-stopped`).
 - ✅ **The next message keeps the chat's page**: with the chat in front, a step that names no tab runs on the chat's own page, the one seen last, also after the run before it ended. A chat with no page yet is told to open one (`AgentTab`, `AgentPage`).
 - ✅ **Working pill restyle**: roomier "X is working…" pill with the full avatar, the current step cut with an ellipsis, Take over and Stop at the same height (`App.tsx` `PageControl`).
 - ✅ **Permission layer**: every call is read, navigate, interact or sensitive; rules per site and companion: always, once per chat, or every time.

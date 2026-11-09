@@ -138,7 +138,7 @@ try:
     took = time.monotonic() - started
     RESULT["stop_seconds"] = round(took, 3)
     check(gone and took < 1, "Stop ends the whole process tree within 1s (%.2fs)" % took)
-    check(until(lambda: "Stopped." in text(process), 5), "The chat says it stopped")
+    check(until(lambda: "Stopped by you" in text(process), 5), "The chat says it stopped")
     check(not rpc(process)["shellErrors"], "No interface JavaScript errors")
     rpc(process, "quit")
     process.wait(timeout=15)

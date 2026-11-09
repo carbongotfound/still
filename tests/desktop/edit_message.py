@@ -94,7 +94,7 @@ def prompts():
 
 
 def said(p):
-    return js(p, "[...document.querySelectorAll('.ai-msg, .ai-turn')].map(m => m.innerText.trim())") or []
+    return js(p, "[...document.querySelectorAll('.ai-msg, .ai-turn, .ai-stopped')].map(m => m.innerText.trim())") or []
 
 
 def mine(p):
@@ -196,7 +196,7 @@ def fake_run(p, port):
     idle(p)
     time.sleep(.5)
     text = "\n".join(said(p))
-    check("WORDFOUR" not in text and "Stopped." not in text, f"The stopped run leaves nothing behind ({text!r})")
+    check("WORDFOUR" not in text and "Stopped by you" not in text, f"The stopped run leaves nothing behind ({text!r})")
 
     # What the replaced reply saved goes. What was saved before stays.
     send(p, "aiSend", text=plan("WORDSIX", ["remember", {"fact": "Likes the color teal"}]))

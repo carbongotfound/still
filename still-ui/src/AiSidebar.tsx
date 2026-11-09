@@ -763,6 +763,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
     if (m.role === "user") return <MyMessage key={i} m={m} known={known} send={send} latest={m === latestPrompt} />
     if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
+    if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Square aria-hidden />Stopped by you</div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, choice } = choicesOf(m.text)
     const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined
