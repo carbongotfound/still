@@ -718,8 +718,8 @@ extension Browser {
     // The step's intent goes on disk before it runs, its outcome after; every step is a checkpoint.
     let going = runs[who]
     if let going, let intent = step.intent { going.task.sensitive.append(intent); if going.task.sensitive.count > 40 { going.task.sensitive.removeFirst() }; saveTask(going) }
-    me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere()
-    defer { me.tool = ""; me.count += 1; me.seen = Date() }
+    me.tool = tool; me.target = targetOf(who, tool, args); publishEverywhere(); publishAiSoon()
+    defer { me.tool = ""; me.count += 1; me.seen = Date(); publishAiSoon() }
     step.changed = false
     let raced = await race(interrupt, limit, { await self.runTool(who, tool, args, quick, step) }), result: String
     switch raced {

@@ -174,6 +174,12 @@ def main():
         check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "Allow once lets the click run")
         idle(p)
 
+        # While a step runs, the line under it says what it's doing right now.
+        send(p, "aiSend", text='CALL wait_for {"text": "Never on this page", "timeoutMs": 5000}')
+        now = until(lambda: (t := js(p, "document.querySelector('.ai-timer')?.innerText")) and t.startswith("Waiting for ") and t, 10) or js(p, "document.querySelector('.ai-timer')?.innerText")
+        check(bool(now) and now.startswith("Waiting for ") and " · " in now, f"While a step runs, the chat says what it's doing ({now!r})")
+        idle(p)
+
         # Stop, the step cap and a rate limit.
         send(p, "aiSend", text="SLOW please")
         until(lambda: "word3" in text(p), 20)

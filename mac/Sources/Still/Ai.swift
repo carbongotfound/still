@@ -1587,7 +1587,7 @@ extension Browser {
   var data: [String: Any] = [
    "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
    "interrupted": incognito || resumeAnswered ? [] : interruptedChats.map { ["id": $0.id, "title": $0.title, "unsure": aiTasks[$0.id]?.sensitive.contains { $0.outcome == nil } ?? false] }, "task": taskView(shown), "incognito": incognito,
-   "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "root": r.chat.from == nil ? NSNull() : exchangeOf(r.chat).root.id as Any, "started": day(r.started), "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
+   "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "root": r.chat.from == nil ? NSNull() : exchangeOf(r.chat).root.id as Any, "started": day(r.started), "tool": workers[r.chat.id]?.tool ?? "", "target": workers[r.chat.id]?.target ?? "", "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why] }] },
    "error": shown.map { $0.error.isEmpty ? view.error : $0.error } ?? view.error, "profile": "Default", "files": libraryFiles(), "tiers": tiersOf(),
    "models": aiClis.flatMap { c in (aiModels[c.id] ?? []).map { ["harness": c.id, "id": $0.id, "name": $0.name, "efforts": $0.efforts] as [String: Any] } },

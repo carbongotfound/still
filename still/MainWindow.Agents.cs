@@ -171,7 +171,7 @@ public partial class MainWindow
      if (await same) {
       var going = runs.GetValueOrDefault(who);
       if (going != null && step.Intent is { } intent) { going.Task.Sensitive.Add(intent); if (going.Task.Sensitive.Count > 40) going.Task.Sensitive.RemoveAt(0); SaveTask(going); }
-      me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll();
+      me.Tool = tool; me.Target = TargetOf(who, tool, args); PublishAll(); PublishAiSoon();
       string result;
       try {
        var working = RunTool(who, tool, args, quick, step);
@@ -190,7 +190,7 @@ public partial class MainWindow
         Checkpoint(going, tool, result);
        }
        if (tool is "ask_companion" or "tell_companion" && me.Target.Length > 0 && !result.StartsWith("{\"ok\":false", StringComparison.Ordinal)) Did(who, (tool == "ask_companion" ? "Asked " : "Handed work to ") + me.Target);
-      } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; }
+      } finally { me.Tool = ""; me.Count++; me.Seen = DateTime.UtcNow; PublishAiSoon(); }
       return result;
      }
      if (tries >= 2) return Fail(KeptChanging);

@@ -4,7 +4,7 @@ import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } 
 import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, Bug, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
-import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, isRunning, since, type AiState } from "./AiSidebar"
+import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, doing, isRunning, since, useSettled, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AuditList, PermissionsSettings, useArmed } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
@@ -1117,30 +1117,6 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
 }
 
 // The chat's details, top right: its companion, the AI it runs on, the pages it opened and usage.
-/// What a companion is doing right now, in the present tense: from the tool it's running and its target (a site, a
-/// search, a teammate), as the host sends them. Between tools it's thinking.
-const DOING: Record<string, string> = {
- web_search: "Searching for “$”", read_url: "Reading $", open_tab: "Opening $", navigate: "Going to $", read_page: "Reading $", find: "Looking through $",
- click: "Clicking on $", type: "Typing on $", press_key: "Pressing a key on $", scroll: "Scrolling $", wait_for: "Waiting for $", screenshot: "Looking at $",
- go_back: "Going back", go_forward: "Going forward", reload: "Reloading $", switch_tab: "Switching to $", close_tab: "Closing a tab", save_file: "Saving $",
- upload_file: "Attaching a file", handle_dialog: "Answering a dialog on $", ask_user: "Waiting for your answer", ask_companion: "Asking $", tell_companion: "Handing work to $",
- remember: "Saving to memory", recall: "Checking memory", forget: "Updating memory", read_knowledge: "Reading notes", update_knowledge: "Updating notes", load_skill: "Getting ready",
- read_attachment: "Reading your file", list_tabs: "Checking the tabs", offer_routine: "Suggesting a routine", list_companions: "Checking the team", list_profiles: "Checking profiles",
- run_plugin_action: "Using $", get_plugin_tools: "Opening $", find_plugins: "Looking for an app", list_connected_plugins: "Checking your apps", open_memory_source: "Opening a source",
-}
-const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page" }
-export const doing = (tool = "", target = "") => !tool ? "Thinking about the next step" : !target && ALONE[tool] ? ALONE[tool] : (DOING[tool] ?? "Working on $").replace("$", target || "the page")
-/// A value that changes at most every ms (the step line: fast tools would flicker), always ending on the latest.
-function useSettled<T>(value: T, ms: number) {
- const [shown, setShown] = useState(value), at = useRef(0)
- useEffect(() => {
-  const wait = at.current + ms - Date.now()
-  const go = () => { at.current = Date.now(); setShown(value) }
-  if (wait <= 0) { go(); return }
-  const t = setTimeout(go, wait); return () => clearTimeout(t)
- }, [value, ms])
- return shown
-}
 const cut = (e: React.MouseEvent<HTMLElement>) => { const el = e.currentTarget; el.title = el.scrollWidth > el.clientWidth ? el.textContent ?? "" : "" } // the whole line, only when it's cut
 
 /// An AI is driving the page in view: a glow runs around the page and the pill floats over it, with who is working, what

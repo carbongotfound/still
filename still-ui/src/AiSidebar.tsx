@@ -52,7 +52,31 @@ export type Attached = { id: string; name: string; size: number }
 export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string } // stock: one Still ships (Reset puts it back); source: where an added one came from
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
-export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
+export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; tool?: string; target?: string; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
+/// What a companion is doing right now, in the present tense: from the tool it's running and its target (a site, a
+/// search, a teammate), as the host sends them. Between tools it's thinking.
+const DOING: Record<string, string> = {
+ web_search: "Searching for “$”", read_url: "Reading $", open_tab: "Opening $", navigate: "Going to $", read_page: "Reading $", find: "Looking through $",
+ click: "Clicking on $", type: "Typing on $", press_key: "Pressing a key on $", scroll: "Scrolling $", wait_for: "Waiting for $", screenshot: "Looking at $",
+ go_back: "Going back", go_forward: "Going forward", reload: "Reloading $", switch_tab: "Switching to $", close_tab: "Closing a tab", save_file: "Saving $",
+ upload_file: "Attaching a file", handle_dialog: "Answering a dialog on $", ask_user: "Waiting for your answer", ask_companion: "Asking $", tell_companion: "Handing work to $",
+ remember: "Saving to memory", recall: "Checking memory", forget: "Updating memory", read_knowledge: "Reading notes", update_knowledge: "Updating notes", load_skill: "Getting ready",
+ read_attachment: "Reading your file", list_tabs: "Checking the tabs", offer_routine: "Suggesting a routine", list_companions: "Checking the team", list_profiles: "Checking profiles",
+ run_plugin_action: "Using $", get_plugin_tools: "Opening $", find_plugins: "Looking for an app", list_connected_plugins: "Checking your apps", open_memory_source: "Opening a source",
+}
+const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page" }
+export const doing = (tool = "", target = "") => !tool ? "Thinking about the next step" : !target && ALONE[tool] ? ALONE[tool] : (DOING[tool] ?? "Working on $").replace("$", target || "the page")
+/// A value that changes at most every ms (the step line: fast tools would flicker), always ending on the latest.
+export function useSettled<T>(value: T, ms: number) {
+ const [shown, setShown] = useState(value), at = useRef(0)
+ useEffect(() => {
+  const wait = at.current + ms - Date.now()
+  const go = () => { at.current = Date.now(); setShown(value) }
+  if (wait <= 0) { go(); return }
+  const t = setTimeout(go, wait); return () => clearTimeout(t)
+ }, [value, ms])
+ return shown
+}
 export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => r.id === id)
 const waits = (r: Run) => !!r.question || !!r.asks?.length
 export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => (r.id === id || r.root === id) && waits(r))
@@ -671,7 +695,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const companion = companionOf(ai, fresh && picked ? picked : ai.chatCompanion)
  const name = companion?.name ?? "your AI"
  const busy = ai.busy
- const started = ai.runs?.find(r => r.id === ai.chatId)?.started
+ const run = ai.runs?.find(r => r.id === ai.chatId), started = run?.started
+ const now = useSettled(run?.tool ? doing(run.tool, run.target) : "Working", 600) // what it's doing right now, as the page pill says it
  const [typing, setTyping] = useState(false)
  const mood = useRunMood(ai, typing)
  const back = useRef(ai.chatId ? scrolls.get(ai.chatId) : undefined) // coming back to this chat: where the user left it
@@ -773,7 +798,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-actions"><IconButton label="Copy" onClick={() => { send("copyText", { text: body }); toast("Copied") }}><Copy /></IconButton></div>
     </div>
    })}
-   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? "Working · " + clock(tick) : `${name} is writing…`}</p></div>}
+   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? now + " · " + clock(tick) : `${name} is writing…`}</p></div>}
   </div></div>}
   {!busy && ai.chatId && ai.task?.state === "interrupted" && <Alert className="task-bar"><AlertDescription>{ai.task.unsure
     ? `Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
