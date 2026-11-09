@@ -1110,9 +1110,11 @@ extension Browser {
    page.inChat = nil; page.runChat = owner
    tabs.removeAll { $0 === page }
    tabs.insert(page, at: (tabs.firstIndex { $0 === chatTab } ?? tabs.count - 1) + 1)
+   if !tabs.contains(where: { $0.inChat == owner && !$0.closed }) { chatTab.pageOpen = false } // moved, not copied: the chat stops showing it beside it
    select(page)
   case "tabMine": // the same, from the running tasks
    guard let mine = tabs.first(where: { $0.id == s("id") && $0.inChat != nil }), let owner = mine.inChat else { break }
+   if !tabs.contains(where: { $0 !== mine && $0.inChat == owner && !$0.closed }) { tabs.first { $0.chatId == owner }?.pageOpen = false }
    mine.runChat = owner.hasPrefix("app:") ? nil : owner; mine.aiGroup = mine.runChat == nil; mine.inChat = nil
    select(mine)
   case "tabHand": // "Hand to …": a tab of the user's becomes a chat's page

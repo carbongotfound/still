@@ -454,6 +454,14 @@ def hand_over(process):
           "The chat opens with your page beside it")
     click(process, ".page-mine")
     check(until(lambda: next((t for t in tabs(process) if t["Id"] == tab["Id"] and not t["InChat"]), None), 5) and rpc(process)["activeId"] == tab["Id"], "Move to my tabs gives it back")
+    chat = next((t["Id"] for t in tabs(process) if t["ChatId"]), "")
+    send(process, "select", id=chat)
+    until(lambda: rpc(process)["activeId"] == chat, 5)
+    time.sleep(1)
+    check(rpc(process)["activeId"] == chat and not js(process, "!!document.querySelector('.page-column.is-split .page-pane')") and sum(t["Url"].endswith("/reviews/best") for t in tabs(process)) == 1,
+          "...and moves it: back on the chat, the page isn't beside it as well")
+    send(process, "select", id=tab["Id"])
+    until(lambda: rpc(process)["activeId"] == tab["Id"], 5)
 
 
 def outside_app(process):

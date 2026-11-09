@@ -689,8 +689,11 @@ public partial class MainWindow
     } else await SelectTab(help);
     break;
    case "chatPopOut" when active?.ChatId is { } owner && Shown is { } page: // "Move to my tabs": the AI's page becomes the user's tab, next to the chat's
-    page.InChat = null; page.RunChat = owner; tabs.Remove(page); tabs.Insert(tabs.IndexOf(active) + 1, page); await SelectTab(page); break;
+    page.InChat = null; page.RunChat = owner; tabs.Remove(page); tabs.Insert(tabs.IndexOf(active) + 1, page);
+    if (!tabs.Any(t => t.InChat == owner && !t.Closed)) active.PageOpen = false; // moved, not copied: the chat stops showing it beside it
+    await SelectTab(page); break;
    case "tabMine" when tabs.FirstOrDefault(t => t.Id == S("id") && t.InChat != null) is { } mine: // the same, from the running tasks
+    if (tabs.FirstOrDefault(t => t.ChatId == mine.InChat) is { } itsChat && !tabs.Any(t => t != mine && t.InChat == mine.InChat && !t.Closed)) itsChat.PageOpen = false;
     mine.RunChat = mine.InChat!.StartsWith(AppPages) ? null : mine.InChat; mine.AgentGroup = mine.RunChat == null; mine.InChat = null; await SelectTab(mine); break;
    case "tabHand" when tabs.FirstOrDefault(t => t.Id == S("id") && t.ChatId == null && t.InChat == null && !t.Private && t.Url.Length > 0) is { } given: { // "Hand to …": a tab of the user's becomes a chat's page
     var to = MyChats.FirstOrDefault(c => c.Id == S("chat"));
