@@ -3,7 +3,9 @@
 Checks: the toolbar has it in place of split view's button; its menu lists eleven permissions for the site; Block, Allow
 and Ask for the camera reach the engine (refused, granted with no bar, asked in the bar); the dot while the camera or
 location is on; pop-ups blocked, asked, allowed; sound muted; USB hidden; everything kept after a restart; a private
-tab's choices stay out of the profile; Reset; the settings link. Media is the engine's fake camera and microphone.
+tab's choices stay out of the profile; Reset; the settings link. Media is the engine's fake camera and microphone. On the
+Mac no camera, microphone or location is used (only their choices are checked), and the kinds WebKit has no way to answer
+for show as not available.
 
 Run: python tests/desktop/sitepermissions.py artifacts/Still-QA/Still.exe [shots folder]
      python tests/desktop/sitepermissions.py artifacts/Still-QA-before/Still.exe [shots folder] --before  (the old toolbar)
@@ -19,7 +21,7 @@ import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import ROOT, js, launch, press_ready, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, js, launch, press_ready, rpc, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 OUT = Path(sys.argv[2]) if len(sys.argv) > 2 and not sys.argv[2].startswith("--") else ROOT / "artifacts" / "sitepermissions-shots"
@@ -97,8 +99,16 @@ def go(p, url, private=False):
 
 
 def open_menu(p):
-    js(p, "document.querySelector('.perm-button').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))")
-    return until(lambda: js(p, "document.querySelectorAll('.perm-row').length === 11 && !document.querySelector('.perm-seg button:disabled')"), 10)
+    # The button toggles the menu, and a press can be lost while the toolbar redraws (a pop-up's tab coming and going on
+    # the Mac): press again until it's open.
+    shown = lambda: js(p, "document.querySelectorAll('.perm-row').length === 11 && !document.querySelector('.perm-seg button:disabled')")
+    for _ in range(3):
+        if js(p, "!document.querySelector('.perm-menu[data-state=open]')"):
+            js(p, "document.querySelector('.perm-button')?.dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))")
+        if until(shown, 4):
+            return True
+        close_menu(p)
+    return False
 
 
 def close_menu(p):
@@ -113,6 +123,16 @@ def states(p):
 def set_state(p, label, state):
     js(p, f"document.querySelector('.perm-seg[aria-label=\"{label}\"] [data-state={state}]').click()")
     return until(lambda: states(p).get(label) == state, 10)
+
+
+def back(p, url):
+    """Back to the site's own tab after a pop-up opened."""
+    send(p, "select", id=next(t["Id"] for t in rpc(p)["tabs"] if t["Url"].startswith(url) and "popup" not in t["Url"] and not t["Private"]))
+    until(lambda: "popup" not in tab(p)["Url"], 5)
+
+
+# Later than a click's reach, so no pop-up here counts as a person's (on the Mac a script Still runs counts as a click).
+POPUP = "setTimeout(() => window.open('/popup'), 1500)"
 
 
 def camera(p, kind="video"):
@@ -142,52 +162,60 @@ def main():
         check(set(states(p).values()) == {"Ask"}, "Everything starts on Ask")
         shot(p, "menu.png")
 
-        set_state(p, "Camera", "Deny")
-        check(camera(p) == "NotAllowedError" and not bar(p), "Camera on Block: the site is refused, with no bar")
-        set_state(p, "Camera", "Allow")
-        check(camera(p) == "granted" and not bar(p), "Camera on Allow: the site gets it, with no bar")
-        close_menu(p)
-        check(until(lambda: "camera" in (tab(p).get("InUse") or ""), 5), "Still knows the camera is on")
-        check(until(lambda: js(p, "!!document.querySelector('.perm-dot')"), 5), "The Permissions button shows a dot")
-        check("camera" in (js(p, "document.querySelector('.perm-button').getAttribute('aria-label')") or ""), "The button says the camera is in use")
-        shot(p, "in-use.png")
-        open_menu(p)
-        check(js(p, "[...document.querySelectorAll('.perm-label')].some(l => l.textContent === 'CameraIn use')"), "The menu marks the camera In use")
-        shot(p, "menu-in-use.png")
-        close_menu(p)
-        page(p, "window.__s.getTracks().forEach(t => t.stop())")
-        check(until(lambda: not tab(p).get("InUse") and js(p, "!document.querySelector('.perm-dot')"), 5), "The dot goes once the camera is off")
+        if MAC:  # the choices only: no camera, microphone or location is used there
+            check(set_state(p, "Camera", "Allow") and set_state(p, "Camera", "Deny"), "Camera: Allow and Block are kept")
+        else:
+            set_state(p, "Camera", "Deny")
+            check(camera(p) == "NotAllowedError" and not bar(p), "Camera on Block: the site is refused, with no bar")
+            set_state(p, "Camera", "Allow")
+            check(camera(p) == "granted" and not bar(p), "Camera on Allow: the site gets it, with no bar")
+            close_menu(p)
+            check(until(lambda: "camera" in (tab(p).get("InUse") or ""), 5), "Still knows the camera is on")
+            check(until(lambda: js(p, "!!document.querySelector('.perm-dot')"), 5), "The Permissions button shows a dot")
+            check("camera" in (js(p, "document.querySelector('.perm-button').getAttribute('aria-label')") or ""), "The button says the camera is in use")
+            shot(p, "in-use.png")
+            open_menu(p)
+            check(js(p, "[...document.querySelectorAll('.perm-label')].some(l => l.textContent === 'CameraIn use')"), "The menu marks the camera In use")
+            shot(p, "menu-in-use.png")
+            close_menu(p)
+            page(p, "window.__s.getTracks().forEach(t => t.stop())")
+            check(until(lambda: not tab(p).get("InUse") and js(p, "!document.querySelector('.perm-dot')"), 5), "The dot goes once the camera is off")
 
-        open_menu(p)
-        set_state(p, "Location", "Allow")
-        page(p, "window.__w = navigator.geolocation.watchPosition(() => {}, () => {})")
-        check(until(lambda: "location" in (tab(p).get("InUse") or ""), 5), "Location in use while the site watches it")
-        page(p, "navigator.geolocation.clearWatch(window.__w)")
-        check(until(lambda: "location" not in (tab(p).get("InUse") or ""), 5), "and not once it stops")
+            open_menu(p)
+            set_state(p, "Location", "Allow")
+            page(p, "window.__w = navigator.geolocation.watchPosition(() => {}, () => {})")
+            check(until(lambda: "location" in (tab(p).get("InUse") or ""), 5), "Location in use while the site watches it")
+            page(p, "navigator.geolocation.clearWatch(window.__w)")
+            check(until(lambda: "location" not in (tab(p).get("InUse") or ""), 5), "and not once it stops")
 
-        set_state(p, "Camera", "Ask")
-        page(p, "navigator.mediaDevices.getUserMedia({ video: true }).then(() => window.__r = 'granted', e => window.__r = e.name)")
-        asked = until(lambda: bar(p), 8)
-        check(asked and "camera" in asked, "Camera on Ask: Still's bar asks")
-        if asked:
-            answer(p, False)
+            set_state(p, "Camera", "Ask")
+            page(p, "navigator.mediaDevices.getUserMedia({ video: true }).then(() => window.__r = 'granted', e => window.__r = e.name)")
+            asked = until(lambda: bar(p), 8)
+            check(asked and "camera" in asked, "Camera on Ask: Still's bar asks")
+            if asked:
+                answer(p, False)
 
         tabs = len(rpc(p)["tabs"])
         set_state(p, "Pop-ups", "Deny")
-        page(p, "window.open('/popup')")
-        time.sleep(1.2)
+        page(p, POPUP)
+        time.sleep(2.5)
         check(len(rpc(p)["tabs"]) == tabs and not bar(p), "Pop-ups on Block: none opens, and nothing asks")
         set_state(p, "Pop-ups", "Ask")
-        page(p, "window.open('/popup')")
-        asked = until(lambda: bar(p), 5)
+        page(p, POPUP)
+        asked = until(lambda: bar(p), 6)
         check(asked and "pop-ups" in asked, "Pop-ups on Ask: the bar offers them")
         if asked:
             answer(p, False)
+        if MAC:  # a script Still runs counts as a person's click there
+            page(p, "window.open('/popup')")
+            check(until(lambda: len(rpc(p)["tabs"]) == tabs + 1, 5) and not bar(p), "Pop-ups on Ask: one a person starts opens, with no bar")
+            back(p, url)
+            open_menu(p)
+            tabs += 1
         set_state(p, "Pop-ups", "Allow")
-        page(p, "window.open('/popup')")
-        check(until(lambda: len(rpc(p)["tabs"]) == tabs + 1, 5), "Pop-ups on Allow: it opens")
-        send(p, "select", id=next(t["Id"] for t in rpc(p)["tabs"] if t["Url"].startswith(url) and "popup" not in t["Url"] and not t["Private"]))
-        until(lambda: "popup" not in tab(p)["Url"], 5)
+        page(p, POPUP)
+        check(until(lambda: len(rpc(p)["tabs"]) == tabs + 1, 6), "Pop-ups on Allow: it opens")
+        back(p, url)
         open_menu(p)
 
         set_state(p, "Autoplay and sound", "Deny")
@@ -195,7 +223,8 @@ def main():
         set_state(p, "Autoplay and sound", "Ask")
         check(until(lambda: not tab(p)["muted"], 5), "Back on Ask: sound again")
 
-        set_state(p, "USB devices", "Deny")
+        if not MAC:  # no USB there
+            set_state(p, "USB devices", "Deny")
         set_state(p, "Microphone", "Allow")
         set_state(p, "Pop-ups", "Deny")
         set_state(p, "Autoplay and sound", "Deny")
@@ -207,14 +236,16 @@ def main():
         go(p, url, private=True)
         open_menu(p)
         check("Private" in (js(p, "document.querySelector('.perm-head small')?.textContent") or ""), "In a private tab the menu says it's forgotten")
-        set_state(p, "Notifications", "Allow")
+        set_state(p, "Pop-ups" if MAC else "Notifications", "Allow")  # the Mac has no notifications to allow
         close_menu(p)
     finally:
         rpc(p, "quit"); p.wait(timeout=20)
 
     saved = json.loads((PROFILE / "state.json").read_text(encoding="utf-8-sig"))["Preferences"].get("SitePermissions", {})
     origin = url.rstrip("/")
-    check(saved.get(origin) == {"Usb": "Deny", "Popups": "Deny", "Autoplay": "Deny"}, f"Still's own choices are saved ({saved})")
+    # The Mac keeps the camera's and microphone's choices too; Windows leaves them to WebView2.
+    mine = {"Camera": "Deny", "Microphone": "Allow", "Popups": "Deny", "Autoplay": "Deny"} if MAC else {"Usb": "Deny", "Popups": "Deny", "Autoplay": "Deny"}
+    check(saved.get(origin) == mine, f"Still's own choices are saved ({saved})")
     check("Notifications" not in json.dumps(saved), "A private tab's choice isn't saved")
 
     p = start()
@@ -222,21 +253,26 @@ def main():
         go(p, url)
         open_menu(p)
         s = states(p)
-        check(s.get("Microphone") == "Allow" and s.get("Pop-ups") == "Deny" and s.get("Autoplay and sound") == "Deny" and s.get("USB devices") == "Deny" and s.get("Camera") == "Deny"
-              and s.get("Notifications") == "Ask", f"After a restart every choice is still there ({s})")
+        want = {"Microphone": "Allow", "Pop-ups": "Deny", "Autoplay and sound": "Deny", "Camera": "Deny"} | ({} if MAC else {"USB devices": "Deny", "Notifications": "Ask"})
+        check(all(s.get(k) == v for k, v in want.items()), f"After a restart every choice is still there ({s})")
         check(tab(p)["muted"], "The blocked site starts muted")
-        check(camera(p, "audio") == "granted" and not bar(p), "The microphone is still allowed after the restart")
+        if not MAC:
+            check(camera(p, "audio") == "granted" and not bar(p), "The microphone is still allowed after the restart")
         check(page(p, "typeof navigator.usb") == "undefined", "USB still hidden after the restart")
         shot(p, "menu-saved.png")
 
         js(p, "[...document.querySelectorAll('.perm-menu [role=menuitem]')].find(i => i.textContent.includes('Reset'))?.click()")
         check(until(lambda: set(states(p).values()) == {"Ask"}, 8), "Reset puts everything back on Ask")
         check(until(lambda: not tab(p)["muted"], 5), "and unmutes the site")
-        page(p, "navigator.mediaDevices.getUserMedia({ audio: true }).then(() => window.__r = 'granted', e => window.__r = e.name)")
-        asked = until(lambda: bar(p), 8)
-        check(asked and "microphone" in asked, "After Reset the microphone asks again")
-        if asked:
-            answer(p, True)
+        if MAC:  # the choice only, for the settings page below
+            set_state(p, "Microphone", "Allow")
+            close_menu(p)
+        else:
+            page(p, "navigator.mediaDevices.getUserMedia({ audio: true }).then(() => window.__r = 'granted', e => window.__r = e.name)")
+            asked = until(lambda: bar(p), 8)
+            check(asked and "microphone" in asked, "After Reset the microphone asks again")
+            if asked:
+                answer(p, True)
         open_menu(p)
         js(p, "[...document.querySelectorAll('.perm-menu [role=menuitem]')].find(i => i.textContent.includes('All site settings'))?.click()")
         check(until(lambda: js(p, "document.body.innerText.includes('Website permissions')"), 8), "All site settings opens Privacy & security")

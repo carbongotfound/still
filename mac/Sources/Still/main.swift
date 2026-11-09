@@ -643,6 +643,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    config.applicationNameForUserAgent = browserName
    config.mediaTypesRequiringUserActionForPlayback = []
    config.preferences.isFraudulentWebsiteWarningEnabled = true
+   config.preferences.javaScriptCanOpenWindowsAutomatically = true // every pop-up comes to Still, which decides (createWebViewWith)
    if #available(macOS 12.3, *) { config.preferences.isElementFullscreenEnabled = true }
   }
   let view = PageView(frame: pageFrame, configuration: config)
@@ -1129,8 +1130,13 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let opener = tabs.first(where: { $0.view === view }), let who = opener.agent, Date().timeIntervalSince(opener.agentActedAt) < 10 {
    return openAgentTab(who, "", configuration: configuration).view
   }
-  // Pop-ups on Block: a page's scripts open nothing (WebKit already stops the ones no click started).
-  if let opener = tabs.first(where: { $0.view === view }), action.navigationType != .linkActivated, siteRule(opener, "Popups") == "Deny" { return nil }
+  // Pop-ups: a link opens. On Block a page's scripts open nothing; on Ask one no person started is held and the bar offers
+  // pop-ups on that site, going by what WebKit's own blocker went by.
+  if let opener = tabs.first(where: { $0.view === view }), action.navigationType != .linkActivated {
+   let rule = siteRule(opener, "Popups")
+   if rule == "Deny" { return nil }
+   if rule != "Allow" && !byPerson(action) { popupBlocked(opener, action.request.url); return nil }
+  }
   let tab = Tab()
   tab.isPrivate = incognito || tabs.first { $0.view === view }?.isPrivate ?? false
   if !tab.isPrivate { tab.engine = tabs.first { $0.view === view }?.engine } // a link from a companion's page stays in its profile

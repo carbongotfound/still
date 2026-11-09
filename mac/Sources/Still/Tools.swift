@@ -236,6 +236,37 @@ extension Browser {
   schedulePublish()
   DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak pending] in pending?.finish(false) }
  }
+ /// A pop-up no person started, on a site still on Ask: the permission bar offers pop-ups there, and Allow opens this one.
+ func popupBlocked(_ tab: Tab, _ url: URL?) {
+  guard let site = URL(string: tab.url).flatMap(authority), !permissions.contains(where: { $0.tab === tab && $0.kind == "open pop-ups" }) else { return }
+  let pending = PendingPermission(tab: tab, site: hostName(site), kind: "open pop-ups")
+  pending.answer = { [weak self] allow in
+   guard let self else { return }
+   self.permissions.removeAll { $0 === pending }
+   self.schedulePublish()
+   guard allow, !tab.closed else { return }
+   var all = self.siteRules(tab.isPrivate)
+   all[site, default: [:]]["Popups"] = "Allow"
+   self.setSiteRules(tab.isPrivate, all)
+   guard let url, ["http", "https"].contains(url.scheme ?? "") else { return }
+   let page = Tab()
+   page.isPrivate = tab.isPrivate || self.incognito
+   if !page.isPrivate { page.engine = tab.engine } // a companion's page keeps its profile
+   self.tabs.append(page)
+   self.select(page)
+   self.navigate(url.absoluteString)
+  }
+  permissions.append(pending)
+  schedulePublish()
+  DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak pending] in pending?.finish(false) }
+ }
+ /// WebKit's own word on whether a person's click or key started a navigation, what its pop-up blocker goes by. WebKit
+ /// keeps it private, so it's read only if there; missing, it counts as no (on Ask the bar then offers the pop-up).
+ func byPerson(_ action: WKNavigationAction) -> Bool {
+  let get = NSSelectorFromString("_isUserInitiated")
+  guard action.responds(to: get) else { return false }
+  return unsafeBitCast(action.method(for: get), to: (@convention(c) (AnyObject, Selector) -> Bool).self)(action, get)
+ }
  func answerPermission(_ id: String, _ allow: Bool) { permissions.first { $0.id == id }?.finish(allow) }
  func dropPermissions(_ tab: Tab) { for pending in permissions where pending.tab === tab { pending.finish(false) } }
  func permissionData() -> [String: Any]? {

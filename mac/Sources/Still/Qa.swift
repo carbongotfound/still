@@ -87,7 +87,7 @@ extension Browser {
    "tabs": tabs.map { t -> [String: Any] in [
     "Id": t.id, "Title": t.title, "Url": t.url, "Pinned": t.pinned, "Private": t.isPrivate, "InChat": n(t.inChat), "RunChat": n(t.runChat), "ChatId": n(t.chatId),
     "Home": t.home, "back": t.back.count, "forward": t.forward.count, "appBack": appNav === t && t.back.contains(where: canGo),
-    "Loading": t.loading, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
+    "Loading": t.loading, "muted": t.muted, "ready": t.view != nil, "Reader": t.reader, "Blocked": t.blocked, "favicon": !t.favicon.isEmpty, "Secure": t.url.hasPrefix("https://"),
     "CertificateError": false, "suspended": t.view == nil ? NSNull() : false, "activeDownloads": 0, "memory": NSNull(), "visible": qaVisible(t.view),
     "enginePrivate": n(t.view.map { !$0.configuration.websiteDataStore.isPersistent }),
     "engineProfile": n(t.view.map { $0.configuration.websiteDataStore === pageStore ? "Default" : $0.configuration.websiteDataStore === companionStore ? "Companion" : $0.configuration.websiteDataStore === privateStore ? "Private" : "Other" })
