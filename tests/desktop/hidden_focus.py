@@ -125,10 +125,7 @@ def main():
             image = next((c.get("data", "") for c in reply.get("content", []) if c.get("type") == "image"), "")
             check(not reply.get("isError") and red(image), "A screenshot of a page out of sight shows that page")
             hides = rpc(process, "eval", script="__hides")
-            if MAC:
-                check(rpc(process, "state")["activeId"] == front and hides == 0, f"...and the page in front stays in front ({hides} hides)")
-            else:  # Windows draws a page only while it's on screen: it shows for a moment, then the page in front is back
-                check(rpc(process, "state")["activeId"] == front, "...and the page in front is back in front")
+            check(rpc(process, "state")["activeId"] == front and hides == 0, f"...and the page in front stays in front ({hides} hides)")
         finally:
             agent.close()
     finally:

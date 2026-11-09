@@ -1248,16 +1248,23 @@ public partial class MainWindow
    }
    case "screenshot": {
     var (w, t, core) = await AgentPage(who, args);
-    // A page only paints while it's on screen: show it for a moment, then give the user their tab back.
-    var previous = w.active;
-    if (t != previous) { await w.SelectTab(t); await Task.Delay(200); }
+    // A page only paints while it's shown: one out of sight is shown under the interface, which covers the whole window,
+    // just for the picture. It never comes to the front and your tab stays where it is.
+    var under = t.View is { Visibility: not Visibility.Visible } hidden ? hidden : null;
+    if (under != null) {
+     if (core.IsSuspended) core.Resume();
+     if (under.Handle != IntPtr.Zero) SetWindowPos(under.Handle, new IntPtr(1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010); // the bottom of the pile
+     under.Visibility = Visibility.Visible;
+     if (under.Handle != IntPtr.Zero) SetWindowPos(under.Handle, new IntPtr(1), 0, 0, 0, 0, 0x0001 | 0x0002 | 0x0010);
+     await Task.Delay(300);
+    }
     using var ms = new MemoryStream();
     var prints = LoginPrints(core.Source); // fields showing a saved login are masked in the picture
     try {
      if (prints.Length > 0 && (await Js(core, MaskJs, new { prints, on = true })).ValueKind != JsonValueKind.True) return Fail("Couldn't hide the saved login on this page, so no screenshot was taken.");
      await core.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, ms);
     }
-    finally { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = false }); if (previous != null && previous != t && !previous.Closed && w.active == t) await w.SelectTab(previous); }
+    finally { if (prints.Length > 0) await Js(core, MaskJs, new { prints, on = false }); if (under != null) w.ShowPage(); }
     Did(who, "Took a screenshot"); return Reply(new { image = Convert.ToBase64String(ms.ToArray()), mimeType = "image/png" });
    }
    case "click": {
