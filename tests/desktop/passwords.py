@@ -421,9 +421,8 @@ def main():
               + ("" if moved and opened and switched else f" (page {moved}, new tab {opened}, switch {switched})"))
         ada = entry(process, SITE, "ada@example.com")
         check(ada and reveal(process, ada) == "Lighthouse-Keeper-42", "Save keeps the login")
-        if not MAC:
-            found = plain_text_anywhere("Lighthouse-Keeper-42")
-            check((PROFILE / "logins.dpapi").exists() and not found, "It's encrypted: the password isn't in plain text anywhere in the profile" + (f" (found in {found})" if found else ""))
+        found = plain_text_anywhere("Lighthouse-Keeper-42")
+        check((PROFILE / ("logins.sealed" if MAC else "logins.dpapi")).exists() and not found, "It's encrypted: the password isn't in plain text anywhere in the profile" + (f" (found in {found})" if found else ""))
 
         # Update: a change-password form updates the saved login.
         go(process, SITE + "/change")

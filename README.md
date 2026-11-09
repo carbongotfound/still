@@ -102,7 +102,7 @@ Qwen Code, GitHub Copilot CLI, [DeepSeek Harness](https://github.com/deepseek-ai
 
 To add one, pick **Add a model** in Still's menu. It opens **Settings > Models**, where **Your models** lists every app with its state on your computer (**Logged in**, **Installed** or **Not installed**) and an **Add** or **Set up** button. Claude, ChatGPT, Grok and Gemini come first; the others and the API presets wait under **More agents**. If an app is already installed and signed in, Still finds it.
 
-**About Compatible APIs:** you pay your provider per use. The key goes in Windows DPAPI or the macOS Keychain, only its last four characters ever show, and it's sent only over https (plain http only to `localhost` and `127.0.0.1`). **Test connection** checks the address, key, model, streaming and tool calls with one tiny request, which your provider may bill. They're labelled **Compatible** because Still tests them against its own test server, not against every real provider.
+**About Compatible APIs:** you pay your provider per use. The key is encrypted with Windows DPAPI or, on the Mac, for that Mac. Only its last four characters ever show, and it's sent only over https (plain http only to `localhost` and `127.0.0.1`). **Test connection** checks the address, key, model, streaming and tool calls with one tiny request, which your provider may bill. They're labelled **Compatible** because Still tests them against its own test server, not against every real provider.
 
 ## Also in the box
 
@@ -111,7 +111,7 @@ To add one, pick **Add a model** in Still's menu. It opens **Settings > Models**
 - **Drafts and undo.** What you type in a message box comes back after a refresh or a restart, and Ctrl+Z (Cmd+Z on the Mac) brings back text you deleted.
 - **Plugins.** Gmail, Slack, Notion, GitHub and the rest of [Composio](https://composio.dev)'s catalog, with **your own** Composio key. Reads go ahead, anything that sends, posts, deletes or pays asks first.
 - **You stay in charge.** Per-site permissions, AI rules per site and per companion, and an 8 second countdown you can cancel before buying, sending, deleting or touching a payment field. A colored cursor shows where the companion clicks, **Take over** lets you drive, **Stop** ends the run.
-- **A password manager** encrypted with Windows DPAPI or the macOS Keychain. Companions never see saved passwords.
+- **A password manager** encrypted with Windows DPAPI or, on the Mac, for that Mac. Companions never see saved passwords.
 - **Use Still from other AI apps.** Turn on **Settings > Models > Let other AI apps use Still** and Claude Code, Claude Desktop, Cursor or any MCP app can drive it, after asking you once.
 
 ```powershell

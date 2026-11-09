@@ -123,8 +123,8 @@ def main():
         card = until(lambda: (t := text(p)) and "Key ending in WXYZ" in t and t, 10) or ""
         check("Compatible" in card and "Verified" not in card and "Supported" not in card and "Tested" not in card, "It's labelled Compatible, nothing more")
         check(K1 not in card and K1 not in (js(p, "document.documentElement.outerHTML") or ""), "The interface shows only the key's last four characters")
-        store = PROFILE / "api-keys" / (pid + ".dpapi")
-        check(MAC or (store.exists() and K1.encode() not in store.read_bytes()), "The key is kept encrypted in its own file")
+        store = PROFILE / "api-keys" / (pid + (".sealed" if MAC else ".dpapi"))
+        check(store.exists() and K1.encode() not in store.read_bytes(), "The key is kept encrypted in its own file")
         check(not secrets_on_disk(), "No file in the profile holds the key")
 
         # Test connection: every check, then a model that won't call tools.
@@ -301,7 +301,7 @@ def main():
         # Keys stay out of every file, and removing one deletes it.
         check(not secrets_on_disk(), "No file in the profile holds any key: " + "; ".join(secrets_on_disk()[:3]))
         send(p, "apiKeyRemove", id=aid)
-        check(until(lambda: not (PROFILE / "api-keys" / (aid + ".dpapi")).exists(), 10) or MAC, "Remove deletes the key")
+        check(until(lambda: not (PROFILE / "api-keys" / (aid + (".sealed" if MAC else ".dpapi"))).exists(), 10), "Remove deletes the key")
         check("Fake Anthropic\nAPI provider · Needs a key\nAdd key" in picker(p), "and the picker asks for one")
         send(p, "apiDelete", id=aid)
         check(until(lambda: provider("Fake Anthropic") is None, 10), "Deleting a provider removes it")

@@ -76,7 +76,7 @@ export function PasswordsPane({ data, send, ask, url }: { data: ToolData; send: 
   <div className="tool-toolbar"><Button type="button" variant="ghost" onClick={() => send("vaultGenerate")}><RotateCw />Suggest a strong one</Button><span /><Button type="button" variant="ghost" onClick={() => setDraft(null)}>Cancel</Button><Button type="submit">Save</Button></div>
  </form>
  return <>
-  <div className="tool-intro"><KeyRound /><p>{MAC ? "Kept in your Mac's Keychain." : "Encrypted by Windows for your account."} Still fills a login only on the site you saved it for, and AIs never see your passwords.</p></div>
+  <div className="tool-intro"><KeyRound /><p>{MAC ? "Encrypted for this Mac and your account." : "Encrypted by Windows for your account."} Still fills a login only on the site you saved it for, and AIs never see your passwords.</p></div>
   {data.offer && <LoginReview key={data.offer.id} offer={data.offer} send={send} />}
   <div className="password-options">
    <div className="setting-row"><div><strong>Offer to save passwords</strong><p>Still asks after you sign in, make an account or change a password.</p></div><Switch aria-label="Offer to save passwords" checked={!!options?.save} onCheckedChange={v => toggle("save", v)} /></div>

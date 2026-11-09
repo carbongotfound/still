@@ -1,7 +1,7 @@
 // Plugins (Windows: MainWindow.Plugins.cs): the user's apps (Gmail, Calendar, Slack…) through Composio, a third-party
 // service, with the user's own project API key (ak_…, from Composio's Platform: Settings → Project Settings → API Keys).
 // Off until they paste one. For You's Connect key (ck_…) is for Composio's MCP endpoint and the API refuses it: Still says
-// so and doesn't keep it. The key is kept like saved logins (the Keychain) and only ever goes to Composio in the x-api-key
+// so and doesn't keep it. The key is kept like saved logins (sealed for this Mac) and only ever goes to Composio in the x-api-key
 // header: never to a file in the clear, a log, memory, the shell, an agent, MCP or a CLI. The shell only hears that there
 // is one, and its last four characters. Every app comes from Composio's own catalog, kept in plugin-catalog.json with each
 // logo in Cache/PluginLogos. Companions get four small lookups (list_connected_plugins, find_plugins, get_plugin_tools,
@@ -41,12 +41,10 @@ func composioError(_ node: [String: Any]) -> String {
  return !message.isEmpty ? message : (node["error"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? "Composio couldn't do that."
 }
 
-/// The Composio key, in the Keychain like saved logins. Test builds keep it in a file in the test profile, so a
-/// Keychain prompt never stops a test run.
+/// The Composio key, sealed for this Mac like saved logins.
 enum PluginKey {
- static var file: URL { support.appendingPathComponent("composio.qa") }
- static var query: [String: Any] { [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still Composio key", kSecAttrAccount as String: support.standardizedFileURL.path] }
- static var exists: Bool = isQa ? FileManager.default.fileExists(atPath: file.path) : SecItemCopyMatching(query as CFDictionary, nil) == errSecSuccess
+ static var file: URL { support.appendingPathComponent("composio.sealed") }
+ static var exists: Bool = FileManager.default.fileExists(atPath: file.path)
  static var savedEnd: String?
  /// The saved key's last four characters, all the shell ever sees of it.
  static var end: String {
@@ -55,30 +53,18 @@ enum PluginKey {
   return savedEnd ?? ""
  }
  static func read() -> String? {
-  if isQa { return (try? Data(contentsOf: file)).map { String(decoding: $0, as: UTF8.self) } }
-  var query = query
-  query[kSecReturnData as String] = true
-  query[kSecMatchLimit as String] = kSecMatchLimitOne
-  var out: CFTypeRef?
-  guard SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-  return String(decoding: data, as: UTF8.self)
+  Sealed.read(file).map { String(decoding: $0, as: UTF8.self) }
  }
  static func save(_ key: String) {
   let data = Data(key.utf8)
   exists = true
   savedEnd = String(key.suffix(4))
-  if isQa { try? data.write(to: file, options: .atomic); return }
-  if SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
-   var add = query
-   add[kSecValueData as String] = data
-   add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-   SecItemAdd(add as CFDictionary, nil)
-  }
+  Sealed.write(data, file)
  }
  static func erase() {
   exists = false
   savedEnd = nil
-  if isQa { try? FileManager.default.removeItem(at: file) } else { SecItemDelete(query as CFDictionary) }
+  try? FileManager.default.removeItem(at: file)
  }
 }
 /// Off, cleanly: the key is gone, nothing is connected as far as Still knows, and a sign-in in progress stops. The apps stay

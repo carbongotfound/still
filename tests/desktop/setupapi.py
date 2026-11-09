@@ -120,8 +120,8 @@ def main():
         check(len(prefs().get("ApiProviders") or []) == 1 and q.get("Kind") == "anthropic" and not q.get("NoKey"), "The same provider is now Claude-compatible, with a key")
         check(js(p, f"document.querySelector('{FORM} input[type=password]')?.value") == "" and "Saved" in (js(p, f"document.querySelector('{FORM} input[type=password]')?.placeholder") or ""),
               "The key field empties and says the key is saved")
-        store = PROFILE / "api-keys" / (q.get("Id", "") + ".dpapi")
-        check(MAC or (store.exists() and KEY.encode() not in store.read_bytes()), "The key is kept encrypted in Settings' key store")
+        store = PROFILE / "api-keys" / (q.get("Id", "") + (".sealed" if MAC else ".dpapi"))
+        check(store.exists() and KEY.encode() not in store.read_bytes(), "The key is kept encrypted in Settings' key store")
         check(KEY not in (js(p, "document.documentElement.outerHTML") or ""), "The key never shows in the interface")
         leaks = [str(f.relative_to(RUN)) for f in RUN.rglob("*") if f.is_file() and f.parent.name != "api-keys" and f.suffix not in (".png", ".mp4")
                  and (KEY.encode() in (b := read(f)) or KEY.encode("utf-16-le") in b)]

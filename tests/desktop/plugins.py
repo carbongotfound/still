@@ -326,15 +326,13 @@ def paste_key(process, key, scope=".plug-page"):
 
 def key_file(profile=None):
     folder = profile or PROFILE
-    return folder / ("composio.qa" if MAC else "composio.dpapi")
+    return folder / ("composio.sealed" if MAC else "composio.dpapi")
 
 
 def nowhere(profile=None):
     """Every file in the profile, read as UTF-8 and UTF-16: the key must not be in any of them in the clear."""
     hits = []
     for f in (profile or PROFILE).rglob("*"):
-        if MAC and f.name == "composio.qa":
-            continue  # the Keychain's stand-in in test builds
         try:
             raw = f.read_bytes() if f.is_file() else b""
         except OSError:
@@ -472,7 +470,7 @@ def keys(process):
     check(not key_file().exists(), "and isn't kept")
     paste_key(process, KEY)
     check(until(lambda: len(tiles(process, "Recommended")) == 8 and not js(process, "!!document.querySelector(\".plug-page input[aria-label='Composio API key']\")"), 10), "A good key turns plugins on")
-    check(key_file().exists(), "It's kept encrypted, " + ("in the Keychain (a test file here)" if MAC else "with DPAPI, like saved passwords"))
+    check(key_file().exists(), "It's kept encrypted, " + ("for this Mac" if MAC else "with DPAPI") + ", like saved passwords")
     check(not js(process, f"document.documentElement.outerHTML.includes({json.dumps(KEY[-8:])}) || JSON.stringify(window.__stillState ?? {{}}).includes({json.dumps(KEY[-8:])})")
           and KEY[-4:] in page_text(process), "The field empties, and the interface only ever gets the key's last four characters")
     catalog = PROFILE / "plugin-catalog.json"

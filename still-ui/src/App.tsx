@@ -987,7 +987,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
        <p className="data-intro">Tabs, bookmarks and history stay on this {MAC ? "Mac" : "PC"}. Still has no account or cloud sync.</p>
        <SetCard title="Protection">
         <SetRow id="blocking" title="Block common ads & trackers" help="A small built-in list. Some ads may remain."><Switch aria-label="Block ads and trackers" checked={state.preferences.blocking} onCheckedChange={v => preference("blocking", String(v))} /></SetRow>
-        <SetRow id="passwords" title="Passwords" help={MAC ? "Your logins, kept in your Keychain." : "Your logins, encrypted by Windows."}><Button variant="outline" size="sm" onClick={() => open("passwords")}><KeyRound />Open</Button></SetRow>
+        <SetRow id="passwords" title="Passwords" help={MAC ? "Your logins, encrypted for this Mac." : "Your logins, encrypted by Windows."}><Button variant="outline" size="sm" onClick={() => open("passwords")}><KeyRound />Open</Button></SetRow>
         <SetRow id="cookies" title="Cookies" help="See and remove what websites keep."><Button variant="outline" size="sm" onClick={() => open("cookies")}><Cookie />Open</Button></SetRow>
         <SetRow id="security" title="Privacy & security" help="Tracking protection and what each site may use."><Button variant="outline" size="sm" onClick={() => open("security")}><ShieldCheck />Open</Button></SetRow>
        </SetCard>

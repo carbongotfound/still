@@ -1,6 +1,6 @@
 // API providers the user added in Settings → Models, run by Still's own agent loop with the user's own key (Windows:
 // Agents/ApiAgent.cs and MainWindow.Api.cs). Labelled Compatible: Still checks these against its own fake server, never
-// against real endpoints. The key lives in the Keychain and only ever goes to the provider, in its auth header.
+// against real endpoints. The key lives in a file encrypted for this Mac (Sealed) and only ever goes to the provider, in its auth header.
 import Foundation
 import Security
 
@@ -54,18 +54,14 @@ var apiProviders: [ApiProvider] {
 }
 func saveApiProviders() { store.prefs["ApiProviders"] = apiProviders.map(\.dict); saveAllLater() }
 
-/// API keys: one Keychain item per provider and profile, like saved logins and the Composio key. Test builds keep each in
-/// a file in the test profile's api-keys folder, so a Keychain prompt never stops a test run. The shell only ever hears
-/// whether there is a key and its last four characters.
+/// API keys: one sealed file per provider in the profile's api-keys folder, like saved logins and the Composio key. The
+/// shell only ever hears whether there is a key and its last four characters.
 enum ApiKeys {
  private static let lock = NSLock()
  private static var known: [String: Bool] = [:], ends: [String: String] = [:], refusedIds = Set<String>()
  static func idOk(_ id: String) -> Bool { id.count > 4 && id.count <= 20 && id.hasPrefix("api-") && id.dropFirst(4).allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } }
  static var folder: URL { support.appendingPathComponent("api-keys") }
- private static func file(_ id: String) -> URL { folder.appendingPathComponent(id + ".qa") }
- private static func query(_ id: String) -> [String: Any] {
-  [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still API key", kSecAttrAccount as String: support.standardizedFileURL.path + "#" + id]
- }
+ static func file(_ id: String) -> URL { folder.appendingPathComponent(id + ".sealed") }
  /// The provider answered 401 or 403 with this key.
  static func refused(_ id: String) -> Bool { lock.lock(); defer { lock.unlock() }; return refusedIds.contains(id) }
  static func setRefused(_ id: String, _ on: Bool) { lock.lock(); if on { refusedIds.insert(id) } else { refusedIds.remove(id) }; lock.unlock() }
@@ -73,42 +69,28 @@ enum ApiKeys {
   guard idOk(id) else { return false }
   lock.lock(); let cached = known[id]; lock.unlock()
   if let cached { return cached }
-  let found = isQa ? FileManager.default.fileExists(atPath: file(id).path) : SecItemCopyMatching(query(id) as CFDictionary, nil) == errSecSuccess
+  let found = FileManager.default.fileExists(atPath: file(id).path)
   lock.lock(); known[id] = found; lock.unlock()
   return found
  }
  static func read(_ id: String) -> String? {
   guard idOk(id) else { return nil }
-  if isQa { return (try? Data(contentsOf: file(id))).map { String(decoding: $0, as: UTF8.self) } }
-  var q = query(id)
-  q[kSecReturnData as String] = true
-  q[kSecMatchLimit as String] = kSecMatchLimitOne
-  var out: CFTypeRef?
-  guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let data = out as? Data else { return nil }
-  return String(decoding: data, as: UTF8.self)
+  return Sealed.read(file(id)).map { String(decoding: $0, as: UTF8.self) }
  }
  static func save(_ id: String, _ key: String) {
   guard idOk(id) else { return }
-  let data = Data(key.utf8)
-  if isQa {
-   try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-   try? data.write(to: file(id), options: .atomic)
-  } else if SecItemUpdate(query(id) as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
-   var add = query(id)
-   add[kSecValueData as String] = data
-   add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-   SecItemAdd(add as CFDictionary, nil)
-  }
+  Sealed.write(Data(key.utf8), file(id))
   lock.lock(); known[id] = true; ends[id] = key.count >= 8 ? String(key.suffix(4)) : ""; refusedIds.remove(id); lock.unlock()
  }
  static func remove(_ id: String) {
   guard idOk(id) else { return }
-  if isQa { try? FileManager.default.removeItem(at: file(id)) } else { SecItemDelete(query(id) as CFDictionary) }
+  try? FileManager.default.removeItem(at: file(id))
   lock.lock(); known[id] = false; ends[id] = nil; refusedIds.remove(id); lock.unlock()
  }
- /// A profile is deleted or reset: every key it kept goes with it.
+ /// A profile is deleted or reset: every key it kept goes with it, and what an older Still kept for it in the Keychain.
  static func erase(_ profile: URL) {
-  if isQa { try? FileManager.default.removeItem(at: profile.appendingPathComponent("api-keys")); return }
+  try? FileManager.default.removeItem(at: profile.appendingPathComponent("api-keys"))
+  if isQa { return }
   let q: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still API key", kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
   var out: CFTypeRef?
   guard SecItemCopyMatching(q as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { return }

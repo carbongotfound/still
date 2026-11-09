@@ -22,7 +22,7 @@ Still 2.10 is a browser for Windows and macOS. It is not audited or certified. T
 
 ## Saved logins and keys
 
-- Passwords, API keys and the Composio key are encrypted with Windows DPAPI for your Windows account, or kept in the macOS Keychain. There's no separate master password, and software running as you can reach them, as with other browsers.
+- Passwords, API keys and the Composio key are encrypted with Windows DPAPI for your Windows account, or on the Mac with a key made from that Mac and your user account, so a copy of the files can't be opened on another computer. There's no separate master password, and software running as you can reach them, as with other browsers.
 - A login fills only on the exact site it was saved for, never in private tabs, and only after you click or type in a visible login field. A login list that the page hides or covers fills nothing. On a page without HTTPS, filling asks first.
 - A copied password clears from the clipboard after 30 seconds and is marked so clipboard history and clipboard managers skip it.
 - Once a password is in a page, that page's scripts can read it, as in every browser.

@@ -1,4 +1,4 @@
-// Saved logins (Windows: Vault.cs and MainWindow.Passwords.cs). They live in the Mac's Keychain, one item per profile.
+// Saved logins (Windows: Vault.cs and MainWindow.Passwords.cs). They live in the profile, in a file encrypted for this Mac (Sealed).
 // In pages, LoginObserver.js runs in Still's own script world, out of the page's reach: the key in a field, auto sign-in,
 // strong passwords for new accounts, and the Save / Update prompt after signing in. Never in private tabs. AIs never get
 // any of it: they can't fill while they drive a tab, what they read is redacted (redactLogins), and a sign-in page
@@ -6,6 +6,7 @@
 import AppKit
 import CommonCrypto
 import CryptoKit
+import IOKit
 import LocalAuthentication
 import Security
 import WebKit
@@ -14,37 +15,81 @@ struct Login: Codable {
  var id = newId(), origin = "", username = "", password = ""
 }
 
-enum Vault {
- /// Test builds keep logins in a file in the test profile, so a Keychain prompt never stops a test run.
- static func file(_ folder: URL) -> URL { folder.appendingPathComponent("logins.qa.json") }
- static func query(_ folder: URL) -> [String: Any] {
-  [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still logins", kSecAttrAccount as String: folder.standardizedFileURL.path]
+/// Secrets on disk instead of the Keychain, whose prompts came back after every update of an ad-hoc signed app. Each file is
+/// encrypted (AES-GCM) with a key made from this Mac's hardware id and your user id, the way DPAPI ties Windows' to your
+/// account: a copy on another Mac or for another user can't be opened, and software running as you on this Mac can, as on
+/// Windows. Only you can read the files (0600). Saved logins, API keys and the Composio key.
+enum Sealed {
+ private static let key: SymmetricKey = {
+  let device = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
+  defer { IOObjectRelease(device) }
+  let mac = IORegistryEntryCreateCFProperty(device, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String ?? ""
+  return HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data((mac + "#" + String(getuid())).utf8)), info: Data("Still secrets".utf8), outputByteCount: 32)
+ }()
+ static func read(_ file: URL) -> Data? {
+  guard let raw = try? Data(contentsOf: file), let box = try? AES.GCM.SealedBox(combined: raw) else { return nil }
+  return try? AES.GCM.open(box, using: key)
  }
- static func read() -> [Login] {
-  var data: Data?
-  if isQa { data = try? Data(contentsOf: file(support)) } else {
-   var query = query(support)
-   query[kSecReturnData as String] = true
-   query[kSecMatchLimit as String] = kSecMatchLimitOne
+ static func write(_ data: Data, _ file: URL) {
+  guard let box = try? AES.GCM.seal(data, using: key).combined else { return }
+  let fm = FileManager.default, next = file.path + ".new"
+  try? fm.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+  // One this Mac can't open (copied from another Mac, or its hardware id changed) is kept beside it, never written over.
+  if fm.fileExists(atPath: file.path), read(file) == nil { try? fm.moveItem(atPath: file.path, toPath: file.path + ".unreadable-" + String(Int(Date().timeIntervalSince1970))) }
+  try? fm.removeItem(atPath: next)
+  guard fm.createFile(atPath: next, contents: box, attributes: [.posixPermissions: 0o600]) else { return }
+  rename(next, file.path)
+ }
+ /// What an older Still kept for this profile in the Keychain comes over once, at start. macOS asks once for each item, and
+ /// a no is asked again at the next start. The Keychain items stay; Keychain Access can remove them. Test builds try it
+ /// only with items made for the test (STILL_QA_KEYCHAIN names them).
+ static func fromKeychain() {
+  let tag = isQa ? qaEnv("STILL_QA_KEYCHAIN") ?? "" : ""
+  guard !isQa || !tag.isEmpty else { return }
+  let home = support.standardizedFileURL.path, done = support.appendingPathComponent("keychain-moved.txt")
+  var moved = Set(((try? String(contentsOf: done, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init))
+  for kind in ["Still logins", "Still Composio key", "Still API key"] {
+   let service = tag + kind
+   let all: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecReturnAttributes as String: true, kSecMatchLimit as String: kSecMatchLimitAll]
    var out: CFTypeRef?
-   if SecItemCopyMatching(query as CFDictionary, &out) == errSecSuccess { data = out as? Data }
+   guard SecItemCopyMatching(all as CFDictionary, &out) == errSecSuccess, let items = out as? [[String: Any]] else { continue }
+   for account in items.compactMap({ $0[kSecAttrAccount as String] as? String }) where !moved.contains(service + "\t" + account) {
+    let file: URL
+    if kind == "Still API key" {
+     let id = account.hasPrefix(home + "#") ? String(account.dropFirst(home.count + 1)) : ""
+     guard ApiKeys.idOk(id) else { continue }
+     file = ApiKeys.file(id)
+    } else {
+     guard account == home else { continue }
+     file = kind == "Still logins" ? Vault.file(support) : PluginKey.file
+    }
+    let one: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account, kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne]
+    var data: CFTypeRef?
+    guard SecItemCopyMatching(one as CFDictionary, &data) == errSecSuccess, let old = data as? Data else { continue } // a no: asked again next start
+    if kind == "Still logins" { // anything saved since a no stays too
+     let now = Vault.decode(read(file))
+     Vault.write(now + Vault.decode(old).filter { was in !now.contains { $0.id == was.id } })
+    } else if read(file) == nil { write(old, file) } // a key added since a no wins
+    if kind == "Still Composio key" { PluginKey.exists = true }
+    moved.insert(service + "\t" + account)
+    try? moved.sorted().joined(separator: "\n").write(to: done, atomically: true, encoding: .utf8)
+   }
   }
-  return data.flatMap { try? JSONDecoder().decode([Login].self, from: $0) } ?? []
  }
+}
+
+enum Vault {
+ static func file(_ folder: URL) -> URL { folder.appendingPathComponent("logins.sealed") }
+ static func read() -> [Login] { decode(Sealed.read(file(support))) }
+ static func decode(_ data: Data?) -> [Login] { data.flatMap { try? JSONDecoder().decode([Login].self, from: $0) } ?? [] }
  static func write(_ entries: [Login]) {
   guard let data = try? JSONEncoder().encode(entries) else { return }
-  if isQa { try? data.write(to: file(support), options: .atomic); return }
-  let query = query(support)
-  if SecItemUpdate(query as CFDictionary, [kSecValueData as String: data] as CFDictionary) == errSecItemNotFound {
-   var add = query
-   add[kSecValueData as String] = data
-   add[kSecAttrAccessible as String] = kSecAttrAccessibleWhenUnlockedThisDeviceOnly
-   SecItemAdd(add as CFDictionary, nil)
-  }
+  Sealed.write(data, file(support))
  }
- /// A deleted or reset profile's logins.
+ /// A deleted or reset profile's logins, and what an older Still kept for it in the Keychain.
  static func erase(_ folder: URL) {
-  if isQa { try? FileManager.default.removeItem(at: file(folder)) } else { SecItemDelete(query(folder) as CFDictionary) }
+  try? FileManager.default.removeItem(at: file(folder))
+  if !isQa { SecItemDelete([kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "Still logins", kSecAttrAccount as String: folder.standardizedFileURL.path] as CFDictionary) }
  }
  /// 24 characters from the system's secure random generator, without look-alikes.
  static func generate() -> String {
@@ -210,7 +255,7 @@ extension Browser {
   loginOffer = nil
   publishBrowserTools("passwords")
   schedulePublish()
-  toast(offer.existingId != nil ? "Password updated." : "Password saved. It stays in your Mac's Keychain.")
+  toast(offer.existingId != nil ? "Password updated." : "Password saved. It stays encrypted on this Mac.")
  }
 
  func neverSaveLogin(_ id: String) {
