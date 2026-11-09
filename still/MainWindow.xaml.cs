@@ -144,7 +144,7 @@ public partial class MainWindow : Window
  // Test windows get their "system" theme from the test (STILL_QA_SYSTEM_THEME, or the systemTheme op), dark unless it says.
  internal static string? qaSystemTheme = App.IsQa ? Environment.GetEnvironmentVariable("STILL_QA_SYSTEM_THEME") ?? "Dark" : null;
  static bool SystemDark => qaSystemTheme != null ? qaSystemTheme == "Dark" : (int?)Registry.GetValue(@"HKEY_CURRENT_USER\Software\Microsoft\Windows\CurrentVersion\Themes\Personalize", "AppsUseLightTheme", 1) == 0;
- void SaveLater() { if (!closing) { saveTimer.Stop(); saveTimer.Start(); ShellPublish(); } }
+ void SaveLater() { if (!closing) { if (!saveTimer.IsEnabled) saveTimer.Start(); ShellPublish(); } } // the first change starts it and later ones don't push it back, so pages that keep changing can't hold off the save
  internal void Save()
  {
   state.Tabs = SavedTabs().ToList();
