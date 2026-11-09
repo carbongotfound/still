@@ -1086,8 +1086,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  }
 
  func webView(_ view: WKWebView, decidePolicyFor response: WKNavigationResponse, decisionHandler: @escaping (WKNavigationResponsePolicy) -> Void) {
-  if !response.canShowMIMEType { tabs.first { $0.view === view }?.downloadAt = Date() }
-  decisionHandler(response.canShowMIMEType ? .allow : .download)
+  // A file the site sends as an attachment downloads, as in other browsers, even when WebKit could show it (a model sent as text)
+  let attachment = ((response.response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Disposition") ?? "").trimmingCharacters(in: .whitespaces).lowercased().hasPrefix("attachment")
+  let download = attachment || !response.canShowMIMEType
+  if download { tabs.first { $0.view === view }?.downloadAt = Date() }
+  decisionHandler(download ? .download : .allow)
  }
 
  func webView(_ view: WKWebView, navigationAction: WKNavigationAction, didBecome download: WKDownload) { track(download) }
