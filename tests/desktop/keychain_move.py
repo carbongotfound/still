@@ -1,7 +1,7 @@
 """Mac: Still reads the Keychain only when you import. Import > An older Still brings the logins and keys an older Still kept
 for this profile into files encrypted for this Mac; starting Still doesn't. The test build reads made-up items instead of
 the Keychain (STILL_QA_OLD_KEYCHAIN), so this never touches the Keychain or brings up a macOS question. Also: a file this
-Mac can't open is kept beside the new one, never written over.
+Mac can't open is kept beside the new one, never written over, and the files need this Mac's Secure Enclave key.
 
 Run: python tests/desktop/keychain_move.py <the QA build's Still binary>
 """
@@ -82,6 +82,14 @@ def main():
             send(p, "importOldStill")
             check(until(lambda: "Nothing new came over" in toasts(p), 5), "Importing again brings nothing twice")
             check(logins(p) == ["kim@example.com"], "and the login is there once")
+        finally:
+            close(p)
+        key = (list(profile.glob("secrets-*.key")) or [profile / "secrets-none.key"])[0]
+        check(key.exists() and key.stat().st_mode & 0o077 == 0 and key.stat().st_size > 64, f"The files' key is beside the profiles, for the user only ({key.name})")
+        key.rename(profile / "away.key")
+        p = opened(profile)
+        try:
+            check(logins(p) == [], "Without that key file the logins can't be opened: the Mac's id alone isn't enough")
         finally:
             close(p)
 

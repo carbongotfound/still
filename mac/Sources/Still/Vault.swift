@@ -16,19 +16,40 @@ struct Login: Codable {
 }
 
 /// Secrets on disk instead of the Keychain, whose prompts came back after every update of an ad-hoc signed app. Each file is
-/// encrypted (AES-GCM) with a key made from this Mac's hardware id and your user id, the way DPAPI ties Windows' to your
-/// account: a copy on another Mac or for another user can't be opened, and software running as you on this Mac can, as on
-/// Windows. Only you can read the files (0600). Saved logins, API keys and the Composio key.
+/// encrypted (AES-GCM). On a Mac with a Secure Enclave (Apple silicon, or a T2 chip) the key needs one that never leaves the
+/// Enclave: its file beside the profiles works only on this Mac, so a copied profile, key file and all, can't be opened
+/// anywhere else. Without an Enclave the key is made from this Mac's hardware id and your user id. Either way, software
+/// running as you on this Mac can use it, as on Windows (DPAPI), and only you can read the files (0600). Saved logins, API
+/// keys and the Composio key.
 enum Sealed {
- private static let key: SymmetricKey = {
+ private static let key: SymmetricKey = enclaveKey() ?? macKey
+ private static let macId: String = {
   let device = IOServiceGetMatchingService(kIOMainPortDefault, IOServiceMatching("IOPlatformExpertDevice"))
   defer { IOObjectRelease(device) }
-  let mac = IORegistryEntryCreateCFProperty(device, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String ?? ""
-  return HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data((mac + "#" + String(getuid())).utf8)), info: Data("Still secrets".utf8), outputByteCount: 32)
+  return IORegistryEntryCreateCFProperty(device, "IOPlatformUUID" as CFString, kCFAllocatorDefault, 0)?.takeRetainedValue() as? String ?? ""
  }()
+ /// The key without an Enclave, and for a file written on a start when the Enclave's couldn't be used.
+ private static let macKey = HKDF<SHA256>.deriveKey(inputKeyMaterial: SymmetricKey(data: Data((macId + "#" + String(getuid())).utf8)), info: Data("Still secrets".utf8), outputByteCount: 32)
+ /// Agreed between an Enclave key and a public key, both kept in this Mac's key file, secrets-<this Mac>.key beside the
+ /// profiles. Another Mac's, copied over with the profiles, has another name and is left alone.
+ private static func enclaveKey() -> SymmetricKey? {
+  guard SecureEnclave.isAvailable else { return nil }
+  let name = SHA256.hash(data: Data(macId.utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
+  let file = profileHome.appendingPathComponent("secrets-\(name).key").path, fm = FileManager.default
+  if !fm.fileExists(atPath: file), let mine = try? SecureEnclave.P256.KeyAgreement.PrivateKey() {
+   // Written whole, then linked in: a Still starting beside this one (another profile) uses whichever got there first.
+   let next = file + ".new-" + UUID().uuidString
+   if fm.createFile(atPath: next, contents: P256.KeyAgreement.PrivateKey().publicKey.rawRepresentation + mine.dataRepresentation, attributes: [.posixPermissions: 0o600]) { link(next, file) }
+   unlink(next)
+  }
+  guard let raw = fm.contents(atPath: file), raw.count > 64, let other = try? P256.KeyAgreement.PublicKey(rawRepresentation: raw.prefix(64)),
+        let mine = try? SecureEnclave.P256.KeyAgreement.PrivateKey(dataRepresentation: raw.dropFirst(64)),
+        let secret = try? mine.sharedSecretFromKeyAgreement(with: other) else { return nil }
+  return secret.hkdfDerivedSymmetricKey(using: SHA256.self, salt: Data(), sharedInfo: Data("Still secrets".utf8), outputByteCount: 32)
+ }
  static func read(_ file: URL) -> Data? {
   guard let raw = try? Data(contentsOf: file), let box = try? AES.GCM.SealedBox(combined: raw) else { return nil }
-  return try? AES.GCM.open(box, using: key)
+  return (try? AES.GCM.open(box, using: key)) ?? (try? AES.GCM.open(box, using: macKey))
  }
  static func write(_ data: Data, _ file: URL) {
   guard let box = try? AES.GCM.seal(data, using: key).combined else { return }
