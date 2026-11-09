@@ -32,6 +32,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - ✅ **History**: searchable panel, remove entries, clear all (`MainWindow.Panels.cs`).
 - ✅ **Downloads**: card on start, progress ring, open/show/cancel, choose folder (`MainWindow.xaml.cs`, Preferences `DownloadFolder`).
 - ✅ **Reader mode**: Ctrl+Shift+R, Mozilla Readability on a copy of the page (`MainWindow.Actions.cs`, `Assets/Readability.js`).
+- 🚧 (security/fixes) **Report a bug**: the main menu's Report a bug, under About Still, opens GitHub's bug report form for Still (`.github/ISSUE_TEMPLATE/bug_report.yml`) in a new tab (`App.tsx`).
 - ✅ **Hide an element**: pick an element to hide; per-site rules re-applied on load (`PickHidden`, `SavedState.Hidden`).
 - ✅ **Find in page, zoom, picture-in-picture**: toolbar and shortcuts (`find`, `zoom`, `pictureInPicture` in `MainWindow.Shell.cs`).
 - ✅ **Full screen**: F11 covers the monitor incl. taskbar; video full screen fills the window instantly (`MainWindow.FullScreen.cs`).

@@ -1,7 +1,7 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, Bug, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
 import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, isRunning, since, type AiState } from "./AiSidebar"
@@ -89,6 +89,7 @@ const initial: State = { profileName:"Default",maximized:false,activeId: "empty"
 // "Try one of these": a look per kind of idea (suggestions.ts homeIdeas).
 const IDEA_LOOKS: Record<HomeIdea["kind"], [LucideIcon, string]> = { project: [Flag, "amber"], app: [Plug, "green"], tab: [FileText, "sky"], role: [Sparkles, "rose"] }
 const HELP = "https://github.com/carbongotfound/still#readme"
+const BUG = "https://github.com/carbongotfound/still/issues/new?template=bug_report.yml"
 // Still's own pages by address, typed in the address bar: still://chats and so on. A home page, a panel, or Help.
 const STILL_PAGES: [name: string, label: string, home?: HomeView][] = [["new", "New chat", "home"], ["chats", "Chat history", "chats"], ["library", "Library", "library"],
  ["companions", "Companions", "companions"], ["skills", "Skills & plugins", "skills"], ["settings", "Settings"], ["history", "History"], ["bookmarks", "Bookmarks"],
@@ -693,6 +694,7 @@ export default function App() {
        <DropdownMenuItem onSelect={() => preference("tabLayout", state.preferences.tabLayout === "Modern" ? "Classic" : "Modern")}><PanelLeft />{state.preferences.tabLayout === "Modern" ? "Tabs on top" : "Tabs on the side"}<DropdownMenuShortcut>Ctrl Shift S</DropdownMenuShortcut></DropdownMenuItem>
        <MenuPanelItem name="settings" label="Settings" icon={<Settings2 />} keys="Ctrl ," />
        <MenuPanelItem name="about" label="About Still" icon={<Info />} />
+       <DropdownMenuItem onSelect={() => send("new", { url: BUG })}><Bug />Report a bug</DropdownMenuItem>
       </DropdownMenuContent>
      </DropdownMenu>
     </div>
