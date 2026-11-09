@@ -27,6 +27,10 @@ public partial class MainWindow
   core.SourceChanged += (_, _) => Name(); core.DocumentTitleChanged += (_, _) => Name();
   core.WindowCloseRequested += (_, _) => Dispatcher.BeginInvoke(popup.Close);
   GateAppLinks(core, () => opener);
+  // A download it starts goes where a tab's would, and closing the window doesn't stop it: it closes once the download ends.
+  int downloading = 0;
+  core.DownloadStarting += (_, e) => { downloading++; Download(opener, e, () => { if (--downloading <= 0 && !popup.IsVisible) popup.Close(); }); };
+  popup.Closing += (_, e) => { if (downloading > 0 && !closing) { e.Cancel = true; popup.Hide(); } };
   // What it opens goes by the same rule as a tab's pop-ups: a real click or the site's Allow, and web pages only.
   core.NewWindowRequested += (_, e2) => {
    e2.Handled = true; string link = e2.Uri; bool clicked = e2.IsUserInitiated;

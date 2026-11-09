@@ -360,6 +360,33 @@ public partial class MainWindow : Window
   if (tab.Dialog is { } open) { tab.Dialog = null; try { open.Deferral.Complete(); } catch (Exception ex) when (ex is InvalidOperationException or System.Runtime.InteropServices.COMException) { } }
   tab.LoadingTask = null; tab.Loading = false; tab.Reader = false; tab.HideScriptId = null;tab.LoginScriptId=null;tab.LoginDetected=false;tab.LoginFilled=false;
  }
+ /// A download a page starts goes to your download folder and the downloads card. done: once it ends, however it ends.
+ void Download(BrowserTab tab, CoreWebView2DownloadStartingEventArgs e, Action? done = null)
+ {
+  tab.DownloadStartedAt = DateTime.UtcNow;
+  var operation = e.DownloadOperation;
+  Directory.CreateDirectory(Prefs.DownloadFolder);
+  string name = Path.GetFileName(e.ResultFilePath);
+  if (string.IsNullOrEmpty(name)) name = "download";
+  string path = Path.Combine(Prefs.DownloadFolder, name);
+  for (int i = 1; File.Exists(path); i++) path = Path.Combine(Prefs.DownloadFolder, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
+  e.ResultFilePath = path;
+  downloads.Insert(0, new DownloadItem { Path = path, Operation = operation, Private = tab.Private });
+  tab.ActiveDownloads++;
+  operation.StateChanged += (_, _) => {
+   if (operation.State != CoreWebView2DownloadState.InProgress && --tab.ActiveDownloads <= 0 && tab.Closed) { tab.ActiveDownloads = 0; DisposeView(tab); }
+   if (operation.State != CoreWebView2DownloadState.InProgress) done?.Invoke();
+   if (operation.State == CoreWebView2DownloadState.Completed) Toast("Downloaded " + Path.GetFileName(path));
+   if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
+   ShellPublish();
+  };
+  // Keep the toolbar progress ring moving, at most ~4 updates a second.
+  operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
+  e.Handled=true;
+  // Show the downloads card as soon as a download starts, like Chrome/Opera.
+  if (shellReady) Dispatcher.BeginInvoke(() => ShellOpen("downloads")); else Toast("Downloading " + name);
+  ShellPublish();
+ }
  async Task EnsureView(BrowserTab tab)
  {
   if (tab.View?.CoreWebView2 != null) return;
@@ -503,30 +530,7 @@ public partial class MainWindow : Window
    } catch (Exception ex) { App.Log(ex); Toast("Couldn't open this pop-up."); }
    finally { deferral.Complete(); }
   };
-  core.DownloadStarting += (_, e) => { if (Off()) return; 
-   tab.DownloadStartedAt = DateTime.UtcNow;
-   var operation = e.DownloadOperation;
-   Directory.CreateDirectory(Prefs.DownloadFolder);
-   string name = Path.GetFileName(e.ResultFilePath);
-   if (string.IsNullOrEmpty(name)) name = "download";
-   string path = Path.Combine(Prefs.DownloadFolder, name);
-   for (int i = 1; File.Exists(path); i++) path = Path.Combine(Prefs.DownloadFolder, Path.GetFileNameWithoutExtension(name) + $" ({i})" + Path.GetExtension(name));
-   e.ResultFilePath = path;
-   downloads.Insert(0, new DownloadItem { Path = path, Operation = operation, Private = tab.Private });
-   tab.ActiveDownloads++;
-   operation.StateChanged += (_, _) => {
-    if (operation.State != CoreWebView2DownloadState.InProgress && --tab.ActiveDownloads <= 0 && tab.Closed) { tab.ActiveDownloads = 0; DisposeView(tab); }
-    if (operation.State == CoreWebView2DownloadState.Completed) Toast("Downloaded " + Path.GetFileName(path));
-    if (operation.State == CoreWebView2DownloadState.Interrupted) Toast("Download interrupted: " + operation.InterruptReason);
-    ShellPublish();
-   };
-   // Keep the toolbar progress ring moving, at most ~4 updates a second.
-   operation.BytesReceivedChanged += (_, _) => { if((DateTime.UtcNow-lastDownloadPublish).TotalMilliseconds>250){lastDownloadPublish=DateTime.UtcNow;ShellPublish();} };
-   e.Handled=true;
-   // Show the downloads card as soon as a download starts, like Chrome/Opera.
-   if (shellReady) Dispatcher.BeginInvoke(() => ShellOpen("downloads")); else Toast("Downloading " + name);
-   ShellPublish();
-  };
+  core.DownloadStarting += (_, e) => { if (!Off()) Download(tab, e); };
   core.PermissionRequested += async (_, e) => { if (Off()) return; 
    using var deferral=e.GetDeferral();
    // Ask inside Still (a bar above the page), never with a separate Windows dialog.
