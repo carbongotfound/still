@@ -256,7 +256,7 @@ enum Raced { case done(String?), interrupted(String), late }
 // The page scripts come straight from the Windows app (mac/build.sh copies them), so both stay in step.
 let agentScripts: [String: String] = {
  var scripts: [String: String] = [:]
- for name in ["Page", "Snapshot", "Find", "Click", "Watch", "Mark", "Seen", "Same", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask"] {
+ for name in ["Page", "Snapshot", "Find", "Click", "Watch", "Mark", "Seen", "Same", "Focus", "Scroll", "Wait", "Sensitive", "FileInput", "Cursor", "Mask", "Sig"] {
   scripts[name] = (try? String(contentsOf: resources.appendingPathComponent("agent-\(name).js"), encoding: .utf8)) ?? ""
  }
  return scripts
@@ -1276,7 +1276,13 @@ extension Browser {
      await pointer(who, tab, view, x, y)
     }
     let field = focus["label"] as? String ?? ""
-    func unchanged() async -> Bool { ((try? await agentJs(view, "return { sig: sig(deepActive()) };", [:])) as? [String: Any])?["sig"] as? String == focus["sig"] as? String }
+    var drawn = false // the editor took it, but what it shows can't be read
+    func unchanged() async -> Bool {
+     let now = (try? await agentJs(view, agentScripts["Sig"] ?? "", [:])) as? [String: Any]
+     let same = now?["sig"] as? String == focus["sig"] as? String
+     if now?["took"] as? Bool == true { drawn = same; return false }
+     return same
+    }
     try step.live()
     if !step.print.isEmpty { _ = try await agentJs(view, agentScripts["Same"] ?? "", ["expect": step.print]) } // nothing typed yet: a change asks again
     if !text.isEmpty {
@@ -1295,7 +1301,7 @@ extension Browser {
      } catch is PageChanged { return agentFail("Typed into \"" + field + "\", but the page changed before Enter, so Still didn't press it. Call read_page to see it now.") }
     }
     did(who, "Typed into " + field)
-    return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "")))
+    return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "") + (drawn ? ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it" : "")))
    case "press_key":
     let (_, tab, view) = try await agentPage(who, args)
     let before = agentTabs[who] ?? "", urlBefore = tab.url

@@ -645,6 +645,10 @@ public partial class MainWindow
   if (!e || e.localName === 'body') return o.id || o.selector ? missing(o) : { error: 'nofocus' };
   if (o.expect && print(e) !== o.expect) return { error: 'changed' };
   S.typing = e;
+  // An editor that takes typing and draws the text itself (Google Docs and Slides empty a hidden field) reads the same after
+  // it. A real input event there, or a key the page handled itself, means the typing arrived, so it isn't typed again.
+  const T = S.took || (S.took = { on: new WeakSet() }); T.got = false;
+  for (const w of new Set([window, view(e)])) if (!T.on.has(w)) { T.on.add(w); w.addEventListener('input', ev => { if (ev.isTrusted) T.got = true; }, true); w.addEventListener('keydown', ev => { if (ev.isTrusted && ev.defaultPrevented) T.got = true; }); }
   if (e.localName === 'select') {
    const want = o.value.trim().toLowerCase(), opts = [...e.options];
    const opt = opts.find(x => x.value === o.value || x.text.trim().toLowerCase() === want) || opts.find(x => x.text.trim().toLowerCase().includes(want));
@@ -682,7 +686,9 @@ public partial class MainWindow
   const max = sc.scrollHeight - sc.clientHeight;
   return { done: 'Scrolled ' + (o.direction === 'up' ? 'up' : 'down'), at: max > 0 ? Math.round(sc.scrollTop / max * 100) + '%' : 'no scrolling here' };
  """;
- const string SigJs = "return { sig: sig(deepActive()) };";
+ const string SigJs = """
+  const a = deepActive(); return { sig: sig(a), took: !!S.took?.got && !!a?.isContentEditable };
+ """;
  // Right before typing: still the field that was approved, and the keys would go into it.
  const string SameJs = """
   const e = S.typing, a = deepActive();
@@ -1179,6 +1185,7 @@ public partial class MainWindow
   if (runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m is { Role: "tool", Status: "working" } && Says(m.Text, doingWord)) is { } step) { step.Text = words; step.Status = "failed"; }
   return JsonSerializer.Serialize(new { ok = false, error = message, unverified = true });
  }
+ const string Drawn = ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it";
  const string CheckFirst = "It may still be working: call read_page to check before trying again, and don't repeat a purchase, send or delete without checking. A canvas or video can change without Still seeing it, so take a screenshot there.";
  /// Did the action work? Its watcher says whether the event reached the element and what changed after. Null means it went
  /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
@@ -1385,7 +1392,13 @@ public partial class MainWindow
     }
     else if (focus.TryGetProperty("near", out var near) && near.ValueKind == JsonValueKind.Object)
      await Pointer(who, t, core, near.GetProperty("x").GetDouble(), near.GetProperty("y").GetDouble());
-    async Task<bool> Unchanged() => Str(await Js(core, SigJs, new { }), "sig") == Str(focus, "sig");
+    bool drawn = false; // the editor took it, but what it shows can't be read
+    async Task<bool> Unchanged() {
+     var now = await Js(core, SigJs, new { });
+     bool same = Str(now, "sig") == Str(focus, "sig");
+     if (now.TryGetProperty("took", out var took) && took.ValueKind == JsonValueKind.True) { drawn = same; return false; }
+     return same;
+    }
     step.Live();
     if (step.Print.Length > 0) await Js(core, SameJs, new { expect = step.Print }); // nothing typed yet: a change asks again
     if (text.Length > 0) {
@@ -1404,7 +1417,7 @@ public partial class MainWindow
       if (await Verdict(who, t, core, before, urlBefore, "Enter", field, step) is { } unsent) return unsent;
      } catch (PageChanged) { return Fail("Typed into \"" + field + "\", but the page changed before Enter, so Still didn't press it. Call read_page to see it now."); }
     }
-    Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "")));
+    Did(who, "Typed into " + field); return Reply(Outcome(who, t, before, (text.Length > 0 ? "Typed into \"" : "Cleared \"") + field + "\"" + (B(args, "submit") ? " and pressed Enter" : "") + (drawn ? Drawn : "")));
    }
    case "press_key": {
     var (w, t, core) = await AgentPage(who, args);

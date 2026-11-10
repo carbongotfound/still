@@ -1,6 +1,6 @@
 """Companions see what a person sees. An outside AI app (over MCP) reads a local test page in a tab the user isn't looking at:
 controls and words that are hidden, see-through, clipped away, parked off the page or covered are left out of read_page and find,
-and a click on one is refused.
+and a click on one is refused. Typing into an editor that draws its own text (like Google Docs) goes in once and says so.
 
 Run: python tests/desktop/seen.py artifacts/Still-QA/Still.exe
 """
@@ -44,9 +44,15 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Seen</title>
 <x-card><span slot=s>Slotted words</span></x-card>
 <iframe src="/frame" style="width:300px;height:70px"></iframe>
 <iframe src="/frame?hidden" style="display:none"></iframe>
+<input id=stuck placeholder="Stuck field" oninput="this.value=''">
+<div id=canvas onclick="kix.contentDocument.querySelector('[contenteditable]').focus()" style="width:300px;height:60px;border:1px solid #888">Drawn:<span id=drawn></span></div>
+<iframe id=kix src="/kix" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
 <script>customElements.define('x-card', class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<p>Shadow words</p><slot name=s></slot><button>Shadow button</button>'; } });</script>"""
 FRAME = "<!doctype html><meta charset=utf-8><p>Frame words</p><button>Frame button</button>"
 HIDDEN_FRAME = "<!doctype html><meta charset=utf-8><p>Hidden frame words</p>"
+# Like Google Docs: typing lands in a hidden field in a frame, which hands it to the page to draw and empties itself.
+KIX = """<!doctype html><meta charset=utf-8><div contenteditable=true aria-label="Document" style="width:10px;height:10px"></div>
+<script>const f = document.querySelector('div'); f.addEventListener('input', () => { parent.document.getElementById('drawn').textContent += f.textContent; f.textContent = ''; });</script>"""
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -54,7 +60,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        data = (HIDDEN_FRAME if self.path.startswith("/frame?hidden") else FRAME if self.path.startswith("/frame") else PAGE).encode()
+        data = (HIDDEN_FRAME if self.path.startswith("/frame?hidden") else FRAME if self.path.startswith("/frame") else KIX if self.path.startswith("/kix") else PAGE).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(data)))
@@ -116,6 +122,14 @@ def main():
         check(not ok, f"A button cut off by its box isn't clicked by its words ({said[:70]})")
         ok, said = client.call("click", text="Shown button", tabId=tab)
         check("hidden" not in said, f"A button that shows is still clicked by its words ({said[:70]})")
+
+        ok, said = client.call("type", selector="#stuck", text="pears", tabId=tab)
+        check(not ok and "didn't change" in said, f"A field that throws typing away isn't called typed ({said[:90]})")
+        ok, said = client.call("click", selector="#canvas", tabId=tab)
+        ok, said = client.call("type", text="hello", tabId=tab)
+        check(ok and "draws its own text" in said, f"Typing into an editor that draws its own text counts, and says to check ({said[:120]})")
+        page = text_of(client.call("read_page", tabId=tab)[1])
+        check("Drawn:hello" in page and "hellohello" not in page, f"and it went in once ({page[page.find('Drawn'):][:40]!r})")
 
         check(rpc(p)["activeId"] != tab, "All this time the user's own tab stayed selected")
     finally:
