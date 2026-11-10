@@ -229,7 +229,7 @@ public partial class MainWindow
   if (given.Length > 40 || given.Any(x => x.Length > 4000)) return Fail("Too many or too long arguments: 40 at most, 4,000 characters each.");
   bool setup = Regex.IsMatch(Path.GetFileNameWithoutExtension(full), "setup|install", RegexOptions.IgnoreCase);
   string what = "Run " + rel + (given.Length > 0 ? " " + Clip(string.Join(" ", given), 80) : "");
-  bool auto = ExchangeOf(run.Chat).Chain.All(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).Programs == "auto");
+  bool auto = KeepGoing(run.Chat);
   if (setup || !auto && !Prefs.PluginsAllowed.Contains(id)) {
    string answer = await Approve(run, what, skill.Source, setup ? "plugin" : "program",
     setup ? "Setup can install other programs on your computer. It runs at your own risk." : "A program from a plugin you added. It runs on your computer with your access.", countdown: false);

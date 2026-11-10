@@ -197,7 +197,6 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
        <div className="companion-folder"><code title={c.folder}>{c.folder || `None, so ${label} can't touch your files.`}</code>
         <Button type="button" variant="outline" size="sm" onClick={() => window.chrome?.webview?.postMessage({ op: "pickFolder" })}><FolderOpen />{c.folder ? "Change" : "Pick a folder"}</Button>
         {c.folder && <Button type="button" variant="ghost" size="sm" onClick={() => save({ ...c, folder: "" })}>Remove</Button>}</div>
-       {c.folder && (c.ai || ai.harness) !== "claude" && <p className="profile-note">Only Claude can work in a folder for now. Others still help in the browser.</p>}
       </section>
       {!draft && <section className="profile-section"><h4>Made by {c.name}</h4>
        {files.length ? <div className="profile-files">{files.map(f => <FileCard key={f.path} path={f.path} send={send} onOpen={onOpenFile} />)}</div>

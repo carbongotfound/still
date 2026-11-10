@@ -64,7 +64,8 @@ final class AiChat: Codable {
  var error = "" // why its last run failed, until the next one (not saved)
  var updated = Date()
  var messages: [AiMessage] = []
- var allowed: [String] = [] // "action site" the user allowed for the rest of this chat
+ var allowed: [String] = [] // "action site" the user allowed for the rest of this chat ("files <folder>": replacing and deleting there)
+ var made = Set<String>() // files it made in its working folder since Still started: it may replace or delete them (not saved)
  var known: [String] = [] // the sites this chat has been to
  var read = 0 // what it has read: 0 nothing, 1 the public web, 2 pages or apps the user is signed in to
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened

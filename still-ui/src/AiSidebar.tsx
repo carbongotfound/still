@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -63,8 +63,9 @@ const DOING: Record<string, string> = {
  remember: "Saving to memory", recall: "Checking memory", forget: "Updating memory", read_knowledge: "Reading notes", update_knowledge: "Updating notes", load_skill: "Getting ready",
  read_attachment: "Reading your file", list_tabs: "Checking the tabs", offer_routine: "Suggesting a routine", list_companions: "Checking the team", list_profiles: "Checking profiles",
  run_plugin_action: "Using $", get_plugin_tools: "Opening $", find_plugins: "Looking for an app", list_connected_plugins: "Checking your apps", open_memory_source: "Opening a source",
+ list_files: "Looking in $", read_file: "Reading $", write_file: "Writing $", edit_file: "Editing $", delete_file: "Deleting $",
 }
-const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page" }
+const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page", list_files: "Looking through the folder" }
 export const doing = (tool = "", target = "") => !tool ? "Thinking about the next step" : !target && ALONE[tool] ? ALONE[tool] : (DOING[tool] ?? "Working on $").replace("$", target || "the page")
 /// A value that changes at most every ms (the step line: fast tools would flicker), always ending on the latest.
 export function useSettled<T>(value: T, ms: number) {
@@ -111,7 +112,7 @@ export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m "
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts: while it runs, once it's done, or if it didn't happen.
 const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Didn't|Nothing|Stopped) /, Ban], [/^(Used|Loaded) skill/, BookOpen], [/^(Search|Ran \d+ search)/, Search], [/^Think/, Lightbulb], [/^(Read|Look)/, Eye], [/^Click/, MousePointer2], [/^Typ/, Keyboard],
- [/^Scroll/, MoveVertical], [/^Sav/, Save], [/^(Took|Taking) a screenshot/, Camera], [/^(Open|Went|Going|Reload|Switch|Clos|Wait)/, Globe]]
+ [/^Scroll/, MoveVertical], [/^Sav/, Save], [/^(Wrot|Writ|Edit)/, Pencil], [/^Delet/, Trash2], [/^(Took|Taking) a screenshot/, Camera], [/^(Open|Went|Going|Reload|Switch|Clos|Wait)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
 const StepIcon = ({ step }: { step: string }) => <span className="ai-step-icon">{createElement(stepIcon(step))}</span>
 // The work view: a turn's steps as a light timeline, a small icon each on a thin line, in muted words. Addresses,

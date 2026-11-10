@@ -11,7 +11,6 @@ struct AgentModel { let id: String, name: String, efforts: [String] }
 /// the adapter's own list, the folder it runs in, the arguments that start Still's MCP server, and the chat's session.
 struct RunRequest {
  var prompt: String, model: String, effort: String, folder: String, mcp: [String], session: String?, resume: Bool
- var workFolder = "" // the user's working folder: the app's own file tools, for that folder only
  var forget = false // an incognito chat: the app saves no session (only where it has a documented option)
  var job = "chats" // what the run is for (chats, titles, setup or test): an API provider's spending is split by it
  var promptFile: String { (folder as NSString).appendingPathComponent("prompt-" + (session ?? "run") + ".txt") }
@@ -61,12 +60,16 @@ func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
  guard let file = attachment(id, in: folder) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
  let url = URL(fileURLWithPath: folder + "/" + id + "/" + file.name)
  did(who, "Read " + file.name)
- if imageMime(file.name) != nil, Int64(file.size) > maxImage { return agentFail("\(file.name) is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") }
- if let mime = imageMime(file.name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
+ return readPage(url, file.name, offset, "Tell the user what you can read.")
+}
+/// A file for the AI (name is what it knows it as): text and code a page at a time from the file itself (it can be 500 MB),
+/// 20000 bytes from offset cut back to a whole character; a PDF's text; a picture up to 5 MB as itself.
+func readPage(_ url: URL, _ name: String, _ offset: Int, _ otherwise: String) -> String {
+ if imageMime(name) != nil, Int64((try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? 0) > maxImage { return agentFail("\(name) is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") }
+ if let mime = imageMime(name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
  if url.pathExtension.lowercased() != "pdf" {
-  // Text a page at a time from the file itself (it can be 500 MB): 20000 bytes from offset, cut back to a whole character.
   guard let f = try? FileHandle(forReadingFrom: url), !((try? f.read(upToCount: 8000)) ?? Data()).contains(0) else {
-   return agentFail("\(file.name) isn't text, a PDF or an image Still can show you. Tell the user what you can read.")
+   return agentFail("\(name) isn't text, a PDF or an image Still can show you. \(otherwise)")
   }
   defer { try? f.close() }
   let length = Int((try? f.seekToEnd()) ?? 0), at = min(offset, length)
@@ -75,14 +78,14 @@ func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
   var end = page.count
   if at + end < length { var i = end - 1; while i > 0, page[i] & 0xC0 == 0x80 { i -= 1 }; if page[i] >= 0x80 { end = i } }
   let words = String(decoding: page[..<end], as: UTF8.self)
-  if end == length, words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": file.name, "text": "(No text in this file.)"]) }
-  return agentOk(["name": file.name, "text": words, "offset": at, "next": at + end < length ? at + end as Any : NSNull(), "length": length])
+  if end == length, words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": name, "text": "(No text in this file.)"]) }
+  return agentOk(["name": name, "text": words, "offset": at, "next": at + end < length ? at + end as Any : NSNull(), "length": length])
  }
- guard let pdf = PDFDocument(url: url) else { return agentFail("Couldn't read \(file.name) as a PDF. Ask the user for another copy.") }
+ guard let pdf = PDFDocument(url: url) else { return agentFail("Couldn't read \(name) as a PDF. Ask the user for another copy.") }
  let text = pdf.string ?? ""
- if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": file.name, "text": "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)"]) }
+ if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": name, "text": "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)"]) }
  let chars = Array(text), at = min(offset, chars.count), end = min(chars.count, at + 20000)
- return agentOk(["name": file.name, "text": String(chars[at..<end]), "offset": at, "next": end < chars.count ? end as Any : NSNull(), "length": chars.count])
+ return agentOk(["name": name, "text": String(chars[at..<end]), "offset": at, "next": end < chars.count ? end as Any : NSNull(), "length": chars.count])
 }
 /// This app's own binary: what the AI apps start as Still's MCP server.
 let stillExecutable = Bundle.main.executablePath ?? CommandLine.arguments[0]
@@ -461,9 +464,7 @@ final class ClaudeAdapter: AgentAdapter {
   var args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.resume ? "--resume" : "--session-id", r.session ?? "",
    "--disable-slash-commands", "--setting-sources", "project,local"] // none of the user's own skills, commands, plugins or settings
   if r.forget { args.append("--no-session-persistence") }
-  // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
-  if !r.workFolder.isEmpty { args += ["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.workFolder, "--permission-mode", "acceptEdits"] }
-  else { args += ["--tools", ""] }
+  args += ["--tools", ""] // none of its own: files go through Still's tools, in the working folder only (Folder.swift)
   if !r.model.isEmpty { args += ["--model", r.model] }
   if !r.effort.isEmpty { args += ["--effort", r.effort] }
   return args

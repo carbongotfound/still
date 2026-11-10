@@ -88,6 +88,7 @@ func targetOf(_ who: String, _ tool: String, _ args: [String: Any]) -> String {
   return name.isEmpty ? "" : title.isEmpty ? name : name + " about " + clipped(title, 50)
  }
  if ["run_plugin_action", "get_plugin_tools", "find_plugins", "list_connected_plugins", "run_plugin_program"].contains(tool) { return "" }
+ if ["list_files", "read_file", "write_file", "edit_file", "delete_file"].contains(tool) { return clipped(argText(args, "path").trimmingCharacters(in: .whitespaces), 60) }
  var url = argText(args, "url")
  if url.isEmpty, let id = agentTabs[who] { url = findTab(id)?.tab.url ?? "" }
  guard let scheme = URL(string: url)?.scheme, scheme == "http" || scheme == "https" else { return "" }
@@ -1046,7 +1047,7 @@ extension Browser {
   if !been.isEmpty && !root.known.contains(been) { root.known.append(been) }
   let signedIn = run.chat.ephemeral ? 1 : 2 // an incognito window holds nothing else
   switch tool {
-  case "read_page", "find", "screenshot", "wait_for", "click", "type", "press_key", "handle_dialog", "list_tabs", "run_plugin_action": root.read = max(root.read, signedIn)
+  case "read_page", "find", "screenshot", "wait_for", "click", "type", "press_key", "handle_dialog", "list_tabs", "run_plugin_action", "read_file", "list_files": root.read = max(root.read, signedIn) // the user's own files count as signed in
   case "read_url": root.read = max(root.read, step.signedOut ? 1 : signedIn)
   case "web_search", "read_attachment": root.read = max(root.read, 1)
   default: break
@@ -1202,6 +1203,7 @@ extension Browser {
    case "web_search": return try await webSearch(who, args)
    case "read_url": return try await readUrl(who, args, step)
    case "read_attachment": return readAttachment(who, argText(args, "id"), max(0, (args["offset"] as? NSNumber)?.intValue ?? 0))
+   case "list_files", "read_file", "write_file", "edit_file", "delete_file": return await folderTool(who, tool, args)
    case "open_tab":
     let background = args["background"] as? Bool ?? (runs[who] != nil)
     let url = try agentWebUrl(argText(args, "url")), chat = runs[who] != nil ? who : nil
@@ -1647,6 +1649,11 @@ enum Mcp {
   tool("web_search", "Search the web and get the results (title, URL, snippet) without opening a tab. Start here for questions and research; open a tab only to click, type, sign in or show the user something.",
        [str("query", "What to search for"), num("count", "How many results, up to 10 (default 8)")], ["query"]),
   tool("read_attachment", "Read a file the user attached to their message, by the id Still gave you: text and code come back as text, a page at a time (pass next as offset for more), PDFs as their text, images as the image itself.", [str("id", "The attachment's id"), num("offset", "Text position to continue from, for long files")], ["id"]),
+  tool("list_files", "List what's in the working folder the user gave you, or a folder in it: folders end with /, files show their size.", [str("path", "A folder in the working folder, like src (default: the working folder itself)")], []),
+  tool("read_file", "Read a file in the working folder: text and code a page at a time (pass next as offset for more), PDFs as their text, images as the image itself.", [str("path", "The file's path in the working folder, like notes/todo.md"), num("offset", "Position to continue from, for long files")], ["path"]),
+  tool("write_file", "Create a file in the working folder, or replace a whole one (folders on the way are made). Replacing a file you didn't make in this chat may ask the user first.", [str("path", "The file's path in the working folder"), str("content", "The whole file")], ["path", "content"]),
+  tool("edit_file", "Change part of a file in the working folder: old is the exact text to replace (it must be there once, unless all is true) and new goes in its place.", [str("path", "The file's path in the working folder"), str("old", "The exact text to replace, as read_file shows it"), str("new", "The text to put in its place"), bool("all", "Replace every place old is")], ["path", "old", "new"]),
+  tool("delete_file", "Delete a file in the working folder. It goes to the Trash (the Recycle Bin on Windows), and Still asks the user first unless you made the file in this chat.", [str("path", "The file's path in the working folder")], ["path"]),
   tool("read_url", "Read a web page's main text without opening a tab (12000 characters at a time). For pages you only need to read; use open_tab when you have to click or type there. It reads signed out (the reply says signedOut) unless the user named the site or you've used it in this chat; open_tab it to see it signed in.",
        [str("url", "The page's URL"), num("offset", "Text position to continue from, for long pages")], ["url"]),
   tool("open_tab", "Open a URL or search terms in a new tab and work there from now on, to click, type or sign in. The user keeps their own tab and can keep browsing. Start most hands-on tasks here.",

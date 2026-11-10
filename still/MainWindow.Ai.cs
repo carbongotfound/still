@@ -56,7 +56,8 @@ public sealed class AiChat
  [System.Text.Json.Serialization.JsonIgnore] public string Error { get; set; } = ""; // why its last run failed, until the next one
  public DateTime Updated { get; set; } = DateTime.UtcNow;
  public List<AiMessage> Messages { get; set; } = [];
- public List<string> Allowed { get; set; } = []; // "action site" the user allowed for the rest of this chat
+ public List<string> Allowed { get; set; } = []; // "action site" the user allowed for the rest of this chat ("files <folder>": replacing and deleting there)
+ [System.Text.Json.Serialization.JsonIgnore] public HashSet<string> Made { get; } = []; // files it made in its working folder since Still started: it may replace or delete them
  public List<AiAudit> Audit { get; set; } = []; // what the AI asked to do on sites, and what happened
 }
 public sealed class AiAudit
@@ -858,7 +859,7 @@ public partial class MainWindow
  static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : WhoYouAre(who) + "\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
-  {(folder.Length > 0 ? $"You may read and write files in the user's working folder {folder}, and nowhere else. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
+  {(folder.Length > 0 ? $"You work in the user's folder {folder}: list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
 
   How to work:
   - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).
@@ -1135,7 +1136,7 @@ public partial class MainWindow
   foreach (var k in skills) if (k.Id != Skill.SetupId) Step(chat, "Used skill " + k.Name); else if (!hadSetup) chat.Messages.Add(new() { Role = "tool", Text = "Used skill " + k.Name }); // Setup's step shows even before a hello
   var list = ListOf(chat); list.Remove(chat); list.Insert(0, chat); SaveAiChats(); PublishAiEverywhere();
 
-  string work = !chat.Ephemeral && cli.Id == "claude" && who?.Folder is { Length: > 0 } wf && Directory.Exists(wf) ? wf : ""; // only Claude Code's file tools are wired up so far
+  string work = FolderOf(chat);
   // Memory goes in when a session starts: what fits this message and the chat so far (a vague "carry on" finds the chat's
   // own summary). Later turns hear what changed since, once.
   string query = shown + "\n" + string.Join("\n", chat.Messages.Where(m => m.Role is "user" or "assistant").TakeLast(4).Select(m => CompanionMemory.Clip(m.Text, 500)))
@@ -1169,7 +1170,7 @@ public partial class MainWindow
   AgentRun? run = null;
   try {
    if (cli.NamesSession) chat.Session ??= Guid.NewGuid().ToString();
-   var request = new RunRequest(prompt, model, effort, folder, mcp, chat.Session, chat.Started && chat.Session != null) { WorkFolder = work, Forget = chat.Ephemeral && cli.Forgets };
+   var request = new RunRequest(prompt, model, effort, folder, mcp, chat.Session, chat.Started && chat.Session != null) { Forget = chat.Ephemeral && cli.Forgets };
    promptFile = request.PromptFile;
    run = me.Run = await cli.Start(exe, request);
    if (me.Stopped) run.Cancel();
@@ -1512,6 +1513,7 @@ public partial class MainWindow
   string tool = name.Replace("mcp__still__", "").Replace("still__", "");
   string arg = input is JsonObject o ? (o["url"] ?? o["text"] ?? o["id"] ?? o["direction"])?.ToString() ?? "" : "";
   if (arg.Length > 60) arg = arg[..60] + "…";
+  string path = input?["path"]?.ToString() ?? "";
   return tool switch {
    "read_page" => "Read the page", "list_tabs" => "Looked at open tabs", "screenshot" => "Took a screenshot",
    "open_tab" => "Opened " + arg, "navigate" => "Went to " + arg, "click" => "Clicked " + (o2(input, "text") ?? "element " + arg),
@@ -1519,6 +1521,7 @@ public partial class MainWindow
    "type" => "Typed “" + arg + "”", "scroll" => "Scrolled " + (arg.Length > 0 ? arg : "the page"), "wait_for" => "Waited for the page",
    "go_back" => "Went back", "go_forward" => "Went forward", "reload" => "Reloaded", "switch_tab" => "Switched tabs", "close_tab" => "Closed a tab", "ask_user" => "",
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
+   "list_files" => "Looked in " + (path.Length > 0 ? path : "the folder"), "read_file" => "Read " + path, "write_file" => "Wrote " + path, "edit_file" => "Edited " + path, "delete_file" => "Deleted " + path,
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
    "load_skill" => "", "run_plugin_program" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "read_knowledge" => "Read a knowledge file", "open_memory_source" => "Checked where a memory came from", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),
@@ -1553,7 +1556,8 @@ public partial class MainWindow
   ("Read", "Reading", "Didn't read"), ("Looked", "Looking", "Didn't look"), ("Took", "Taking", "Didn't take"), ("Opened", "Opening", "Didn't open"), ("Went", "Going", "Didn't go"),
   ("Clicked", "Clicking", "Didn't click"), ("Typed", "Typing", "Didn't type"), ("Scrolled", "Scrolling", "Didn't scroll"), ("Waited", "Waiting", "Stopped waiting"), ("Reloaded", "Reloading", "Didn't reload"),
   ("Switched", "Switching", "Didn't switch"), ("Closed", "Closing", "Didn't close"), ("Saved", "Saving", "Didn't save"), ("Pressed", "Pressing", "Didn't press"), ("Answered", "Answering", "Didn't answer"),
-  ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed")];
+  ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed"),
+  ("Wrote", "Writing", "Didn't write"), ("Edited", "Editing", "Didn't edit"), ("Deleted", "Deleting", "Didn't delete")];
  static bool Says(string text, string word) => text == word || text.StartsWith(word + " ", StringComparison.Ordinal);
  static string Doing(string label) { foreach (var w in StepWords) if (Says(label, w.Done)) return w.Doing + label[w.Done.Length..]; return label; }
  static void EndStep(AiMessage step, bool ok)
@@ -1694,28 +1698,33 @@ public partial class MainWindow
   if (from == null || Attachment(from, id) is not { } file) return Fail("No attachment has that id. Use the id from the [Still] note in the user's message.");
   string path = Path.Combine(from, id, file.Name);
   Did(who, "Read " + file.Name);
-  if (ImageMime(file.Name) is { } mime)
-   return file.Size > MaxImage ? Fail($"{file.Name} is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") : Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
-  if (!Path.GetExtension(file.Name).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
+  return ReadPage(path, file.Name, offset, "Tell the user what you can read.");
+ }
+ /// A file for the AI (name is what it knows it as): text and code a page at a time from the file itself (it can be 500 MB),
+ /// 20000 bytes from offset cut back to a whole character; a PDF's text; a picture up to 5 MB as itself.
+ static string ReadPage(string path, string name, long offset, string otherwise)
+ {
+  if (ImageMime(name) is { } mime)
+   return new FileInfo(path).Length > MaxImage ? Fail($"{name} is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") : Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
+  if (!Path.GetExtension(name).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
   {
-   // Text a page at a time from the file itself (it can be 500 MB): 20000 bytes from offset, cut back to a whole character.
    using var f = File.OpenRead(path);
    var head = new byte[Math.Min(f.Length, 8000)]; f.ReadExactly(head);
-   if (head.AsSpan().Contains((byte)0)) return Fail($"{file.Name} isn't text, a PDF or an image Still can show you. Tell the user what you can read.");
+   if (head.AsSpan().Contains((byte)0)) return Fail($"{name} isn't text, a PDF or an image Still can show you. {otherwise}");
    long start = Math.Min(offset, f.Length); f.Position = start;
    var page = new byte[Math.Min(20000, f.Length - start)]; f.ReadExactly(page);
    int cut = page.Length;
    if (start + cut < f.Length) { int i = cut - 1; while (i > 0 && (page[i] & 0xC0) == 0x80) i--; if (page[i] >= 0x80) cut = i; }
    string words = Encoding.UTF8.GetString(page, 0, cut);
-   if (cut == f.Length && words.Trim().Length == 0) return Reply(new { name = file.Name, text = "(No text in this file.)" });
-   return Reply(new { name = file.Name, text = words, offset = start, next = start + cut < f.Length ? start + cut : (long?)null, length = f.Length });
+   if (cut == f.Length && words.Trim().Length == 0) return Reply(new { name, text = "(No text in this file.)" });
+   return Reply(new { name, text = words, offset = start, next = start + cut < f.Length ? start + cut : (long?)null, length = f.Length });
   }
   string text;
   try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(path); text = string.Join("\n\n", pdf.GetPages().Select(p => UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(p))); }
-  catch (Exception ex) when (ex is not OutOfMemoryException) { return Fail($"Couldn't read {file.Name} as a PDF. Ask the user for another copy."); }
-  if (text.Trim().Length == 0) return Reply(new { name = file.Name, text = "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)" });
-  int at = Math.Min(offset, text.Length), end = Math.Min(text.Length, at + 20000);
-  return Reply(new { name = file.Name, text = text[at..end], offset = at, next = end < text.Length ? end : (int?)null, length = text.Length });
+  catch (Exception ex) when (ex is not OutOfMemoryException) { return Fail($"Couldn't read {name} as a PDF. Ask the user for another copy."); }
+  if (text.Trim().Length == 0) return Reply(new { name, text = "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)" });
+  int at = (int)Math.Min(offset, text.Length), end = Math.Min(text.Length, at + 20000);
+  return Reply(new { name, text = text[at..end], offset = at, next = end < text.Length ? end : (int?)null, length = text.Length });
  }
 
  /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.

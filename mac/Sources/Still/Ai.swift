@@ -375,7 +375,8 @@ let stepWords: [(done: String, doing: String, failed: String)] = [
  ("Read", "Reading", "Didn't read"), ("Looked", "Looking", "Didn't look"), ("Took", "Taking", "Didn't take"), ("Opened", "Opening", "Didn't open"), ("Went", "Going", "Didn't go"),
  ("Clicked", "Clicking", "Didn't click"), ("Typed", "Typing", "Didn't type"), ("Scrolled", "Scrolling", "Didn't scroll"), ("Waited", "Waiting", "Stopped waiting"), ("Reloaded", "Reloading", "Didn't reload"),
  ("Switched", "Switching", "Didn't switch"), ("Closed", "Closing", "Didn't close"), ("Saved", "Saving", "Didn't save"), ("Pressed", "Pressing", "Didn't press"), ("Answered", "Answering", "Didn't answer"),
- ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed")]
+ ("Picked", "Picking", "Didn't pick"), ("Updated", "Updating", "Didn't update"), ("Checked", "Checking", "Didn't check"), ("Removed", "Removing", "Nothing removed"),
+ ("Wrote", "Writing", "Didn't write"), ("Edited", "Editing", "Didn't edit"), ("Deleted", "Deleting", "Didn't delete")]
 func says(_ text: String, _ word: String) -> Bool { text == word || text.hasPrefix(word + " ") }
 func doing(_ label: String) -> String {
  for w in stepWords where says(label, w.done) { return w.doing + label.dropFirst(w.done.count) }
@@ -425,6 +426,11 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "switch_tab": return "Switched tabs"
  case "close_tab": return "Closed a tab"
  case "save_file": return "Saved " + (AgentStream.str(o?["name"]) ?? "a file")
+ case "list_files": return "Looked in " + ((AgentStream.str(o?["path"]) ?? "").isEmpty ? "the folder" : AgentStream.str(o?["path"])!)
+ case "read_file": return "Read " + (AgentStream.str(o?["path"]) ?? "")
+ case "write_file": return "Wrote " + (AgentStream.str(o?["path"]) ?? "")
+ case "edit_file": return "Edited " + (AgentStream.str(o?["path"]) ?? "")
+ case "delete_file": return "Deleted " + (AgentStream.str(o?["path"]) ?? "")
  case "find": return "Looked for " + (quoted("text") ?? "text")
  case "press_key": return "Pressed " + (AgentStream.str(o?["key"]) ?? "a key")
  case "handle_dialog": return "Answered a dialog"
@@ -620,7 +626,7 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
  (who.map { whoYouAre($0) + "\n" } ?? "") + """
  You are the AI assistant built into Still, the user's web browser, running on \(cli.app). You work with the user in a chat.
  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
- \(folder.isEmpty ? "You are not in a terminal: you have no files or shell here" : "You may read and write files in the user's working folder \(folder), and nowhere else. There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
+ \(folder.isEmpty ? "You are not in a terminal: you have no files or shell here" : "You work in the user's folder \(folder): list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it. There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
 
  How to work:
  - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).
@@ -1497,9 +1503,7 @@ extension Browser {
   for k in skills { if k.id != Skill.setupId { chatStep(chat, "Used skill " + k.name) } else if !hadSetup { chat.messages.append(AiMessage("tool", "Used skill " + k.name)) } } // Setup's step shows even before a hello
   toTop(chat); publishAiEverywhere()
 
-  var isFolder: ObjCBool = false
-  let wf = who?.folder ?? ""
-  let work = !chat.ephemeral && cli.id == "claude" && !wf.isEmpty && FileManager.default.fileExists(atPath: wf, isDirectory: &isFolder) && isFolder.boolValue ? wf : "" // only Claude Code's file tools are wired up so far
+  let work = folderOf(chat)
   // Memory goes in when a session starts: what fits this message and the chat so far (a vague "carry on" finds the chat's
   // own summary). Later turns hear what changed since, once.
   let recent: String = chat.messages.filter { $0.role == "user" || $0.role == "assistant" }.suffix(4).map { CompanionMemory.clip($0.text, 500) }.joined(separator: "\n")
@@ -1533,7 +1537,6 @@ extension Browser {
   if let note = onDefault.removeValue(forKey: chat.id) { model = ""; effort = ""; chat.messages.append(AiMessage("note", note)) }
   if cli.namesSession && chat.session == nil { chat.session = UUID().uuidString.lowercased() }
   var request = RunRequest(prompt: prompt, model: model, effort: effort, folder: folder, mcp: mcp, session: chat.session, resume: chat.started && chat.session != nil)
-  request.workFolder = work
   request.forget = chat.ephemeral && cli.forgets
   Task { [request] in await finishRun(chat, cli, exe, me, request, shown, asker: asker) }
  }

@@ -889,7 +889,7 @@ public partial class MainWindow
   if (u == null || u.Scheme is not ("http" or "https")) throw new InvalidOperationException("Agents can only open http and https pages" + (folder.Length > 0 ? ", and files in your working folder." : "."));
   return url;
  }
- string WorkFolder(string who) => Companions.FirstOrDefault(c => c.Id == runs.GetValueOrDefault(who)?.Chat.Companion)?.Folder ?? "";
+ string WorkFolder(string who) => runs.GetValueOrDefault(who) is { } run ? FolderOf(run.Chat) : "";
  // ---- The permission layer ----
  // Every call is read, navigate, interact or sensitive: buying, sending, deleting, a form that posts, a password or
  // payment field, or anything on a site the user marked sensitive. Settings say, per site, action and companion,
@@ -962,7 +962,7 @@ public partial class MainWindow
   if (been.Length > 0 && !root.Known.Contains(been)) root.Known.Add(been);
   int signedIn = run.Chat.Ephemeral ? 1 : 2; // an incognito window holds nothing else
   root.Read = Math.Max(root.Read, tool switch {
-   "read_page" or "find" or "screenshot" or "wait_for" or "click" or "type" or "press_key" or "handle_dialog" or "list_tabs" or "run_plugin_action" => signedIn,
+   "read_page" or "find" or "screenshot" or "wait_for" or "click" or "type" or "press_key" or "handle_dialog" or "list_tabs" or "run_plugin_action" or "read_file" or "list_files" => signedIn, // the user's own files count as signed in
    "read_url" => step.SignedOut ? 1 : signedIn,
    "web_search" or "read_attachment" => 1,
    _ => 0 });
@@ -1120,6 +1120,7 @@ public partial class MainWindow
    return name.Length == 0 ? "" : title.Length == 0 ? name : name + " about " + Clip(title, 50);
   }
   if (tool is "run_plugin_action" or "get_plugin_tools" or "find_plugins" or "list_connected_plugins" or "run_plugin_program") return "";
+  if (tool is "list_files" or "read_file" or "write_file" or "edit_file" or "delete_file") return Clip(S(args, "path").Trim(), 60);
   string url = S(args, "url");
   if (url.Length == 0 && agentTabs.TryGetValue(who, out var id)) url = FindTab(id)?.Url ?? "";
   return Uri.TryCreate(url, UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? Host(url) : "";
@@ -1289,6 +1290,7 @@ public partial class MainWindow
    case "list_connected_plugins" or "find_plugins" or "get_plugin_tools" or "run_plugin_action": return await PluginTool(who, tool, args);
    case "remember" or "recall" or "forget" or "update_knowledge" or "read_knowledge" or "open_memory_source": return Remembering(who, tool, args);
    case "run_plugin_program": return await PluginProgram(who, args);
+   case "list_files" or "read_file" or "write_file" or "edit_file" or "delete_file": return await FolderTool(who, tool, args);
    case "load_skill": {
     // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
     var run = runs.GetValueOrDefault(who);

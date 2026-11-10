@@ -249,7 +249,7 @@ extension Browser {
   if given.count > 40 || given.contains(where: { $0.count > 4000 }) { return agentFail("Too many or too long arguments: 40 at most, 4,000 characters each.") }
   let setup = regexMatch("(?i)setup|install", full.deletingPathExtension().lastPathComponent) != nil
   let shown = given.joined(separator: " "), what = "Run " + rel + (given.isEmpty ? "" : " " + (shown.count > 80 ? String(shown.prefix(79)) + "…" : shown))
-  let auto = exchangeOf(run.chat).chain.allSatisfy { c in levelOf(companions.first { $0.id == c }).programs == "auto" }
+  let auto = keepGoing(run.chat)
   if setup || !auto && !pref("PluginsAllowed", [String]()).contains(id) {
    let answer = await approve(run, what, skill.source, setup ? "plugin" : "program",
     setup ? "Setup can install other programs on your computer. It runs at your own risk." : "A program from a plugin you added. It runs on your computer with your access.", countdown: false)

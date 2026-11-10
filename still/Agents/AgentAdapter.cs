@@ -12,7 +12,6 @@ public sealed record AgentModel(string Id, string Name, string[] Efforts);
 /// the adapter's own list, the folder it runs in, the command that starts Still's MCP server, and the chat's session.
 public sealed record RunRequest(string Prompt, string Model, string Effort, string Folder, IReadOnlyList<string> Mcp, string? Session, bool Resume)
 {
- public string WorkFolder { get; init; } = ""; // the user's working folder: the app's own file tools, for that folder only
  public bool Forget { get; init; } // an incognito chat: the app saves no session (only where it has a documented option)
  public string Job { get; init; } = "chats"; // what the run is for, in an API provider's spending: chats, titles or setup
  public string PromptFile => Path.Combine(Folder, "prompt-" + (Session ?? "run") + ".txt");
@@ -136,9 +135,7 @@ sealed class ClaudeAdapter : AgentAdapter
   List<string> args = ["-p", "--output-format", "stream-json", "--verbose", "--mcp-config", config, "--strict-mcp-config", "--allowedTools", "mcp__still", r.Resume ? "--resume" : "--session-id", r.Session!,
    "--disable-slash-commands", "--setting-sources", "project,local"]; // none of the user's own skills, commands, plugins or settings
   if (r.Forget) args.Add("--no-session-persistence");
-  // File tools only with a working folder, and only inside it: edits are accepted in the working directories, anything else is refused.
-  if (r.WorkFolder.Length > 0) args.AddRange(["--tools", "Read,Write,Edit,Glob,Grep", "--add-dir", r.WorkFolder, "--permission-mode", "acceptEdits"]);
-  else args.AddRange(["--tools", ""]);
+  args.AddRange(["--tools", ""]); // none of its own: files go through Still's tools, in the working folder only (MainWindow.Folder.cs)
   if (r.Model.Length > 0) args.AddRange(["--model", r.Model]);
   if (r.Effort.Length > 0) args.AddRange(["--effort", r.Effort]);
   return Task.FromResult(args);
