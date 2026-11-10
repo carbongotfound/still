@@ -393,6 +393,7 @@ def main():
         done = len(lines("results.jsonl"))
         js(p, f"window.__plan = {files_js([('plan.md', 'text/markdown', base64.b64encode(b'# Plan\\nShip it').decode())])}; (l => {{ l.dispatchEvent(new DragEvent('dragenter', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }})); l.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }})) }})(document.querySelector('{box} .ai-log'))")
         check(until(lambda: js(p, f"!!document.querySelector('{box} > .composer-drop')"), 3), "Dragging files over a chat lights up the whole chat")
+        check(js(p, f"document.querySelector('{box} > .composer-drop').offsetParent === document.querySelector('{box}')"), "...the chat, not the window around it")
         rpc(p, "capture", name="attach-drop-chat.png")
         js(p, f"document.querySelector('{box} .ai-log').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }}))")
         check(until(lambda: chips(p, box) == ["plan.md 15 B"], 10) and not js(p, f"!!document.querySelector('{box} > .composer-drop')"), "...and a drop anywhere on it adds them to the chat's box")
