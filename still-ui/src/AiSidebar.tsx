@@ -878,7 +878,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   return () => keep.disconnect()
  }, [ai.chatId, !!setup])
  const pages = tabs.filter(t => t.inChat && t.inChat === ai.chatId)
- const openLink = (url: string) => send("new", { url })
+ const openLink = (url: string) => url.startsWith("still:settings/") ? send("openPanel", { name: "settings", value: url }) : send("new", { url })
 
  return <section className="chat-view" data-mode={mode} aria-label={"Chat with " + name}>
   {!setup && chat?.from && <div className="task-head"><div className="chat-column">

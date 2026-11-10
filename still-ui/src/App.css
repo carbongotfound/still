@@ -119,6 +119,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .set-nav-item[aria-current=page] { background:var(--background); color:var(--foreground); font-weight:500; box-shadow:0 0 0 1px var(--border),0 1px 2px #0000000f; }
 .set-nav-item svg { width:15px; height:15px; flex:none; }
 .set-main { overflow-y:auto; scrollbar-width:thin; padding:22px 28px 32px; display:flex; flex-direction:column; gap:22px; }
+.set-offer { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; margin:12px 0 0; padding:8px 8px 8px 12px; border-radius:10px; border:1px solid color-mix(in oklab,var(--primary) 30%,var(--border)); background:color-mix(in oklab,var(--primary) 6%,var(--background)); font-size:13px; }
+.set-offer > svg { width:15px; height:15px; color:var(--primary); flex:none; } .set-offer > span { flex:1; min-width:0; }
+.md-setting > svg { width:.95em; height:.95em; margin-right:3px; vertical-align:-.12em; }
 .set-title { margin:0; font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
 .set-group h3 { margin:0 0 8px 2px; font:600 10.5px var(--font-ui); letter-spacing:.07em; text-transform:uppercase; color:var(--muted-foreground); }
 .set-card { border:1px solid var(--border); border-radius:14px; background:var(--card); overflow:hidden; }

@@ -101,6 +101,8 @@ FAKE = textwrap.dedent(r'''
         text('Pick what matters.\n\n```choices\n{"question": "Which should I compare?", "type": "multiple", "options": ["Price", "Weight", "Battery"]}\n```')
     elif verb == "DROP":
         text('Which day?\n\n```choices\n{"question": "Pick a day", "type": "dropdown", "options": ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9"]}\n```')
+    elif verb == "SETLINK":
+        text("Fewer check-ins? [Have Jonah check in more](still:settings/autonomy/Jonah?to=ask), [use the dark theme](still:settings/theme?to=Dark) or see [your permissions](still:settings/permissions).")
     elif verb == "RATE":
         text("Here's **the plan**: book `Alfama House` and see [the map](https://example.com/map).")
     elif verb == "BADJSON":
@@ -543,6 +545,38 @@ def main():
         note = next((m["Text"] for m in msgs if m["Role"] == "note" and "isn't available" in m["Text"]), "")
         check(note.startswith("notonplan isn't available on your Fake agent account") and "Settings → Models" in note, "The chat says it ran on the default model: " + note[:90])
         check(msgs and msgs[-1]["Role"] == "assistant" and msgs[-1]["Text"] == "Okay.", "and the answer follows")
+
+        # A settings link in a reply opens that exact setting; a change it offers waits for Change it.
+        again(p, jonah, "SETLINK")
+        link = lambda words: js(p, "[...[...document.querySelectorAll('.chat-view .md')].pop().querySelectorAll('a.md-setting')].find(a => a.innerText.includes(%s))?.click() ?? 'none'" % json.dumps(words))
+        offer = lambda: js(p, "document.querySelector('.set-offer')?.innerText.replace(/\\s+/g, ' ').trim() || ''") or ""
+        def prefs():  # Still may be writing it right now (Windows locks the file then)
+            for _ in range(20):
+                try:
+                    return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"]
+                except (OSError, ValueError):
+                    time.sleep(.1)
+            return {}
+        level = lambda: next((c.get("Autonomy") for c in prefs().get("Companions", []) if c["Id"] == "jonah"), None)
+        link("check in more")
+        lit = until(lambda: js(p, "document.querySelector('#set-autonomy-jonah')?.classList.contains('set-flash')"), 10)
+        said = until(offer, 5) or ""
+        check(lit and said.startswith("Set Jonah to Ask more?"), f"A settings link opens that setting, lit up, and offers the change ({said!r})")
+        time.sleep(.5)
+        rpc(p, "capture", name="skills-setlink.png")
+        js(p, "[...document.querySelectorAll('.set-offer button')].find(b => b.innerText.trim() === 'Change it').click()")
+        check(until(lambda: level() == "ask", 10) and until(lambda: not offer(), 5), "Change it makes the change and the offer goes")
+        link("dark theme")
+        lit = until(lambda: js(p, "document.querySelector('#set-theme')?.classList.contains('set-flash')"), 10)
+        said = until(offer, 5) or ""
+        js(p, "[...document.querySelectorAll('.set-offer button')].find(b => b.innerText.trim() === 'Not now').click()")
+        time.sleep(1)
+        theme = prefs().get("Theme")
+        check(lit and said.startswith("Set Theme to Black?") and not offer() and theme == "Light", f"Not now leaves it as it was ({said!r}, {theme})")
+        link("permissions")
+        lit = until(lambda: js(p, "document.querySelector('#set-permissions')?.classList.contains('set-flash')"), 10)
+        check(lit and not offer(), "A link without a value only opens the setting")
+        send(p, "companionAutonomy", id="jonah", level="keepgoing")
 
         # Settings → Models: the tiers, with Advanced off; Reset puts the defaults back.
         send(p, "openPanel", name="settings")

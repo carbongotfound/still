@@ -106,7 +106,7 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  return <div className="perm-settings">
   <p className="tool-caption">Choose what your companions may do without asking. Sensitive steps are buying, sending, deleting, forms that send data, and password or payment fields. Allowed without asking, a sensitive step still waits 8 seconds so you can cancel it. AI apps you connect from outside Still ask in the bar at the top before a sensitive step, and when a rule for everyone or a sensitive site says to.</p>
   <div className="setting-row"><div><strong>Autonomy</strong><p>How much each companion does before it checks with you. Keep going makes the calls and keeps working. {ALWAYS_ASKS}</p></div></div>
-  {companions.map(c => { const level = levelOf(c); return <div key={c.id} className="setting-row perm-level"><div><strong><Face companion={c} size={20} />{c.name}</strong><p>{AUTONOMY[level].short}</p></div>
+  {companions.map(c => { const level = levelOf(c); return <div key={c.id} className="setting-row perm-level" id={"set-autonomy-" + c.id}><div><strong><Face companion={c} size={20} />{c.name}</strong><p>{AUTONOMY[level].short}</p></div>
    <Select value={level} onValueChange={v => send("companionAutonomy", { id: c.id, level: v })}><SelectTrigger size="sm" aria-label={"Autonomy for " + c.name}><SelectValue /></SelectTrigger>
     <SelectContent>{(Object.keys(AUTONOMY) as Autonomy[]).map(id => <SelectItem key={id} value={id}>{AUTONOMY[id].name}</SelectItem>)}</SelectContent></Select></div> })}
   <Separator />

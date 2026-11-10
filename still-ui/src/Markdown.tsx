@@ -1,14 +1,14 @@
 import type { ReactNode } from "react"
-import { Copy } from "lucide-react"
+import { Copy, Settings2 } from "lucide-react"
 import { mediaLine } from "./media"
 import { MediaCard } from "./MediaCard"
 
 // A small Markdown renderer for AI replies: headings, lists, quotes, code, tables, links, bold/italic/strike.
 // React escapes all text, so a reply can't inject HTML. Links open in a new Still tab. An image or a YouTube link on a
-// line of its own shows as a card (MediaCard.tsx).
+// line of its own shows as a card (MediaCard.tsx). A still:settings/ link opens that setting (App.tsx settingsLink).
 type Link = (url: string) => void
 
-const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*\s][^*]*\*|(?<![\w])_[^_\s][^_]*_(?![\w]))|(\[[^\]]+\]\((?:https?:\/\/|mailto:)[^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g
+const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*|__[^_]+__)|(~~[^~]+~~)|(\*[^*\s][^*]*\*|(?<![\w])_[^_\s][^_]*_(?![\w]))|(\[[^\]]+\]\((?:https?:\/\/|mailto:|still:settings\/)[^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g
 
 function inline(text: string, onLink: Link, key = ""): ReactNode[] {
  const out: ReactNode[] = []
@@ -22,7 +22,8 @@ function inline(text: string, onLink: Link, key = ""): ReactNode[] {
   else if (m[4]) out.push(<em key={k}>{inline(t.slice(1, -1), onLink, k)}</em>)
   else {
    const [label, url] = m[5] ? [t.slice(1, t.indexOf("](")), t.slice(t.indexOf("](") + 2, -1)] : [t, t]
-   out.push(<a key={k} href={url} title={url} onClick={e => { e.preventDefault(); onLink(url) }}>{m[5] ? inline(label, onLink, k) : label}</a>)
+   const setting = url.startsWith("still:")
+   out.push(<a key={k} href={url} title={setting ? "Opens in Settings" : url} className={setting ? "md-setting" : undefined} onClick={e => { e.preventDefault(); onLink(url) }}>{setting && <Settings2 />}{m[5] ? inline(label, onLink, k) : label}</a>)
   }
   last = m.index + t.length
  }

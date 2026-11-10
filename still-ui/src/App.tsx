@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
 import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, doing, isRunning, since, useSettled, type AiState } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
-import { AuditList, PermissionsSettings, useArmed } from "./Permissions"
+import { AUTONOMY, AuditList, PermissionsSettings, levelOf, useArmed, type Autonomy } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
 import { AiLogo } from "./AiLogo"
 import { Buddy, CompanionContext, Face, FALLBACK, Space, agentFace, hueOf, lookOf, type Companion } from "./Buddy"
@@ -153,6 +153,23 @@ const SETTINGS_FIND: Finding[] = [
  ["clearHistory", "privacy", "Clear browsing history", "delete"], ["clearCookies", "privacy", "Clear cookies and website data", "delete sign out"],
  ["autoUpdate", "about", "Update automatically", "auto update download install new version"], ["checkUpdates", "about", "Check for updates", "update new version latest"],
  ["about", "about", "About Still", "version update intro open source"]]
+// A settings link from a reply (Markdown.tsx): still:settings/<a SETTINGS_FIND id>, or autonomy/<companion id or name>.
+// Settings opens at that setting, lit up. ?to=<value> offers a change in Still's own words; the user's Change it is the
+// yes. A companion can't change a setting itself. These can be offered, with the word Settings shows for each value:
+const OFFERS: Record<string, [key: string, words: Record<string, string>]> = {
+ theme: ["theme", { Light: "Light", Dark: "Black", System: "System" }], layout: ["tabLayout", { Classic: "Classic", Modern: "Modern" }],
+ search: ["search", { DuckDuckGo: "DuckDuckGo", Google: "Google", Bing: "Bing" }], sounds: ["sounds", { true: "On", false: "Off" }], restore: ["restore", { true: "On", false: "Off" }] }
+type Offer = { page: string; row: string; to: string; who?: Companion }
+function settingsLink(url: string, companions: Companion[]): Offer | null {
+ const m = /^still:settings\/([\w-]+)(?:\/([^?]+))?(?:\?to=(\w+))?$/.exec(url); if (!m) return null
+ const [, id, named = "", to = ""] = m
+ if (id === "autonomy") {
+  const name = decodeURIComponent(named).toLowerCase(), who = name ? companions.find(c => c.id === name || c.name.toLowerCase() === name) : undefined
+  return who ? { page: "privacy", row: "autonomy-" + who.id, to: to in AUTONOMY ? to : "", who } : { page: "privacy", row: "permissions", to: "" }
+ }
+ const found = SETTINGS_FIND.find(f => f[0] === id)
+ return found ? { page: found[1], row: id, to: OFFERS[id]?.[1][to] ? to : "" } : null
+}
 function SetCard({ title, children }: { title: string; children: ReactNode }) {
  return <section className="set-group" aria-label={title}><h3>{title}</h3><div className="set-card">{children}</div></section>
 }
@@ -324,17 +341,23 @@ export default function App() {
  const [memoryFor, setMemoryFor] = useState("") // the companion Settings > Memory opens on
  const [settingsFind, setSettingsFind] = useState("")
  const [flash, setFlash] = useState("") // the setting a search result jumped to: it lights up for a moment
+ const [offer, setOffer] = useState<Offer | null>(null) // a change a settings link offered (settingsLink)
  const reduced = useReducedMotion()
  const [replay, setReplay] = useState(false) // About's "Replay the intro"
  const [whatsNew, setWhatsNew] = useState(false) // What's New: once after an update, or from About
  // The little sounds (sound.ts): the Sounds setting, unless the system's own sounds are off or motion is reduced
  const soundsBlocked = state.preferences.osSoundsOff ? (MAC ? "Off because your Mac's sound effects are off" : "Off because Windows sounds are off") : reduced ? "Off because reduce motion is on" : ""
  const sounds = state.preferences.sounds !== false && !soundsBlocked
- useEffect(() => {
-  const row = flash ? document.getElementById("set-" + flash) : null
-  if (!row) return
-  row.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }); row.classList.add("set-flash")
-  const t = setTimeout(() => { row.classList.remove("set-flash"); setFlash("") }, 1600)
+ useEffect(() => { // Settings may still be opening (a settings link): wait up to 2 seconds for the row
+  if (!flash) return
+  let t = 0, tries = 0
+  const go = () => {
+   const row = document.getElementById("set-" + flash)
+   if (!row) { t = window.setTimeout(() => tries++ < 20 ? go() : setFlash(""), 100); return }
+   row.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }); row.classList.add("set-flash")
+   t = window.setTimeout(() => { row.classList.remove("set-flash"); setFlash("") }, 1600)
+  }
+  go()
   return () => clearTimeout(t)
  }, [flash, reduced])
  useEffect(() => setSounds(sounds), [sounds])
@@ -484,6 +507,7 @@ export default function App() {
   return () => { observer.disconnect(); cancelAnimationFrame(frame) }
  }, [state.activeId, active?.pinned, state.tabs.length, state.focusMode, state.fullScreen, modern])
  useEffect(() => { paneRef.current = pane }, [pane])
+ const aiRef = useRef(ai); useEffect(() => { aiRef.current = ai }, [ai]) // for the message listener
  useEffect(() => { const t = setTimeout(() => setEntering(false), 700); return () => clearTimeout(t) }, [])
  useLayoutEffect(() => { if (pane !== "downloads") return; const r = document.querySelector('[aria-label="Downloads"]')?.getBoundingClientRect(); if (r) document.documentElement.style.setProperty("--dl-top", r.bottom + 8 + "px") }, [pane])
  useEffect(() => { if (state.permission) setShownPermission(state.permission) }, [state.permission])
@@ -523,7 +547,7 @@ export default function App() {
    if (data.kind === "thumb") dispatchEvent(new CustomEvent("still-thumb", { detail: data }))
    if (data.kind === "pluginCatalog" || data.kind === "pluginLogos") dispatchEvent(new CustomEvent("still-" + data.kind, { detail: data.data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
-   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") { setSettingsFind(""); setSettingsPage(OLD_PAGES[data.value] ?? (data.value || "general")) } } }
+   if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") { const link = settingsLink(data.value ?? "", aiRef.current?.companions ?? []); setSettingsFind(""); setSettingsPage(link?.page ?? OLD_PAGES[data.value] ?? (data.value || "general")); setOffer(link?.to ? link : null); if (link) setFlash(link.row) } } }
    if (data.kind === "toast") { toast(data.message);setNotice(data.message) }
    if (data.kind === "snapshot") { setSnapshot(data.data); setPairShot(data.partner ?? "") }
    if (data.kind === "upload") setUpload(data.data)
@@ -601,6 +625,16 @@ export default function App() {
   (hasAi || !AI_PAGES.includes(page)) && !(id === "talk" && !hasAi) && !(["askInChat", "dev"].includes(id) && !state.preferences.agents) && !(id === "dev" && !state.mcpCommand) && !(["ai", "titles"].includes(id) && !hasAi) &&
   settingsFind.toLowerCase().split(/\s+/).filter(Boolean).every(w => `${label} ${more} ${pageName(page)}`.toLowerCase().includes(w))).slice(0, 12) : []
  const jumpTo = (f: Finding) => { setSettingsFind(""); setSettingsPage(f[1]); setFlash(f[0]) }
+ const offered = (() => { // what the offer says and does, or nothing once the setting already is that
+  if (!offer) return null
+  if (offer.who) {
+   const who = ai?.companions?.find(c => c.id === offer.who!.id), to = offer.to as Autonomy
+   return !who || levelOf(who) === to ? null : { text: `Set ${who.name} to ${AUTONOMY[to].name}?`, apply: () => send("companionAutonomy", { id: who.id, level: to }) }
+  }
+  const [key, words] = OFFERS[offer.row], p = state.preferences
+  const now = { theme: p.theme, layout: p.tabLayout ?? "Classic", search: p.search, sounds: String(p.sounds !== false), restore: String(!!p.restore) }[offer.row]
+  return now === offer.to ? null : { text: `Set ${SETTINGS_FIND.find(f => f[0] === offer.row)![2]} to ${words[offer.to]}?`, apply: () => preference(key, offer.to) }
+ })()
  const about = <div className="about-content"><div className="still-mark"><i /><i /></div><p>The open-source agent browser. Companions run on Claude, ChatGPT, Grok, Gemini, OpenCode, Qwen Code, GitHub Copilot{MAC ? ", DeepSeek Harness or Amp" : " or DeepSeek Harness"} through their own apps, or an OpenAI- or Claude-compatible API like DeepSeek. Switch models anytime, even halfway through a task, and let your other AI apps drive it through MCP or the command line.</p><ul className="about-points"><li>Your companion works in its own background tabs and asks before anything that matters. Private tabs, passwords and cookies stay off-limits.</li><li>Every other AI app asks first, and you say yes once.</li>{MAC ? <><li>Your tabs, history and passwords stay on this Mac, with passwords encrypted for this Mac and your account.</li><li>Ad and tracker blocking, private windows and separate profiles built in.</li><li>Imports bookmarks, history and passwords from Chrome, Firefox, Edge, Brave and Arc, plus Safari bookmarks and any password CSV.</li></> : <><li>Your tabs, history and passwords stay on this PC, with passwords encrypted by Windows.</li><li>Ad and tracker blocking, private tabs, extensions and separate profiles built in.</li><li>Imports everything from Chrome, Edge, Brave and Opera GX, including sign-ins, and bookmarks, history and passwords from Firefox.</li></>}</ul>{state.update ? <div className="flex gap-2"><Button disabled={state.update.busy && state.update.ready} onClick={() => send("openUpdate")}>{state.update.busy ? <><Loader2 className="spin" />{state.update.ready ? "Restarting…" : `Updating… ${state.update.progress ?? 0}%`}</> : <><Download />Update to Still {state.update.version}</>}</Button><Button variant="ghost" onClick={() => send("releaseNotes")}>What's new</Button></div> : null}<Button variant="ghost" className="about-replay" onClick={() => { close(); setReplay(true) }}><Sparkles />Replay the intro</Button>{notesFor(state.version) && <Button variant="ghost" className="about-replay" onClick={() => { close(); setWhatsNew(true) }}><Gift />What's new in {releaseOf(state.version)}</Button>}<p className="text-xs text-muted-foreground">{state.preferences.autoUpdate === false ? "Automatic updates are off. Still tells you when a new version is out, and you update with one click." : "Still updates itself automatically. New versions download in the background and install the next time you close Still."}</p><p className="text-xs text-muted-foreground">Version {state.version ?? "2.0.0"} · Powered by {MAC ? "WebKit" : "Microsoft Edge WebView2"}</p></div>
  return <UICtx.Provider value={{state,ai,setContext,open,arriving,setGhost,renaming,setRenaming}}><CompanionContext.Provider value={companionOf(ai, ai?.chatCompanion)}><MotionConfig reducedMotion="user" transition={FLOW}><TooltipProvider delayDuration={650}><MascotStage />
   <div className={cn("browser-shell", modern ? "modern-layout" : "horizontal-layout", state.fullScreen && "is-fullscreen", entering && state.secondary && "window-enter", state.incognito && "is-incognito")} data-reduced-motion={!!reduced}>
@@ -897,6 +931,8 @@ export default function App() {
      <div className="set-main">
       {settingsFind ? found.length ? <SetCard title={found.length === 1 ? "1 setting" : `${found.length} settings`}>{found.map(f => { const Icon = SETTING_PAGES.find(p => p[0] === f[1])?.[2] ?? Info; return <button key={f[0]} className="set-result" onClick={() => jumpTo(f)}><strong>{f[2]}</strong><span><Icon />{pageName(f[1])}</span></button> })}</SetCard> : <p className="set-empty">Nothing matches "{settingsFind}". Try a word like theme, model or passwords.</p> : <>
       <h2 className="set-title">{pageName(settingsPage)}</h2>
+      {offered && settingsPage === offer?.page && <div className="set-offer" role="status"><Settings2 /><span>{offered.text}</span>
+       <Button size="sm" variant="ghost" onClick={() => setOffer(null)}>Not now</Button><Button size="sm" onClick={() => { offered.apply(); setOffer(null); setFlash(offer.row) }}>Change it</Button></div>}
       {settingsPage === "general" && <>
        <SetCard title="Start">
         <SetRow id="setup" title="Setup" help="Go through the first steps again: your model, a new companion and a first task."><Button variant="outline" size="sm" onClick={() => { close(); send("welcomeAgain") }}>Run setup again</Button></SetRow>
