@@ -366,14 +366,86 @@ public partial class MainWindow
    }
   };
   const frames = (d = document, out = []) => { for (const f of d.querySelectorAll('iframe,frame')) { try { const c = f.contentDocument; if (c && c.body) { out.push(c); frames(c, out); } } catch {} } return out; };
-  const pageText = () => [document, ...frames()].map(d => d.body ? d.body.innerText : '').filter(s => s.trim()).join('\n').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n');
+  // The words a person can see, in reading order, through open shadow roots and same-origin frames: like innerText, which also
+  // reads words that are out of sight, see-through, tiny or in a frame that doesn't show.
+  const BLOCK = /^(block|flex|grid|list-item|flow-root|table|table-row|table-caption|table-row-group|table-header-group|table-footer-group)$/;
+  const pageText = () => {
+   const out = [];
+   const visit = c => {
+    if (c.nodeType === 3) {
+     const pe = c.parentElement || c.parentNode?.host; if (!pe) return;
+     const cs = view(pe).getComputedStyle(pe);
+     if (sight(pe).kids && cs.visibility === 'visible' && parseFloat(cs.fontSize) >= 3 && !/^rgba\(.*,\s*0\)$|\/\s*0\)$/.test(cs.color)) out.push(/^(pre|break-spaces)/.test(cs.whiteSpace) ? c.data : c.data.replace(/\s+/g, ' '));
+     return;
+    }
+    if (c.nodeType !== 1 || /^(script|style|noscript|template|select|textarea)$/.test(c.localName)) return;
+    const cs = view(c).getComputedStyle(c);
+    if (cs.display === 'none' || !sight(c).kids) return;
+    if (c.localName === 'br') { out.push('\n'); return; }
+    const block = BLOCK.test(cs.display);
+    out.push(block ? '\n' : cs.display === 'table-cell' ? '\t' : '');
+    if (/^i?frame$/.test(c.localName)) { let d = null; try { d = c.contentDocument; } catch {} if (d && d.body) visit(d.body); }
+    else if (c.localName === 'slot') { const a = c.assignedNodes({ flatten: true }); for (const x of a.length ? a : c.childNodes) visit(x); }
+    else for (const x of (c.shadowRoot || c).childNodes) visit(x);
+    if (block) out.push('\n');
+   };
+   if (document.body) visit(document.body);
+   return out.join('').replace(/[ \t]+/g, ' ').replace(/\s*\n\s*/g, '\n').trim();
+  };
   // Position in the top window's viewport, adding the offsets of any frames it sits in.
   const box = e => { const r = e.getBoundingClientRect(); let x = r.left, y = r.top; for (let w = view(e); w !== window && w.frameElement; w = w.parent) { const f = w.frameElement.getBoundingClientRect(); x += f.left + w.frameElement.clientLeft; y += f.top + w.frameElement.clientTop; } return { x, y, w: r.width, h: r.height }; };
   const Q = 'a[href],button,input:not([type=hidden]),select,textarea,summary,label[for],[role=button],[role=link],[role=checkbox],[role=radio],[role=tab],[role=menuitem],[role=menuitemcheckbox],[role=menuitemradio],[role=option],[role=switch],[role=combobox],[role=textbox],[role=searchbox],[role=slider],[role=treeitem],[contenteditable=""],[contenteditable=true],[contenteditable=plaintext-only],[onclick],[tabindex]:not([tabindex="-1"])';
   const parentOf = e => e.parentElement || (e.getRootNode && e.getRootNode().host) || null;
   // Controls, plus clickable things built from plain elements (the outermost element with a pointer cursor).
-  const isControl = (e, cs) => e.localName === 'label' ? !!e.control && !visible(e.control, view(e).getComputedStyle(e.control)) : e.matches(Q) || cs.cursor === 'pointer' && !!parentOf(e) && view(e).getComputedStyle(parentOf(e)).cursor !== 'pointer' && !!(e.innerText || e.getAttribute('aria-label') || '').trim();
-  const visible = (e, cs) => e.getClientRects().length > 0 && cs.visibility !== 'hidden' && (+cs.opacity > 0 || e.localName === 'input');
+  const isControl = (e, cs) => e.localName === 'label' ? !!e.control && !visible(e.control) : e.matches(Q) || cs.cursor === 'pointer' && !!parentOf(e) && view(e).getComputedStyle(parentOf(e)).cursor !== 'pointer' && !!(e.innerText || e.getAttribute('aria-label') || '').trim();
+  // What a person can see. ok: the element shows; kids: what's inside it can show; clip: the box its insides are cut to. Out of
+  // sight: no box, invisible or see-through (itself or anything around it), cut away by a box around it that clips, clipped to
+  // nothing, off the page's top or left where no scrolling goes, or off its side when the page doesn't scroll sideways. Hidden
+  // controls and words are how a page talks to the AI behind the user's back, so the AI gets neither. A see-through field or
+  // dropdown laid over its own look still counts. ponytail: words the colour of their background, and fixed or positioned
+  // things that escape a box that's cut away, are judged by the box around them in the page, not by where they're drawn.
+  let SEEN = new WeakMap(); const FREE = { l: -1e9, t: -1e9, r: 1e9, b: 1e9 };
+  const sight = e => {
+   let s = SEEN.get(e); if (s) return s;
+   const w = view(e), d = e.ownerDocument, p = parentOf(e), f = !p && w.frameElement;
+   const up = p ? sight(p) : f ? { kids: sight(f).kids, clip: FREE } : { kids: true, clip: FREE };
+   s = { ok: false, kids: false, clip: up.clip };
+   const cs = up.kids ? w.getComputedStyle(e) : null;
+   if (cs && cs.display === 'contents') s = { ok: false, kids: true, clip: up.clip };
+   else if (cs && e.getClientRects().length && (cs.opacity !== '0' || /^(input|select)$/.test(e.localName)) && !/inset\(\s*(50|100)%/.test(cs.clipPath)) {
+    const r = e.getBoundingClientRect(), c = cs.position === 'fixed' ? { l: 0, t: 0, r: w.innerWidth, b: w.innerHeight } : up.clip, n = (cs.clip.match(/-?[\d.]+/g) || []).map(Number);
+    const page = e === d.documentElement || e === d.body, cuts = x => /^(hidden|clip)$/.test(x), scrolls = x => /^(auto|scroll|overlay)$/.test(x);
+    const out = r.left >= c.r || r.right < c.l || r.top >= c.b || r.bottom < c.t || r.right + w.scrollX <= 0 || r.bottom + w.scrollY <= 0;
+    const kids = !out && !(n.length === 4 && (n[1] - n[3] <= 1 || n[2] - n[0] <= 1)) && !(!page && cuts(cs.overflowX) && r.width <= 1) && !(!page && cuts(cs.overflowY) && r.height <= 1);
+    const cw = Math.min(r.right, c.r) - Math.max(r.left, c.l), ch = Math.min(r.bottom, c.b) - Math.max(r.top, c.t);
+    // Its insides are cut to its box where it clips; where it scrolls, scrolling can bring them into view. A page that doesn't
+    // scroll sideways cuts at the window's sides (menus parked off to the side); one that doesn't scroll down still scrolls inside.
+    const x = page ? (cuts(cs.overflowX) ? { l: 0, r: w.innerWidth } : { l: c.l, r: c.r }) : cuts(cs.overflowX) ? { l: Math.max(c.l, r.left), r: Math.min(c.r, r.right) } : scrolls(cs.overflowX) ? { l: FREE.l, r: FREE.r } : { l: c.l, r: c.r };
+    const y = page ? { t: c.t, b: c.b } : cuts(cs.overflowY) ? { t: Math.max(c.t, r.top), b: Math.min(c.b, r.bottom) } : scrolls(cs.overflowY) ? { t: FREE.t, b: FREE.b } : { t: c.t, b: c.b };
+    // A box with no size of its own (a link around a card, say) shows through what's in it.
+    const big = cw > 1 && ch > 1 || (r.width <= 1 || r.height <= 1) && !!e.firstElementChild;
+    s = { ok: kids && big && cs.visibility === 'visible', kids, clip: { ...x, ...y } };
+   }
+   SEEN.set(e, s);
+   return s;
+  };
+  const visible = e => sight(e).ok;
+  // The pop-up that holds the page's attention, if one is open: what's outside it can't be reached.
+  let M; const modal = () => M !== undefined ? M : (M = [...document.querySelectorAll('[aria-modal=true],dialog[open]')].reverse().find(m => { try { return visible(m) && (m.localName !== 'dialog' || m.matches(':modal')); } catch { return false; } }) || null);
+  // On top at some point a person could click. Under a pop-up or banner: false. Out of view: true, unless a pop-up is open.
+  const free = e => {
+   const b = box(e); let tried = 0;
+   for (const [fx, fy] of [[.5, .5], [.2, .2], [.8, .2], [.2, .8], [.8, .8]]) {
+    const x = b.x + b.w * fx, y = b.y + b.h * fy;
+    if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+    tried++;
+    const top = deepAt(x, y);
+    if (top && (inside(top, e) || inside(e, top) || top.closest?.('label')?.control === e)) return true;
+   }
+   return !tried && (!modal() || inside(modal(), e));
+  };
+  // What read_page and find list: a control a person can see and use. Inert parts of a page don't take clicks.
+  const usable = (e, cs) => isControl(e, cs) && visible(e) && !e.closest('[inert]');
   const editable = e => e.isContentEditable && !e.matches('a,button');
   const label = e => {
    const t = e.localName, d = e.ownerDocument;
@@ -402,7 +474,16 @@ public partial class MainWindow
   const deepActive = () => { let a = document.activeElement; for (;;) { if (a && a.shadowRoot && a.shadowRoot.activeElement) { a = a.shadowRoot.activeElement; continue; } let d = null; if (a && /^i?frame$/.test(a.localName)) try { d = a.contentDocument; } catch {} if (d && d.activeElement) { a = d.activeElement; continue; } return a; } };
   const byId = id => { id = String(id); let hit = document.querySelector('[data-still-id="' + id + '"]'); if (!hit) walk(document, e => { if (e.getAttribute('data-still-id') === id) { hit = e; return false; } }); return hit; };
   const bySel = sel => { let hit = null; walk(document, e => { if (e.matches(sel)) { hit = e; return false; } }); return hit; };
-  const byText = text => { const want = text.trim().toLowerCase(); let best = null; walk(document, e => { const cs = view(e).getComputedStyle(e); if (!isControl(e, cs) || !visible(e, cs)) return; const l = label(e).toLowerCase(); if (l === want) { best = e; return false; } if (!best && l.includes(want)) best = e; }); return best; };
+  const byText = text => {
+   const want = text.trim().toLowerCase(); let best = null, rank = -1;
+   walk(document, e => {
+    const cs = view(e).getComputedStyle(e); if (!usable(e, cs)) return;
+    const l = label(e).toLowerCase(), m = l === want ? 2 : l.includes(want) ? 0 : -1; if (m < 0) return;
+    const r = m + (free(e) ? 1 : 0); if (r > rank) { best = e; rank = r; }
+    if (rank === 3) return false;
+   });
+   return best; // covered, it still comes back, so the click can say what's on top of it
+  };
   const target = o => o.id ? byId(o.id) : o.selector ? bySel(o.selector) : o.text ? byText(o.text) : null;
   const missing = o => ({ error: o.id ? 'gone' : 'notfound' });
   // A fingerprint of a field's text, to tell whether typing changed it.
@@ -482,18 +563,20 @@ public partial class MainWindow
 
  // read_page: header, then one line per control near the visible area (or all of them), then a page of the text.
  const string SnapshotJs = """
-  const vh = innerHeight, out = [], listed = new Set(), cap = o.all ? 600 : 250; let above = 0, below = 0, more = 0;
+  const vh = innerHeight, out = [], listed = new Set(), cap = o.all ? 600 : 250; let above = 0, below = 0, more = 0, under = 0;
   walk(document, e => {
    const cs = view(e).getComputedStyle(e);
-   if (!isControl(e, cs) || !visible(e, cs)) return;
+   if (!usable(e, cs)) return;
    const host = parentOf(e)?.closest?.('a,button'); if (host && listed.has(host)) return;
    if (!o.all) { const b = box(e); if (b.y + b.h < -vh / 2) { above++; return; } if (b.y > vh * 1.5) { below++; return; } }
+   if (!free(e)) { under++; return; }
    if (listed.size >= cap) { more++; return; }
    listed.add(e); out.push(line(e));
   });
   const se = document.scrollingElement || document.documentElement;
   let s = document.title + '\n' + location.href + '\nscrolled ' + Math.round(scrollY) + ' of ' + Math.max(0, se.scrollHeight - vh) + 'px\n\n' + (out.join('\n') || '(no buttons, links or fields here)');
   if (above || below || more) s += '\n… ' + [above && above + ' more above', below && below + ' more below', more && more + ' more'].filter(Boolean).join(', ') + ' (scroll, use find, or read_page all=true)';
+  if (under) s += '\n… ' + under + ' more under something on top, like a pop-up or banner: close it first';
   if (o.text) {
    const t = pageText(), from = Math.min(o.offset, t.length), part = t.slice(from, from + 8000), end = from + part.length;
    s += '\n\n--- text' + (from > 0 || end < t.length ? ' (characters ' + from + '–' + end + ' of ' + t.length + (end < t.length ? '; read_page offset=' + end + ' for more' : '') + ')' : '') + ' ---\n' + part;
@@ -506,7 +589,7 @@ public partial class MainWindow
   if (!want) return { error: 'empty' };
   walk(document, e => {
    const cs = view(e).getComputedStyle(e);
-   if (!isControl(e, cs) || !visible(e, cs)) return;
+   if (!usable(e, cs) || !free(e)) return;
    if ((label(e) + ' ' + (e.type === 'password' ? '' : e.value || '') + ' ' + (e.getAttribute('href') || '') + ' ' + (e.title || '')).toLowerCase().includes(want)) out.push(line(e));
    if (out.length >= 25) return false;
   });
@@ -526,6 +609,7 @@ public partial class MainWindow
   const top = deepAt(x, y);
   if (!top) return { error: 'offscreen' };
   if (!inside(top, e) && !inside(e, top) && top.closest('label')?.control !== e) return { error: 'covered', by: line(top.closest(Q) || top) };
+  SEEN = new WeakMap(); if (!visible(e)) return { error: 'hidden' };
   if (!o.again) watch(e, top, o.expect);
   return { x, y, label: label(e) || kind(e) };
  """;
