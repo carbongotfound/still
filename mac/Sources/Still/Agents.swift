@@ -876,13 +876,13 @@ extension Browser {
  }
 
  func claim(_ who: String, _ tab: Tab) {
-  let before = shown
+  let before = shown, was = agentTabs[who]
   agentTabs[who] = tab.id; tab.lastSeen = Date() // in use: memory saver leaves it awake
   if tab.agentKey != who { tab.agent = worker(who).name; tab.agentKey = who; schedulePublish() }
   if shown !== before { // a chat shows the page its AI just moved to
    if let page = shown, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) }
    layoutPages(); schedulePublish()
-  }
+  } else if was != tab.id || tab.view?.isHidden == true { layoutPages() } // out of view, the page it works in keeps drawing; the one it left stops
  }
 
  /// The agent's work is done: its icon leaves the user's own tabs (in every window). Tabs it opened stay in the AI group.
@@ -894,6 +894,7 @@ extension Browser {
    var changed = false
    for tab in browser.tabs where tab.agentKey == key && !tab.aiGroup { tab.agent = nil; tab.agentKey = nil; changed = true }
    if changed { browser.schedulePublish() }
+   browser.layoutPages() // its page out of view stops drawing
   }
  }
 

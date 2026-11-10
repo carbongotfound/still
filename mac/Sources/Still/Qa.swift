@@ -41,7 +41,7 @@ private func qaTopLeft(_ w: NSWindow) -> (left: Double, top: Double) {
 }
 private func qaVisible(_ view: WKWebView?) -> Any {
  guard let view else { return NSNull() }
- return view.window == nil ? "Collapsed" : view.isHiddenOrHasHiddenAncestor ? "Hidden" : "Visible"
+ return view.window == nil ? "Collapsed" : view.unseen ? "Hidden" : "Visible"
 }
 private func qaResidentBytes() -> UInt64 {
  var info = mach_task_basic_info()
@@ -105,7 +105,7 @@ extension Browser {
    "split": ["left": n(splitLeft?.id), "right": n(splitRight?.id), "ratio": splitRatio, "partner": n(partner?.id), "leftWidth": n(splitLeft?.view?.frame.width), "rightWidth": n(splitRight?.view?.frame.width),
              "leftVisible": n(splitLeft?.view.map { !$0.isHiddenOrHasHiddenAncestor }), "rightVisible": n(splitRight?.view.map { !$0.isHiddenOrHasHiddenAncestor })] as [String: Any],
    "windows": browsers.map { b -> [String: Any] in ["id": b.windowId, "active": n(b.active?.id),
-    "tabs": b.tabs.map { ["Id": $0.id, "Url": $0.url, "Group": $0.group, "wired": $0.view != nil, "visible": n($0.view.map { !$0.isHiddenOrHasHiddenAncestor && $0.window != nil })] as [String: Any] }] },
+    "tabs": b.tabs.map { ["Id": $0.id, "Url": $0.url, "Group": $0.group, "wired": $0.view != nil, "visible": n($0.view.map { !$0.unseen && $0.window != nil })] as [String: Any] }] },
    "order": tabs.map(\.id)
   ]
  }
@@ -164,11 +164,11 @@ private func qaHandle(_ line: String, _ reply: @escaping (String) -> Void) {
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { for w in browsers.map(\.window) { w.close() } }
  case "served": done(["files": qaServed])
  case "appLinks": done(["opened": b.qaAppLinks])
- case "keyboardHolder": done(["hidden": (b.window.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor ?? false])
+ case "keyboardHolder": done(["hidden": (b.window.firstResponder as? NSView)?.unseen ?? false])
  case "keyboardToHidden":
-  let hiddenPage = b.tabs.compactMap(\.view).first { $0.isHidden }
+  let hiddenPage = b.tabs.compactMap(\.view).first { $0.unseen }
   let took = hiddenPage.map { b.window.makeFirstResponder($0) && b.window.firstResponder === $0 } ?? false
-  done(["tried": hiddenPage != nil, "took": took, "hidden": (b.window.firstResponder as? NSView)?.isHiddenOrHasHiddenAncestor ?? false])
+  done(["tried": hiddenPage != nil, "took": took, "hidden": (b.window.firstResponder as? NSView)?.unseen ?? false])
  case "privateName": done(["isPrivate": isPrivateName(text("host"))])
  case "shellEval": qaWhenReady(b) { qaEval(b.shell, text("script"), done) }
  case "eval":
@@ -386,7 +386,7 @@ private func qaPost(_ b: Browser, _ event: NSEvent) {
 /// the window's size in points (scale 2 for Retina pixels). Saved as a PNG in the profile.
 private func qaCapture(_ b: Browser, _ name: String, _ scale: Double, _ done: @escaping (Any) -> Void) {
  func views(_ view: NSView) -> [WKWebView] {
-  view.subviews.flatMap { sub -> [WKWebView] in sub.isHidden ? [] : (sub as? WKWebView).map { [$0] } ?? views(sub) }
+  view.subviews.flatMap { sub -> [WKWebView] in sub.unseen ? [] : (sub as? WKWebView).map { [$0] } ?? views(sub) }
  }
  let root = b.window.contentView!, size = root.bounds.size
  var shots: [(NSImage, NSRect)] = []

@@ -97,11 +97,16 @@ final class ShellView: WKWebView {
  }
 }
 
+extension NSView {
+ /// Out of the user's sight: hidden, or a companion's page kept drawing at no opacity (layoutPages).
+ var unseen: Bool { isHiddenOrHasHiddenAncestor || alphaValue == 0 }
+}
+
 /// Every change of who holds the keyboard comes through here, and a page out of sight never gets it. Refusing here, not in
 /// the page, leaves the page in front holding it: AppKit takes it from that page before it asks the new one.
 final class StillWindow: NSWindow {
  override func makeFirstResponder(_ responder: NSResponder?) -> Bool {
-  if let page = responder as? PageView, page.isHiddenOrHasHiddenAncestor { return false }
+  if let page = responder as? PageView, page.unseen { return false }
   return super.makeFirstResponder(responder)
  }
 }
@@ -112,6 +117,7 @@ final class PageView: WKWebView {
  /// A rect from the top left in this view's own coordinates (flipped or not).
  func local(_ rect: NSRect, flipped: Bool) -> NSRect { flipped ? rect : NSRect(x: rect.minX, y: bounds.height - rect.maxY, width: rect.width, height: rect.height) }
  override func hitTest(_ point: NSPoint) -> NSView? {
+  if alphaValue == 0 { return nil } // a companion's page out of view, still drawing (layoutPages): the user's clicks go past it
   if let holes, let superview {
    let p = convert(point, from: superview)
    if !local(bounds.insetBy(dx: holes.frame, dy: holes.frame), flipped: true).contains(p) || holes.spots.contains(where: { local($0.rect, flipped: isFlipped).contains(p) }) { return nil }
@@ -600,6 +606,8 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
 
  /// The shown page fills the page slot; a split pair shares it, 6 points apart. A page out of view keeps a real size when the
  /// slot folds away (a chat in front with no page beside it): laid out at 1x1, a companion working in it could click nothing.
+ /// A page a companion is working in out of view keeps drawing at no opacity, past the mouse: a hidden one gets no animation
+ /// frames, so what waits on one (Google Forms' Publish dialog) never happens.
  func layoutPages() {
   let shown = self.shown, partner = self.partner
   let leftWidth = ((pageFrame.width - 6) * splitRatio).rounded()
@@ -611,7 +619,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    if partner != nil && tab === splitRight { frame.origin.x += leftWidth + 6; frame.size.width = max(1, pageFrame.width - 6 - leftWidth) }
    if !showing && (frame.width <= 1 || frame.height <= 1) { frame = view.frame.width > 1 && view.frame.height > 1 ? view.frame : root.bounds }
    if view.frame != frame { view.frame = frame }
-   view.isHidden = !showing || overlay
+   let working = !showing && agentTabs.values.contains(tab.id)
+   view.isHidden = !working && (!showing || overlay)
+   view.alphaValue = working ? 0 : 1
   }
   cutHoles()
  }
