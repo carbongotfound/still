@@ -53,12 +53,21 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Seen</title>
 <input id=stuck placeholder="Stuck field" oninput="this.value=''">
 <div id=canvas onclick="kix.contentDocument.querySelector('[contenteditable]').focus()" style="width:300px;height:60px;border:1px solid #888">Drawn:<span id=drawn></span></div>
 <iframe id=kix src="/kix" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
+<div id=slidebox onclick="deck.contentDocument.body.focus()" style="width:300px;height:60px;border:1px solid #888">Slide:<span id=slide></span></div>
+<iframe id=deck src="/deck" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
+<div id=idlebox onclick="idle.contentDocument.body.focus()" style="width:300px;height:30px;border:1px solid #888">Not editing</div>
+<iframe id=idle src="/idle" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
 <script>customElements.define('x-card', class extends HTMLElement { constructor() { super(); this.attachShadow({ mode: 'open' }).innerHTML = '<p>Shadow words</p><slot name=s></slot><button>Shadow button</button>'; } });</script>"""
 FRAME = "<!doctype html><meta charset=utf-8><p>Frame words</p><button>Frame button</button>"
 HIDDEN_FRAME = "<!doctype html><meta charset=utf-8><p>Hidden frame words</p>"
 # Like Google Docs: typing lands in a hidden field in a frame, which hands it to the page to draw and empties itself.
 KIX = """<!doctype html><meta charset=utf-8><div contenteditable=true aria-label="Document" style="width:10px;height:10px"></div>
 <script>const f = document.querySelector('div'); f.addEventListener('input', () => { parent.document.getElementById('drawn').textContent += f.textContent; f.textContent = ''; });</script>"""
+# Like Google Slides: the frame's whole body is the field, and the page cancels each insert and draws the words itself.
+DECK = """<!doctype html><meta charset=utf-8><script>onload = () => document.body.addEventListener('beforeinput', e => {
+ e.preventDefault(); if (e.data) parent.document.getElementById('slide').textContent += e.data; });</script><body contenteditable=true></body>"""
+# Like Slides with no text box being edited: the hidden field keeps the words and nothing uses them.
+IDLE = "<!doctype html><meta charset=utf-8><body contenteditable=true></body>"
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -66,7 +75,7 @@ class Handler(BaseHTTPRequestHandler):
         pass
 
     def do_GET(self):
-        data = (HIDDEN_FRAME if self.path.startswith("/frame?hidden") else FRAME if self.path.startswith("/frame") else KIX if self.path.startswith("/kix") else PAGE).encode()
+        data = (HIDDEN_FRAME if self.path.startswith("/frame?hidden") else FRAME if self.path.startswith("/frame") else KIX if self.path.startswith("/kix") else DECK if self.path.startswith("/deck") else IDLE if self.path.startswith("/idle") else PAGE).encode()
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(data)))
@@ -141,6 +150,16 @@ def main():
         check(ok and "draws its own text" in said, f"Typing into an editor that draws its own text counts, and says to check ({said[:120]})")
         page = text_of(client.call("read_page", tabId=tab)[1])
         check("Drawn:hello" in page and "hellohello" not in page, f"and it went in once ({page[page.find('Drawn'):][:40]!r})")
+        client.call("click", selector="#slidebox", tabId=tab)
+        ok, said = client.call("type", text="role", tabId=tab)
+        check(ok and "draws its own text" in said, f"So does typing into a frame whose whole page is the field, like Google Slides ({said[:120]})")
+        ok, said = client.call("type", selector="#slidebox", text="s", tabId=tab)
+        check(ok and "draws its own text" in said, f"even when the AI names the box it clicked while the frame keeps the keys ({said[:120]})")
+        page = text_of(client.call("read_page", tabId=tab)[1])
+        check("Slide:roles" in page and "roless" not in page, f"and each went in once ({page[page.find('Slide:'):][:40]!r})")
+        client.call("click", selector="#idlebox", tabId=tab)
+        ok, said = client.call("type", text="lost", tabId=tab)
+        check(not ok and "hidden field the page didn't use" in said, f"Words left in a hidden field nothing uses aren't called typed ({said[:120]})")
 
         check(rpc(p)["activeId"] != tab, "All this time the user's own tab stayed selected")
 

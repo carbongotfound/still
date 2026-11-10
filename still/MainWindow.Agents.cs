@@ -645,13 +645,15 @@ public partial class MainWindow
  // type: focuses the field and selects what's in it (so typing replaces it), or picks a dropdown option.
  const string FocusJs = """
   const e = o.id || o.selector ? target(o) : deepActive();
-  if (!e || e.localName === 'body') return o.id || o.selector ? missing(o) : { error: 'nofocus' };
+  // A focused body is nothing focused, unless it's editable: Google Docs and Slides type into a frame whose whole body is.
+  if (!e || (e.localName === 'body' && !e.isContentEditable)) return o.id || o.selector ? missing(o) : { error: 'nofocus' };
   if (o.expect && print(e) !== o.expect) return { error: 'changed' };
   S.typing = e;
-  // An editor that takes typing and draws the text itself (Google Docs and Slides empty a hidden field) reads the same after
-  // it. A real input event there, or a key the page handled itself, means the typing arrived, so it isn't typed again.
+  // An editor that takes typing and draws the text itself (Google Docs empties a hidden field, Slides cancels the insert and
+  // does it itself) reads the same after it. A real input event there, or a key or insert the page handled itself, means the
+  // typing arrived, so it isn't typed again.
   const T = S.took || (S.took = { on: new WeakSet() }); T.got = false;
-  for (const w of new Set([window, view(e)])) if (!T.on.has(w)) { T.on.add(w); w.addEventListener('input', ev => { if (ev.isTrusted) T.got = true; }, true); w.addEventListener('keydown', ev => { if (ev.isTrusted && ev.defaultPrevented) T.got = true; }); }
+  for (const w of new Set([window, view(e), view(deepActive() || e)])) if (!T.on.has(w)) { T.on.add(w); w.addEventListener('input', ev => { if (ev.isTrusted) T.got = true; }, true); w.addEventListener('keydown', ev => { if (ev.isTrusted && ev.defaultPrevented) T.got = true; }); w.addEventListener('beforeinput', ev => { if (ev.isTrusted && ev.defaultPrevented) T.got = true; }); }
   if (e.localName === 'select') {
    const want = o.value.trim().toLowerCase(), opts = [...e.options];
    const opt = opts.find(x => x.value === o.value || x.text.trim().toLowerCase() === want) || opts.find(x => x.text.trim().toLowerCase().includes(want));
@@ -675,7 +677,10 @@ public partial class MainWindow
    if (b.w > 6 && b.h > 8 && hit && inside(e, hit) && !hit.closest('a')) at = { x, y };
   }
   const fb = box(e), near = e.ownerDocument === document ? { x: fb.x + Math.min(24, fb.w / 2), y: fb.y + fb.h / 2 } : null; // where the AI's cursor goes
-  return { label: label(e) || kind(e), sig: sig(deepActive()), multiline: e.isContentEditable || e.localName === 'textarea', at, near };
+  // In a frame nobody can see (Docs and Slides take keys there), words count only if the page takes them: left sitting in
+  // that field, they went nowhere (in Slides, no text box was being edited). Docs refills it with invisible characters.
+  const fr = view(e).frameElement, hidden = !!fr && !visible(fr);
+  return { label: label(e) || kind(e), sig: sig(deepActive()), multiline: e.isContentEditable || e.localName === 'textarea', at, near, hidden };
  """;
  // scroll: an element into view, or the page (or the scrolling panel under the middle of the view) by some pixels.
  const string ScrollJs = """
@@ -690,7 +695,9 @@ public partial class MainWindow
   return { done: 'Scrolled ' + (o.direction === 'up' ? 'up' : 'down'), at: max > 0 ? Math.round(sc.scrollTop / max * 100) + '%' : 'no scrolling here' };
  """;
  const string SigJs = """
-  const a = deepActive(); return { sig: sig(a), took: !!S.took?.got && !!a?.isContentEditable };
+  // kept: the words typed sit in the focused field (in a hidden one, nothing used them).
+  const a = deepActive(), bare = x => String(x || '').replace(/\s+/g, ''), w = bare(o.text);
+  return { sig: sig(a), took: !!S.took?.got && !!a?.isContentEditable, kept: !!w && !!a && bare(a.value ?? a.textContent).includes(w) };
  """;
  // Right before typing: still the field that was approved, and the keys would go into it.
  const string SameJs = """
@@ -1188,7 +1195,8 @@ public partial class MainWindow
   if (runs.GetValueOrDefault(who)?.Chat.Messages.LastOrDefault(m => m is { Role: "tool", Status: "working" } && Says(m.Text, doingWord)) is { } step) { step.Text = words; step.Status = "failed"; }
   return JsonSerializer.Serialize(new { ok = false, error = message, unverified = true });
  }
- const string Drawn = ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it";
+ const string Drawn = ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it. Such editors put words in at the caret: to replace text, press Control+A first";
+ const string Unused = "Typed, but the words only reached a hidden field the page didn't use. Click into the text where they should go first (a text box may need a second click, or Enter, before it edits), then type.";
  const string CheckFirst = "It may still be working: call read_page to check before trying again, and don't repeat a purchase, send or delete without checking. A canvas or video can change without Still seeing it, so take a screenshot there.";
  /// Did the action work? Its watcher says whether the event reached the element and what changed after. Null means it went
  /// through; otherwise this is the failure to send back. key: the key pressed, "" for a click.
@@ -1395,11 +1403,12 @@ public partial class MainWindow
     }
     else if (focus.TryGetProperty("near", out var near) && near.ValueKind == JsonValueKind.Object)
      await Pointer(who, t, core, near.GetProperty("x").GetDouble(), near.GetProperty("y").GetDouble());
-    bool drawn = false; // the editor took it, but what it shows can't be read
+    bool drawn = false, stuck = false; // drawn: the editor took it, but what it shows can't be read; stuck: the words sit in a hidden field nothing used
     async Task<bool> Unchanged() {
-     var now = await Js(core, SigJs, new { });
-     bool same = Str(now, "sig") == Str(focus, "sig");
-     if (now.TryGetProperty("took", out var took) && took.ValueKind == JsonValueKind.True) { drawn = same; return false; }
+     var now = await Js(core, SigJs, new { text });
+     bool same = Str(now, "sig") == Str(focus, "sig"), took = B(now, "took");
+     if (B(focus, "hidden")) { stuck = B(now, "kept"); drawn = took && !stuck; return !drawn; }
+     if (took) { drawn = same; return false; }
      return same;
     }
     step.Live();
@@ -1407,8 +1416,8 @@ public partial class MainWindow
     if (text.Length > 0) {
      await core.CallDevToolsProtocolMethodAsync("Input.insertText", JsonSerializer.Serialize(new { text }));
      // Some editors ignore inserted text and only take key presses: type it key by key.
-     if (text.Length <= 4000 && await Unchanged()) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean(), Me(who), step); }
-     if (await Unchanged()) return Fail("Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
+     if (text.Length <= 4000 && await Unchanged() && !stuck) { await Js(core, FocusJs, Q(true)); await TypeKeys(core, text, focus.GetProperty("multiline").GetBoolean(), Me(who), step); }
+     if (await Unchanged()) return Fail(stuck ? Unused : "Typed, but \"" + Str(focus, "label") + "\" didn't change. Click it first, then type without an id, or use press_key.");
     }
     else if (!B(args, "append")) await PressKey(core, "Backspace");
     string field = Str(focus, "label");

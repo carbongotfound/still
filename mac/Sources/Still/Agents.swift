@@ -540,7 +540,7 @@ return { label: r.label };
 // type: puts the text in the focused field the way typing would (undoable, with input events), or sets it directly if the page blocks that.
 let agentInsertScript = #"""
 const e = deepActive();
-if (!e || e.localName === 'body') return { error: 'nofocus' };
+if (!e || (e.localName === 'body' && !e.isContentEditable)) return { error: 'nofocus' };
 if (!o.text && o.append) return true;
 const d = e.ownerDocument, w = view(e), isValue = 'value' in e && e.localName !== 'button', before = isValue ? e.value : e.textContent;
 let ok = false;
@@ -1287,11 +1287,12 @@ extension Browser {
      await pointer(who, tab, view, x, y)
     }
     let field = focus["label"] as? String ?? ""
-    var drawn = false // the editor took it, but what it shows can't be read
+    var drawn = false, stuck = false // drawn: the editor took it, but what it shows can't be read; stuck: the words sit in a hidden field nothing used
     func unchanged() async -> Bool {
-     let now = (try? await agentJs(view, agentScripts["Sig"] ?? "", [:])) as? [String: Any]
-     let same = now?["sig"] as? String == focus["sig"] as? String
-     if now?["took"] as? Bool == true { drawn = same; return false }
+     let now = (try? await agentJs(view, agentScripts["Sig"] ?? "", ["text": text])) as? [String: Any]
+     let same = now?["sig"] as? String == focus["sig"] as? String, took = now?["took"] as? Bool == true
+     if focus["hidden"] as? Bool == true { stuck = now?["kept"] as? Bool == true; drawn = took && !stuck; return !drawn }
+     if took { drawn = same; return false }
      return same
     }
     try step.live()
@@ -1299,9 +1300,9 @@ extension Browser {
     if !text.isEmpty {
      view.insertText(text)
      // Some editors ignore inserted text: put it in the way typing would, or type it key by key.
-     if await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); _ = try await agentJs(view, agentInsertScript, ["text": text, "append": append]) }
-     if text.count <= 4000, await unchanged() { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who), step) }
-     if await unchanged() { return agentFail("Typed, but \"" + field + "\" didn't change. Click it first, then type without an id, or use press_key.") }
+     if await unchanged(), !stuck { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); _ = try await agentJs(view, agentInsertScript, ["text": text, "append": append]) }
+     if text.count <= 4000, await unchanged(), !stuck { _ = try await agentJs(view, agentScripts["Focus"] ?? "", q(true)); await typeKeys(view, text, focus["multiline"] as? Bool == true, worker(who), step) }
+     if await unchanged() { return agentFail(stuck ? "Typed, but the words only reached a hidden field the page didn't use. Click into the text where they should go first (a text box may need a second click, or Enter, before it edits), then type." : "Typed, but \"" + field + "\" didn't change. Click it first, then type without an id, or use press_key.") }
     } else if !append { try await pressKey(view, "Backspace", step) }
     if submit {
      let urlBefore = tab.url
@@ -1312,7 +1313,7 @@ extension Browser {
      } catch is PageChanged { return agentFail("Typed into \"" + field + "\", but the page changed before Enter, so Still didn't press it. Call read_page to see it now.") }
     }
     did(who, "Typed into " + field)
-    return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "") + (drawn ? ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it" : "")))
+    return agentOk(outcome(who, tab, before, (text.isEmpty ? "Cleared \"" : "Typed into \"") + field + "\"" + (submit ? " and pressed Enter" : "") + (drawn ? ". The editor took it but draws its own text, so Still can't read it back: take a screenshot to check it. Such editors put words in at the caret: to replace text, press Meta+A first" : "")))
    case "press_key":
     let (_, tab, view) = try await agentPage(who, args)
     let before = agentTabs[who] ?? "", urlBefore = tab.url
