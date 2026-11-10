@@ -476,9 +476,10 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-edit-note { margin:6px 0 8px; font-size:12px; color:var(--muted-foreground); white-space:normal; }
 .ai-edit-actions { display:flex; justify-content:flex-end; gap:6px; }
 .ai-msg.is-note { color:var(--muted-foreground); font-size:12px; display:flex; gap:6px; align-items:center; }
-.ai-stopped { display:flex; align-items:center; gap:8px; margin:4px 0; color:var(--muted-foreground); font-size:11.5px; font-weight:500; letter-spacing:.01em; user-select:none; }
-.ai-stopped::before, .ai-stopped::after { content:""; flex:1; height:1px; background:var(--border); }
-.ai-stopped svg { width:8px; height:8px; fill:currentColor; stroke:none; border-radius:1px; }
+.ai-stopped { display:flex; align-items:center; flex-wrap:wrap; gap:6px; margin:2px 0 4px; color:var(--muted-foreground); font-size:12px; user-select:none; }
+.ai-stopped > svg { width:12px; height:12px; }
+.ai-stopped > button { display:inline-flex; align-items:center; gap:4px; height:24px; margin-left:4px; padding:0 10px 0 8px; border:1px solid var(--border); border-radius:999px; color:var(--foreground); font-size:12px; font-weight:500; transition:background .15s; }
+.ai-stopped > button:hover { background:var(--muted); } .ai-stopped > button svg { width:11px; height:11px; }
 .ai-turn { position:relative; display:flex; flex-direction:column; gap:12px; padding-left:52px; }
 /* A turn's 30px avatar sits left of its first line, 12px from the content, which every later card and paragraph lines
    up with. The rest of the same turn (is-more) sits 12px under it instead of a full message gap. */

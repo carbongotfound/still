@@ -265,6 +265,7 @@ func onCompanion(_ who: String) -> Bool {
 }
 func newChatProfile(_ incognito: Bool) -> String? { !incognito && store.prefs["AgentProfile"] as? String == "companion" ? "companion" : nil }
 var ratings = [String: String]() // a thumb the user put on a reply: the chat's AI hears it once, with the next message
+let corrects = "[Still] The user stopped you partway through your last reply. Their message below may correct you or change the plan: carry on from where you stopped with it in mind, without redoing steps that worked.", continueBrief = "[Still] The user stopped you partway through your last reply, then asked you to continue. Carry on from where you stopped, without repeating what you already wrote or redoing steps that worked."
 var autonomyChanged = Set<String>() // started chats whose companion's Autonomy changed: its AI hears it on the next turn
 var profileSwitched = Set<String>() // chats whose profile the user just switched: their AI hears it on the next turn
 let companionNote = "Your pages open in the companion profile: a separate browser profile with its own sign-ins and cookies, apart from the user's. If a site needs the user signed in, open it and ask_user so they can sign in there."
@@ -1072,6 +1073,8 @@ extension Browser {
    for t in tabs where t.chatId != nil { close(t) }
   case "aiStop": if let stopping = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")] { stopping.queue.removeAll(); stopRun(stopping) }
   case "aiResume": if let c = myChats.first(where: { $0.id == s("id") }) { resumeTask(c) }
+  case "aiContinue": // picks the stopped reply up, with no message of the user's
+   if let c = myChats.first(where: { $0.id == s("id") }), c.from == nil, runs[c.id] == nil, let last = c.messages.last, last.role == "note", last.text == "Stopped." { runAi(c, continueBrief, shown: "") }
   case "aiResumeAll" where !incognito: // not one with a step that may not have finished: that one is resumed on its own
    resumeAnswered = true
    for cut in interruptedChats where !(aiTasks[cut.id]?.sensitive.contains { $0.outcome == nil } ?? false) { resumeTask(cut) }
@@ -1491,6 +1494,7 @@ extension Browser {
   if !pref("AgentsEnabled", false) { prefs["AgentsEnabled"] = true; saveLater(); chat.messages.append(AiMessage("note", "Turned on Settings → Let other AI apps use Still, so \(cli.name) can use your tabs.")) }
   approvedAgents.insert(cli.name.lowercased()) // the user started this agent here, so it needs no approval bar
   v.error = ""; chat.error = ""; chat.updated = Date(); chat.running = true
+  let correcting = !shown.isEmpty && chat.from == nil && chat.messages.last.map { $0.role == "note" && $0.text == "Stopped." } == true // the user stopped the last reply: this picks up from there
   if !shown.isEmpty { let said = AiMessage("user", shown, who: asker); if !files.isEmpty { said.files = files }; chat.messages.append(said) }
   let who = companions.first { $0.id == chat.companion }
   // Setup, while it's pending: Still loads it itself, the one skill it loads for the AI, in the companion's regular chats
@@ -1522,7 +1526,7 @@ extension Browser {
   let switched = profileSwitched.remove(chat.id) != nil && chat.started
    ? "[Still] " + (chat.profile == "companion" ? "The user switched this chat to browse in the companion profile: " + companionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : ""
   let level = who != nil && chat.started && autonomyChanged.remove(chat.id) != nil ? "[Still] " + levelOf(who).line + "\n\n" : ""
-  let prompt = intro + switched + (ratings.removeValue(forKey: chat.id).map { $0 + "\n\n" } ?? "") + level + folderNote(chat, work) + (changed.isEmpty ? "" : changed + "\n\n") + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
+  let prompt = intro + switched + (ratings.removeValue(forKey: chat.id).map { $0 + "\n\n" } ?? "") + level + folderNote(chat, work) + (correcting ? corrects + "\n\n" : "") + (changed.isEmpty ? "" : changed + "\n\n") + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   if isQa, !chat.ephemeral, let line = try? JSONSerialization.data(withJSONObject: ["chat": chat.id, "companion": chat.companion, "prompt": prompt]) { // QA builds: the evals and skill tests read it; never an incognito chat's
    let file = support.appendingPathComponent("qa-prompts.jsonl"), entry = line + Data("\n".utf8)
    if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(entry); try? h.close() } else { try? entry.write(to: file) }
@@ -1549,6 +1553,9 @@ extension Browser {
   func finish() {
    if let run, !run.cancelled, run.exitCode != 0 { run.saveLog(request.folder, chat.id) }
    if stopped || (run?.exitCode ?? 1) != 0 || !chat.error.isEmpty { stopSteps(chat) }
+   // What came in after Stop goes above the mark, so it sits where the reply stopped.
+   if stopped, let mark = chat.messages.lastIndex(where: { $0.role == "note" && $0.text == "Stopped." }), mark < chat.messages.count - 1,
+      !chat.messages[(mark + 1)...].contains(where: { $0.role == "user" }) { chat.messages.append(chat.messages.remove(at: mark)) }
    if runs[chat.id] === me {
     runs[chat.id] = nil
     for browser in browsers { browser.releaseAgentTabs(chat.id) }

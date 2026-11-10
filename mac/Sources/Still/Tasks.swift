@@ -56,7 +56,7 @@ func taskState(_ r: ChatRun?, _ state: String, _ reason: String = "", _ pending:
 func startTask(_ r: ChatRun, _ ask: String) {
  let before = aiTasks[r.chat.id], t = AiTask()
  t.chat = r.chat.id; t.ask = String(ask.prefix(2000))
- if let before, before.state == "interrupted" || before.state == "waiting" && before.reason == "signin" {
+ if let before, before.state == "interrupted" || before.state == "waiting" && before.reason == "signin" || ask.isEmpty { // the same task carries on
   if !before.ask.isEmpty { t.ask = before.ask }
   t.steps = before.steps; t.sensitive = before.sensitive; t.tabs = before.tabs; t.lastAudit = before.lastAudit
   r.recheck = before.sensitive.contains { $0.outcome == nil }

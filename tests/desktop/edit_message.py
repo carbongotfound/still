@@ -196,7 +196,7 @@ def fake_run(p, port):
     idle(p)
     time.sleep(.5)
     text = "\n".join(said(p))
-    check("WORDFOUR" not in text and "Stopped by you" not in text, f"The stopped run leaves nothing behind ({text!r})")
+    check("WORDFOUR" not in text and "You stopped it here" not in text, f"The stopped run leaves nothing behind ({text!r})")
 
     # What the replaced reply saved goes. What was saved before stays.
     send(p, "aiSend", text=plan("WORDSIX", ["remember", {"fact": "Likes the color teal"}]))

@@ -189,7 +189,7 @@ def main():
         send(p, "aiStop")
         gone = idle(p, 5)
         took = time.monotonic() - started
-        check(gone and took < 1.5 and "Stopped by you" in text(p), "Stop ends a streaming reply at once (%.2fs)" % took)
+        check(gone and took < 1.5 and "You stopped it here" in text(p), "Stop ends a streaming reply at once (%.2fs)" % took)
         before = len(fake.requests)
         t = ask(p, "LOOP forever", 120, until_text="Stopped after 40 steps") or ""
         check("Stopped after 40 steps in one reply" in t and len(fake.requests) - before <= 41, "A reply stops after 40 steps, with a note")

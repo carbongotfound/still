@@ -71,7 +71,7 @@ public partial class MainWindow
  {
   var before = aiTasks.GetValueOrDefault(r.Chat.Id);
   r.Task = new() { Chat = r.Chat.Id, Ask = ask.Length > 2000 ? ask[..2000] : ask };
-  if (before is { State: "interrupted" } || before is { State: "waiting", Reason: "signin" }) {
+  if (before is { State: "interrupted" } || before is { State: "waiting", Reason: "signin" } || ask.Length == 0 && before != null) { // the same task carries on
    r.Task.Ask = before.Ask.Length > 0 ? before.Ask : r.Task.Ask; r.Task.Steps = before.Steps; r.Task.Sensitive = before.Sensitive; r.Task.Tabs = before.Tabs; r.Task.LastAudit = before.LastAudit;
    r.Recheck = before.Sensitive.Any(s => s.Outcome == null);
   }

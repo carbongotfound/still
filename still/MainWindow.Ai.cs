@@ -278,6 +278,7 @@ public partial class MainWindow
  const string CompanionProfile = "companion";
  static string? NewChatProfile(bool incognito) => !incognito && sharedState?.Preferences.AgentProfile == CompanionProfile ? CompanionProfile : null;
  static readonly Dictionary<string, string> ratings = []; // a thumb the user put on a reply: the chat's AI hears it once, with the next message
+ const string Corrects = "[Still] The user stopped you partway through your last reply. Their message below may correct you or change the plan: carry on from where you stopped with it in mind, without redoing steps that worked.", ContinueBrief = "[Still] The user stopped you partway through your last reply, then asked you to continue. Carry on from where you stopped, without repeating what you already wrote or redoing steps that worked.";
  static readonly HashSet<string> autonomyChanged = []; // started chats whose companion's Autonomy changed: its AI hears it on the next turn
  static readonly HashSet<string> profileSwitched = []; // chats whose profile the user just switched: their AI hears it on the next turn
  /// Closing an incognito window ends its chats: their runs stop (the AI app's processes with them) and their files go.
@@ -602,6 +603,8 @@ public partial class MainWindow
     break;
    case "aiResumeDismiss" when !incognito: // later, from each chat
     resumeAnswered = true; PublishAiEverywhere(); break;
+   case "aiContinue" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { From: null } stopped && !Busy(stopped) && stopped.Messages.LastOrDefault() is { Role: "note", Text: "Stopped." }:
+    await RunAi(stopped, ContinueBrief, shown: ""); break; // picks the stopped reply up, with no message of the user's
    case "aiResume" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { } resumed:
     await ResumeTask(resumed); break;
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
@@ -1124,6 +1127,7 @@ public partial class MainWindow
   if (!Prefs.AgentsEnabled) { Prefs.AgentsEnabled = true; SaveLater(); chat.Messages.Add(new() { Role = "note", Text = $"Turned on Settings → Let other AI apps use Still, so {cli.Name} can use your tabs." }); }
   approvedAgents.Add(cli.Name); // the user started this agent here, so it needs no approval bar
   aiError = chat.Error = ""; chat.Updated = DateTime.UtcNow; chat.Running = true;
+  bool corrects = shown.Length > 0 && chat.From == null && chat.Messages.LastOrDefault() is { Role: "note", Text: "Stopped." }; // the user stopped the last reply: this picks up from there
   if (shown.Length > 0) chat.Messages.Add(new() { Role = "user", Text = shown, Who = asker, Files = files is { Count: > 0 } ? files : null });
   int from = chat.Messages.Count;
   var who = Companions.FirstOrDefault(c => c.Id == chat.Companion);
@@ -1157,6 +1161,7 @@ public partial class MainWindow
    + (ratings.Remove(chat.Id, out var rating) ? rating + "\n\n" : "")
    + (who != null && chat.Started && autonomyChanged.Remove(chat.Id) ? "[Still] " + LevelOf(who).Line + "\n\n" : "")
    + FolderNote(chat, work)
+   + (corrects ? Corrects + "\n\n" : "")
    + (changed.Length > 0 ? changed + "\n\n" : "")
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   if (App.IsQa && !chat.Ephemeral) try { File.AppendAllText(Path.Combine(App.DataRoot, "qa-prompts.jsonl"), JsonSerializer.Serialize(new { chat = chat.Id, companion = chat.Companion, prompt }) + "\n"); } catch (IOException) { }
@@ -1222,6 +1227,10 @@ public partial class MainWindow
    if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
    string ended = stopped ? "completed" : run == null || run.ExitCode != 0 || chat.Error.Length > 0 ? "failed" : "completed"; // before Dispose, which takes the exit code with it
    if (stopped || ended == "failed") StopSteps(chat);
+   // What came in after Stop goes above the mark, so it sits where the reply stopped.
+   if (stopped && chat.Messages.FindLastIndex(m => m is { Role: "note", Text: "Stopped." }) is var mark and >= 0 && chat.Messages.Skip(mark + 1).Any() && chat.Messages.Skip(mark + 1).All(m => m.Role != "user")) {
+    var stop = chat.Messages[mark]; chat.Messages.RemoveAt(mark); chat.Messages.Add(stop);
+   }
    run?.Dispose();
    if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false;
     if (chat.Messages.Skip(from).LastOrDefault(m => m.Role is "tool" or "search" or "read") is { } last) last.Took = Math.Max(1, chat.Worked); }

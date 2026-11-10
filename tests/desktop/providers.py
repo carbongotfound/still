@@ -1,5 +1,7 @@
 """Agent adapters end to end with fake agent apps (no AI usage): onboarding row states, a run, resume, API keys kept
-out, Stop ending the whole process tree within a second, and no "Codex" anywhere on screen.
+out, Stop ending the whole process tree within a second, and no "Codex" anywhere on screen. After a stop, what the
+reply wrote stays, Continue picks it up with no message of the user's, and a message typed then tells the AI it's a
+correction; the next one doesn't.
 
 Run: python tests/desktop/providers.py artifacts/Still-QA/Still.exe
 The fakes are manifest agents (Still's agents folder) backed by a small Python script; see docs/agentic/agents.md.
@@ -52,7 +54,7 @@ FAKE = textwrap.dedent(r'''
     if args[:1] == ["status-out"]: print("signed out"); sys.exit(0)
     prompt = sys.stdin.read()
     keys = [k for k in ("ANTHROPIC_API_KEY", "OPENAI_API_KEY", "XAI_API_KEY") if k in os.environ]
-    with open(os.path.join(here, "calls.jsonl"), "a") as log: log.write(json.dumps({"args": args, "keys": keys, "pid": os.getpid()}) + "\n")
+    with open(os.path.join(here, "calls.jsonl"), "a") as log: log.write(json.dumps({"args": args, "keys": keys, "pid": os.getpid(), "prompt": prompt}) + "\n")
     session = args[args.index("--resume") + 1] if "--resume" in args else "fake-session-1"
     def say(e): print(json.dumps(e), flush=True)
     say({"type": "system", "subtype": "init", "session_id": session})
@@ -150,7 +152,33 @@ try:
     took = time.monotonic() - started
     RESULT["stop_seconds"] = round(took, 3)
     check(gone and took < 1, "Stop ends the whole process tree within 1s (%.2fs)" % took)
-    check(until(lambda: "Stopped by you" in text(process), 5), "The chat says it stopped")
+    check(until(lambda: "You stopped it here" in text(process), 5), "The chat marks where it stopped")
+    shown = lambda: rpc(process, "shellEval", script="[...document.querySelectorAll('.ai-stopped button')].filter(b => b.checkVisibility()).length")
+    mine = lambda: rpc(process, "shellEval", script="document.querySelectorAll('.ai-msg.is-user').length")
+    hint = lambda: rpc(process, "shellEval", script="[...document.querySelectorAll('[aria-label=Message]')].filter(b => b.checkVisibility()).map(b => b.getAttribute('aria-placeholder')).join('|')")
+    last = lambda: json.loads(LOG.read_text().splitlines()[-1])
+    check("Working on it" in text(process) and shown() == 1, "What it wrote stays, with one Continue on the mark")
+    check("Type a correction" in (hint() or ""), f"The box offers a correction ({hint()!r})")
+
+    # Continue: the same session carries on, told so, with no message of the user's.
+    runs, asked = len(LOG.read_text().splitlines()), mine()
+    rpc(process, "shellEval", script="document.querySelector('.ai-stopped button').click()")
+    until(lambda: len(LOG.read_text().splitlines()) > runs, 15)
+    check("asked you to continue" in last()["prompt"] and last()["args"][-2:] == ["--resume", "fake-session-1"], "Continue resumes the session and says to carry on")
+    check(until(lambda: "Fake reply %d" % (runs + 1) in text(process), 30) and mine() == asked and shown() == 0, "It replies, with no message of the user's, and Continue goes")
+
+    # A message typed after a stop is a correction; the next one isn't.
+    (BIN / "child.pid").unlink()
+    send(process, "aiSend", text="SLEEP once more")
+    until(lambda: (BIN / "child.pid").exists(), 30)
+    send(process, "aiStop")
+    until(lambda: shown() == 1, 10)
+    send(process, "aiSend", text="use the blue one")
+    check(until(lambda: "use the blue one" in last()["prompt"], 15) and "Their message below may correct you" in last()["prompt"], "A message after a stop is told to pick up from there")
+    until(lambda: "Fake reply %d" % len(LOG.read_text().splitlines()) in text(process), 30)
+    send(process, "aiSend", text="thanks")
+    check(until(lambda: "thanks" in last()["prompt"], 15) and "stopped you partway" not in last()["prompt"], "The next message isn't")
+    check(shown() == 0, "No Continue once the chat moved on")
     check(not rpc(process)["shellErrors"], "No interface JavaScript errors")
     rpc(process, "quit")
     process.wait(timeout=15)

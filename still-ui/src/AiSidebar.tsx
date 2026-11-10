@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp, Trash2, FolderOpen, FolderX } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -888,6 +888,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const latestPrompt = messages.findLast(m => m.role === "user" && !m.who && !m.answer)
  const turnAt = busy ? items.findLastIndex(m => m === latestPrompt) : items.length // while it works, every step since the latest message stays in view
  const last = items[items.length - 1], working = !!last && "steps" in last && last.steps[last.steps.length - 1].status === "working"
+ const stopped = !busy && !chat?.from && !!last && "text" in last && last.role === "note" && last.text === "Stopped." // the user stopped the last reply
  const thinking = busy && !working && !(last && !("steps" in last) && last.role === "assistant")
  // A turn's time (its run's last step keeps it) shows on the turn's first block of two or more steps, wherever that last step is.
  const tookAt = new Map<number, number>()
@@ -943,7 +944,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
     if (m.role === "user") return <MyMessage key={(ai.chatId ?? "new") + "." + i} m={m} known={known} send={send} latest={m === latestPrompt} draft={(ai.incognito ? "private." : "") + "edit." + (ai.chatId ?? "new")} />
     if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
-    if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Square aria-hidden />Stopped by you</div>
+    if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Pause aria-hidden />You stopped it here
+     {stopped && i === items.length - 1 && <button type="button" onClick={() => send("aiContinue", { id: ai.chatId })}><Play aria-hidden />Continue</button>}</div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
     const { body, choice, next } = choicesOf(m.text)
     const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined, last = i === items.length - 1 && !busy
@@ -973,7 +975,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     <div className="ai-queued-what" title={queued.map(q => q.text).join("\n\n")}>{upNext && <p>{upNext}</p>}{upFiles.map((f, i) => <span key={i} className="ai-queued-file"><FileIcon path={f.name} /><span>{f.name}</span></span>)}</div>
     <Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button className="ai-queued-x" aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    {!chat?.from && <><Composer chat={chat?.id} draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
-    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
+    placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : stopped ? "Type a correction to pick up from here…" : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
     : companion && <Tip label={forget ? `${name} won't remember anything from this chat` : `${name} remembers useful things from this chat`}><label className="chat-memory"><Switch size="sm" aria-label="Don't remember this chat" checked={forget} onCheckedChange={on => chat ? send("chatNoMemory", { id: chat.id, on }) : setOffRecord(on)} />Don't remember this chat</label></Tip>}
