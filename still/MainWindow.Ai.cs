@@ -58,6 +58,8 @@ public sealed class AiChat
  public List<AiMessage> Messages { get; set; } = [];
  public List<string> Allowed { get; set; } = []; // "action site" the user allowed for the rest of this chat ("files <folder>": replacing and deleting there)
  [System.Text.Json.Serialization.JsonIgnore] public HashSet<string> Made { get; } = []; // files it made in its working folder since Still started: it may replace or delete them
+ public string? Folder { get; set; } // its own working folder over its companion's ("": none in this chat); null: the companion's
+ public string? FolderTold { get; set; } // the folder its AI was last told about
  public List<AiAudit> Audit { get; set; } = []; // what the AI asked to do on sites, and what happened
 }
 public sealed class AiAudit
@@ -525,7 +527,7 @@ public partial class MainWindow
   usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), @checked = aiChecked,
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
-  chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
+  chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion, chatFolder = shown == null ? null : FolderOf(shown), nextFolder,
   messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, rating = m.Rating, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
@@ -621,7 +623,8 @@ public partial class MainWindow
     if (files.Count > 0) asked += FilesNote(files);
     if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(new(typed, text, asked, files)); Sent(true); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
+    var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files, folder: target == null ? nextFolder : null);
+    if (target == null) nextFolder = null;
     Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
     await run;
     break; }
@@ -819,6 +822,7 @@ public partial class MainWindow
     if (Prefs.Companions.Count(c => c.Skills.Remove(S("id"))) > 0) SaveLater();
     foreach (var w in Windows) if (w != this) w.PublishAi();
     break;
+   case "chatFolder": ChatFolder(data); return;
    case "pickFolder": { // a companion's working folder
     var folderDialog = new Microsoft.Win32.OpenFolderDialog { Title = "Pick a working folder" };
     if (folderDialog.ShowDialog(this) == true) ShellSend(new { kind = "folder", data = new { path = folderDialog.FolderName } });
@@ -1088,11 +1092,11 @@ public partial class MainWindow
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null). asker: the teammate
  /// whose message this is, when one companion asks another (Exchange).
- async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null, bool routine = false)
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null, bool routine = false, string? folder = null)
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito), Routine = routine }; // a private window remembers nothing
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", Folder = folder, NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito), Routine = routine }; // a private window remembers nothing
    MyChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { if (into.ChatId != chat.Id) { into.Back.Add(Spot(into)); into.Forward.Clear(); } into.ChatId = chat.Id; into.Home = ""; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
@@ -1152,6 +1156,7 @@ public partial class MainWindow
    + (profileSwitched.Remove(chat.Id) && chat.Started ? "[Still] " + (chat.Profile == CompanionProfile ? "The user switched this chat to browse in the companion profile: " + CompanionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : "")
    + (ratings.Remove(chat.Id, out var rating) ? rating + "\n\n" : "")
    + (who != null && chat.Started && autonomyChanged.Remove(chat.Id) ? "[Still] " + LevelOf(who).Line + "\n\n" : "")
+   + FolderNote(chat, work)
    + (changed.Length > 0 ? changed + "\n\n" : "")
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   if (App.IsQa && !chat.Ephemeral) try { File.AppendAllText(Path.Combine(App.DataRoot, "qa-prompts.jsonl"), JsonSerializer.Serialize(new { chat = chat.Id, companion = chat.Companion, prompt }) + "\n"); } catch (IOException) { }

@@ -191,6 +191,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var tabs: [Tab] = []
  var active: Tab?
  var downloads: [Download] = []
+ var nextFolder: String? // the next new chat's own folder ("": none), picked before it starts
  var uploads: [String: (name: String, size: Int64)] = [:] // files dropped or pasted in the box, still coming in pieces (attachPiece)
  var closed: [String] = [] // closed tabs' addresses, newest last (25 at most)
  var ready = false, focusMode = false, overlay = false

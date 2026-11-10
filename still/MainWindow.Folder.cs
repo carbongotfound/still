@@ -10,9 +10,32 @@ namespace Still;
 // sends it to the Recycle Bin. A file it made in this chat it may replace or delete, and Allow in this chat stops the asking.
 public partial class MainWindow
 {
- /// The folder a chat works in, or "" (none, gone, or a private window).
- string FolderOf(AiChat chat) => !chat.Ephemeral && Companions.FirstOrDefault(c => c.Id == chat.Companion)?.Folder is { Length: > 0 } f && Path.IsPathFullyQualified(f) && Directory.Exists(f)
+ string? nextFolder; // the next new chat's own folder ("": none), picked before it starts
+ /// The folder a chat works in: its own, or else its companion's; "" for none, one that's gone, or a private window.
+ string FolderOf(AiChat chat) => !chat.Ephemeral && (chat.Folder ?? Companions.FirstOrDefault(c => c.Id == chat.Companion)?.Folder) is { Length: > 0 } f && Path.IsPathFullyQualified(f) && Directory.Exists(f)
   ? Path.GetFullPath(f).TrimEnd(Path.DirectorySeparatorChar) : "";
+ /// What the AI hears when its folder changed since it was last told (a new session's instructions name it).
+ static string FolderNote(AiChat chat, string work)
+ {
+  string told = chat.FolderTold ?? work;
+  chat.FolderTold = work;
+  return !chat.Started || told == work ? "" : "[Still] " + (work.Length > 0 ? $"The user changed your working folder to {work}: list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it." : "The user took away your working folder, so you can't reach their files now.") + "\n\n";
+ }
+ /// chatFolder: a chat's own folder, picked or given ("" with remove: none in it); with no chat, the next new chat's.
+ void ChatFolder(JsonElement data)
+ {
+  string id = S(data, "chat"), given = S(data, "path");
+  var chat = id.Length > 0 ? MyChats.FirstOrDefault(c => c.Id == id) : null;
+  if (id.Length > 0 && (chat == null || chat.Ephemeral)) return;
+  string? path = B(data, "remove") ? "" : Path.IsPathFullyQualified(given) && Directory.Exists(given) ? given : null;
+  if (path == null) {
+   var pick = new Microsoft.Win32.OpenFolderDialog { Title = chat == null ? "Pick a folder for the new chat" : "Pick a folder for this chat" };
+   if (pick.ShowDialog(this) != true) return;
+   path = pick.FolderName;
+  }
+  if (chat != null) { chat.Folder = path; SaveAiChats(); } else nextFolder = path;
+  PublishAiEverywhere();
+ }
  /// Everyone in the chain (the companion, and whoever it's helping) is on Keep going.
  bool KeepGoing(AiChat chat) => ExchangeOf(chat).Chain.All(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).Programs == "auto");
 

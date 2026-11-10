@@ -7,6 +7,9 @@ Recycle Bin (the Trash on a Mac). Allow in this chat stops the asking in that fo
 outside the folder and a link out of it are refused without a card; a full path inside works. A companion with no
 folder is told it has none.
 
+A chat can have its own folder over its companion's: the box shows the active one as a chip, one picked before the
+chat starts goes with it, the + menu removes it (none in that chat), and a change mid-chat reaches the AI.
+
 Usage: python tests/desktop/folder.py <QA exe>
 The fake AI app answers a last line "CALLS: <json list of [tool, arguments]>" by calling each tool in turn through
 Still's MCP server and writing each result to results.jsonl as it comes. Deleted files are named still-qa-*.txt, since
@@ -134,6 +137,18 @@ def put(path, text):
     path.write_bytes(text.encode("utf-8"))  # as given: no \r\n on Windows
 
 
+def chip(p, box):
+    """The folder chip in a box, or None."""
+    return js(p, f"(b => b && b.checkVisibility() ? b.innerText.trim() : null)(document.querySelector('{box} .folder-chip'))")
+
+
+def prompt_of(cid):
+    """The last prompt Still sent for a chat (QA builds log them)."""
+    file = PROFILE / "qa-prompts.jsonl"
+    lines = [json.loads(l) for l in file.read_text(encoding="utf-8").splitlines() if l.strip()] if file.exists() else []
+    return next((l["prompt"] for l in reversed(lines) if l.get("chat") == cid), "")
+
+
 def link(at, to):
     """A link out of the folder: a junction on Windows (no admin needed), a symbolic link on the Mac."""
     if MAC:
@@ -253,6 +268,46 @@ def main():
         audit = [a.get("Result", "") for c in chats() if c["Id"] == cid for a in c.get("Audit", [])]
         check("You said no" in audit and "You allowed it once" in audit and any("Keep going" in a for a in audit) and "You allowed changes in this folder for this chat" in audit,
               f"The chat's log says how each change was allowed ({audit})")
+
+        # A chat's own folder: the box shows the active one; one picked before the chat starts goes with it.
+        other = RUN / "Other folder"
+        other.mkdir()
+        put(other / "plan.md", "plan")
+        send(p, "new")
+        until(lambda: js(p, "!!document.querySelector('.home-compose [aria-label=Message]')"), 10)
+        js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
+        check(until(lambda: chip(p, ".home-compose") == "Work folder", 5), f"Before a chat starts, the box shows its companion's folder ({chip(p, '.home-compose')!r})")
+        send(p, "chatFolder", path=str(other))
+        check(until(lambda: chip(p, ".home-compose") == "Other folder", 5), f"...or the folder picked for the new chat ({chip(p, '.home-compose')!r})")
+        known = {c["Id"] for c in chats()}
+        before = len(results())
+        send(p, "aiSend", text="CALLS: " + json.dumps([["list_files", {}]]), home=True, companion="maya")
+        cid3 = until(lambda: next((c["Id"] for c in chats() if c["Id"] not in known), None), 20)
+        r = got(before, 1)
+        own = lambda: next((c.get("Folder") for c in chats() if c["Id"] == cid3), None)
+        check(r and out(r[0]).get("items") == ["plan.md (4 B)"] and own() == str(other), f"The chat starts in that folder ({r[0]['text'][:90] if r else None}, {own()!r})")
+        check(until(lambda: chip(p, ".chat-view") == "Other folder", 5), f"The chat's box shows it ({chip(p, '.chat-view')!r})")
+        idle(p, cid3)
+
+        # Removed from the + menu: no folder in this chat, though its companion has one, and the AI hears so.
+        js(p, "document.querySelector('.chat-view .composer-add').dispatchEvent(new PointerEvent('pointerdown', { bubbles: true, button: 0, pointerType: 'mouse' }))")
+        until(lambda: js(p, "!!document.querySelector('[role=menu]')"), 5)
+        items = js(p, "[...document.querySelectorAll('[role=menuitem]')].map(i => i.innerText.trim())") or []
+        check("Change folder…" in items and "Remove folder from this chat" in items, f"The + menu changes or removes the chat's folder ({items})")
+        js(p, "[...document.querySelectorAll('[role=menuitem]')].find(i => i.innerText.includes('Remove folder')).click()")
+        check(until(lambda: chip(p, ".chat-view") is None and own() == "", 5), f"Remove takes the folder out of this chat ({chip(p, '.chat-view')!r}, {own()!r})")
+        cid3, before = calls(p, cid3, [["list_files", {}]])
+        r = got(before, 1)
+        check(r and r[0]["error"] and "no working folder" in r[0]["text"] and "took away your working folder" in prompt_of(cid3), "The AI can't reach files there now, and is told so")
+        idle(p, cid3)
+
+        # Back to a folder, given straight as the picker would: the chip and the AI follow.
+        send(p, "chatFolder", chat=cid3, path=str(WORK))
+        check(until(lambda: chip(p, ".chat-view") == "Work folder", 5), "Changing it shows in the chip at once")
+        cid3, before = calls(p, cid3, [["list_files", {"path": "sub"}]])
+        r = got(before, 1)
+        check(r and not r[0]["error"] and f"changed your working folder to {WORK}" in prompt_of(cid3), "...and the AI works there, told of the change")
+        idle(p, cid3)
 
         # A companion with no folder.
         cid2, before = calls(p, None, [["list_files", {}]], companion="leo")

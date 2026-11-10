@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 // Work in a folder (Windows: MainWindow.Folder.cs): a companion's folder on the user's Mac, where its AI app (whichever it
 // is) lists, reads, creates and edits files with Still's tools. Nothing outside it: no "..", no path out of it, and no
@@ -6,12 +6,18 @@ import Foundation
 // deleting one always asks and sends it to the Trash. A file it made in this chat it may replace or delete, and Allow in
 // this chat stops the asking.
 
-/// The folder a chat works in, or "" (none, gone, or a private window).
+/// The folder a chat works in: its own, or else its companion's; "" for none, one that's gone, or a private window.
 func folderOf(_ chat: AiChat) -> String {
  var isFolder: ObjCBool = false
- guard !chat.ephemeral, let f = companions.first(where: { $0.id == chat.companion })?.folder, f.hasPrefix("/"),
+ guard !chat.ephemeral, let f = chat.folder ?? companions.first(where: { $0.id == chat.companion })?.folder, f.hasPrefix("/"),
        FileManager.default.fileExists(atPath: f, isDirectory: &isFolder), isFolder.boolValue else { return "" }
  return URL(fileURLWithPath: f).standardizedFileURL.path
+}
+/// What the AI hears when its folder changed since it was last told (a new session's instructions name it).
+func folderNote(_ chat: AiChat, _ work: String) -> String {
+ let told = chat.folderTold ?? work
+ chat.folderTold = work
+ return !chat.started || told == work ? "" : "[Still] " + (work.isEmpty ? "The user took away your working folder, so you can't reach their files now." : "The user changed your working folder to \(work): list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it.") + "\n\n"
 }
 /// Everyone in the chain (the companion, and whoever it's helping) is on Keep going.
 func keepGoing(_ chat: AiChat) -> Bool { exchangeOf(chat).chain.allSatisfy { c in levelOf(companions.first { $0.id == c }).programs == "auto" } }
@@ -109,4 +115,24 @@ func inside(_ root: String, _ given: String) throws -> String {
  if answer == "chat" { run.chat.allowed.append(key) }
  publishAiEverywhere()
  return answer == "once" || answer == "chat" ? nil : agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.")
+}
+
+extension Browser {
+ /// chatFolder: a chat's own folder, picked or given ("" with remove: none in it); with no chat, the next new chat's.
+ func chatFolder(_ data: [String: Any]) {
+  let id = argText(data, "chat"), given = argText(data, "path")
+  let chat = id.isEmpty ? nil : myChats.first { $0.id == id }
+  if !id.isEmpty && (chat == nil || chat!.ephemeral) { return }
+  let set = { [self] (path: String) in
+   if let chat { chat.folder = path; saveAiChats() } else { nextFolder = path }
+   publishAiEverywhere()
+  }
+  var isFolder: ObjCBool = false
+  if data["remove"] as? Bool == true { set(""); return }
+  if given.hasPrefix("/"), FileManager.default.fileExists(atPath: given, isDirectory: &isFolder), isFolder.boolValue { set(given); return }
+  let picker = NSOpenPanel()
+  picker.canChooseDirectories = true; picker.canChooseFiles = false; picker.allowsMultipleSelection = false
+  picker.message = chat == nil ? "Pick a folder for the new chat" : "Pick a folder for this chat"
+  picker.beginSheetModal(for: window) { result in if result == .OK, let url = picker.url { set(url.path) } }
+ }
 }

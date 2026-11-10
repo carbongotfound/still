@@ -955,6 +955,9 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mode-chip { display:flex; align-items:center; gap:6px; height:32px; padding:0 9px 0 5px; border-radius:999px; background:var(--muted); color:var(--foreground); font-size:13px; font-weight:500; transition:background .15s; }
 .mode-chip:hover, .mode-chip[data-state=open] { background:color-mix(in oklab,var(--hue,var(--foreground)) 14%,var(--muted)); }
 .mode-chip > svg { width:13px; height:13px; color:var(--hue,currentColor); } .mode-chip:disabled { opacity:.5; }
+.folder-chip { display:flex; align-items:center; gap:5px; min-width:0; max-width:180px; height:26px; padding:0 9px 0 7px; border-radius:999px; color:var(--muted-foreground); font-size:12px; font-weight:500; transition:background .15s, color .15s; }
+.folder-chip:hover { background:var(--muted); color:var(--foreground); } .folder-chip:disabled { opacity:.5; }
+.folder-chip > svg { width:13px; height:13px; flex:none; } .folder-chip > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .mode-menu[data-slot=dropdown-menu-content] { width:272px; padding:6px; border-radius:14px; }
 .mode-menu [data-slot=dropdown-menu-item] { height:38px; gap:10px; border-radius:10px; font-size:14px; }
 .mode-find { width:100%; height:36px; padding:0 10px; margin-bottom:2px; border:0; outline:0; background:none; font-size:13.5px; color:var(--foreground); }

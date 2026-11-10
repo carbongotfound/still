@@ -66,10 +66,12 @@ final class AiChat: Codable {
  var messages: [AiMessage] = []
  var allowed: [String] = [] // "action site" the user allowed for the rest of this chat ("files <folder>": replacing and deleting there)
  var made = Set<String>() // files it made in its working folder since Still started: it may replace or delete them (not saved)
+ var folder: String? // its own working folder over its companion's ("": none in this chat); nil: the companion's
+ var folderTold: String? // the folder its AI was last told about
  var known: [String] = [] // the sites this chat has been to
  var read = 0 // what it has read: 0 nothing, 1 the public web, 2 pages or apps the user is signed in to
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, known, read, audit }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, known, read, audit, folder, folderTold }
  init() {}
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -78,6 +80,7 @@ final class AiChat: Codable {
   companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory); routine = c.value(.routine, routine)
   worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)
   messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); known = c.value(.known, known); read = c.value(.read, read); audit = c.value(.audit, audit)
+  folder = c.value(.folder, folder); folderTold = c.value(.folderTold, folderTold)
  }
 }
 

@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp, Trash2 } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp, Trash2, FolderOpen, FolderX } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -36,7 +36,7 @@ export type AiState = {
  runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: { text: string; files?: { name: string; size: number }[] }[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
- chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
+ chatId?: string; chatHarness?: string; chatCompanion?: string; chatFolder?: string | null; nextFolder?: string | null; messages: Message[]
  question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
  chats: ChatRow[]
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
@@ -479,7 +479,7 @@ function MyMessage({ m, known, send, latest, draft }: { m: Message; known: Known
   </div>
  </div>
 }
-export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, draft: draftKey }: { draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[], draft?: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
+export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, autoFocus, onTyping, companion, onCompanion, tabs, chat, draft: draftKey }: { chat?: string; draft?: string; ai: AiState; send: Send; placeholder: string; onSubmit: (text: string, tabs: string[], files: string[], draft?: string) => void; onStop?: () => void; disabled?: boolean; autoFocus?: boolean; onTyping?: (typing: boolean) => void; companion?: Companion; onCompanion?: (id: string) => void; tabs?: TabRef[] }) {
  const draft = draftKey && (ai.incognito ? "private." + draftKey : draftKey)
  const drafted = useRef(draft)
  const [parts, setParts] = useState<Part[]>([])
@@ -491,6 +491,9 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const acks = useRef(new Map<string, (done: number) => void>()), stopped = useRef(new Set<string>()), queue = useRef(Promise.resolve())
  const [dropping, setDropping] = useState(false)
  const me = useId()
+ // The folder this chat works in: its own or its companion's; before it starts, the one picked for it.
+ const folder = ai.incognito ? "" : (chat ? ai.chatFolder : ai.nextFolder ?? companion?.folder) ?? "", folderName = folder.split(/[\\/]/).filter(Boolean).pop() ?? folder
+ const pickFolder = () => send("chatFolder", { chat })
  const partsRef = useRef(parts), filesRef = useRef(files)
  useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
  useEffect(() => { // Ctrl+V (Cmd+V on the Mac) with no box in focus: a copied picture lands in the box on show
@@ -712,6 +715,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     <DropdownMenuContent {...add.props} className="w-72" onCloseAutoFocus={e => e.preventDefault()}>
      <DropdownMenuItem onSelect={() => send("aiPickFiles", { to: me })}><Paperclip />Add files<span className="menu-hint">or drop them here</span></DropdownMenuItem>
      <DropdownMenuItem onSelect={() => send("aiPasteImage", { to: me })}><ClipboardPaste />Paste copied image<span className="menu-hint">or {MAC ? "⌘V" : "Ctrl+V"}</span></DropdownMenuItem>
+     {!ai.incognito && <DropdownMenuItem onSelect={pickFolder}><FolderOpen />{folder ? "Change folder…" : "Work in a folder…"}</DropdownMenuItem>}
+     {folder && <DropdownMenuItem onSelect={() => send("chatFolder", { chat, remove: true })}><FolderX />Remove folder from {chat ? "this chat" : "the new chat"}</DropdownMenuItem>}
      <DropdownMenuSeparator />
      <DropdownMenuLabel>Skills</DropdownMenuLabel>
      {skills.slice(0, 8).map(k => <DropdownMenuItem key={k.id} onSelect={() => pickSkill(k)}><BookOpen />{k.name}</DropdownMenuItem>)}
@@ -719,6 +724,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
      {pages.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Add a tab</DropdownMenuLabel>
       {pages.map(t => <DropdownMenuItem key={t.id} onSelect={() => putTab(t)}><TabIcon tab={t} /><span className="truncate">{t.title || host(t.url)}</span></DropdownMenuItem>)}</>}
     </DropdownMenuContent></DropdownMenu>
+   {folder && <Tip label={folder}><button type="button" className="folder-chip" aria-label={`Working folder: ${folderName}. Change it`} disabled={disabled} onClick={pickFolder}><FolderOpen /><span>{folderName}</span></button></Tip>}
    <span className="composer-gap" />
    <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
    {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
@@ -966,7 +972,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {queued.length > 0 && <div className="ai-queued"><span className="ai-queued-label">Up next</span>
     <div className="ai-queued-what" title={queued.map(q => q.text).join("\n\n")}>{upNext && <p>{upNext}</p>}{upFiles.map((f, i) => <span key={i} className="ai-queued-file"><FileIcon path={f.name} /><span>{f.name}</span></span>)}</div>
     <Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button className="ai-queued-x" aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
-   {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
+   {!chat?.from && <><Composer chat={chat?.id} draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">
     {ai.incognito ? <p className="chat-incognito"><LockKeyhole />Incognito chat: Still keeps nothing from it and deletes it when you close this window. {provider?.name ?? "Your model"} and the sites {name} visits still get what's sent to them, {provider?.api ? "and Still writes none of it to disk." : provider?.forgets ? `and ${provider.app || provider.name} is told not to save it on this computer.` : `and ${provider?.app || provider?.name || "its app"} may keep its own record.`} Connected apps are off in incognito windows. Memory: read only.</p>
