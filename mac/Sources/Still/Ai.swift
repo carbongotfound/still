@@ -1485,6 +1485,7 @@ extension Browser {
     runs[chat.id] = nil
     for browser in browsers { browser.releaseAgentTabs(chat.id) }
     chat.worked = Int(Date().timeIntervalSince(me.started)); chat.running = false
+    chat.messages[min(from, chat.messages.count)...].last(where: { ["tool", "search", "read"].contains($0.role) })?.took = max(1, chat.worked)
    }
    me.question?.answer.set("The chat ended."); me.question = nil
    // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
@@ -1627,7 +1628,7 @@ extension Browser {
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
-    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
+    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "took": $0.took ?? 0, "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "role": c.role, "personality": c.personality, "length": c.length, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "setup": c.setup == "pending" ? "pending" : "done", "capture": c.capture, "joinSection": !c.joinKept && joinSection(c.instructions) != nil,

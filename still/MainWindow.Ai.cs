@@ -22,6 +22,7 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Reply { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Chat { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Title { get; set; } // what was asked for, in a few words
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] public int Took { get; set; } // a run's last step: how long the run took, in seconds ("Worked for…")
 }
 /// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
 public sealed class AiFile { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public long Size { get; set; } }
@@ -520,7 +521,7 @@ public partial class MainWindow
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
    .SelectMany(r => r.Approvals.Select(a => new { id = a.Id, run = r.Chat.Id, who = r.Chat.Companion, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until })),
@@ -1196,7 +1197,8 @@ public partial class MainWindow
    string ended = stopped ? "completed" : run == null || run.ExitCode != 0 || chat.Error.Length > 0 ? "failed" : "completed"; // before Dispose, which takes the exit code with it
    if (stopped || ended == "failed") StopSteps(chat);
    run?.Dispose();
-   if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false; }
+   if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false;
+    if (chat.Messages.Skip(from).LastOrDefault(m => m.Role is "tool" or "search" or "read") is { } last) last.Took = Math.Max(1, chat.Worked); }
    // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
    if (Windows.Any(w => !w.closing)) { me.Task.Pending = ""; TaskState(me, ended, stopped ? "stopped" : ""); }
    me.Question?.Answer.TrySetResult("The chat ended."); me.Question = null;

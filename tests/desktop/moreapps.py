@@ -258,7 +258,7 @@ def main():
               "DeepSeek Harness: its own shell, file, web, sub-agent and workflow tools off")
         check(all(by.get(t, {}).get("disabled") is False for t in ("credentials", "authorization", "deepseek-account")), "DeepSeek Harness: the sign-in it set up itself still works")
         check(first.get("telemetry") == "DISABLED" and first.get("keys") == [] and first.get("prompt", 0) > 0, "DeepSeek Harness: telemetry off, no other app's API key, the prompt on stdin")
-        check(until(lambda: js(p, "[...document.querySelectorAll('.ai-step-text')].some(e => e.innerText.toLowerCase().includes('tab'))"), 5), "DeepSeek Harness: its tool call shows as a step")
+        check(until(lambda: js(p, "[...document.querySelectorAll('.ai-step-text')].some(e => e.textContent.toLowerCase().includes('tab'))"), 5), "DeepSeek Harness: its tool call shows as a step")
         second = ask(p, "dsh", "again", 2)["args"]
         check(after(second, "--session-id") == "session-fake-1", "DeepSeek Harness: the next message resumes its session")
 

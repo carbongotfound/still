@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
+import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
 import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -49,7 +49,7 @@ export type AiState = {
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean; took?: number | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string; plugin?: boolean } // stock: one Still ships (Reset puts it back); source: where an added one came from; plugin: it came with programs
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; tool?: string; target?: string; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
@@ -110,14 +110,51 @@ const MoreAgents = ({ open, count, onClick }: { open: boolean; count?: number; o
 export const clock = (s: number) => s < 60 ? s + "s" : Math.floor(s / 60) + "m " + String(s % 60).padStart(2, "0") + "s"
 export const since = (iso?: string) => iso ? Math.max(0, Math.round((Date.now() - Date.parse(iso)) / 1000)) : 0
 // Each step's icon, from how its label starts: while it runs, once it's done, or if it didn't happen.
-const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Didn't|Nothing|Stopped) /, Ban], [/^(Used|Loaded) skill/, BookOpen], [/^(Read|Look)/, Eye], [/^Click/, MousePointer2], [/^Typ/, Keyboard],
+const STEP_ICONS: [RegExp, LucideIcon][] = [[/^(Didn't|Nothing|Stopped) /, Ban], [/^(Used|Loaded) skill/, BookOpen], [/^(Search|Ran \d+ search)/, Search], [/^Think/, Lightbulb], [/^(Read|Look)/, Eye], [/^Click/, MousePointer2], [/^Typ/, Keyboard],
  [/^Scroll/, MoveVertical], [/^Sav/, Save], [/^(Took|Taking) a screenshot/, Camera], [/^(Open|Went|Going|Reload|Switch|Clos|Wait)/, Globe]]
 const stepIcon = (step: string) => STEP_ICONS.find(([re]) => re.test(step))?.[1] ?? ListTodo
-// A step reads as its verb in bold and what it acted on, muted. An address shows as its site; the full one is on hover.
-function Step({ step }: { step: string }) {
- const [verb, ...rest] = step.split(" "), what = rest.join(" "), url = what.match(/https?:\/\/\S+/)?.[0]
- return <span className="ai-step-line" title={url}><b>{verb}</b>{what && <span> {url ? what.replace(url, host(url)) : what}</span>}</span>
+const StepIcon = ({ step }: { step: string }) => <span className="ai-step-icon">{createElement(stepIcon(step))}</span>
+// The work view: a turn's steps as a light timeline, a small icon each on a thin line, in muted words. Addresses,
+// searches and file names are monospace. Repeats in a row fold into one line ("Ran 3 searches") that opens to each.
+// While the turn runs its steps are all in view and the one running shimmers; once it ends two or more fold under
+// "Worked for 1m 03s" and the tick joins only when every step worked (a step with a status didn't, or never said).
+const short = (url: string) => { const s = url.replace(/^https?:\/\/(www\.)?/, "").replace(/\/$/, ""); return s.length > 48 ? s.slice(0, 47) + "…" : s }
+const MONO = /(https?:\/\/\S+|\d{1,3}(?:\.\d{1,3}){3}(?::\d+)?(?:\/\S*)?|(?=[\w.-]*[a-z])[\w-]+(?:\.[\w-]+)+(?::\d+)?(?:\/\S*)?)/i // an address, a site or a file name
+function Words({ step }: { step: string }) {
+ return <span className="ai-step-line">{step.split(MONO).map((p, i) => i % 2 ? <code key={i} className="ai-mono" title={p}>{short(p)}</code> : p)}</span>
 }
+const FOLDS: Record<string, (n: number) => string> = { search: n => `Ran ${n} searches`, Read: n => `Read ${n} pages`, file: n => `Read ${n} files`, Opened: n => `Opened ${n} pages`,
+ Went: n => `Went to ${n} pages`, Clicked: n => `Clicked ${n} times`, Typed: n => `Typed ${n} times`, Scrolled: n => `Scrolled ${n} times`, Saved: n => `Saved ${n} files`, Pressed: n => `Pressed ${n} keys` }
+// Which steps fold together: one still going, or one that didn't work, stays on its own line.
+const FILE = /^Read \S.*\.(pdf|txt|csv|tsv|md|json|docx?|xlsx?|pptx?|png|jpe?g|gif|webp|html?|xml|zip)$/i // read_attachment names the file
+const foldOf = (m: Message) => m.role === "search" ? "search" : m.role === "read" ? "Read" : m.status ? "" : FILE.test(m.text) ? "file" : m.text.split(" ")[0]
+function Look({ m, onLink }: { m: Message; onLink: (url: string) => void }) {
+ let data: { q?: string; url?: string; title?: string; results?: { title: string; url: string; snippet: string }[] } = {}
+ try { data = JSON.parse(m.text) } catch { return null }
+ const link = (url: string, label: ReactNode) => <Tip label={url}><a href={url} onClick={e => { e.preventDefault(); onLink(url) }}>{label}</a></Tip>
+ if (m.role === "read") return <li className="ai-work-row ai-look"><span className="ai-step-icon"><Globe /></span><span className="ai-step-text">Read {link(data.url ?? "", <code className="ai-mono">{short(data.url ?? "")}</code>)}{data.title && <small> · {data.title}</small>}</span></li>
+ const results = data.results ?? []
+ return <li><details className="ai-look"><summary className="ai-work-row"><span className="ai-step-icon"><Search /></span><span className="ai-step-text">Searched <code className="ai-mono">{data.q}</code><small> · {results.length} result{results.length === 1 ? "" : "s"}</small></span><ChevronDown className="ai-steps-chevron" /></summary>
+  <ol className="ai-look-results">{results.map(r => <li key={r.url}>{link(r.url, r.title || host(r.url))}<small>{host(r.url)}</small>{r.snippet && <p>{r.snippet}</p>}</li>)}</ol></details></li>
+}
+function WorkStep({ m, onLink }: { m: Message; onLink: (url: string) => void }) {
+ if (m.role === "search" || m.role === "read") return <Look m={m} onLink={onLink} />
+ return <li className={"ai-work-row" + (m.status === "working" ? " is-live" : m.status === "failed" ? " is-failed" : "")}><StepIcon step={m.text} /><span className="ai-step-text"><Words step={m.text} /></span></li>
+}
+function Work({ steps, live, took, onLink }: { steps: Message[]; live: boolean; took?: number; onLink: (url: string) => void }) {
+ const rows: { fold: string; steps: Message[] }[] = []
+ for (const m of steps) { const fold = foldOf(m), last = rows[rows.length - 1]; if (fold && FOLDS[fold] && last?.fold === fold) last.steps.push(m); else rows.push({ fold, steps: [m] }) }
+ const list = <ol className="ai-work-rows">{rows.map((r, i) => {
+  if (r.steps.length === 1) return <WorkStep key={i} m={r.steps[0]} onLink={onLink} />
+  return <li key={i}><details className="ai-work-fold"><summary className="ai-work-row"><StepIcon step={r.fold === "search" ? "Search" : r.fold === "Read" ? "Opened" : r.steps[0].text} /><span className="ai-step-text">{FOLDS[r.fold](r.steps.length)}</span><ChevronDown className="ai-steps-chevron" /></summary>
+   <ol>{r.steps.map((m, j) => <WorkStep key={j} m={m} onLink={onLink} />)}</ol></details></li>
+ })}</ol>
+ if (live) return <div className="ai-work is-live">{list}</div>
+ const state = steps.some(s => s.status === "failed") ? <X className="ai-steps-state is-failed" aria-label="Didn't finish" /> : !steps.some(s => s.status) && <Check className="ai-steps-state is-done" aria-label="Done" />
+ if (steps.length === 1) return <div className="ai-work is-single">{list}{state}</div> // one step needs no fold
+ return <details className="ai-work"><summary className="ai-work-head">{took ? "Worked for " + clock(took) : steps.length + " steps"}{state}<ChevronDown className="ai-steps-chevron" /></summary>{list}</details>
+}
+
 // Before setup makes one there's no companion: Still itself talks, with the default look.
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
@@ -749,7 +786,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const name = companion?.name ?? "your AI"
  const busy = ai.busy
  const run = ai.runs?.find(r => r.id === ai.chatId), started = run?.started
- const now = useSettled(run?.tool ? doing(run.tool, run.target) : "Working", 600) // what it's doing right now, as the page pill says it
+ const now = useSettled(doing(run?.tool, run?.target), 600) // what it's doing right now, as the page pill says it
  const [typing, setTyping] = useState(false)
  const mood = useRunMood(ai, typing)
  const back = useRef(ai.chatId ? scrolls.get(ai.chatId) : undefined) // coming back to this chat: where the user left it
@@ -780,10 +817,20 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const items: (Message | { role: "steps"; steps: Message[]; who?: string | null })[] = []
  for (const m of messages) {
   const prev = items[items.length - 1]
-  if (m.role === "tool") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m); else items.push({ role: "steps", steps: [m], who: m.who }) }
+  if (m.role === "tool" || m.role === "search" || m.role === "read") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m); else items.push({ role: "steps", steps: [m], who: m.who }) }
   else items.push(m)
  }
  const latestPrompt = messages.findLast(m => m.role === "user" && !m.who && !m.answer)
+ const turnAt = busy ? items.findLastIndex(m => m === latestPrompt) : items.length // while it works, every step since the latest message stays in view
+ const last = items[items.length - 1], working = !!last && "steps" in last && last.steps[last.steps.length - 1].status === "working"
+ const thinking = busy && !working && !(last && !("steps" in last) && last.role === "assistant")
+ // A turn's time (its run's last step keeps it) shows on the turn's first block of two or more steps, wherever that last step is.
+ const tookAt = new Map<number, number>()
+ for (let i = 0, first = -1, took = 0; i <= items.length; i++) {
+  const m = items[i]
+  if (!m || (!("steps" in m) && m.role === "user")) { if (first >= 0 && took) tookAt.set(first, took); first = -1; took = 0 }
+  else if ("steps" in m) { took = Math.max(took, ...m.steps.map(s => s.took ?? 0)); if (first < 0 && m.steps.length > 1) first = i }
+ }
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more). A teammate's line has its face.
@@ -825,18 +872,8 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
    {items.map((m, i) => {
-    if ("steps" in m) {
-     // One row: the latest step (once it's over, the one that didn't work) and how many came before it. More than one step
-     // opens into the full list. The tick means every step worked: a step with a status didn't, or never said.
-     const live = busy && i === items.length - 1, failed = live ? undefined : m.steps.findLast(s => s.status === "failed"), latest = (failed ?? m.steps[m.steps.length - 1]).text, Icon = stepIcon(latest), more = m.steps.length - 1
-     const row = <><span className="ai-step-icon"><Icon /></span><span className="ai-step-text"><Step step={latest} />{more > 0 && <small>+ {more} more</small>}</span>
-      {live ? <Spinner className="ai-steps-state" aria-label="Working" /> : failed ? <X className="ai-steps-state is-failed" aria-label="Didn't finish" /> : !m.steps.some(s => s.status) && <Check className="ai-steps-state is-done" aria-label="Done" />}</>
-     return <div key={i} className={turn(i)}>{face(i)}{more ? <details className="ai-steps-group"><summary>{row}<ChevronDown className="ai-steps-chevron" /></summary>
-      <ol>{m.steps.map((s, j) => { const StepIcon = stepIcon(s.text); return <li key={j}><span className="ai-step-icon"><StepIcon /></span><Step step={s.text} /></li> })}</ol></details>
-      : <div className="ai-steps-group is-single"><div className="ai-steps-row">{row}</div></div>}</div>
-    }
+    if ("steps" in m) return <div key={i} className={turn(i)}>{face(i)}<Work steps={m.steps} live={busy && i > turnAt} took={tookAt.get(i)} onLink={openLink} /></div>
     if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
-    if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
     if (m.role === "user") return <MyMessage key={(ai.chatId ?? "new") + "." + i} m={m} known={known} send={send} latest={m === latestPrompt} draft={(ai.incognito ? "private." : "") + "edit." + (ai.chatId ?? "new")} />
@@ -852,7 +889,9 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-actions"><IconButton label="Copy" onClick={() => { send("copyText", { text: body }); toast("Copied") }}><Copy /></IconButton></div>
     </div>
    })}
-   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<p className="ai-timer">{items.length ? now + " · " + clock(tick) : `${name} is writing…`}</p></div>}
+   {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<div className="ai-live">
+    {thinking && <div className="ai-work-row is-live"><StepIcon step={now} /><span className="ai-step-text">{now}</span></div>}
+    <p className="ai-timer"><span className="still-mark is-small is-live" aria-hidden><i /><i /></span>Working for {clock(tick)}</p></div></div>}
   </div></div>}
   {!busy && ai.chatId && ai.task?.state === "interrupted" && <Alert className="task-bar"><AlertDescription>{ai.task.unsure
     ? `Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
@@ -956,17 +995,6 @@ export function RunAnnouncer({ ai }: { ai: AiState }) {
   if (lines.length) setSay(lines.join(". "))
  }, [ai.runs, ai.chats, ai.privateChats])
  return <div className="sr-only run-announcer" role="status" aria-live="polite">{say}</div>
-}
-
-// web_search and read_url: one compact row each ("Searched 'x' · 8 results", "Read example.com") that opens to the results.
-function LookedUp({ m, onLink }: { m: { role: string; text: string }; onLink: (url: string) => void }) {
- let data: { q?: string; url?: string; title?: string; results?: { title: string; url: string; snippet: string }[] } = {}
- try { data = JSON.parse(m.text) } catch { return null }
- const link = (url: string, label: ReactNode) => <Tip label={url}><a href={url} onClick={e => { e.preventDefault(); onLink(url) }}>{label}</a></Tip>
- if (m.role === "read") return <div className="ai-look"><div className="ai-look-row"><Globe />{link(data.url ?? "", <b>Read {host(data.url ?? "")}</b>)}{data.title && <small>· {data.title}</small>}</div></div>
- const results = data.results ?? []
- return <details className="ai-look"><summary><Search /><b>Searched “{data.q}”</b><small>· {results.length} result{results.length === 1 ? "" : "s"}</small><ChevronDown className="ai-steps-chevron" /></summary>
-  <ol>{results.map(r => <li key={r.url}>{link(r.url, r.title || host(r.url))}<small>{host(r.url)}</small>{r.snippet && <p>{r.snippet}</p>}</li>)}</ol></details>
 }
 
 export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Send; onOpen: (open: boolean) => void; tabs: (TabRef & { favicon?: string; agent?: string })[] }) {

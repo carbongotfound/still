@@ -153,7 +153,8 @@ def main():
         # Tools run through Still's own MCP server, and the chat resumes from its transcript.
         idle(p)
         t = ask(p, "Which tabs?\nCALL list_tabs {}", until_text="Done. Result:") or ""
-        check("Done. Result:" in t and "Looked at open tabs" in t, "A tool call runs through Still's tools and shows as a step")
+        steps = js(p, "[...document.querySelectorAll('.ai-work')].map(e => e.textContent).join(' ')") or ""  # a done turn's steps are folded
+        check("Done. Result:" in t and "Looked at open tabs" in steps, "A tool call runs through Still's tools and shows as a step")
         transcripts = list((PROFILE / "ai" / "chats").rglob("api-*.json"))
         convo = json.loads(transcripts[0].read_text(encoding="utf-8")) if transcripts else {}
         check(len(transcripts) == 1 and any(m.get("role") == "tool" for m in convo.get("messages", [])) and convo.get("in", 0) > 0, "The chat's transcript, tool calls and totals included, is kept in its folder")
@@ -174,10 +175,11 @@ def main():
         check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "Allow once lets the click run")
         idle(p)
 
-        # While a step runs, the line under it says what it's doing right now.
+        # While a step runs, its row shimmers and the line under it says how long it's been working.
         send(p, "aiSend", text='CALL wait_for {"text": "Never on this page", "timeoutMs": 5000}')
-        now = until(lambda: (t := js(p, "document.querySelector('.ai-timer')?.innerText")) and t.startswith("Waiting for ") and t, 10) or js(p, "document.querySelector('.ai-timer')?.innerText")
-        check(bool(now) and now.startswith("Waiting for ") and " · " in now, f"While a step runs, the chat says what it's doing ({now!r})")
+        live = "[...document.querySelectorAll('.ai-work-row.is-live')].map(e => e.innerText).pop() + ' | ' + document.querySelector('.ai-timer')?.innerText"
+        now = until(lambda: (t := js(p, live)) and t.startswith("Waiting for ") and t, 10) or js(p, live)
+        check(bool(now) and now.startswith("Waiting for ") and " | Working for " in now, f"While a step runs, the chat says what it's doing and for how long ({now!r})")
         idle(p)
 
         # Stop, the step cap and a rate limit.

@@ -210,7 +210,8 @@ def main():
         args = json.loads(prompts.read_text().splitlines()[-1])["args"]
         check("--effort" in args and args[args.index("--effort") + 1] == "low" and "--model" not in args, "Quick mode runs another AI app with --effort low and its own model")
         reply = until(lambda: "Done, fake reply." in text(process) and text(process), 20) or ""
-        check("Used skill Trip plan" in reply, "The chat shows a Used skill row")
+        steps = js(process, "[...document.querySelectorAll('.ai-work')].map(e => e.textContent).join(' ')") or ""  # two or more steps fold once done
+        check(reply and "Used skill Trip plan" in steps, "The chat shows a Used skill row")
         check(js(process, "!!document.querySelector('.ai-msg.is-user .mention.is-skill')"), "The user's message shows the skill inline")
 
         # Chat History: unread, archive, search, the companion filter.

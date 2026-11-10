@@ -379,7 +379,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .upload-foot { display:flex;justify-content:flex-end;margin-top:6px; }
 @media (prefers-reduced-motion: reduce) { .upload-tile { transition:none; } }
 
-@media (prefers-reduced-motion: reduce) { .ask-card, .home-mate, .home-idea, .ai-sidebar > *, .ai-msg, .ai-steps-group, .ai-working, .ai-hello, .ai-center, .ai-idea, .ai-queued, .ai-face, .agent-pill-text b::after { animation:none !important; } }
+@media (prefers-reduced-motion: reduce) { .ask-card, .home-mate, .home-idea, .ai-sidebar > *, .ai-msg, .ai-steps-group, .ai-working, .ai-hello, .ai-center, .ai-idea, .ai-queued, .ai-face, .agent-pill-text b::after, .still-mark.is-live i { animation:none !important; }
+ .ai-work-row.is-live .ai-step-text, .ai-work-row.is-live .ai-step-text * { animation:none; background:none; color:var(--foreground); } }
 .md { display:flex; flex-direction:column; gap:8px; }
 .md h3 { font-size:15px; font-weight:600; margin-top:4px; }
 .md h4 { font-size:14px; font-weight:600; margin-top:2px; }
@@ -481,7 +482,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-turn.is-more { margin-top:-6px; }
 .ai-turn-face { position:absolute; left:0; top:-8px; display:flex; } /* centered on a line of text */
 .ai-turn:has(> .ai-turn-face + .ai-steps-group) > .ai-turn-face { top:4px; } /* on a step card's row */
-.ai-turn:has(> .ai-turn-face + .ai-timer) > .ai-turn-face { top:-2px; }
+.ai-turn:has(> .ai-turn-face + :is(.ai-work, .ai-live)) > .ai-turn-face { top:-3px; } /* on the work view's first line */
 /* Steps are compact cards on an 8px grid: an icon tile, the verb in bold and its target muted, a check on the right. */
 .ai-steps-group { border-radius:12px; background:var(--card); box-shadow:0 0 0 1px var(--border); }
 .ai-steps-group summary, .ai-steps-row { display:flex; align-items:center; gap:10px; padding:12px; list-style:none; }
@@ -495,7 +496,34 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-steps-chevron { width:15px; height:15px; flex:none; color:var(--muted-foreground); transition:rotate .25s var(--ease-flow),color .15s; }
 .ai-steps-group[open] .ai-steps-chevron { rotate:180deg; } .ai-steps-group summary:hover .ai-steps-chevron { color:var(--foreground); }
 .ai-steps-group ol { margin:0; padding:12px; border-top:1px solid var(--border); list-style:none; display:flex; flex-direction:column; gap:8px; font-size:.88em; }
-.ai-timer { margin:0; padding-top:8px; font-size:.9em; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+/* The work view: a turn's steps as a light timeline. A small icon per step on a thin line, muted words, addresses and
+   searches in monospace. Done, it folds under "Worked for…"; the step running now shimmers. */
+.ai-work { min-width:0; font-size:13.5px; color:var(--muted-foreground); }
+.ai-work-head { display:inline-flex; align-items:center; gap:6px; min-height:24px; list-style:none; cursor:pointer; user-select:none; transition:color .15s; }
+.ai-work-head::-webkit-details-marker, .ai-work-fold > summary::-webkit-details-marker, .ai-look > summary::-webkit-details-marker { display:none; }
+.ai-work-head:hover, .ai-work-fold > summary:hover, .ai-look > summary:hover { color:var(--foreground); }
+.ai-work[open] > .ai-work-head .ai-steps-chevron, .ai-work-fold[open] > summary .ai-steps-chevron, .ai-look[open] > summary .ai-steps-chevron { rotate:180deg; }
+.ai-work[open] > .ai-work-rows { margin-top:6px; }
+.ai-work.is-single { display:flex; align-items:center; gap:6px; } .ai-work.is-single .ai-work-rows::before { content:none; }
+.ai-work-rows, .ai-work-fold > ol { position:relative; list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:4px; }
+.ai-work-rows::before { content:""; position:absolute; left:9.5px; top:14px; bottom:14px; width:1px; background:var(--border); }
+.ai-work-fold > ol { margin:2px 0 4px 30px; }
+.ai-work-row { display:flex; align-items:center; gap:10px; min-width:0; min-height:28px; list-style:none; }
+.ai-work-fold > summary, .ai-look > summary { cursor:pointer; transition:color .15s; }
+.ai-work .ai-step-icon, .ai-live .ai-step-icon { position:relative; width:20px; height:20px; border-radius:50%; background:var(--background); color:var(--muted-foreground); }
+.ai-work .ai-step-icon svg, .ai-live .ai-step-icon svg { width:13px; height:13px; }
+.ai-work .ai-step-text, .ai-live .ai-step-text { display:block; flex:0 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:inherit; }
+.ai-work .ai-step-text small { font-size:inherit; }
+.ai-work-row.is-failed .ai-step-icon { color:var(--destructive); }
+.ai-mono { font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace; font-size:.9em; color:color-mix(in oklab,var(--foreground) 72%,var(--muted-foreground)); }
+.ai-work a { color:inherit; text-decoration:none; } .ai-work a:hover .ai-mono { text-decoration:underline; }
+.ai-work-row.is-live .ai-step-text { background:linear-gradient(90deg,var(--muted-foreground) 40%,var(--foreground) 50%,var(--muted-foreground) 60%) 0 0/250% 100%; -webkit-background-clip:text; background-clip:text; color:transparent; animation:ai-shimmer 1.8s linear infinite; }
+.ai-work-row.is-live .ai-step-text * { color:transparent; }
+@keyframes ai-shimmer { from { background-position:100% 0; } to { background-position:0 0; } }
+.ai-live { display:flex; flex-direction:column; gap:2px; color:var(--muted-foreground); font-size:13.5px; }
+.ai-timer { display:flex; align-items:center; gap:9px; min-height:28px; margin:0; padding-left:4px; font-size:13px; color:var(--muted-foreground); font-variant-numeric:tabular-nums; }
+.still-mark.is-live i { animation:still-live .9s ease-in-out infinite alternate; } .still-mark.is-live i:last-child { animation-delay:-.45s; }
+@keyframes still-live { from { transform:scaleY(.45); } to { transform:scaleY(1); } }
 .ai-next { display:flex; flex-direction:column; gap:2px; margin-top:2px; }
 .ai-next-step { display:flex; align-items:center; gap:12px; padding:7px 8px; border-radius:10px; text-align:left; transition:background .15s; }
 .ai-next-step:hover:not(:disabled) { background:var(--muted); } .ai-next-step:disabled { opacity:.6; }
@@ -1440,17 +1468,10 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .page-tabs img, .page-tabs svg { width:14px; height:14px; flex:none; } .page-tabs span { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
 .page-tabs i { width:6px; height:6px; border-radius:50%; background:#3fb79a; flex:none; }
 .page-mine { font-size:12.5px; }
-.ai-look { margin:2px 0; }
-.ai-look summary, .ai-look-row { display:flex; align-items:center; gap:9px; padding:6px 8px; border-radius:10px; list-style:none; cursor:pointer; font-size:13.5px; color:var(--muted-foreground); }
-.ai-look summary::-webkit-details-marker { display:none; }
-.ai-look summary:hover { background:var(--muted); }
-.ai-look summary > svg:first-child, .ai-look-row > svg:first-child { width:24px; height:24px; flex:none; padding:5px; border-radius:50%; border:1px solid var(--input); }
-.ai-look summary b, .ai-look-row b { font-weight:500; color:var(--foreground); overflow:hidden; white-space:nowrap; text-overflow:ellipsis; }
-.ai-look summary small, .ai-look-row small { overflow:hidden; white-space:nowrap; text-overflow:ellipsis; } .ai-look summary small { flex:none; font-size:inherit; }
-.ai-look summary .ai-steps-chevron { margin-left:auto; width:15px; height:15px; flex:none; transition:rotate .2s; } .ai-look[open] .ai-steps-chevron { rotate:180deg; }
-.ai-look ol { list-style:none; margin:2px 0 6px 41px; padding:0; display:flex; flex-direction:column; gap:10px; }
-.ai-look-row a { text-decoration:none; color:inherit; min-width:0; overflow:hidden; } .ai-look li a { display:block; font-size:13.5px; font-weight:500; color:var(--foreground); text-decoration:none; } .ai-look li a:hover { text-decoration:underline; }
-.ai-look li small { display:block; font-size:12px; color:var(--muted-foreground); } .ai-look li p { margin:2px 0 0; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
+/* A search's results, under its row in the timeline. */
+.ai-look-results { list-style:none; margin:4px 0 8px 30px; padding:0; display:flex; flex-direction:column; gap:10px; }
+.ai-look-results a { display:block; font-size:13.5px; font-weight:500; color:var(--foreground); text-decoration:none; } .ai-look-results a:hover { text-decoration:underline; }
+.ai-look-results small { display:block; font-size:12px; color:var(--muted-foreground); } .ai-look-results p { margin:2px 0 0; font-size:12.5px; line-height:1.45; color:var(--muted-foreground); }
 .md-draft { position:relative; margin:4px 0; padding:12px 14px; border-radius:12px; background:var(--muted); border:1px solid var(--border); }
 .md-draft > span { display:block; margin-bottom:6px; font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; color:var(--muted-foreground); }
 .md-draft > p { margin:0; white-space:pre-wrap; font-size:14px; line-height:1.55; }

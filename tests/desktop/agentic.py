@@ -335,9 +335,9 @@ def laptops(process):
           "Saving the same name again replaces the file and keeps one card")
     bad = next((c for c in calls() if c["tool"] == "save_file" and "evil" in json.dumps(c["args"])), {})
     check(bad and not bad["ok"] and not list(PROFILE.rglob("*.exe")), "save_file refuses other file types and paths outside its folder")
-    steps = js(process, "document.querySelector('.chat-pane .ai-steps-group')?.innerText ?? ''") or ""
-    check(re.search(r"\+ \d+ more", steps) and js(process, "document.querySelectorAll('.chat-pane .ai-steps-state.is-done').length > 0")
-          and js(process, "document.querySelectorAll('.chat-pane details.ai-steps-group > summary .ai-step-icon').length > 0"), "Steps collapse into one row with the latest step, a count and a check when done")
+    head = until(lambda: (t := js(process, "[...document.querySelectorAll('.chat-pane details.ai-work > summary')].pop()?.innerText ?? ''")) and t.startswith("Worked for ") and t, 30)
+    check(head and js(process, "document.querySelectorAll('.chat-pane .ai-work-head .ai-steps-state.is-done').length > 0")
+          and js(process, "document.querySelectorAll('.chat-pane details.ai-work:not([open]) .ai-work-rows .ai-step-icon').length > 0"), f"Once it's done, its steps fold under how long it worked, with a check ({head!r})")
 
     # The chat's details list its files; the viewer opens beside the chat: a sortable grid with a sticky header.
     send(process, "chatPage", on=False)
@@ -430,8 +430,13 @@ def lookup(process):
     check(found.get("text") == "found 3", "web_search returns the search page's results, with links undone")
     chat = chats().get("LOOKUP the best laptop under $800", {})
     check(chat and len(tabs(process)) == before + 1 and not any(t["InChat"] == chat["Id"] for t in tabs(process)), "A search-only question opens no tabs (just its chat)")
-    rows = [re.sub(r"\s*·\s*", " · ", re.sub(r"\s+", " ", row)).strip() for row in js(process, "[...document.querySelectorAll('.chat-pane .ai-look')].map(r => r.innerText)") or []]
-    check(len(rows) == 2 and rows[0].startswith("Searched “laptop reviews under 800” · 3 results") and rows[1].startswith("Read 127.0.0.1"), "The chat shows one row per search and per page read")
+    head = until(lambda: (t := js(process, "document.querySelector('.chat-pane details.ai-work > summary')?.innerText ?? ''")) and t.startswith("Worked for ") and t, 10)
+    check(head, f"Once it's done, what it looked at folds under how long it worked ({head!r})")
+    click(process, ".chat-pane details.ai-work > summary")
+    rows = [re.sub(r"\s*·\s*", " · ", re.sub(r"\s+", " ", row)).strip() for row in js(process, "[...document.querySelectorAll('.chat-pane .ai-work[open] .ai-look')].map(r => r.innerText)") or []]
+    mono = js(process, "[...document.querySelectorAll('.chat-pane .ai-look .ai-mono')].filter(e => getComputedStyle(e).fontFamily.endsWith('monospace')).length")
+    check(len(rows) == 2 and rows[0].startswith("Searched laptop reviews under 800 · 3 results") and rows[1].startswith("Read 127.0.0.1") and mono == 2,
+          f"Opened, it shows one row per search and per page read, the search and the address in monospace ({rows})")
     click(process, ".chat-pane details.ai-look summary")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-look[open] li').length") == 3, 3), "Opening the search row lists its results")
     check(js(process, "!!document.querySelector('.chat-pane .md-table table') && !!document.querySelector('.chat-pane .md-draft button')"), "The answer has a clean table and a draft with its own Copy button")

@@ -37,12 +37,12 @@ def prefs():
 
 
 def row(p):
-    """The last step row: its words, the list it opens into, and which state icon it shows."""
+    """The last turn's work: its latest step's words, every step, and which state it shows (a done turn folds, so textContent)."""
     return json.loads(js(p, """JSON.stringify((() => {
-        const groups = [...document.querySelectorAll('.chat-view .ai-steps-group:not(.delegation)')], g = groups[groups.length - 1]
+        const g = [...document.querySelectorAll('.chat-view .ai-work')].pop()
         if (!g) return null
-        return { line: g.querySelector('.ai-step-line')?.innerText ?? '', steps: [...g.querySelectorAll('ol .ai-step-line')].map(e => e.textContent),
-         tick: !!g.querySelector('.ai-steps-state.is-done'), failed: !!g.querySelector('.ai-steps-state.is-failed'), spinning: !!g.querySelector('.ai-steps-state[aria-label=Working]') }
+        const steps = [...g.querySelectorAll('.ai-step-line')].map(e => e.textContent)
+        return { line: steps[steps.length - 1] ?? '', steps, tick: !!g.querySelector('.ai-steps-state.is-done'), failed: !!g.querySelector('.ai-steps-state.is-failed'), spinning: !!g.querySelector('.ai-work-row.is-live') }
     })())""") or "null")
 
 
