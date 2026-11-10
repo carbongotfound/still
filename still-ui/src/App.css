@@ -584,10 +584,15 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-msg.is-user.is-teammate { background:color-mix(in oklab,var(--hue) 12%,var(--muted)); }
 .ai-asker { display:flex; align-items:center; gap:6px; margin:-2px 0 6px -4px; font-size:12px; font-weight:600; color:var(--muted-foreground); white-space:normal; }
 .ai-queued { display:flex; align-items:center; gap:8px; margin-bottom:6px; padding:6px 6px 6px 11px; border-radius:12px; background:var(--muted); font-size:12px; animation:ai-in .2s ease-out; }
-.ai-queued span { flex:none; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); }
-.ai-queued p { flex:1; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ai-queued button { display:grid; place-items:center; width:20px; height:20px; border-radius:6px; color:var(--muted-foreground); }
-.ai-queued button:hover { background:var(--accent); color:var(--foreground); } .ai-queued svg { width:13px; height:13px; }
+.ai-queued-label { flex:none; font-size:10.5px; font-weight:600; text-transform:uppercase; letter-spacing:.04em; color:var(--muted-foreground); }
+/* What was typed, cut short with an ellipsis, then a chip per file: it shrinks, the buttons never do. */
+.ai-queued-what { flex:1; min-width:0; display:flex; align-items:center; gap:6px; overflow:hidden; }
+.ai-queued-what p { flex:0 1 auto; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ai-queued-file { flex:none; max-width:150px; display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:999px; background:var(--background); color:var(--muted-foreground); font-size:11px; }
+.ai-queued-file > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.ai-queued-file .file-icon { width:14px; height:14px; border-radius:0; background:none; } .ai-queued-file .file-icon svg { width:12px; height:12px; }
+.ai-queued-x { flex:none; display:grid; place-items:center; width:20px; height:20px; border-radius:6px; color:var(--muted-foreground); }
+.ai-queued-x:hover { background:var(--accent); color:var(--foreground); } .ai-queued-x svg { width:13px; height:13px; }
 .ai-error { margin:0 14px 8px; width:auto; }
 .task-bar { display:flex; align-items:center; gap:10px; margin:0 14px 8px; width:auto; }
 .task-bar [data-slot=alert-description] { flex:1; min-width:0; }
@@ -1042,7 +1047,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 @keyframes sprite-col { to { background-position-x:calc((var(--c) - 1) * var(--s) * -1); } }
 @keyframes sprite-row { to { background-position-y:calc((var(--r) - 1) * var(--s) * -1); } }
 @media (prefers-reduced-motion: reduce) { .mascot-sprite { animation:none !important; } }
-.ai-queued [data-slot=button] { height:24px; padding:0 9px; font-size:12px; }
+.ai-queued [data-slot=button] { flex:none; height:24px; padding:0 9px; font-size:12px; }
 .file-card { display:flex; align-items:center; gap:10px; max-width:460px; padding:8px 10px 8px 8px; border-radius:14px; border:1px solid var(--border); background:var(--card); box-shadow:0 1px 3px rgb(0 0 0/.05); animation:ai-in .25s ease-out; }
 .file-card-open { flex:1; min-width:0; display:flex; align-items:center; gap:12px; text-align:left; border-radius:10px; }
 .file-card-open > span:last-child { min-width:0; display:flex; flex-direction:column; }

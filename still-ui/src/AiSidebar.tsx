@@ -33,7 +33,7 @@ export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.
 export type AiState = {
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
  checked?: boolean // the first status check is done, so an empty status means the app can't say
- runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: string[]; files?: LibFile[]; worked?: number
+ runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: { text: string; files?: { name: string; size: number }[] }[]; files?: LibFile[]; worked?: number
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; messages: Message[]
@@ -740,7 +740,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
 export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onFile, interests }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void; onFile: (path: string) => void; interests?: string[] }) {
  const [tick, setTick] = useState(0)
  const provider = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
- const queued = ai.queued ?? []
+ const queued = ai.queued ?? [], upNext = queued.map(q => q.text).filter(Boolean).join(" · "), upFiles = queued.flatMap(q => q.files ?? [])
  const log = useRef<HTMLDivElement>(null)
  const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
  const known: Known = { companions: ai.companions ?? [], tabs, plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
@@ -865,7 +865,9 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} draft={"answer." + (ai.chatId ?? "new")} />}
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} companions={ai.companions} send={send} incognito={ai.incognito} />}
-   {queued.length > 0 && <div className="ai-queued"><span>Up next</span><p>{queued.join("\n\n")}</p><Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
+   {queued.length > 0 && <div className="ai-queued"><span className="ai-queued-label">Up next</span>
+    <div className="ai-queued-what" title={queued.map(q => q.text).join("\n\n")}>{upNext && <p>{upNext}</p>}{upFiles.map((f, i) => <span key={i} className="ai-queued-file"><FileIcon path={f.name} /><span>{f.name}</span></span>)}</div>
+    <Button variant="outline" size="sm" onClick={() => send("aiNow")}>Send now</Button><Tip label="Don't send"><button className="ai-queued-x" aria-label="Don't send" onClick={() => send("aiUnqueue")}><X /></button></Tip></div>}
    {!chat?.from && <><Composer draft={"chat." + (ai.chatId ?? "new")} ai={ai} send={send} onSubmit={submit} onTyping={setTyping} onStop={busy ? () => send("aiStop") : undefined} companion={companion} onCompanion={fresh && mode === "panel" ? setPicked : undefined} tabs={tabs}
     placeholder={busy ? (queued.length ? "Add to what's up next…" : "Add a next step…") : items.length ? `Reply to ${name}…` : mode === "tab" ? `Work with ${name}…` : "Ask anything, or tell me what to do…"} />
    <div className="chat-under">

@@ -10,6 +10,9 @@ extension KeyedDecodingContainer {
 
 /// A file the user attached to a message: kept in ai/attachments/<id>, read with read_attachment.
 struct AiFile: Codable { var id = "", name = "", size = 0 }
+/// A message typed while the chat worked: what the user typed (Up next shows it, with its files), what the chat shows
+/// (with its tab links) and what the AI is told (with Still's notes on the tabs and files).
+struct Queued { let typed: String, shown: String, asked: String, files: [AiFile] }
 extension AiFile {
  init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -112,7 +115,7 @@ final class ChatRun {
  var run: AgentRun?
  var stopped = false
  var question: AiQuestion?
- var queue: [String] = [] // typed while it worked: sent together when it finishes
+ var queue: [Queued] = [] // typed while it worked: sent together when it finishes
  var approvals: [Approval] = []
  var typed = Set<String>() // what it typed into pages: form data, which memory never keeps
  var task = AiTask() // its state and checkpoint (Tasks.swift)

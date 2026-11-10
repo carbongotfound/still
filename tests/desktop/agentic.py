@@ -9,6 +9,7 @@ Chat runs open their pages as background tabs beside the chat, never in the tab 
 Run: python tests/desktop/agentic.py artifacts/Still-QA/Still.exe
 Screenshots: docs/agentic/compare/ (split-v01, done-v01, viewer-side-v01, library-v01, tasks-v01, question-v01, lookup-v01, mine-v01)
 """
+import base64
 import csv
 import http.server
 import json
@@ -143,7 +144,7 @@ FAKE = textwrap.dedent(r'''
         return ok, text
     def reply(text): say({"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}})
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
-    asked = prompt.rsplit("\n\n", 1)[-1]
+    asked = re.sub(r"(\n\n\[Still\][^\n]*)+$", "", prompt).rsplit("\n\n", 1)[-1]  # the user's words, before Still's notes on files
     if m := re.search(r"LAPTOPS (\S+)", asked):
         reply("I'll open the store, find laptops under $800, and save a CSV for you.")
         call("open_tab", url=m[1] + "/laptops")
@@ -488,11 +489,29 @@ def queue_and_question(process):
     ask(process, f"SLOW {SITE}/slow-c 30")
     until(lambda: slow("slow-c"), 20)
     until(lambda: js(process, "!!document.querySelector('.chat-pane [aria-label=Message]')"), 5)
-    send(process, "aiSend", text="ASK please")
-    check(until(lambda: "ASK please" in (js(process, "document.querySelector('.ai-queued')?.innerText ?? ''") or ""), 5), "A message sent while it works waits as Up next")
+    # With a file: Up next shows only what was typed and a chip for the file, cut short before the buttons.
+    send(process, "aiAttach", to="box", name="queued-notes.txt", data=base64.b64encode(b"Notes for later").decode())
+    kept = until(lambda: next((d.name for d in (PROFILE / "ai" / "attachments").glob("*") if (d / "queued-notes.txt").exists()), None), 10)
+    asked = "ASK please, and check the next one carefully before you go on to the rest of the list, then tell me what you found"
+    send(process, "aiSend", text=asked, files=[kept or ""])
+    bar = lambda: js(process, "document.querySelector('.ai-queued')?.innerText ?? ''") or ""
+    check(until(lambda: "ASK please" in bar(), 5), "A message sent while it works waits as Up next")
+    check("[Still]" not in bar() and "queued-notes.txt" in (js(process, "document.querySelector('.ai-queued .ai-queued-file')?.innerText ?? ''") or ""),
+          f"Up next shows only what was typed, with a chip for the file ({bar()[:140]!r})")
+    fit = js(process, """(() => { const q = document.querySelector('.ai-queued'), p = q.querySelector('p'), b = q.querySelector('[data-slot=button]'), x = q.querySelector('.ai-queued-x'), r = e => e.getBoundingClientRect()
+        return { cut: p.scrollWidth > p.clientWidth, clear: r(q.querySelector('.ai-queued-what')).right <= r(b).left + .5 && r(b).right <= r(x).left + .5, label: b.scrollWidth <= b.clientWidth + 1, chip: r(q.querySelector('.ai-queued-file > span:last-child')).width > 40 } })()""")
+    check(fit and fit["cut"] and fit["clear"] and fit["label"] and fit["chip"], f"Long text ends in an ellipsis and never runs under Send now or the X, and the file's chip keeps its name ({fit})")
+    time.sleep(.5); capture(process, "upnext-v01")  # once it has faded in
     check(js(process, "document.querySelector('.chat-pane [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Add to what's up next…", "The box says it adds to what's up next")
     click(process, ".ai-queued [data-slot=button]")
     check(until(lambda: js(process, "!!document.querySelector('.ask-card')"), 20), "Send now stops the run and sends the follow-up, which asks a question")
+    def queued_message():
+        for c in json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8")):
+            for m in c.get("Messages", []):
+                if m.get("Role") == "user" and "ASK please" in (m.get("Text") or ""): return m
+    sent = until(queued_message, 10) or {}
+    check(sent.get("Text") == asked and [f.get("Name") or f.get("name") for f in sent.get("Files") or []] == ["queued-notes.txt"],
+          f"In the chat it reads as typed, with its file, and no note from Still ({(sent.get('Text') or '')[:140]!r}, {sent.get('Files')})")
     check(until(lambda: js(process, "!!document.querySelector('.tasks-button .is-needs')"), 5), "The running tasks button shows that a chat needs you")
     time.sleep(.5)
     capture(process, "question-v01")

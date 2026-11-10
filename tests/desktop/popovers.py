@@ -6,6 +6,7 @@ keep each mode's line inline (no side card). A fake agent app stands in for the 
 Run: python tests/desktop/popovers.py artifacts/Still-QA/Still.exe [--shots DIR]
 --shots DIR saves the 400 px panel with the mode menu open, light and dark, as popovers-<os>-<theme>.png in DIR.
 """
+import base64
 import json
 from pathlib import Path
 import shutil
@@ -185,6 +186,17 @@ def popovers(process, layout, theme):
         submit(process, "and then this")
         if until(lambda: js(process, "!!document.querySelector('.ai-sidebar .ai-queued button[aria-label=\"Don\\'t send\"]')"), 5):
             tip(process, "Don't send", ".ai-sidebar .ai-queued button[aria-label=\"Don't send\"]")
+            # In the narrow side chat too: long words end in an ellipsis before Send now and the X, and a file shows as a chip.
+            send(process, "aiAttach", to="box", name="side-notes.txt", data=base64.b64encode(b"Side notes").decode())
+            kept = until(lambda: max(RUN.glob("*/ai/attachments/*/side-notes.txt"), key=lambda f: f.stat().st_mtime, default=None), 10)
+            send(process, "aiSend", text="and check every page twice before you tell me what you found on each one of them", files=[kept.parent.name if kept else ""])
+            fit = lambda: js(process, """(() => { const q = document.querySelector('.ai-sidebar .ai-queued'), p = q?.querySelector('p'), b = q?.querySelector('[data-slot=button]'), x = q?.querySelector('.ai-queued-x'), n = q?.querySelector('.ai-queued-file > span:last-child'), r = e => e.getBoundingClientRect()
+                return p && b && x && n ? { cut: p.scrollWidth > p.clientWidth, clear: r(q.querySelector('.ai-queued-what')).right <= r(b).left + .5 && r(b).right <= r(x).left + .5, label: b.scrollWidth <= b.clientWidth + 1, chip: r(n).width > 40, text: q.innerText } : null })()""")
+            got = until(fit, 5) or {}
+            check(got.get("cut") and got.get("clear") and got.get("label") and got.get("chip") and "[Still]" not in got.get("text", ""),
+                  f"Up next in the side chat: typed words cut short before Send now and the X, and a chip for the file ({ {k: v for k, v in got.items() if k != 'text'} })")
+            time.sleep(.5)
+            copy(rpc(process, "capture", name="upnext-side.png"), f"upnext-side-{GROUP[0]}-{GROUP[1]}.png".replace(" ", "_"))
         else:
             check(False, "A message sent while it works waits as Up next")
         escape(process)

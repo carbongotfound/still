@@ -1038,7 +1038,7 @@ extension Browser {
    // Files from the box: the message names them, and the AI reads each with read_attachment.
    var seenFiles = Set<String>()
    let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
-   if let target, let working = runs[target.id] { working.queue.append(files.isEmpty ? text : text + filesNote(files)); sent(true); break }
+   if let target, let working = runs[target.id] { working.queue.append(Queued(typed: typed, shown: text, asked: files.isEmpty ? asked : asked + filesNote(files), files: files)); sent(true); break }
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
    sent(true) // the chat has the message now (or holds it until an AI app is set up)
@@ -1544,8 +1544,9 @@ extension Browser {
    if chat.messages.last?.role == "user" { chat.messages.removeLast() }
    Task { await aiSignIn(cli) }
   } else if !me.queue.isEmpty && run != nil {
-   let next = me.queue.joined(separator: "\n\n"); me.queue.removeAll()
-   runAi(chat, next)
+   let queued = me.queue; me.queue.removeAll() // sent together, as one message: the chat shows what was typed and its files, the AI gets Still's notes
+   var seen = Set<String>()
+   runAi(chat, queued.map(\.asked).joined(separator: "\n\n"), shown: queued.map(\.shown).joined(separator: "\n\n"), files: queued.flatMap(\.files).filter { seen.insert($0.id).inserted })
   }
   publishAiEverywhere()
  }
@@ -1610,7 +1611,7 @@ extension Browser {
   let harness = view.chat?.harness ?? pref("AiHarness", "")
   let day = { (date: Date) in isoText(date) }
   var data: [String: Any] = [
-   "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
+   "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue.map { ["text": $0.typed, "files": $0.files.map { ["name": $0.name, "size": $0.size] }] } as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),
    "interrupted": incognito || resumeAnswered ? [] : interruptedChats.map { ["id": $0.id, "title": $0.title, "unsure": aiTasks[$0.id]?.sensitive.contains { $0.outcome == nil } ?? false] }, "task": taskView(shown), "incognito": incognito,
    "runs": runs.values.filter { r in myChats.contains { $0 === r.chat } }.map { r -> [String: Any] in ["id": r.chat.id, "root": r.chat.from == nil ? NSNull() : exchangeOf(r.chat).root.id as Any, "started": day(r.started), "tool": workers[r.chat.id]?.tool ?? "", "target": workers[r.chat.id]?.target ?? "", "question": r.question?.text ?? NSNull(), "options": r.question.map { $0.options as Any } ?? NSNull(),
     "asks": r.approvals.filter { $0.until == nil }.map { ["id": $0.id, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why] }] },

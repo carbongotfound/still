@@ -25,6 +25,9 @@ public sealed class AiMessage
 }
 /// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
 public sealed class AiFile { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public long Size { get; set; } }
+/// A message typed while the chat worked: what the user typed (Up next shows it, with its files), what the chat shows
+/// (with its tab links) and what the AI is told (with Still's notes on the tabs and files).
+public sealed record Queued(string Typed, string Shown, string Asked, List<AiFile> Files);
 public sealed class AiChat
 {
  public string Id { get; set; } = Guid.NewGuid().ToString("N");
@@ -467,7 +470,7 @@ public partial class MainWindow
   public AgentRun? Run;
   public bool Stopped;
   public AiQuestion? Question;
-  public readonly List<string> Queue = []; // typed while it worked: sent together when it finishes
+  public readonly List<Queued> Queue = []; // typed while it worked: sent together when it finishes
   public readonly List<Approval> Approvals = [];
   public readonly HashSet<string> Typed = []; // what it typed into pages: form data, which memory never keeps
   public AiTask Task = new(); // its state and checkpoint (MainWindow.Tasks.cs)
@@ -507,7 +510,7 @@ public partial class MainWindow
  }
 
  void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
-  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue, worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito && !resumeAnswered).Select(c => new { id = c.Id, title = c.Title, unsure = aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null) }), task = TaskView(shown), incognito,
+  open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue.Select(q => new { text = q.Typed, files = q.Files.Select(f => new { name = f.Name, size = f.Size }) }), worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito && !resumeAnswered).Select(c => new { id = c.Id, title = c.Title, unsure = aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null) }), task = TaskView(shown), incognito,
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, tool = workers.GetValueOrDefault(r.Chat.Id)?.Tool, target = workers.GetValueOrDefault(r.Chat.Id)?.Target, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, tiers = TiersOf(),
@@ -609,7 +612,7 @@ public partial class MainWindow
     var files = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("files", out var fileIds) && fileIds.ValueKind == JsonValueKind.Array
      ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
     if (files.Count > 0) asked += FilesNote(files);
-    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(files.Count > 0 ? text + FilesNote(files) : text); Sent(true); break; }
+    if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(new(typed, text, asked, files)); Sent(true); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
     var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
     Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
@@ -1207,7 +1210,10 @@ public partial class MainWindow
    if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
    _ = AiSignIn(cli);
   }
-  else if (me.Queue.Count > 0 && run != null) { string next = string.Join("\n\n", me.Queue); me.Queue.Clear(); await RunAi(chat, next); }
+  else if (me.Queue.Count > 0 && run != null) { // sent together, as one message: the chat shows what was typed and its files, the AI gets Still's notes
+   var queued = me.Queue.ToList(); me.Queue.Clear();
+   await RunAi(chat, string.Join("\n\n", queued.Select(q => q.Asked)), string.Join("\n\n", queued.Select(q => q.Shown)), files: queued.SelectMany(q => q.Files).DistinctBy(f => f.Id).ToList());
+  }
   PublishAiEverywhere();
  }
 
