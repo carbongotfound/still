@@ -175,6 +175,16 @@ func userAway() -> Bool {
 // sensitive site says to ask, and then they ask in the bar at the top. Rules: prefs["Permissions"], [{Site, Action, Companion, Mode}].
 let permissionActions = ["read", "navigate", "interact", "sensitive"]
 func defaultPermission(_ action: String) -> String { action == "interact" ? "chat" : action == "sensitive" ? "ask" : "always" }
+/// A companion's Autonomy (Permissions.tsx AUTONOMY; Windows: LevelOf): clicking and typing on any site, new sites after
+/// reading the web (reach), plugin programs, and the line that tells it how to work. Sensitive steps ask at every level.
+func levelOf(_ c: Companion?) -> (interact: String, newSites: String, programs: String, line: String) {
+ switch c?.autonomy {
+ case nil: return ("", "balanced", "ask", "")
+ case "ask": return ("chat", "ask", "ask", "The user set you to Ask more: check with them before choices that shape the result (which option, what to include, where to go next), not only before risky steps.")
+ case "balanced": return ("chat", "balanced", "ask", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan or is hard to undo.")
+ default: return ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working. Stop only before risky steps: paying, deleting their things, sending or posting to other people, submitting personal data or accepting terms.")
+ }
+}
 func onSite(_ rule: String, _ site: String) -> Bool { !rule.isEmpty && (site == rule || site.hasSuffix("." + rule)) }
 /// An address on this computer or its network, or nil if it's not an address at all.
 func privateAddress(_ host: String) -> Bool? {
@@ -1008,13 +1018,14 @@ extension Browser {
   pref("Permissions", [[String: Any]]()).contains { ruleText($0, "Action") == action && ruleText($0, "Mode") == "always" && onSite(ruleText($0, "Site"), site) && (ruleText($0, "Companion").isEmpty || ruleText($0, "Companion") == who) }
  }
  /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
- /// whether going somewhere takes a yes. Nil: it doesn't. How careful is the user's pick (NewSites): "ask" asks before any
+ /// whether going somewhere takes a yes. Nil: it doesn't. How careful is the strictest Autonomy in the chain: "ask" asks before any
  /// new site and any long address; "balanced" asks before a new site, and before a long address only off the sites the chat
  /// knows or when it carries another address on; "fewer" asks only before a long address off them. Your own network always asks.
- @MainActor func reach(_ root: AiChat, _ tool: String, _ url: String, _ host: String) async -> (why: String, data: Bool)? {
+ @MainActor func reach(_ root: AiChat, _ chain: [String], _ tool: String, _ url: String, _ host: String) async -> (why: String, data: Bool)? {
   guard let u = URLComponents(string: url), ["http", "https"].contains(u.scheme?.lowercased() ?? "") else { return nil }
   let extra = (u.percentEncodedQuery?.count ?? 0) + (u.percentEncodedFragment?.count ?? 0)
-  let known = beenTo(root, host), how = pref("NewSites", "balanced")
+  let rank = ["ask": 0, "balanced": 1]
+  let known = beenTo(root, host), how = chain.map { c in levelOf(companions.first { $0.id == c }).newSites }.min { rank[$0, default: 2] < rank[$1, default: 2] } ?? "balanced"
   if root.read > 0 && (extra > 200 || u.percentEncodedPath.count > 300) && (!known || how == "ask" || onward(u)) { return ("This address carries a lot of data: " + clipped(u.percentEncodedPath + (u.percentEncodedQuery.map { "?" + $0 } ?? "") + (u.percentEncodedFragment.map { "#" + $0 } ?? ""), 120), true) }
   if known { return nil }
   if await privateHost(host) { return ("This is on your own computer or network.", false) }
@@ -1042,11 +1053,13 @@ extension Browser {
   }
  }
 
- /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
+ /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site,
+ /// everyone anywhere. With no rule, clicking and typing follow the companion's Autonomy: a rule the user set always wins.
  func permissionMode(_ companion: String, _ site: String, _ action: String) -> String? {
   let rules = pref("Permissions", [[String: Any]]()).filter { ruleText($0, "Action") == action }
   let mine = companion.isEmpty ? nil : rules.first { ruleText($0, "Companion") == companion && onSite(ruleText($0, "Site"), site) } ?? rules.first { ruleText($0, "Companion") == companion && ruleText($0, "Site").isEmpty }
   let rule = mine ?? rules.first { ruleText($0, "Companion").isEmpty && onSite(ruleText($0, "Site"), site) } ?? rules.first { ruleText($0, "Companion").isEmpty && ruleText($0, "Site").isEmpty }
+  if rule == nil, action == "interact", let level = companions.first(where: { $0.id == companion }) { return levelOf(level).interact }
   return rule.map { ruleText($0, "Mode") }
  }
  func setPermission(_ site: String, _ action: String, _ companion: String, _ mode: String) {
@@ -1110,7 +1123,7 @@ extension Browser {
   var data = false
   if let up, !url.isEmpty {
    step.goes = site
-   if !up.chain.allSatisfy({ siteAllows($0, site, action) }), let asked = await reach(up.root, tool, url, site) { why = why.isEmpty ? asked.why : why + " " + asked.why; data = asked.data; if mode == "always" { mode = "chat" } }
+   if !up.chain.allSatisfy({ siteAllows($0, site, action) }), let asked = await reach(up.root, up.chain, tool, url, site) { why = why.isEmpty ? asked.why : why + " " + asked.why; data = asked.data; if mode == "always" { mode = "chat" } }
   }
   var granted = !data && (mode == "always" || mode == "chat" && (up.map { $0.root.allowed.contains(key) } ?? sessionGrants.contains(who + " " + key)))
   if action == "sensitive" && run?.recheck == true { granted = false } // picked up after one that may not have finished: the user decides again
@@ -1489,13 +1502,7 @@ extension Browser {
    guard !marked.isEmpty else { break }
    prefs["SensitiveSites"] = pref("SensitiveSites", [String]()).filter { $0 != marked } + (argFlag(data, "on") ? [marked] : [])
    saveLater(); publishAiEverywhere()
-  case "permNewSites":
-   guard ["ask", "balanced", "fewer"].contains(argText(data, "mode")) else { break }
-   prefs["NewSites"] = argText(data, "mode"); saveLater(); publishAiEverywhere()
-  case "permPluginPrograms":
-   guard ["ask", "auto"].contains(argText(data, "mode")) else { break }
-   prefs["PluginPrograms"] = argText(data, "mode"); saveLater(); publishAiEverywhere()
-  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); prefs["NewSites"] = "balanced"; prefs["PluginPrograms"] = "ask"; prefs["PluginsAllowed"] = [String](); saveLater(); publishAiEverywhere()
+  case "permReset": prefs["Permissions"] = [[String: Any]](); prefs["SensitiveSites"] = [String](); prefs["PluginsAllowed"] = [String](); saveLater(); publishAiEverywhere()
   default: return false
   }
   return true
@@ -1513,7 +1520,7 @@ extension Browser {
    .map { ["site": ruleText($0, "Site"), "action": ruleText($0, "Action"), "companion": ruleText($0, "Companion"), "mode": ruleText($0, "Mode")] }
   // The shown chat's cards, and those of the child tasks it started (they ask in the user's chat).
   let asking = shown.map { s in runs.values.filter { $0.chat === s || $0.chat.from != nil && exchangeOf($0.chat).root === s } } ?? []
-  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()), "newSites": pref("NewSites", "balanced"), "pluginPrograms": pref("PluginPrograms", "ask"),
+  return ["permissions": everyone + specific, "sensitiveSites": pref("SensitiveSites", [String]()),
           "approvals": asking.flatMap { r in r.approvals.map { ["id": $0.id, "run": r.chat.id, "who": r.chat.companion, "what": $0.what, "site": $0.site, "action": $0.action, "why": $0.why, "until": $0.until.map { isoText($0) as Any } ?? NSNull()] as [String: Any] } },
           "audit": shown.map { chat in chat.audit.suffix(100).map { ["at": isoText($0.at), "what": $0.what, "site": $0.site, "result": $0.result] } } as Any? ?? NSNull()]
  }

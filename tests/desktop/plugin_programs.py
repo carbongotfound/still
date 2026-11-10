@@ -5,7 +5,7 @@ A companion with a plugin's skill gets its programs from load_skill and runs one
 CLAUDE_PLUGIN_ROOT set and its output and exit code coming back, and Always for this plugin stops asking for that one.
 Setup always asks, says it runs at your own risk and has no Always. A path outside the plugin, a file that isn't a
 program and a plugin the companion doesn't have are refused without a card. A program that runs too long is stopped.
-Settings > Privacy & permissions > Autonomy: Hands-off runs them without a card, and Reset all asks again.
+A companion on Keep going runs them without a card; back on Balanced, after Reset all, it asks again.
 Deleting the plugin's last skill deletes its folder.
 
 Usage: python tests/desktop/plugin_programs.py <QA exe>
@@ -135,7 +135,7 @@ def main():
     (PROFILE / "plugins" / "other").mkdir()
     (PROFILE / "plugins" / "other" / "x.py").write_text("print('other')\n", encoding="utf-8")
     (PROFILE / "outside.py").write_text("print('outside')\n", encoding="utf-8")
-    crew = [{"Id": "maya", "Name": "Maya", "Job": "Researcher", "Mode": "default", "Skills": ["watch"]}]
+    crew = [{"Id": "maya", "Name": "Maya", "Job": "Researcher", "Mode": "default", "Skills": ["watch"], "Autonomy": "balanced"}]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake",
         "Width": 1300, "Height": 860}, "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     p = launch(EXE, PROFILE)
@@ -203,29 +203,28 @@ def main():
         check(out.get("timedOut") is True and "woke" not in out.get("output", ""), f"A program that runs too long is stopped ({out})")
         idle(p, cid)
 
-        # Settings: Don't ask, then Reset all.
+        # Settings: Maya on Keep going, then back on Balanced and Reset all.
         send(p, "openPanel", name="settings")
         until(lambda: js(p, "!!document.querySelector('.set-shell')"), 10)
         js(p, "[...document.querySelectorAll('.set-nav-item')].find(t => t.innerText.trim() === 'Privacy & permissions')?.click()")
-        auto = "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).find(t => t.includes('Autonomy')) ?? ''"
+        auto = "document.querySelector('[aria-label=\"Autonomy for Maya\"]')?.innerText ?? ''"
         row = until(lambda: js(p, auto), 10) or ""
-        check("Balanced" in row, f"Settings show Autonomy, Balanced ({row[:120]!r})")
+        check("Balanced" in row, f"Settings show Maya's Autonomy, Balanced ({row[:120]!r})")
         send(p, "permReset")
-        send(p, "permSet", site="", companion="", action="interact", mode="always")
-        send(p, "permNewSites", mode="fewer")
-        send(p, "permPluginPrograms", mode="auto")
-        check(until(lambda: "Hands-off" in (js(p, auto) or ""), 5), "Hands-off shows in Settings")
+        send(p, "companionAutonomy", id="maya", level="keepgoing")
+        check(until(lambda: "Keep going" in (js(p, auto) or ""), 5), "Keep going shows in Settings")
         send(p, "openPanel", name="settings")
         js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py", "args": ["auto"]}]])
         r = got(before, 1)
-        check(r and "hello auto" in r[0]["text"] and not js(p, "!!document.querySelector('.chat-view .approve-card')"), "With Don't ask it runs without a card")
+        check(r and "hello auto" in r[0]["text"] and not js(p, "!!document.querySelector('.chat-view .approve-card')"), "On Keep going it runs without a card")
         idle(p, cid)
         audit = [a for c in chats() if c["Id"] == cid for a in c.get("Audit", [])]
         check(any("without asking" in a.get("Result", "") for a in audit) and any(a.get("Result") == "You allowed this plugin" for a in audit), "The chat's log says how each run was allowed")
+        send(p, "companionAutonomy", id="maya", level="balanced")
         send(p, "permReset")
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py"}]])
-        check("Run scripts/hello.py" in card(p).get("text", ""), "Reset all: it asks again, Always for this plugin forgotten too")
+        check("Run scripts/hello.py" in card(p).get("text", ""), "Back on Balanced, after Reset all: it asks again, Always for this plugin forgotten too")
         press(p, "Deny")
         got(before, 1)
         idle(p, cid)

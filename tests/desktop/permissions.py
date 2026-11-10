@@ -12,7 +12,7 @@ the cards like a person would.
   STEP <url> click|key|send <what>   one step on a page: click a selector, press a key, or type into a selector and press Enter
   LATER <url>       clicks Add to cart, then a moment later Save for later: a second step arrives under a waiting card
 
-Checks: once per chat / always / ask every time, a sensitive step always shows a card or a countdown, Cancel and the
+Checks: once per chat / always / ask every time, Keep going (each companion's Autonomy), a sensitive step always shows a card or a countdown, Cancel and the
 countdown running out, Cancel right at the end of it, Approve all, sensitive sites, Stop during a card, an outside AI app asking in the bar, the
 settings page and Reset all, and the audit log in the chat's details.
 
@@ -340,6 +340,15 @@ def marked_sites():
     return saved_list("SensitiveSites")
 
 
+def level(companion):
+    return next((c.get("Autonomy") for c in saved_list("Companions") if c["Id"] == companion), None)
+
+
+def prompts():
+    file = PROFILE / "qa-prompts.jsonl"
+    return [json.loads(line) for line in file.read_text(encoding="utf-8").splitlines() if line.endswith("}")] if file.exists() else []
+
+
 def rules():
     try:
         return json.loads((PROFILE / "state.json").read_text(encoding="utf-8"))["Preferences"].get("Permissions", [])
@@ -355,7 +364,8 @@ def main():
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json"}))
-    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080,
+    crew = [{k: v for k, v in c.items() if (c["Id"], k) != ("rosa", "Autonomy")} for c in CREW]  # Rosa has no level saved: Keep going
+    (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "claude" if LIVE else "fake", "Theme": "Light", "Width": 1720, "Height": 1080,
         # Live: clicking and typing go ahead, so the only card is the sensitive step's.
         **({"Permissions": [{"Site": "", "Action": "interact", "Companion": "", "Mode": "always"}]} if LIVE else {})},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
@@ -364,6 +374,7 @@ def main():
         if LIVE:
             return live(process)
         once_per_chat(process)
+        keep_going(process)
         ask_every_time(process)
         sensitive(process)
         cancel_at_the_end(process)
@@ -486,6 +497,43 @@ def once_per_chat(process):
     check(shown and "localhost" in shown[0], "The rule is for that site only: another site still asks")
     press(process, "Allow once")
     idle(process)
+
+
+def keep_going(process):
+    """Each companion has an Autonomy. On Keep going (the default) clicking and typing just happen, its instructions say to
+    keep working, a change reaches a chat already going once, and a sensitive step still asks."""
+    send(process, "companionAutonomy", id="maya", level="keepgoing")
+    check(until(lambda: level("maya") == "keepgoing", 10), "Keep going is saved for Maya")
+    n = len(prompts())
+    ask(process, f"CART {OTHER} 2 k")
+    until(lambda: len(calls("CART " + OTHER + " 2 k")) == 2, 30)
+    check(all(c["ok"] for c in calls("CART " + OTHER + " 2 k")) and until(lambda: audit("CART " + OTHER + " 2 k") == ["Allowed by your settings"] * 2, 10),
+          f"Keep going: clicks on a new site run with no card, and the log says why ({audit('CART ' + OTHER + ' 2 k')})")
+    first = next((e["prompt"] for e in prompts()[n:] if e["companion"] == "maya"), "")
+    check("The user set you to Keep going" in first and "make a reasonable call" in first and "Always ask (ask_user) before risky steps" in first,
+          "Its instructions say to make reasonable calls and keep going, and to ask before risky steps")
+    idle(process)
+    cid = chat_of("CART " + OTHER + " 2 k")["Id"]
+    send(process, "companionAutonomy", id="maya", level="balanced")
+    until(lambda: level("maya") == "balanced", 10)
+    n = len(prompts())
+    send(process, "chatOpen", id=cid)
+    until(lambda: js(process, "!!document.querySelector('.chat-view [aria-label=Message]')"), 10)
+    send(process, "aiSend", text="Thanks")
+    said = until(lambda: next((e["prompt"] for e in prompts()[n:] if e["chat"] == cid), None), 30) or ""
+    check("[Still] The user set you to Balanced" in said, "A chat already going hears the change, with the next message")
+    idle(process)
+    send(process, "companionAutonomy", id="maya", level="keepgoing")
+    until(lambda: level("maya") == "keepgoing", 10)
+    ask(process, f"ORDER {OTHER} k")
+    shown = until(lambda: cards(process), 30)
+    check(shown and "Place order" in shown[0], f"Keep going: a sensitive step still asks ({shown})")
+    press(process, "Deny")
+    until(lambda: len(calls("ORDER " + OTHER + " k")) == 2, 30)
+    check(not ORDERS, "Denied, the order never reaches the shop")
+    idle(process)
+    send(process, "companionAutonomy", id="maya", level="balanced")
+    until(lambda: level("maya") == "balanced", 10)
 
 
 def ask_every_time(process):
@@ -1033,11 +1081,11 @@ def reach(process):
     check(until(lambda: seen(short), 20) and not seen(onward), "Denied, it doesn't go; a short address on that site goes with no card")
     idle(process)
 
-    send(process, "permNewSites", mode="ask")
-    check(until(lambda: saved_list("NewSites") == "ask", 10), "Ask first is saved")
+    send(process, "companionAutonomy", id="maya", level="ask")
+    check(until(lambda: level("maya") == "ask", 10), "Ask more is saved for Maya")
     near, far, next_far = who(OTHER, "d5"), long(who(OTHER, "d6")), long(who(OTHER, "d7"))
     ask(process, plan("d5", read(near), go(far), go(next_far)) + " on localhost")
-    check(until(lambda: "a lot of data" in why(), 30), f"Ask first: even on a site the user named, a long address asks ({why()!r})")
+    check(until(lambda: "a lot of data" in why(), 30), f"Ask more: even on a site the user named, a long address asks ({why()!r})")
     press(process, "Allow in this chat")
     check(until(lambda: seen(far), 20), "Allowed, it goes")
     check(until(lambda: "a lot of data" in why(), 20), "Allow in this chat doesn't cover the next one")
@@ -1045,11 +1093,11 @@ def reach(process):
     idle(process)
     check(not seen(next_far), "Denied, it doesn't go")
 
-    send(process, "permNewSites", mode="fewer")
-    check(until(lambda: saved_list("NewSites") == "fewer", 10), "Fewer questions is saved")
+    send(process, "companionAutonomy", id="maya", level="keepgoing")
+    check(until(lambda: level("maya") == "keepgoing", 10), "Keep going is saved for Maya")
     first, heavy = who(SITE, "d8"), long(who(OTHER, "d9"))
     ask(process, plan("d8", read(first), go(heavy)))
-    check(until(lambda: "a lot of data" in why(), 30), f"Fewer questions: a long address to a new site still asks ({why()!r})")
+    check(until(lambda: "a lot of data" in why(), 30), f"Keep going: a long address to a new site still asks ({why()!r})")
     press(process, "Deny")
     idle(process)
     check(not seen(heavy), "Denied, it doesn't go")
@@ -1058,7 +1106,9 @@ def reach(process):
     check(until(lambda: seen(then), 30) and not cards(process), "and a new site after reading the web goes with no card")
     idle(process)
     send(process, "permReset")
-    check(until(lambda: saved_list("NewSites") == "balanced", 10), "Reset all goes back to Balanced")
+    check(until(lambda: level("maya") == "keepgoing", 10) and until(lambda: not rules(), 10), "Reset all clears the rules and leaves Maya's level alone")
+    send(process, "companionAutonomy", id="maya", level="balanced")
+    until(lambda: level("maya") == "balanced", 10)
 
     tab, later = who(OTHER, "e1"), who(SITE, "e2")
     ask(process, plan("e", go(tab), ["read_page", {}], read(later)))
@@ -1436,7 +1486,9 @@ def settings(process):
     check("Any site" in table and "Sensitive steps" in table and "shop.example" in table and "Maya" in table, "Settings list the defaults and the rule for Maya on shop.example")
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
     row = js(process, "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).join(' | ')") or ""
-    check("Autonomy" in row and "Balanced" in row, f"Settings show Autonomy, Balanced to start ({row[:160]!r})")
+    check("Autonomy" in row and "Maya" in row and "Balanced" in row, f"Settings show each companion's Autonomy ({row[:160]!r})")
+    rosa = js(process, "document.querySelector('[aria-label=\"Autonomy for Rosa\"]')?.innerText ?? ''") or ""
+    check(rosa == "Keep going", f"A companion with no level saved is on Keep going, the default ({rosa!r})")
     capture(process, "permissions-v01")
     press(process, "Reset all", ".perm-settings")
     until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)

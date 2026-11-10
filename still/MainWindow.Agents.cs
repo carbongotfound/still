@@ -898,6 +898,13 @@ public partial class MainWindow
  // sensitive site says to ask, and then they ask in the bar at the top. Null: go ahead; otherwise the refusal for the AI.
  static readonly string[] PermissionActions = ["read", "navigate", "interact", "sensitive"];
  static string DefaultPermission(string action) => action switch { "interact" => "chat", "sensitive" => "ask", _ => "always" };
+ /// A companion's Autonomy (Permissions.tsx AUTONOMY): clicking and typing on any site, new sites after reading the web
+ /// (Reach), plugin programs, and the line that tells it how to work. Sensitive steps ask at every level. No companion: none.
+ static (string Interact, string NewSites, string Programs, string Line) LevelOf(Companion? c) => c?.Autonomy switch {
+  null => ("", "balanced", "ask", ""),
+  "ask" => ("chat", "ask", "ask", "The user set you to Ask more: check with them before choices that shape the result (which option, what to include, where to go next), not only before risky steps."),
+  "balanced" => ("chat", "balanced", "ask", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan or is hard to undo."),
+  _ => ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working. Stop only before risky steps: paying, deleting their things, sending or posting to other people, submitting personal data or accepting terms.") };
  static bool OnSite(string rule, string site) => rule.Length > 0 && (site == rule || site.EndsWith("." + rule, StringComparison.Ordinal));
  /// On this computer or its network, going by the name or address alone.
  internal static bool IsPrivateName(string host)
@@ -928,20 +935,21 @@ public partial class MainWindow
   || root.Messages.Any(m => m.Role == "user" && m.Who == null && HostWords.Matches(LinkTitles.Replace(m.Text.ToLowerInvariant(), "(")).Any(t => OnSite(t.Value.StartsWith("www.", StringComparison.Ordinal) ? t.Value[4..] : t.Value, host)));
  bool SiteAllows(string who, string site, string action) => Prefs.Permissions.Any(p => p.Action == action && p.Mode == "always" && OnSite(p.Site, site) && (p.Companion.Length == 0 || p.Companion == who));
  /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
- /// whether going somewhere takes a yes. Null: it doesn't. How careful is the user's pick (Prefs.NewSites): "ask" asks before
+ /// whether going somewhere takes a yes. Null: it doesn't. How careful is the strictest Autonomy in the chain: "ask" asks before
  /// any new site and any long address; "balanced" asks before a new site, and before a long address only off the sites the
  /// chat knows or when it carries another address on; "fewer" asks only before a long address off them. Your own network
  /// always asks.
- async Task<(string Why, bool Data)?> Reach(AiChat root, string tool, string url, string host)
+ async Task<(string Why, bool Data)?> Reach(AiChat root, List<string> chain, string tool, string url, string host)
  {
+  string how = chain.Select(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).NewSites).MinBy(h => h switch { "ask" => 0, "balanced" => 1, _ => 2 }) ?? "balanced";
   if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) return null;
   int extra = u.Query.Length + u.Fragment.Length;
   bool known = BeenTo(root, host);
-  if (root.Read > 0 && (extra > 200 || u.AbsolutePath.Length > 300) && (!known || Prefs.NewSites == "ask" || Onward(u))) return ("This address carries a lot of data: " + Clip(u.PathAndQuery + u.Fragment, 120), true);
+  if (root.Read > 0 && (extra > 200 || u.AbsolutePath.Length > 300) && (!known || how == "ask" || Onward(u))) return ("This address carries a lot of data: " + Clip(u.PathAndQuery + u.Fragment, 120), true);
   if (known) return null;
   if (await PrivateHost(host)) return ("This is on your own computer or network.", false);
   // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
-  if (Prefs.NewSites != "fewer" && root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
+  if (how != "fewer" && root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
   return null;
  }
  /// An address inside the address, the way a site's redirect sends what it carries on to another.
@@ -975,12 +983,14 @@ public partial class MainWindow
  static object Probe(string tool, JsonElement args) => new { tool, id = Id(args), selector = S(args, "selector"), text = S(args, "text"), key = S(args, "key"), submit = B(args, "submit") };
  static string SiteOf(string input) => (input = input.Trim().ToLowerInvariant()).Length == 0 ? "" : Host(input.Contains("://") ? input : "https://" + input);
  static readonly HashSet<string> sessionGrants = []; // outside apps: "who action site" allowed until Still closes
- /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site, everyone anywhere.
+ /// The rule that applies, most specific first: this companion on this site, this companion anywhere, everyone on this site,
+ /// everyone anywhere. With no rule, clicking and typing follow the companion's Autonomy: a rule the user set always wins.
  string? PermissionMode(string companion, string site, string action)
  {
   var rules = Prefs.Permissions.Where(p => p.Action == action).ToList();
   var rule = (companion.Length > 0 ? rules.FirstOrDefault(p => p.Companion == companion && OnSite(p.Site, site)) ?? rules.FirstOrDefault(p => p.Companion == companion && p.Site.Length == 0) : null)
    ?? rules.FirstOrDefault(p => p.Companion.Length == 0 && OnSite(p.Site, site)) ?? rules.FirstOrDefault(p => p.Companion.Length == 0 && p.Site.Length == 0);
+  if (rule == null && action == "interact" && Companions.FirstOrDefault(c => c.Id == companion) is { } level) return LevelOf(level).Interact;
   return rule?.Mode;
  }
  void SetPermission(string site, string action, string companion, string mode)
@@ -1038,7 +1048,7 @@ public partial class MainWindow
   bool data = false;
   if (run != null && url.Length > 0) {
    step.Goes = site;
-   if (!up.Chain.All(c => SiteAllows(c, site, action)) && await Reach(up.Root, tool, url, site) is { } reach) { why = why.Length > 0 ? why + " " + reach.Why : reach.Why; data = reach.Data; if (mode == "always") mode = "chat"; }
+   if (!up.Chain.All(c => SiteAllows(c, site, action)) && await Reach(up.Root, up.Chain, tool, url, site) is { } reach) { why = why.Length > 0 ? why + " " + reach.Why : reach.Why; data = reach.Data; if (mode == "always") mode = "chat"; }
   }
   bool granted = !data && (mode == "always" || mode == "chat" && (run != null ? up.Root.Allowed.Contains(key) : sessionGrants.Contains(who + " " + key)));
   if (action == "sensitive" && run?.Recheck == true) granted = false; // picked up after one that may not have finished: the user decides again

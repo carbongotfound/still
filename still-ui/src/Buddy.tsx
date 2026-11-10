@@ -8,7 +8,7 @@ export const HUES: Record<string, string> = { sage: "#8fbf8a", lavender: "#a99be
 const BEFORE: Record<string, string> = { sky: "ocean", peach: "apricot", lilac: "lavender", sand: "sage", rose: "blush", lemon: "apricot", slate: "periwinkle" }
 
 export type Mode = "efficient" | "default" | "expert"
-export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; skills?: string[]; memory?: Fact[]; summaries?: ChatSummary[]; knowledge?: Note[]; setup?: "pending" | "done"; capture?: boolean; joinSection?: boolean; tone?: string; role?: string; personality?: Personality; length?: ReplyLength; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
+export type Companion = { id: string; name: string; face: string; color: string; job: string; ai?: string; mode?: Mode; autonomy?: "ask" | "balanced" | "keepgoing"; skills?: string[]; memory?: Fact[]; summaries?: ChatSummary[]; knowledge?: Note[]; setup?: "pending" | "done"; capture?: boolean; joinSection?: boolean; tone?: string; role?: string; personality?: Personality; length?: ReplyLength; folder?: string; look?: string; pluginsOff?: string[]; routines?: Routine[]
  crew?: string // the crew member it was picked from (crew.tsx)
  askName?: boolean } // it still has a name Still used to hand out: ask once whether to keep it
 /// A companion's personality preset ("" = only its Tone in the user's words) and how long its replies are.

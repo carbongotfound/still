@@ -150,6 +150,7 @@ CREW = [{"Id": "maya", "Name": "Maya", "Job": "An all-round coworker: researches
         {"Id": "nora", "Name": "Nora", "Job": "A careful researcher: reads several sources, checks the facts and cites them."},
         {"Id": "jonah", "Name": "Jonah", "Job": "A savvy shopper: finds the best price, compares deals and reviews, and never buys without asking."},
         {"Id": "rosa", "Name": "Rosa", "Job": "An organizer: handles email, calendars, documents and online busywork."}]
+CREW = [{**c, "Autonomy": "balanced"} for c in CREW]  # the suites test asking; Keep going, the default, has its own checks (permissions.py)
 
 ROOT = Path(__file__).resolve().parents[2]
 SIZES = ((1720, 1080), (1280, 800))

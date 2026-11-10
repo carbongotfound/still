@@ -1157,6 +1157,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .audit-list li { display:flex; flex-direction:column; padding:5px 0; font-size:12.5px; border-bottom:1px solid var(--border); } .audit-list li:last-child { border-bottom:0; }
 .audit-list b { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .audit-list small { color:var(--muted-foreground); font-size:11.5px; }
 .perm-settings { display:flex; flex-direction:column; gap:12px; }
+.perm-level strong { display:flex; align-items:center; gap:8px; }
 .perm-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .perm-table th { padding:0 6px 6px; text-align:left; font-weight:500; color:var(--muted-foreground); border-bottom:1px solid var(--border); }
 .perm-table td { padding:5px 6px; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }

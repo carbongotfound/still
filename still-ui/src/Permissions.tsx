@@ -18,24 +18,16 @@ export type AuditEntry = { at: string; what: string; site: string; result: strin
 
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
-// How much companions do on their own. One pick sets clicking and typing for everyone on any site, new sites after reading
-// the web (Reach) and plugin programs; rules per site or companion still apply on top, and a mix that matches no level is Custom.
+// How much a companion does on its own: one pick per companion. Still holds what each level allows (Windows LevelOf, Mac
+// levelOf): clicking and typing on any site, new sites after reading the web, plugin programs, and a line in its instructions.
 export const AUTONOMY = {
- careful: { name: "Careful", short: "Also asks before any long address", about: "Companions ask before clicking or typing on each site, once a chat. Once a chat has read the web, every new site asks, and so does any long address.", interact: "chat", newSites: "ask", programs: "ask" },
- balanced: { name: "Balanced", short: "Asks once a chat on each site", about: "Companions ask before clicking or typing on each site, once a chat. Once a chat has read the web, every new site asks. Plugin programs ask each time.", interact: "chat", newSites: "balanced", programs: "ask" },
- handsoff: { name: "Hands-off", short: "Asks only before risky steps", about: "Companions click, type, open new sites and run your plugins' programs without asking, at your own risk.", interact: "always", newSites: "fewer", programs: "auto" },
+ ask: { name: "Ask more", short: "Checks in on choices and each site" },
+ balanced: { name: "Balanced", short: "Asks once a chat on each site" },
+ keepgoing: { name: "Keep going", short: "Asks only before risky steps" },
 } as const
 export type Autonomy = keyof typeof AUTONOMY
+export const levelOf = (c?: Companion): Autonomy => c?.autonomy ?? "keepgoing"
 export const ALWAYS_ASKS = "At every level, buying, sending, deleting, forms that send data, and password or payment fields ask first, and so do your own computer or network and a long address that carries data to a new site."
-export function autonomyOf(ai: AiState): Autonomy | "" {
- const interact = ai.permissions?.find(r => r.action === "interact" && !r.site && !r.companion)?.mode ?? "chat"
- const newSites = ai.newSites ?? "balanced", programs = ai.pluginPrograms === "auto" ? "auto" : "ask"
- return (Object.keys(AUTONOMY) as Autonomy[]).find(k => AUTONOMY[k].interact === interact && AUTONOMY[k].newSites === newSites && AUTONOMY[k].programs === programs) ?? ""
-}
-export function setAutonomy(send: Send, level: Autonomy) {
- const a = AUTONOMY[level]
- send("permSet", { site: "", companion: "", action: "interact", mode: a.interact }); send("permNewSites", { mode: a.newSites }); send("permPluginPrograms", { mode: a.programs })
-}
 
 // Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
 export function useArmed(key: string) {
@@ -109,14 +101,14 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
  const [marked, setMarked] = useState("")
- const level = autonomyOf(ai)
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
   <p className="tool-caption">Choose what your companions may do without asking. Sensitive steps are buying, sending, deleting, forms that send data, and password or payment fields. Allowed without asking, a sensitive step still waits 8 seconds so you can cancel it. AI apps you connect from outside Still ask in the bar at the top before a sensitive step, and when a rule for everyone or a sensitive site says to.</p>
-  <div className="setting-row"><div><strong>Autonomy</strong><p>{level ? AUTONOMY[level].about : "Your own mix of the rules below."} {ALWAYS_ASKS}</p></div>
-   <Select value={level || "custom"} onValueChange={v => setAutonomy(send, v as Autonomy)}><SelectTrigger size="sm" aria-label="Autonomy"><SelectValue /></SelectTrigger>
-    <SelectContent>{!level && <SelectItem value="custom" disabled>Custom</SelectItem>}{(Object.keys(AUTONOMY) as Autonomy[]).map(id => <SelectItem key={id} value={id}>{AUTONOMY[id].name}</SelectItem>)}</SelectContent></Select></div>
+  <div className="setting-row"><div><strong>Autonomy</strong><p>How much each companion does before it checks with you. Keep going makes the calls and keeps working. {ALWAYS_ASKS}</p></div></div>
+  {companions.map(c => { const level = levelOf(c); return <div key={c.id} className="setting-row perm-level"><div><strong><Face companion={c} size={20} />{c.name}</strong><p>{AUTONOMY[level].short}</p></div>
+   <Select value={level} onValueChange={v => send("companionAutonomy", { id: c.id, level: v })}><SelectTrigger size="sm" aria-label={"Autonomy for " + c.name}><SelectValue /></SelectTrigger>
+    <SelectContent>{(Object.keys(AUTONOMY) as Autonomy[]).map(id => <SelectItem key={id} value={id}>{AUTONOMY[id].name}</SelectItem>)}</SelectContent></Select></div> })}
   <Separator />
   <table className="perm-table"><thead><tr><th>Site</th><th>Who</th><th>Action</th><th>Permission</th><th><span className="sr-only">Remove</span></th></tr></thead>
    <tbody>{rules.map(r => <tr key={r.site + "|" + r.action + "|" + r.companion}>
@@ -140,8 +132,8 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
     <Input aria-label="Add a sensitive site" placeholder="Add a site, like mybank.com" value={marked} onChange={e => setMarked(e.target.value)} /><Button type="submit" size="sm" variant="outline" disabled={!marked.trim()}>Add</Button>
    </form></div>
   <Separator />
-  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, and autonomy goes back to Balanced.</p></div>
+  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: your rules and sensitive sites go, reading and opening pages just happen, and sensitive steps ask every time. Each companion keeps its autonomy.</p></div>
    <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
-    body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
+    body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go. Each companion keeps its autonomy.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>
 }

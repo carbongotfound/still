@@ -69,8 +69,8 @@ def setup():
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json"}))
-    crew = [{"Id": "maya", "Name": "Maya", "Job": "Research for the user: briefs with a source for every claim.", "Crew": "research"},
-            {"Id": "jonah", "Name": "Jonah", "Job": "Sales for the user: leads, call prep and follow-up drafts.", "Crew": "sales"}]
+    crew = [{"Id": "maya", "Name": "Maya", "Job": "Research for the user: briefs with a source for every claim.", "Crew": "research", "Autonomy": "balanced"},
+            {"Id": "jonah", "Name": "Jonah", "Job": "Sales for the user: leads, call prep and follow-up drafts.", "Crew": "sales", "Autonomy": "balanced"}]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake", "Theme": "Light",
         "Width": 1280, "Height": 860}, "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     return launch(EXE, PROFILE)

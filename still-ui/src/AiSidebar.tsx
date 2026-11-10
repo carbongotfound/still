@@ -19,7 +19,7 @@ import { premadeOf, starters } from "./crew"
 import { Markdown } from "./Markdown"
 import { choicesOf, type Choice } from "./nextSteps"
 import { FileCard, FileIcon, sizeText, type LibFile } from "./Files"
-import { Approvals, AUTONOMY, autonomyOf, setAutonomy, type Approval, type Autonomy, type AuditEntry, type Rule } from "./Permissions"
+import { Approvals, AUTONOMY, levelOf, type Approval, type Autonomy, type AuditEntry, type Rule } from "./Permissions"
 import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
 import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
@@ -42,7 +42,7 @@ export type AiState = {
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
  advanced?: boolean; skills?: Skill[]
  tiers?: Record<string, Record<Mode, { model: string; effort: string; custom: boolean; missing: boolean; failed: boolean }>>
- approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; newSites?: string; pluginPrograms?: string; chatSummaries?: boolean
+ approvals?: Approval[]; audit?: AuditEntry[]; permissions?: Rule[]; sensitiveSites?: string[]; chatSummaries?: boolean
  plugins?: PluginsState
  apis?: ApiState
 }
@@ -308,7 +308,7 @@ const MODES: [Mode, string, LucideIcon, string][] = [
  ["default", "Everyday", Coffee, "Your AI app's usual setup, right for most things"],
  ["expert", "Thorough", Brain, "Its strongest model, taking its time on hard jobs"],
 ]
-const AUTONOMY_ICON: Record<Autonomy, LucideIcon> = { careful: ShieldCheck, balanced: Scale, handsoff: Zap }
+const AUTONOMY_ICON: Record<Autonomy, LucideIcon> = { ask: ShieldCheck, balanced: Scale, keepgoing: Zap }
 // The message box's menus open above the whole box, lined up with its edge, not over what you're typing. In the chat
 // panel they span the box, so nothing behind them peeks out at the sides.
 function useOverBox<T extends HTMLElement>(align: "start" | "end") {
@@ -323,7 +323,7 @@ function useOverBox<T extends HTMLElement>(align: "start" | "end") {
 function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
  const [find, setFind] = useState("")
  const over = useOverBox<HTMLButtonElement>("end")
- const mode = companion?.mode ?? "default", autonomy = autonomyOf(ai)
+ const mode = companion?.mode ?? "default", autonomy = levelOf(companion)
  const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
  return <DropdownMenu onOpenChange={o => { over.measure(o); if (!o) setFind("") }}>
   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" ref={over.ref} className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
@@ -338,9 +338,9 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
    <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
    <DropdownMenuSeparator />
-   <DropdownMenuLabel className="mode-label">Autonomy, for every companion</DropdownMenuLabel>
-   {(Object.keys(AUTONOMY) as Autonomy[]).map(id => { const Icon = AUTONOMY_ICON[id]; return <DropdownMenuItem key={id} className="mode-item" onSelect={() => setAutonomy(send, id)}>
-    <Icon className="mode-icon" /><span className="mode-text">{AUTONOMY[id].name}<small>{AUTONOMY[id].short}</small></span>{autonomy === id && <CircleCheck className="mode-check" />}</DropdownMenuItem> })}
+   <DropdownMenuLabel className="mode-label">{companion ? "Autonomy for " + companion.name : "Autonomy"}</DropdownMenuLabel>
+   {(Object.keys(AUTONOMY) as Autonomy[]).map(id => { const Icon = AUTONOMY_ICON[id]; return <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionAutonomy", { id: companion.id, level: id }) }}>
+    <Icon className="mode-icon" /><span className="mode-text">{AUTONOMY[id].name}<small>{AUTONOMY[id].short}</small></span>{companion && autonomy === id && <CircleCheck className="mode-check" />}</DropdownMenuItem> })}
    <DropdownMenuSeparator />
    <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal />Model settings…</DropdownMenuItem>
   </DropdownMenuContent>

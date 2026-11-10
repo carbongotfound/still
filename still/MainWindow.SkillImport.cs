@@ -205,8 +205,8 @@ public partial class MainWindow
    .Where(f => IsProgram(f) && !f.Split('/').Any(p => p.StartsWith('.') || p is "node_modules" or "__pycache__" or "venv" or "site-packages")).Order(StringComparer.Ordinal).Take(40)] : [];
 
  /// run_plugin_program: a program inside one of the companion's plugins, through its interpreter, with the arguments as
- /// given (never a shell), in the companion's working folder or else the plugin's. It asks first unless Plugin programs
- /// is Don't ask or the user allowed this plugin; setup and install programs always ask. Stopping the chat stops it.
+ /// given (never a shell), in the companion's working folder or else the plugin's. It asks first unless the companion
+ /// (and anyone it's helping) is on Keep going or the user allowed this plugin; setup and install programs always ask. Stopping the chat stops it.
  async Task<string> PluginProgram(string who, JsonElement args)
  {
   var run = runs.GetValueOrDefault(who);
@@ -229,14 +229,15 @@ public partial class MainWindow
   if (given.Length > 40 || given.Any(x => x.Length > 4000)) return Fail("Too many or too long arguments: 40 at most, 4,000 characters each.");
   bool setup = Regex.IsMatch(Path.GetFileNameWithoutExtension(full), "setup|install", RegexOptions.IgnoreCase);
   string what = "Run " + rel + (given.Length > 0 ? " " + Clip(string.Join(" ", given), 80) : "");
-  if (setup || Prefs.PluginPrograms != "auto" && !Prefs.PluginsAllowed.Contains(id)) {
+  bool auto = ExchangeOf(run.Chat).Chain.All(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).Programs == "auto");
+  if (setup || !auto && !Prefs.PluginsAllowed.Contains(id)) {
    string answer = await Approve(run, what, skill.Source, setup ? "plugin" : "program",
     setup ? "Setup can install other programs on your computer. It runs at your own risk." : "A program from a plugin you added. It runs on your computer with your access.", countdown: false);
    Audit(run.Chat, what, skill.Source, answer == "always" ? "You allowed this plugin" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no");
    if (answer == "always" && !setup && !Prefs.PluginsAllowed.Contains(id)) { Prefs.PluginsAllowed.Add(id); SaveLater(); }
    PublishAiEverywhere();
    if (answer is not ("once" or "always")) return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't run it again unless they ask.");
-  } else Audit(run.Chat, what, skill.Source, "Ran without asking, as Settings allows");
+  } else Audit(run.Chat, what, skill.Source, "Ran without asking, as Keep going allows");
   if (ExchangeOf(run.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // its output is someone else's text, like a page
   Step(run.Chat, "Ran " + rel); PublishAiEverywhere();
   int seconds = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("timeout", out var t) && t.TryGetDouble(out var d) ? (int)Math.Clamp(d, 5, 600) : 120;
