@@ -43,8 +43,8 @@ public partial class MainWindow : Window
   Activated += (_, _) => LastActive = this;
   state = sharedState ??= store.Load();
   StartupMetrics.Mark("session-loaded");
-  if(state.UiVersion==0){state.Welcome=true;state.SeenVersion=CurrentVersion.ToString(2);} // brand-new install: the welcome setup, not What's New
-  if(App.IsQa&&Environment.GetEnvironmentVariable("STILL_QA_WHATSNEW")==null)state.SeenVersion=CurrentVersion.ToString(2); // tests see What's New only when they ask
+  if(state.UiVersion==0){state.Welcome=true;state.SeenVersion=CurrentVersion.ToString(3);} // brand-new install: the welcome setup, not What's New
+  if(App.IsQa&&Environment.GetEnvironmentVariable("STILL_QA_WHATSNEW")==null)state.SeenVersion=CurrentVersion.ToString(3); // tests see What's New only when they ask
   if(state.UiVersion<2){if(state.UiVersion>0)state.Preferences.Theme="Dark";state.UiVersion=2;} // new installs follow the system
   if(state.UiVersion<3){state.Preferences.SearchEngine="Google";state.UiVersion=3;}
   if(state.UiVersion<4){state.Preferences.OfferPasswordSave=state.Preferences.OfferPasswordUpdate=true;state.UiVersion=4;} // offering to save logins is on by default, like other browsers

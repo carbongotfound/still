@@ -25,6 +25,12 @@ public partial class MainWindow
   Environment.GetEnvironmentVariable("STILL_QA_VERSION") is { } fake ? Version.Parse(fake) :
 #endif
   Assembly.GetEntryAssembly()?.GetName().Version ?? new Version(0, 0);
+ /// Tests' own release notes (STILL_QA_NOTES, a whatsnew.json) in place of the ones the interface ships with.
+ static JsonElement? QaNotes =>
+#if STILL_QA
+  Environment.GetEnvironmentVariable("STILL_QA_NOTES") is { } notes ? JsonDocument.Parse(File.ReadAllText(notes)).RootElement :
+#endif
+  null;
  static string InstalledExe => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "Still", "Still.exe");
  static bool CanSelfUpdate => string.Equals(Environment.ProcessPath, InstalledExe, StringComparison.OrdinalIgnoreCase)
 #if STILL_QA

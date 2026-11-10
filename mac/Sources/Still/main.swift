@@ -369,6 +369,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   state["noAi"] = false
   state["welcome"] = welcome && !secondary && !incognito
   state["seenVersion"] = store.seenVersion
+  if let notes = qaEnv("STILL_QA_NOTES"), let data = FileManager.default.contents(atPath: notes) { state["qaNotes"] = try? JSONSerialization.jsonObject(with: data) } // tests' own release notes
   state["version"] = currentVersion
   state["zoom"] = Int(((shown?.view?.pageZoom ?? 1) * 100).rounded())
   state["preferences"] = preferences
@@ -476,7 +477,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
    }
   case "preference": setPreference(text("key"), text("value"))
   case "welcomeDone": welcome = false; saveLater(); applyTheme()
-  case "whatsNewSeen": store.seenVersion = releaseLine; saveLater(); for browser in browsers { browser.publish() }
+  case "whatsNewSeen": store.seenVersion = currentVersion; saveLater(); for browser in browsers { browser.publish() }
   case "defaultBrowser": makeDefault()
   case "chooseDownloads":
    let picker = NSOpenPanel()

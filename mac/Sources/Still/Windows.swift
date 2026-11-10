@@ -14,7 +14,7 @@ final class Store {
  var history: [[String: Any]] = []
  var bookmarks: [[String: Any]] = []
  var welcome = true
- var seenVersion = "" // the release (2.10) whose What's New was shown
+ var seenVersion = "" // the version (2.10.1) whose news was last shown, "2.10" before 2.10.2
  var groups: [TabGroup] = []
  var picks: [[String: Any]] = [] // what you typed and the site you picked (never private tabs): Typed, Url, Count, At
  var hidden: [String: [String]] = [:] // elements hidden on a site, by host
@@ -41,8 +41,8 @@ func loadStore() {
  store.history = savedState["History"] as? [[String: Any]] ?? []
  store.bookmarks = savedState["Bookmarks"] as? [[String: Any]] ?? []
  store.welcome = savedState["Welcome"] as? Bool ?? true
- store.seenVersion = savedState["SeenVersion"] as? String ?? (savedState.isEmpty ? releaseLine : "") // a new install: the welcome setup, not What's New
- if isQa && qaEnv("STILL_QA_WHATSNEW") == nil { store.seenVersion = releaseLine } // tests see What's New only when they ask
+ store.seenVersion = savedState["SeenVersion"] as? String ?? (savedState.isEmpty ? currentVersion : "") // a new install: the welcome setup, not What's New
+ if isQa && qaEnv("STILL_QA_WHATSNEW") == nil { store.seenVersion = currentVersion } // tests see What's New only when they ask
  store.picks = savedState["AddressPicks"] as? [[String: Any]] ?? []
  store.hidden = savedState["Hidden"] as? [String: [String]] ?? [:]
  store.groups = (savedState["Groups"] as? [[String: Any]] ?? []).map { item in
