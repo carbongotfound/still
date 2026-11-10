@@ -101,11 +101,14 @@ public partial class MainWindow
   core.PermissionRequested+=(_,e)=>e.State=CoreWebView2PermissionState.Deny;
   if(App.IsQa){await core.CallDevToolsProtocolMethodAsync("Runtime.enable","{}");shellExceptionReceiver=core.GetDevToolsProtocolEventReceiver("Runtime.exceptionThrown");shellExceptionReceiver.DevToolsProtocolEventReceived+=(_,e)=>shellErrors.Add(e.ParameterObjectAsJson);}
   core.WebMessageReceived+=async (_,e)=> {
-   if(e.Source!="https://still.internal/index.html"||core.Source!="https://still.internal/index.html"||e.WebMessageAsJson.Length>65536)return;
+   if(e.Source!="https://still.internal/index.html"||core.Source!="https://still.internal/index.html")return;
+   string json=e.WebMessageAsJson;
+   if(json.Length>6<<20)return;
    try {
-    using var document=JsonDocument.Parse(e.WebMessageAsJson);
+    using var document=JsonDocument.Parse(json);
     var data=document.RootElement;
     string op=data.GetProperty("op").GetString()??"";
+    if(json.Length>65536&&op!="aiAttach")return; // only a piece of a file (4 MB, as base64) is bigger
     App.Breadcrumb="shell "+op;
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
     // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.
@@ -261,7 +264,7 @@ public partial class MainWindow
      case "minimize":WindowState=WindowState.Minimized;break;
      case "closeWindow":Close();break;
      case "draftSave": SaveDraft(S("key"),data.TryGetProperty("draft",out var draft)?draft:default);break;
-     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiEdit" or "aiRate" or "aiPasteImage" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiStatus" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResume" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "companionAutonomy" or "aiAdvanced" or "aiTier" or "aiTiersReset" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "memoryForgetChat" or "memoryCapture" or "chatSummaries" or "knowledgeReset" or "knowledgeUndo" or "memoryResetAll" or "personalizationClear" or "companionSetupAgain" or "instructionsJoin" or "chatNoMemory" or "aiChatProfile" or "skillSave" or "skillDelete" or "skillReset" or "skillImportLook" or "skillImportAdd" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "mediaFetch" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach" or "aiThumb" or "aiReattach" or "appHome":await HandleAi(op,data);break;
+     case "permAnswer" or "permSet" or "permSensitive" or "permReset" or "aiToggle" or "aiAsk" or "aiHarness" or "aiNew" or "aiOpenChat" or "aiDeleteChat" or "aiDeleteAll" or "aiSend" or "aiEdit" or "aiRate" or "aiPasteImage" or "aiStop" or "aiModel" or "aiLogin" or "aiInstall" or "aiSetupCancel" or "aiCheck" or "aiStatus" or "aiAnswer" or "chatOpen" or "chatPage" or "chatPopOut" or "tabMine" or "tabHand" or "aiHelpPage" or "aiResume" or "aiResumeAll" or "aiResumeDismiss" or "agentChat" or "companionSave" or "companionDelete" or "companionMain" or "companionMode" or "companionAutonomy" or "aiAdvanced" or "aiTier" or "aiTiersReset" or "memoryAdd" or "memoryEdit" or "memoryForget" or "memoryClear" or "memoryForgetChat" or "memoryCapture" or "chatSummaries" or "knowledgeReset" or "knowledgeUndo" or "memoryResetAll" or "personalizationClear" or "companionSetupAgain" or "instructionsJoin" or "chatNoMemory" or "aiChatProfile" or "skillSave" or "skillDelete" or "skillReset" or "skillImportLook" or "skillImportAdd" or "chatArchive" or "aiNow" or "aiUnqueue" or "pickFolder" or "fileRead" or "fileShow" or "mediaFetch" or "fileDelete" or "aiPickFiles" or "aiKickoff" or "aiAttach" or "aiAttachCancel" or "aiThumb" or "aiReattach" or "appHome":await HandleAi(op,data);break;
      case "apiSave" or "apiModels" or "apiKeyRemove" or "apiDelete" or "apiTest":await HandleApi(op,data);break;
      case "pluginKey" or "pluginLink" or "pluginKeyRemove" or "pluginRefresh" or "pluginLogos" or "pluginConnect" or "pluginDisconnect" or "pluginToggle":await HandlePlugins(op,data);break;
      default:await HandleBrowserTool(op,data);break;

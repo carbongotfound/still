@@ -576,6 +576,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .file-chip .file-icon { width:16px; height:18px; border-radius:4px; background:none; } .file-chip .file-icon svg { width:14px; height:14px; }
 .file-chip .file-thumb { width:18px; height:18px; flex:none; border-radius:4px; object-fit:cover; box-shadow:0 0 0 1px var(--border); }
 .file-chip > span { max-width:180px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .file-chip small { color:var(--muted-foreground); font-size:11px; }
+.file-chip.is-loading { position:relative; overflow:hidden; } .file-chip.is-loading small { font-variant-numeric:tabular-nums; }
+.file-progress { position:absolute; left:0; bottom:0; height:2px; background:var(--primary); transition:width .15s linear; }
+@media (prefers-reduced-motion: reduce) { .file-progress { transition:none; } }
 .msg-files { display:flex; flex-wrap:wrap; gap:4px; margin-top:6px; } .msg-files .skill-chip { background:color-mix(in oklab,var(--foreground) 8%,transparent); }
 .composer { position:relative; } .composer.is-drop { outline:2px dashed color-mix(in oklab,var(--hue,#5c7a76) 70%,var(--foreground)); outline-offset:2px; }
 .composer-drop { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:inherit; pointer-events:none; font-weight:600;

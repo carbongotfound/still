@@ -427,19 +427,23 @@ const shrink = (src: string) => new Promise<string>(done => {
 function useThumb(file: Attached) {
  const [src, setSrc] = useState(thumbs.get(file.id))
  useEffect(() => {
-  if (src !== undefined || !IMAGE.test(file.name)) return
+  if (src !== undefined || !IMAGE.test(file.name) || file.size > 5 * 1048576) return // the AI apps take pictures up to 5 MB, so Still shows those
   const got = (e: Event) => {
    const d = (e as CustomEvent).detail; if (d.id !== file.id) return
    if (thumbs.has(d.id)) setSrc(thumbs.get(d.id)); else shrink(String(d.data ?? "")).then(s => { thumbs.set(d.id, s); setSrc(s) })
   }
   addEventListener("still-thumb", got); window.chrome?.webview?.postMessage({ op: "aiThumb", id: file.id })
   return () => removeEventListener("still-thumb", got)
- }, [file.id, file.name, src])
+ }, [file.id, file.name, file.size, src])
  return src
 }
-// Limits match the host's (MainWindow.Ai.cs Attach): 10 files a message, files up to 10 MB, images up to 5 MB.
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10, LONG_PASTE = 2000 // characters: a longer paste goes in as a file
-const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `${f.name} is ${sizeText(f.size)}. ${IMAGE.test(f.name) ? "Images" : "Files"} can be up to ${IMAGE.test(f.name) ? 5 : 10} MB.` : ""
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i, LONG_PASTE = 2000 // characters: a longer paste goes in as a file
+// Any number of files, of any kind, up to 500 MB each (the host checks too: MainWindow.Ai.cs AttachPiece). A file goes to Still 4 MB at a time.
+const MAX_FILE = 500 * 1048576, PIECE = 4 * 1048576
+const tooBig = (f: File) => f.size > MAX_FILE ? `${f.name} is ${sizeText(f.size)}. Files can be up to 500 MB.` : ""
+const base64 = (b: Blob) => new Promise<string>((ok, no) => { const r = new FileReader(); r.onload = () => ok(String(r.result).slice(String(r.result).indexOf(",") + 1)); r.onerror = () => no(r.error); r.readAsDataURL(b) })
+const newKey = () => [...crypto.getRandomValues(new Uint8Array(8))].map(b => b.toString(16).padStart(2, "0")).join("")
+type Coming = { key: string; name: string; size: number; done: number } // a file on its way in, and how much of it is in
 
 // The message box. / picks a skill, # an open tab (never a private one) or a connected app, and @ a companion: each goes
 // into the text where it was typed, as a mention (Mention.tsx). Arrows, Enter or Tab and Esc work the pickers.
@@ -482,6 +486,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [pick, setPick] = useState(0)
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
+ const [coming, setComing] = useState<Coming[]>([])
+ const acks = useRef(new Map<string, (done: number) => void>()), stopped = useRef(new Set<string>()), queue = useRef(Promise.resolve())
  const [dropping, setDropping] = useState(false)
  const me = useId()
  const partsRef = useRef(parts), filesRef = useRef(files)
@@ -514,22 +520,42 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  useEffect(() => { // what Still kept from a pick, drop or paste in this box
   const got = (e: Event) => { // added now, or (.kept) a draft's that are still there
    const d = (e as CustomEvent).detail; if (d.to !== me && d.to !== me + ".kept") return
-   if (d.files?.length) { const all = [...filesRef.current, ...d.files].slice(0, MAX_FILES); setFiles(all); if (d.to === me) save(partsRef.current, all) }
+   if (d.key) { acks.current.get(d.key)?.(-1); acks.current.delete(d.key); setComing(l => l.filter(x => x.key !== d.key)); if (stopped.current.has(d.key)) return }
+   if (d.files?.length) { const all = [...filesRef.current, ...d.files]; setFiles(all); if (d.to === me) save(partsRef.current, all) }
    if (d.error) toast(d.error)
   }
+  const going = (e: Event) => { // a picked file being copied in
+   const d = (e as CustomEvent).detail; if (d.to !== me || stopped.current.has(d.key)) return
+   setComing(l => l.some(x => x.key === d.key) ? l.map(x => x.key === d.key ? { ...x, done: d.done } : x) : [...l, { key: d.key, name: d.name, size: d.size, done: d.done }])
+  }
+  const acked = (e: Event) => { const d = (e as CustomEvent).detail; acks.current.get(d.key)?.(d.done); acks.current.delete(d.key) }
   const back = (e: Event) => { if ((e as CustomEvent).detail === draft && unsent.current.length) { setFiles(unsent.current); save(partsRef.current, unsent.current); unsent.current = [] } }
-  addEventListener("still-attached", got); addEventListener("still-unsent", back)
-  return () => { removeEventListener("still-attached", got); removeEventListener("still-unsent", back) }
+  addEventListener("still-attached", got); addEventListener("still-unsent", back); addEventListener("still-attaching", going); addEventListener("still-attach-ack", acked)
+  return () => { removeEventListener("still-attached", got); removeEventListener("still-unsent", back); removeEventListener("still-attaching", going); removeEventListener("still-attach-ack", acked) }
  }, [me, draft]) // eslint-disable-line react-hooks/exhaustive-deps
  const take = (list: FileList | File[]) => {
-  const all = [...list], room = MAX_FILES - files.length
-  if (all.length > room) toast(`You can attach up to ${MAX_FILES} files to a message.`)
-  for (const f of all.slice(0, Math.max(0, room))) {
+  for (const f of [...list]) {
    if (tooBig(f)) { toast(tooBig(f)); continue }
-   const read = new FileReader()
-   read.onload = () => send("aiAttach", { to: me, name: f.name || "pasted-image.png", data: String(read.result).slice(String(read.result).indexOf(",") + 1) })
-   read.readAsDataURL(f)
+   const key = newKey(), name = f.name || "pasted-image.png"
+   setComing(l => [...l, { key, name, size: f.size, done: 0 }])
+   queue.current = queue.current.then(() => upload(f, key, name))
   }
+ }
+ // One file at a time, a piece at a time, each acknowledged before the next; the last comes back as still-attached.
+ const upload = async (f: File, key: string, name: string) => {
+  try {
+   for (let at = 0; at === 0 || at < f.size; at += PIECE) {
+    const data = await base64(f.slice(at, at + PIECE))
+    if (stopped.current.has(key)) return
+    const done = await new Promise<number>(ok => { acks.current.set(key, ok); send("aiAttach", { to: me, key, name, size: f.size, offset: at, data }) })
+    if (done < 0) return
+    setComing(l => l.map(x => x.key === key ? { ...x, done } : x))
+   }
+  } catch { toast(`Couldn't add ${name}.`); stopAdding(key) }
+ }
+ const stopAdding = (key: string) => {
+  stopped.current.add(key); acks.current.get(key)?.(-1); acks.current.delete(key)
+  setComing(l => l.filter(x => x.key !== key)); send("aiAttachCancel", { key })
  }
  const box = useRef<HTMLDivElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
@@ -582,6 +608,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  // The draft stays until Still says it took the message: if it couldn't, the text comes back (drafts.tsx sent).
  const submit = () => {
   if (!message || disabled) return
+  if (coming.length) { toast("Your files are still being added."); return }
   flush(); sending(draft); unsent.current = files
   onSubmit(message, attached, files.map(f => f.id), draft)
   if (box.current) box.current.innerHTML = ""
@@ -654,8 +681,11 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
   {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
-  {files.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+  {files.length + coming.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
    {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
+   {coming.map(c => { const pct = Math.floor(100 * c.done / (c.size || 1)); return <span key={c.key} className="skill-chip file-chip is-loading" title={c.name}><FileIcon path={c.name} /><span>{c.name}</span><small>{pct}%</small>
+    <i className="file-progress" role="progressbar" aria-label={"Adding " + c.name} aria-valuenow={pct} style={{ width: pct + "%" }} />
+    <button type="button" aria-label={"Stop adding " + c.name} onClick={() => stopAdding(c.key)}><X /></button></span> })}
   </InputGroupAddon>}
   <div ref={box} data-history={draft} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck

@@ -839,20 +839,64 @@ extension Browser {
   companions.removeAll { $0 === gone }; storeCompanions(); publishOthers()
   try? FileManager.default.removeItem(at: CompanionMemory.folder(gone.id)); CompanionMemory.drop(gone.id)
  }
- /// Keeps what was picked, dropped or pasted, and tells the box (to) what it got; anything too big is named in the error.
- func attach(_ to: String, _ picked: [(name: String, size: Int64, bytes: () -> Data?)]) {
-  var files: [[String: Any]] = [], errors: [String] = []
-  for (raw, size, bytes) in picked {
-   let clean = String((raw as NSString).lastPathComponent.map { "/:\\".contains($0) ? "_" : $0 }.prefix(120)).trimmingCharacters(in: .whitespaces)
-   let name = clean.isEmpty || clean.hasPrefix(".") ? "file" + clean : clean
-   let max = imageMime(name) != nil ? maxImage : maxFile
-   if size > max { errors.append("\(name) is \(sizeText(size)). \(max == maxImage ? "Images" : "Files") can be up to \(max >> 20) MB."); continue }
-   let id = String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)), folder = attachmentsHere + "/" + id
-   guard let data = bytes(), data.count <= max, (try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)) != nil,
-         (try? data.write(to: URL(fileURLWithPath: folder + "/" + name))) != nil else { errors.append("Couldn't add \(name)."); continue }
-   files.append(["id": id, "name": name, "size": data.count])
+ /// Copies picked or copied files in, one at a time and off the main thread, telling the box (to) how far each is ("attaching") and what it got.
+ /// The x on its chip removes its folder, which stops the copy.
+ func attachURLs(_ to: String, _ urls: [URL]) {
+  let here = attachmentsHere
+  DispatchQueue.global(qos: .userInitiated).async { [self] in
+   for url in urls {
+    let name = attachName(url.lastPathComponent), id = newAttachId(), folder = here + "/" + id, part = folder + "/" + partName
+    let size = Int64((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize ?? 0)
+    let tell = { (m: [String: Any]) in DispatchQueue.main.async { self.send(m) } }
+    if size > maxAttach { tell(["kind": "attached", "to": to, "files": [] as [Any], "error": tooBig(name, size)]); continue }
+    var done: Int64 = 0, last = Date()
+    let copied = { () -> Bool? in // nil: stopped with the x
+     do {
+      try FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)
+      guard FileManager.default.createFile(atPath: part, contents: nil), let into = FileHandle(forWritingAtPath: part) else { return false }
+      let from = try FileHandle(forReadingFrom: url)
+      defer { try? from.close(); try? into.close() }
+      while let piece = try from.read(upToCount: 1 << 20), !piece.isEmpty {
+       guard FileManager.default.fileExists(atPath: part) else { return nil }
+       try into.write(contentsOf: piece); done += Int64(piece.count)
+       if done > maxAttach { return false }
+       if Date().timeIntervalSince(last) >= 0.15 { last = Date(); tell(["kind": "attaching", "to": to, "key": id, "name": name, "size": size, "done": done]) }
+      }
+      guard FileManager.default.fileExists(atPath: part) else { return nil }
+      try FileManager.default.moveItem(atPath: part, toPath: folder + "/" + name)
+      return true
+     } catch { return false }
+    }()
+    if copied != true { try? FileManager.default.removeItem(atPath: folder) }
+    let files: [[String: Any]] = copied == true ? [["id": id, "name": name, "size": done]] : []
+    tell(["kind": "attached", "to": to, "key": id, "files": files, "error": copied == false ? "Couldn't add \(name)." : ""])
+   }
   }
-  send(["kind": "attached", "to": to, "files": files, "error": errors.joined(separator: " ")])
+ }
+ /// A file dropped or pasted in the box comes in pieces (key, offset): each is added to the file and acknowledged ("attachAck"),
+ /// and the last makes it one the box can send. Without a key it's one piece (as before pieces).
+ func attachPiece(_ to: String, _ given: String, _ raw: String, _ size: Int64, _ offset: Int64, _ data: String) {
+  let whole = given.isEmpty, key = whole ? newAttachId() : given, name = attachName(raw), folder = attachmentsHere + "/" + key, part = folder + "/" + partName
+  func fail(_ error: String) {
+   if uploads.removeValue(forKey: key) != nil || whole { try? FileManager.default.removeItem(atPath: folder) }
+   send(["kind": "attached", "to": to, "key": key, "files": [] as [Any], "error": error])
+  }
+  guard key.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let bytes = Data(base64Encoded: data) else { return fail("Couldn't add \(name).") }
+  if offset == 0 {
+   let size = whole ? Int64(bytes.count) : size
+   if size > maxAttach { return fail(tooBig(name, size)) }
+   guard !FileManager.default.fileExists(atPath: folder), (try? FileManager.default.createDirectory(atPath: folder, withIntermediateDirectories: true)) != nil,
+         FileManager.default.createFile(atPath: part, contents: nil) else { return fail("Couldn't add \(name).") }
+   uploads[key] = (name, size)
+  }
+  guard let up = uploads[key], let into = FileHandle(forWritingAtPath: part), let end = try? into.seekToEnd(), end == UInt64(offset),
+        offset + Int64(bytes.count) <= up.size, (try? into.write(contentsOf: bytes)) != nil else { return fail("Couldn't add \(name).") }
+  try? into.close()
+  let done = offset + Int64(bytes.count)
+  if done < up.size { return send(["kind": "attachAck", "key": key, "done": done]) }
+  guard (try? FileManager.default.moveItem(atPath: part, toPath: folder + "/" + up.name)) != nil else { return fail("Couldn't add \(name).") }
+  uploads[key] = nil
+  send(["kind": "attached", "to": to, "key": key, "files": [["id": key, "name": up.name, "size": up.size]] as [[String: Any]], "error": ""])
  }
  func storeCompanions() { prefs["Companions"] = companions.map(\.dict); saveLater() }
  /// A companion offers to repeat something on a schedule: the user says yes in the chat, or nothing is added.
@@ -940,6 +984,7 @@ extension Browser {
  func handleAi(_ op: String, _ data: [String: Any]) -> Bool {
   func s(_ k: String) -> String { data[k] as? String ?? "" }
   func b(_ k: String) -> Bool { AgentStream.isTrue(data[k]) }
+  func n(_ k: String) -> Int64 { (data[k] as? NSNumber)?.int64Value ?? 0 }
   // Whether Still took a message from a box: its draft goes once it did, and stays (the text back in the box) if not.
   func sent(_ ok: Bool, _ error: String = "") { if !s("draft").isEmpty { send(["kind": "sent", "draft": s("draft"), "ok": ok, "error": error]) } }
   let v = aiView
@@ -1041,7 +1086,7 @@ extension Browser {
    let asked = attached.isEmpty ? text : typed + "\n\n[Still] The user attached \(attached.count == 1 ? "this tab" : "these tabs"): " + attached.map { "\(tabTitle($0.title)) \($0.url) (tabId \($0.id))" }.joined(separator: "; ") + ". Read each with read_page before you answer."
    // Files from the box: the message names them, and the AI reads each with read_attachment.
    var seenFiles = Set<String>()
-   let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }.filter { seenFiles.insert($0.id).inserted }.prefix(maxFiles))
+   let files = Array((data["files"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }.filter { seenFiles.insert($0.id).inserted })
    if let target, let working = runs[target.id] { working.queue.append(Queued(typed: typed, shown: text, asked: files.isEmpty ? asked : asked + filesNote(files), files: files)); sent(true); break }
    if active?.chatId != nil || b("home") { v.chat = target }
    runAi(target, files.isEmpty ? asked : asked + filesNote(files), shown: text, into: b("home") || active?.chatId != nil ? active : nil, companion: s("companion"), noMemory: b("noMemory"), files: files)
@@ -1087,15 +1132,15 @@ extension Browser {
     let to = s("to")
     picker.beginSheetModal(for: window) { [self] result in
      guard result == .OK else { return }
-     attach(to, picker.urls.prefix(maxFiles).map { url in (url.lastPathComponent, ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize).map(Int64.init) ?? 0, { try? Data(contentsOf: url) }) })
+     attachURLs(to, picker.urls)
     }
    }
   case "aiReattach": // a draft's files, the ones still here
    let kept = (data["ids"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }
    var seen = Set<String>()
-   send(["kind": "attached", "to": s("to"), "files": kept.filter { seen.insert($0.id).inserted }.prefix(maxFiles).map { ["id": $0.id, "name": $0.name, "size": $0.size] }, "error": ""])
+   send(["kind": "attached", "to": s("to"), "files": kept.filter { seen.insert($0.id).inserted }.map { ["id": $0.id, "name": $0.name, "size": $0.size] }, "error": ""])
   case "aiThumb": // a chip's picture of an attached image
-   if let pic = attachment(s("id"), in: attachmentsHere), let mime = imageMime(pic.name), let bytes = FileManager.default.contents(atPath: attachmentsHere + "/" + pic.id + "/" + pic.name) {
+   if let pic = attachment(s("id"), in: attachmentsHere), Int64(pic.size) <= maxImage, let mime = imageMime(pic.name), let bytes = FileManager.default.contents(atPath: attachmentsHere + "/" + pic.id + "/" + pic.name) {
     send(["kind": "thumb", "id": pic.id, "data": "data:\(mime);base64," + bytes.base64EncodedString()])
    }
   case "aiPasteImage": // the + menu, or a paste the box can't read itself
@@ -1103,12 +1148,15 @@ extension Browser {
    DispatchQueue.main.async { [self] in
     let copied = copiedFiles()
     if copied.isEmpty { if !quiet { toast("There's no image copied right now.") }; return }
-    attach(to, copied.prefix(maxFiles).map { url in (url.lastPathComponent, ((try? url.resourceValues(forKeys: [.fileSizeKey]))?.fileSize).map(Int64.init) ?? 0, { try? Data(contentsOf: url) }) })
+    attachURLs(to, copied)
    }
-  case "aiAttach": // dropped or pasted in the box
-   let dropped = s("data")
-   guard !dropped.isEmpty else { break }
-   attach(s("to"), [(s("name"), Int64(dropped.count / 4 * 3), { Data(base64Encoded: dropped) })])
+  case "aiAttach": // dropped or pasted in the box, a piece at a time
+   attachPiece(s("to"), s("key"), s("name"), n("size"), n("offset"), s("data"))
+  case "aiAttachCancel": // the x on a file still coming in: pieces stop being taken, and a copy stops when its folder goes (attachURLs)
+   let key = s("key"), folder = attachmentsHere + "/" + key
+   if key.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, FileManager.default.fileExists(atPath: folder + "/" + partName) {
+    uploads[key] = nil; try? FileManager.default.removeItem(atPath: folder)
+   }
   case "aiAnswer": // from the chat, or the running tasks list
    guard let answering = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")], let q = answering.question else { break }
    let answer = String(tidy(s("text")).prefix(2000))

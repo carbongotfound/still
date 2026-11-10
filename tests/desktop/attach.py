@@ -107,7 +107,16 @@ def files_js(spec):
 
 
 def chips(p, box):
-    return js(p, f"[...document.querySelectorAll('{box} .composer .file-chip')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
+    """The files in a box (not the ones still coming in)."""
+    return js(p, f"[...document.querySelectorAll('{box} .composer .file-chip:not(.is-loading)')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
+
+
+def drop_on(p, box, transfer):
+    js(p, f"document.querySelector('{box} .composer').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: {transfer} }}))")
+
+
+def toasts(p):
+    return js(p, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' ')") or ""
 
 
 class UploadPage(http.server.BaseHTTPRequestHandler):
@@ -271,10 +280,47 @@ def main():
         check(until(lambda: "Tide table" in (js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""), 5) and len(chips(p, home)) == 3, "A short one stays text in the box")
         js(p, f"(t => {{ t.focus(); document.execCommand('selectAll'); document.execCommand('delete') }})(document.querySelector('{home} [aria-label=Message]'))")
 
-        # Too big: says why, adds nothing.
-        js(p, f"document.querySelector('{home} .composer').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: {files_js([('huge.png', 'image/png', 6 * 1024 * 1024)])} }}))")
-        toast = until(lambda: js(p, "[...document.querySelectorAll('[data-sonner-toast]')].map(t => t.innerText).join(' ')"), 5) or ""
-        check("huge.png is 6.0 MB. Images can be up to 5 MB." in toast and len(chips(p, home)) == 3, f"A file that's too big says why and isn't added ({toast!r})")
+        # Big files: a 6 MB picture comes in 4 MB pieces, its chip showing how far it is, and is kept whole. Over 5 MB it isn't
+        # shown as a picture (the AI apps take pictures up to 5 MB), so its chip has the icon.
+        js(p, "window.__pcts = []; window.__watch = new MutationObserver(() => document.querySelectorAll('.file-chip.is-loading [role=progressbar]').forEach(b => window.__pcts.push(+b.getAttribute('aria-valuenow')))); window.__watch.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['aria-valuenow'] })")
+        drop_on(p, home, files_js([('huge.png', 'image/png', 6 * 1024 * 1024)]))
+        got = until(lambda: len(chips(p, home)) == 4 and chips(p, home), 30) or chips(p, home)
+        pcts = js(p, "window.__watch.disconnect(); window.__pcts") or []
+        check(got[-1:] == ["huge.png 6.0 MB"] and not js(p, f"!!document.querySelector('{home} .file-chip.is-loading')"), f"A 6 MB picture is added ({got})")
+        check(0 in pcts and any(0 < n < 100 for n in pcts), f"...its chip shows how far it is while it comes in ({sorted(set(pcts))})")
+        kept = [d for d in (PROFILE / "ai" / "attachments").iterdir() if (d / "huge.png").exists()]
+        check(len(kept) == 1 and (kept[0] / "huge.png").stat().st_size == 6 * 1024 * 1024 and [f.name for f in kept[0].iterdir()] == ["huge.png"], "...and Still keeps it whole, from its pieces")
+        time.sleep(1)
+        check(not js(p, f"!!document.querySelector('{home} .file-chip[title=\"huge.png\"] img.file-thumb')"), "...with its icon, not a picture of it (over 5 MB)")
+        js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove huge.png\"]').click()")
+        until(lambda: len(chips(p, home)) == 3, 3)
+
+        # Over 500 MB: says why, adds nothing (a File that says it's 600 MB).
+        drop_on(p, home, "(() => { const f = new File(['x'], 'film.mov', { type: 'video/quicktime' }), t = new DataTransfer(); Object.defineProperty(f, 'size', { value: 600 * 1048576 }); Object.defineProperty(t, 'files', { value: [f] }); Object.defineProperty(t, 'types', { value: ['Files'] }); return t })()")
+        toast = until(lambda: "film.mov" in toasts(p) and toasts(p), 5) or toasts(p)
+        check("film.mov is 600.0 MB. Files can be up to 500 MB." in toast and len(chips(p, home)) == 3 and not js(p, "!!document.querySelector('.file-chip.is-loading')"), f"A file over 500 MB says why and isn't added ({toast!r})")
+        key = uuid.uuid4().hex[:16]
+        send(p, "aiAttach", to="nobody", key=key, name="film.mov", size=600 * 1048576, offset=0, data="")
+        time.sleep(1)
+        check(not (PROFILE / "ai" / "attachments" / key).exists(), "...and Still itself takes nothing over 500 MB")
+
+        # As many files as you like, of any kind.
+        drop_on(p, home, files_js([(f"part-{i}.xyz", "application/octet-stream", 3) for i in range(12)]))
+        got = until(lambda: len(chips(p, home)) == 15 and chips(p, home), 20) or chips(p, home)
+        check(len(got) == 15 and got[3:] == [f"part-{i}.xyz 3 B" for i in range(12)], f"Twelve more files, of a kind Still doesn't know, all go in ({len(got)})")
+        for i in range(12):
+            js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove part-{i}.xyz\"]')?.click()")
+            until(lambda: len(chips(p, home)) == 14 - i, 3)
+        check(len(chips(p, home)) == 3, "...and x takes them out again")
+
+        # x on a file still coming in stops it, and nothing of it is kept.
+        drop_on(p, home, files_js([("long.mov", "video/quicktime", 40 * 1024 * 1024)]))
+        until(lambda: js(p, f"!!document.querySelector('{home} .file-chip.is-loading button[aria-label=\"Stop adding long.mov\"]')"), 5)
+        rpc(p, "capture", name="attach-coming.png")
+        js(p, f"document.querySelector('{home} .file-chip.is-loading button[aria-label=\"Stop adding long.mov\"]').click()")
+        time.sleep(2)
+        left = [d for d in (PROFILE / "ai" / "attachments").iterdir() if (d / ".stillpart").exists() or (d / "long.mov").exists()]
+        check(len(chips(p, home)) == 3 and not js(p, "!!document.querySelector('.file-chip.is-loading')") and not left, f"x on a file still coming in stops it, and nothing of it is kept ({chips(p, home)}, {len(left)})")
 
         # x removes one.
         js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove dot.png\"]').click()")

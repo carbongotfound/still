@@ -191,6 +191,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var tabs: [Tab] = []
  var active: Tab?
  var downloads: [Download] = []
+ var uploads: [String: (name: String, size: Int64)] = [:] // files dropped or pasted in the box, still coming in pieces (attachPiece)
  var closed: [String] = [] // closed tabs' addresses, newest last (25 at most)
  var ready = false, focusMode = false, overlay = false
  var panel = ""
@@ -391,8 +392,9 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
   // Only Still's own interface, from its own origin, drives the browser.
   guard message.webView === shell, message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == "still", message.frameInfo.securityOrigin.host == "app",
-        let text = message.body as? String, text.utf8.count <= 65536,
-        let data = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], let op = data["op"] as? String else { return }
+        let text = message.body as? String, text.utf8.count <= 6 << 20,
+        let data = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], let op = data["op"] as? String,
+        text.utf8.count <= 65536 || op == "aiAttach" else { return } // only a piece of a file (4 MB, as base64) is bigger
   handle(op, data)
   if op != "bounds" && op != "overlay" && op != "pageHoles" { schedulePublish() }
  }

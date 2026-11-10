@@ -36,13 +36,19 @@ enum AgentEvent {
 
 let agentEfforts = ["low", "medium", "high"]
 var aiFolder: String { support.appendingPathComponent("ai").path }
-// Attachments: up to 10 a message, files up to 10 MB and images up to 5 MB (what the AI apps take).
-let maxFiles = 10, maxFile: Int64 = 10 << 20, maxImage: Int64 = 5 << 20
+// Attachments: any number, of any kind, up to 500 MB each. An image goes to the AI as a picture only up to 5 MB (what the AI apps take).
+let maxAttach: Int64 = 500 << 20, maxImage: Int64 = 5 << 20, partName = ".stillpart" // a file still coming in, in its attachment's folder
+func attachName(_ raw: String) -> String {
+ let clean = String((raw as NSString).lastPathComponent.map { "/:\\".contains($0) ? "_" : $0 }.prefix(120)).trimmingCharacters(in: .whitespaces)
+ return clean.isEmpty || clean.hasPrefix(".") ? "file" + clean : clean
+}
+func tooBig(_ name: String, _ size: Int64) -> String { "\(name) is \(sizeText(size)). Files can be up to 500 MB." }
+func newAttachId() -> String { String(UUID().uuidString.replacingOccurrences(of: "-", with: "").lowercased().prefix(16)) }
 var attachmentsFolder: String { aiFolder + "/attachments" }
 func imageMime(_ name: String) -> String? { ["png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg", "gif": "image/gif", "webp": "image/webp"][(name as NSString).pathExtension.lowercased()] }
 func sizeText(_ b: Int64) -> String { b < 1024 ? "\(b) B" : b < 1 << 20 ? String(format: "%.1f KB", Double(b) / 1024) : String(format: "%.1f MB", Double(b) / 1048576) }
 func attachment(_ id: String, in folder: String = attachmentsFolder) -> AiFile? {
- guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: folder + "/" + id).first else { return nil }
+ guard id.range(of: "^[a-f0-9]{16}$", options: .regularExpression) != nil, let name = try? FileManager.default.contentsOfDirectory(atPath: folder + "/" + id).first(where: { $0 != partName }) else { return nil }
  let size = (try? FileManager.default.attributesOfItem(atPath: folder + "/" + id + "/" + name)[.size] as? Int) ?? 0
  return AiFile(id: id, name: name, size: size)
 }
@@ -55,15 +61,25 @@ func readAttachment(_ who: String, _ id: String, _ offset: Int) -> String {
  guard let file = attachment(id, in: folder) else { return agentFail("No attachment has that id. Use the id from the [Still] note in the user's message.") }
  let url = URL(fileURLWithPath: folder + "/" + id + "/" + file.name)
  did(who, "Read " + file.name)
+ if imageMime(file.name) != nil, Int64(file.size) > maxImage { return agentFail("\(file.name) is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") }
  if let mime = imageMime(file.name), let data = try? Data(contentsOf: url) { return agentOk(["image": data.base64EncodedString(), "mime": mime]) }
- var text: String
- if url.pathExtension.lowercased() == "pdf" {
-  guard let pdf = PDFDocument(url: url) else { return agentFail("Couldn't read \(file.name) as a PDF. Ask the user for another copy.") }
-  text = pdf.string ?? ""
- } else {
-  guard let data = try? Data(contentsOf: url), !data.prefix(8000).contains(0) else { return agentFail("\(file.name) isn't text, a PDF or an image Still can show you. Tell the user what you can read.") }
-  text = String(decoding: data, as: UTF8.self)
+ if url.pathExtension.lowercased() != "pdf" {
+  // Text a page at a time from the file itself (it can be 500 MB): 20000 bytes from offset, cut back to a whole character.
+  guard let f = try? FileHandle(forReadingFrom: url), !((try? f.read(upToCount: 8000)) ?? Data()).contains(0) else {
+   return agentFail("\(file.name) isn't text, a PDF or an image Still can show you. Tell the user what you can read.")
+  }
+  defer { try? f.close() }
+  let length = Int((try? f.seekToEnd()) ?? 0), at = min(offset, length)
+  try? f.seek(toOffset: UInt64(at))
+  let page = [UInt8]((try? f.read(upToCount: 20000)) ?? Data())
+  var end = page.count
+  if at + end < length { var i = end - 1; while i > 0, page[i] & 0xC0 == 0x80 { i -= 1 }; if page[i] >= 0x80 { end = i } }
+  let words = String(decoding: page[..<end], as: UTF8.self)
+  if end == length, words.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": file.name, "text": "(No text in this file.)"]) }
+  return agentOk(["name": file.name, "text": words, "offset": at, "next": at + end < length ? at + end as Any : NSNull(), "length": length])
  }
+ guard let pdf = PDFDocument(url: url) else { return agentFail("Couldn't read \(file.name) as a PDF. Ask the user for another copy.") }
+ let text = pdf.string ?? ""
  if text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return agentOk(["name": file.name, "text": "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)"]) }
  let chars = Array(text), at = min(offset, chars.count), end = min(chars.count, at + 20000)
  return agentOk(["name": file.name, "text": String(chars[at..<end]), "offset": at, "next": end < chars.count ? end as Any : NSNull(), "length": chars.count])

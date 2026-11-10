@@ -550,6 +550,7 @@ public partial class MainWindow
  {
   string S(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.String ? v.GetString() ?? "" : "";
   bool B(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.True;
+  long L(string k) => data.ValueKind == JsonValueKind.Object && data.TryGetProperty(k, out var v) && v.ValueKind == JsonValueKind.Number && v.TryGetInt64(out var n) ? n : 0;
   // Whether Still took a message from a box: its draft goes once it did, and stays (the text back in the box) if not.
   void Sent(bool ok, string error = "") { if (S("draft") is { Length: > 0 } box) ShellSend(new { kind = "sent", draft = box, ok, error }); }
   string harness = aiChat?.Harness ?? Prefs.AiHarness;
@@ -615,7 +616,7 @@ public partial class MainWindow
     string asked = attached.Count == 0 ? text : typed + $"\n\n[Still] The user attached {(attached.Count == 1 ? "this tab" : "these tabs")}: " + string.Join("; ", attached.Select(t => $"{TabTitle(t.Title)} {t.Url} (tabId {t.Id})")) + ". Read each with read_page before you answer.";
     // Files from the box: the message names them, and the AI reads each with read_attachment.
     var files = data.ValueKind == JsonValueKind.Object && data.TryGetProperty("files", out var fileIds) && fileIds.ValueKind == JsonValueKind.Array
-     ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).ToList() : [];
+     ? fileIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null).OfType<AiFile>().DistinctBy(f => f.Id).ToList() : [];
     if (files.Count > 0) asked += FilesNote(files);
     if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(new(typed, text, asked, files)); Sent(true); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
@@ -658,20 +659,22 @@ public partial class MainWindow
     break; }
    case "aiPickFiles": {
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
-    if (picker.ShowDialog(this) == true) Attach(S("to"), picker.FileNames.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
+    if (picker.ShowDialog(this) == true) AttachPaths(S("to"), picker.FileNames);
     break; }
-   case "aiThumb" when Attachment(AttachmentsHere, S("id")) is { } pic && ImageMime(pic.Name) is { } picMime: // a chip's picture of an attached image
+   case "aiThumb" when Attachment(AttachmentsHere, S("id")) is { } pic && ImageMime(pic.Name) is { } picMime && pic.Size <= MaxImage: // a chip's picture of an attached image
     ShellSend(new { kind = "thumb", id = pic.Id, data = $"data:{picMime};base64,{Convert.ToBase64String(File.ReadAllBytes(Path.Combine(AttachmentsHere, pic.Id, pic.Name)))}" }); break;
    case "aiPasteImage": { // the + menu, or a paste the box can't read itself
     var copiedNow = CopiedFiles();
-    if (copiedNow.Count > 0) Attach(S("to"), copiedNow.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
+    if (copiedNow.Count > 0) AttachPaths(S("to"), copiedNow);
     else if (!B("quiet")) Toast("There's no image copied right now.");
     break; }
-   case "aiAttach" when S("data") is { Length: > 0 } dropped: // dropped or pasted in the box
-    Attach(S("to"), [(S("name"), dropped.Length / 4L * 3, () => Convert.FromBase64String(dropped))]); break;
+   case "aiAttach": // dropped or pasted in the box, a piece at a time
+    AttachPiece(S("to"), S("key"), S("name"), L("size"), L("offset"), S("data")); break;
+   case "aiAttachCancel": // the x on a file still coming in
+    CancelAttach(S("key")); break;
    case "aiReattach" when data.ValueKind == JsonValueKind.Object && data.TryGetProperty("ids", out var keptIds) && keptIds.ValueKind == JsonValueKind.Array: // a draft's files, the ones still here
     ShellSend(new { kind = "attached", to = S("to"), files = keptIds.EnumerateArray().Select(e => e.ValueKind == JsonValueKind.String ? Attachment(AttachmentsHere, e.GetString()!) : null)
-     .OfType<AiFile>().DistinctBy(f => f.Id).Take(MaxFiles).Select(f => new { id = f.Id, name = f.Name, size = f.Size }), error = "" }); break;
+     .OfType<AiFile>().DistinctBy(f => f.Id).Select(f => new { id = f.Id, name = f.Name, size = f.Size }), error = "" }); break;
    case "aiAnswer" when runs.GetValueOrDefault(S("id") is { Length: > 0 } answerId ? answerId : ShownChat?.Id ?? "") is { Question: { } q } answering: { // from the chat, or the running tasks list
     var asked = answering.Chat;
     string answer = S("text").Trim() is { Length: > 0 } a ? (a.Length > 2000 ? a[..2000] : a) : "";
@@ -1585,32 +1588,102 @@ public partial class MainWindow
   return answered ? Reply(new { answer = await asked.Answer.Task }) : Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.");
  }
 
- // Attachments: up to 10 a message, files up to 10 MB and images up to 5 MB (what the AI apps take).
- const int MaxFiles = 10;
- const long MaxFile = 10L << 20, MaxImage = 5L << 20;
+ // Attachments: any number, of any kind, up to 500 MB each. An image goes to the AI as a picture only up to 5 MB (what the AI apps take).
+ const long MaxAttach = 500L << 20, MaxImage = 5L << 20;
+ const string Part = ".stillpart"; // a file still coming in, in its attachment's folder
+ readonly Dictionary<string, CancellationTokenSource> copying = []; // picked or copied files being copied in, by id
+ readonly Dictionary<string, (string Name, long Size)> uploads = []; // dropped or pasted files coming in pieces, by id
  static string AttachmentsFolder => Path.Combine(AiFolder, "attachments");
  string AttachmentsHere => incognito ? Path.Combine(PrivateFolder, "attachments") : AttachmentsFolder;
  static string? ImageMime(string name) => Path.GetExtension(name).ToLowerInvariant() switch { ".png" => "image/png", ".jpg" or ".jpeg" => "image/jpeg", ".gif" => "image/gif", ".webp" => "image/webp", _ => null };
  static string SizeText(long b) => b < 1024 ? b + " B" : b < 1L << 20 ? $"{b / 1024.0:0.#} KB" : $"{b / 1048576.0:0.#} MB";
  static AiFile? Attachment(string folder, string id) => Regex.IsMatch(id, "^[a-f0-9]{16}$") && Directory.Exists(Path.Combine(folder, id))
-  && Directory.GetFiles(Path.Combine(folder, id)).FirstOrDefault() is { } path ? new() { Id = id, Name = Path.GetFileName(path), Size = new FileInfo(path).Length } : null;
+  && Directory.GetFiles(Path.Combine(folder, id)).FirstOrDefault(f => Path.GetFileName(f) != Part) is { } path ? new() { Id = id, Name = Path.GetFileName(path), Size = new FileInfo(path).Length } : null;
  static string FilesNote(List<AiFile> files) => $"\n\n[Still] The user attached {(files.Count == 1 ? "a file" : files.Count + " files")}: "
   + string.Join("; ", files.Select(f => $"\"{f.Name}\" ({SizeText(f.Size)}, id {f.Id})")) + ". Read each with read_attachment before you answer.";
 
- /// Keeps what was picked, dropped or pasted, and tells the box (to) what it got; anything too big is named in the error.
- void Attach(string to, IEnumerable<(string Name, long Size, Func<byte[]> Bytes)> picked)
+ static string AttachName(string raw) => string.Concat(Path.GetFileName(raw).Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim() is { Length: > 0 } n ? n[..Math.Min(n.Length, 120)] : "file";
+ static string TooBig(string name, long size) => $"{name} is {SizeText(size)}. Files can be up to 500 MB.";
+ void Gone(string folder) { try { Directory.Delete(folder, true); } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { } }
+
+ /// Copies picked or copied files in, one at a time and off the UI thread, telling the box (to) how far each is ("attaching") and what it got.
+ async void AttachPaths(string to, IEnumerable<string> paths)
  {
-  List<AiFile> files = []; List<string> errors = [];
-  foreach (var (raw, size, bytes) in picked)
+  foreach (var path in paths.ToList())
   {
-   string name = string.Concat(Path.GetFileName(raw).Select(ch => Path.GetInvalidFileNameChars().Contains(ch) ? '_' : ch)).Trim() is { Length: > 0 } n ? n[..Math.Min(n.Length, 120)] : "file";
-   long max = ImageMime(name) != null ? MaxImage : MaxFile;
-   if (size > max) { errors.Add($"{name} is {SizeText(size)}. {(max == MaxImage ? "Images" : "Files")} can be up to {max >> 20} MB."); continue; }
-   string id = Guid.NewGuid().ToString("N")[..16], folder = Path.Combine(AttachmentsHere, id);
-   try { var data = bytes(); if (data.Length > max) throw new IOException(); Directory.CreateDirectory(folder); File.WriteAllBytes(Path.Combine(folder, name), data); files.Add(new() { Id = id, Name = name, Size = data.Length }); }
-   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException) { errors.Add($"Couldn't add {name}."); }
+   string name = AttachName(path), id = Guid.NewGuid().ToString("N")[..16], folder = Path.Combine(AttachmentsHere, id), part = Path.Combine(folder, Part);
+   using var stop = new CancellationTokenSource();
+   copying[id] = stop;
+   try
+   {
+    long size = new FileInfo(path).Length;
+    if (size > MaxAttach) { ShellSend(new { kind = "attached", to, files = Array.Empty<object>(), error = TooBig(name, size) }); continue; }
+    Directory.CreateDirectory(folder);
+    await Task.Run(async () =>
+    {
+     using var from = File.OpenRead(path); using var into = File.Create(part);
+     var buffer = new byte[1 << 20]; var tick = Stopwatch.StartNew(); long done = 0; int n;
+     while ((n = await from.ReadAsync(buffer, stop.Token)) > 0)
+     {
+      await into.WriteAsync(buffer.AsMemory(0, n), stop.Token); done += n;
+      if (done > MaxAttach) throw new IOException("It grew past 500 MB.");
+      if (tick.ElapsedMilliseconds >= 150) { tick.Restart(); long now = done; _ = Dispatcher.InvokeAsync(() => ShellSend(new { kind = "attaching", to, key = id, name, size, done = now })); }
+     }
+    });
+    File.Move(part, Path.Combine(folder, name));
+    ShellSend(new { kind = "attached", to, key = id, files = new[] { new { id, name, size = new FileInfo(Path.Combine(folder, name)).Length } }, error = "" });
+   }
+   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or OperationCanceledException)
+   {
+    Gone(folder);
+    ShellSend(new { kind = "attached", to, key = id, files = Array.Empty<object>(), error = ex is OperationCanceledException ? "" : $"Couldn't add {name}." });
+   }
+   finally { copying.Remove(id); }
   }
-  ShellSend(new { kind = "attached", to, files = files.Select(f => new { id = f.Id, name = f.Name, size = f.Size }), error = string.Join(" ", errors) });
+ }
+
+ /// A file dropped or pasted in the box comes in pieces (key, offset): each is added to the file and acknowledged ("attachAck"),
+ /// and the last makes it one the box can send. Without a key it's one piece (as before pieces).
+ void AttachPiece(string to, string key, string raw, long size, long offset, string data)
+ {
+  bool whole = key.Length == 0;
+  if (whole) key = Guid.NewGuid().ToString("N")[..16];
+  string name = AttachName(raw), folder = Path.Combine(AttachmentsHere, key);
+  try
+  {
+   if (!Regex.IsMatch(key, "^[a-f0-9]{16}$")) throw new IOException("Not a key.");
+   var bytes = Convert.FromBase64String(data);
+   if (offset == 0)
+   {
+    if (whole) size = bytes.Length;
+    if (size > MaxAttach) { ShellSend(new { kind = "attached", to, key, files = Array.Empty<object>(), error = TooBig(name, size) }); return; }
+    if (Directory.Exists(folder)) throw new IOException("Taken.");
+    Directory.CreateDirectory(folder); uploads[key] = (name, size);
+   }
+   if (!uploads.TryGetValue(key, out var up)) throw new IOException("Not coming in.");
+   using (var into = new FileStream(Path.Combine(folder, Part), FileMode.Append))
+   {
+    if (into.Position != offset || offset + bytes.Length > up.Size) throw new IOException("Out of order.");
+    into.Write(bytes);
+   }
+   long done = offset + bytes.Length;
+   if (done < up.Size) { ShellSend(new { kind = "attachAck", key, done }); return; }
+   File.Move(Path.Combine(folder, Part), Path.Combine(folder, up.Name));
+   uploads.Remove(key);
+   ShellSend(new { kind = "attached", to, key, files = new[] { new { id = key, name = up.Name, size = up.Size } }, error = "" });
+  }
+  catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or FormatException)
+  {
+   if (uploads.Remove(key) || whole) Gone(folder);
+   ShellSend(new { kind = "attached", to, key, files = Array.Empty<object>(), error = $"Couldn't add {name}." });
+  }
+ }
+
+ /// The x on a file still coming in: a copy stops (and cleans up after itself), pieces stop being taken.
+ void CancelAttach(string key)
+ {
+  copying.GetValueOrDefault(key)?.Cancel();
+  if (uploads.Remove(key)) Gone(Path.Combine(AttachmentsHere, key));
  }
 
  /// read_attachment: text and code as text, a PDF's text, an image as itself.
@@ -1621,17 +1694,25 @@ public partial class MainWindow
   if (from == null || Attachment(from, id) is not { } file) return Fail("No attachment has that id. Use the id from the [Still] note in the user's message.");
   string path = Path.Combine(from, id, file.Name);
   Did(who, "Read " + file.Name);
-  if (ImageMime(file.Name) is { } mime) return Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
-  string text;
-  if (Path.GetExtension(file.Name).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
-   try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(path); text = string.Join("\n\n", pdf.GetPages().Select(p => UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(p))); }
-   catch (Exception ex) when (ex is not OutOfMemoryException) { return Fail($"Couldn't read {file.Name} as a PDF. Ask the user for another copy."); }
-  else
+  if (ImageMime(file.Name) is { } mime)
+   return file.Size > MaxImage ? Fail($"{file.Name} is a picture over 5 MB, too big to show you. Ask the user for a smaller copy.") : Reply(new { image = Convert.ToBase64String(File.ReadAllBytes(path)), mime });
+  if (!Path.GetExtension(file.Name).Equals(".pdf", StringComparison.OrdinalIgnoreCase))
   {
-   var bytes = File.ReadAllBytes(path);
-   if (bytes.AsSpan(0, Math.Min(bytes.Length, 8000)).Contains((byte)0)) return Fail($"{file.Name} isn't text, a PDF or an image Still can show you. Tell the user what you can read.");
-   text = Encoding.UTF8.GetString(bytes);
+   // Text a page at a time from the file itself (it can be 500 MB): 20000 bytes from offset, cut back to a whole character.
+   using var f = File.OpenRead(path);
+   var head = new byte[Math.Min(f.Length, 8000)]; f.ReadExactly(head);
+   if (head.AsSpan().Contains((byte)0)) return Fail($"{file.Name} isn't text, a PDF or an image Still can show you. Tell the user what you can read.");
+   long start = Math.Min(offset, f.Length); f.Position = start;
+   var page = new byte[Math.Min(20000, f.Length - start)]; f.ReadExactly(page);
+   int cut = page.Length;
+   if (start + cut < f.Length) { int i = cut - 1; while (i > 0 && (page[i] & 0xC0) == 0x80) i--; if (page[i] >= 0x80) cut = i; }
+   string words = Encoding.UTF8.GetString(page, 0, cut);
+   if (cut == f.Length && words.Trim().Length == 0) return Reply(new { name = file.Name, text = "(No text in this file.)" });
+   return Reply(new { name = file.Name, text = words, offset = start, next = start + cut < f.Length ? start + cut : (long?)null, length = f.Length });
   }
+  string text;
+  try { using var pdf = UglyToad.PdfPig.PdfDocument.Open(path); text = string.Join("\n\n", pdf.GetPages().Select(p => UglyToad.PdfPig.DocumentLayoutAnalysis.TextExtractor.ContentOrderTextExtractor.GetText(p))); }
+  catch (Exception ex) when (ex is not OutOfMemoryException) { return Fail($"Couldn't read {file.Name} as a PDF. Ask the user for another copy."); }
   if (text.Trim().Length == 0) return Reply(new { name = file.Name, text = "(No text in this file. If it's a scanned PDF, ask the user for the text or a picture of the pages.)" });
   int at = Math.Min(offset, text.Length), end = Math.Min(text.Length, at + 20000);
   return Reply(new { name = file.Name, text = text[at..end], offset = at, next = end < text.Length ? end : (int?)null, length = text.Length });

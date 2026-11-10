@@ -544,6 +544,8 @@ export default function App() {
    if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted ?? []) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
+   if (data.kind === "attaching") dispatchEvent(new CustomEvent("still-attaching", { detail: data }))
+   if (data.kind === "attachAck") dispatchEvent(new CustomEvent("still-attach-ack", { detail: data }))
    if (data.kind === "thumb") dispatchEvent(new CustomEvent("still-thumb", { detail: data }))
    if (data.kind === "pluginCatalog" || data.kind === "pluginLogos") dispatchEvent(new CustomEvent("still-" + data.kind, { detail: data.data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
