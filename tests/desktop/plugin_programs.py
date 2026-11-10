@@ -5,7 +5,7 @@ A companion with a plugin's skill gets its programs from load_skill and runs one
 CLAUDE_PLUGIN_ROOT set and its output and exit code coming back, and Always for this plugin stops asking for that one.
 Setup always asks, says it runs at your own risk and has no Always. A path outside the plugin, a file that isn't a
 program and a plugin the companion doesn't have are refused without a card. A program that runs too long is stopped.
-Settings > Privacy & permissions > Plugin programs: Don't ask runs them without a card, and Reset all asks again.
+Settings > Privacy & permissions > Autonomy: Hands-off runs them without a card, and Reset all asks again.
 Deleting the plugin's last skill deletes its folder.
 
 Usage: python tests/desktop/plugin_programs.py <QA exe>
@@ -207,12 +207,14 @@ def main():
         send(p, "openPanel", name="settings")
         until(lambda: js(p, "!!document.querySelector('.set-shell')"), 10)
         js(p, "[...document.querySelectorAll('.set-nav-item')].find(t => t.innerText.trim() === 'Privacy & permissions')?.click()")
-        row = until(lambda: js(p, "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).find(t => t.includes('Plugin programs')) ?? ''"), 10) or ""
-        check("Ask each time" in row, f"Settings show Plugin programs, Ask each time ({row[:120]!r})")
+        auto = "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).find(t => t.includes('Autonomy')) ?? ''"
+        row = until(lambda: js(p, auto), 10) or ""
+        check("Balanced" in row, f"Settings show Autonomy, Balanced ({row[:120]!r})")
         send(p, "permReset")
+        send(p, "permSet", site="", companion="", action="interact", mode="always")
+        send(p, "permNewSites", mode="fewer")
         send(p, "permPluginPrograms", mode="auto")
-        check(until(lambda: "Don't ask" in (js(p, "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).find(t => t.includes('Plugin programs')) ?? ''") or ""), 5),
-              "Don't ask shows in Settings")
+        check(until(lambda: "Hands-off" in (js(p, auto) or ""), 5), "Hands-off shows in Settings")
         send(p, "openPanel", name="settings")
         js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py", "args": ["auto"]}]])

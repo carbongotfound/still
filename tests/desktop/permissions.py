@@ -1436,7 +1436,7 @@ def settings(process):
     check("Any site" in table and "Sensitive steps" in table and "shop.example" in table and "Maya" in table, "Settings list the defaults and the rule for Maya on shop.example")
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
     row = js(process, "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).join(' | ')") or ""
-    check("New sites after reading the web" in row and "Balanced" in row, f"Settings show how careful to be with new sites, Balanced to start ({row[:160]!r})")
+    check("Autonomy" in row and "Balanced" in row, f"Settings show Autonomy, Balanced to start ({row[:160]!r})")
     capture(process, "permissions-v01")
     press(process, "Reset all", ".perm-settings")
     until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)

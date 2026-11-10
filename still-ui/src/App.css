@@ -920,6 +920,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 [data-slot=dropdown-menu-content], [data-slot=context-menu-content], [data-slot=select-content], .mode-mates { scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }
 .mode-text { display:flex; flex-direction:column; gap:1px; } .mode-text small { font-size:11.5px; line-height:1.35; color:var(--muted-foreground); }
 .mode-none { padding:6px 10px 8px; font-size:12.5px; color:var(--muted-foreground); }
+.mode-label { padding:10px 8px 4px !important; font-weight:450 !important; color:var(--muted-foreground); }
 .mode-advanced { display:flex; align-items:center; justify-content:space-between; padding:10px 8px 6px !important; font-weight:450 !important; color:var(--muted-foreground); }
 
 /* Skills in the message box: "/" opens a list, a picked skill shows as a chip */

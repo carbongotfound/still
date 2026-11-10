@@ -18,15 +18,23 @@ export type AuditEntry = { at: string; what: string; site: string; result: strin
 
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
 const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
-// After a chat reads the web, a page could send it somewhere new with what it read in the address.
-const PROGRAMS: Record<string, [string, string]> = {
- ask: ["Ask each time", "Before a companion runs a program from a plugin you added, Still asks. Always for this plugin stops asking for that one."],
- auto: ["Don't ask", "Companions run programs from plugins you added without asking, at your own risk. Setup still asks."],
+// How much companions do on their own. One pick sets clicking and typing for everyone on any site, new sites after reading
+// the web (Reach) and plugin programs; rules per site or companion still apply on top, and a mix that matches no level is Custom.
+export const AUTONOMY = {
+ careful: { name: "Careful", short: "Also asks before any long address", about: "Companions ask before clicking or typing on each site, once a chat. Once a chat has read the web, every new site asks, and so does any long address.", interact: "chat", newSites: "ask", programs: "ask" },
+ balanced: { name: "Balanced", short: "Asks once a chat on each site", about: "Companions ask before clicking or typing on each site, once a chat. Once a chat has read the web, every new site asks. Plugin programs ask each time.", interact: "chat", newSites: "balanced", programs: "ask" },
+ handsoff: { name: "Hands-off", short: "Asks only before risky steps", about: "Companions click, type, open new sites and run your plugins' programs without asking, at your own risk.", interact: "always", newSites: "fewer", programs: "auto" },
+} as const
+export type Autonomy = keyof typeof AUTONOMY
+export const ALWAYS_ASKS = "At every level, buying, sending, deleting, forms that send data, and password or payment fields ask first, and so do your own computer or network and a long address that carries data to a new site."
+export function autonomyOf(ai: AiState): Autonomy | "" {
+ const interact = ai.permissions?.find(r => r.action === "interact" && !r.site && !r.companion)?.mode ?? "chat"
+ const newSites = ai.newSites ?? "balanced", programs = ai.pluginPrograms === "auto" ? "auto" : "ask"
+ return (Object.keys(AUTONOMY) as Autonomy[]).find(k => AUTONOMY[k].interact === interact && AUTONOMY[k].newSites === newSites && AUTONOMY[k].programs === programs) ?? ""
 }
-const NEW_SITES: Record<string, [string, string]> = {
- ask: ["Ask first", "Once a chat has read the web, every new site asks, and so does any long address."],
- balanced: ["Balanced", "Once a chat has read the web, every new site asks. A long address asks when it goes to a new site or carries another address."],
- fewer: ["Fewer questions", "Only a long address to a new site asks, and anything on your own computer or network. A page a companion reads could send a little of it elsewhere."],
+export function setAutonomy(send: Send, level: Autonomy) {
+ const a = AUTONOMY[level]
+ send("permSet", { site: "", companion: "", action: "interact", mode: a.interact }); send("permNewSites", { mode: a.newSites }); send("permPluginPrograms", { mode: a.programs })
 }
 
 // Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
@@ -101,11 +109,15 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
  const rules = ai.permissions ?? [], companions = ai.companions ?? []
  const [site, setSite] = useState(""), [who, setWho] = useState("all"), [action, setAction] = useState("interact"), [mode, setMode] = useState("always")
  const [marked, setMarked] = useState("")
- const newSites = ai.newSites && NEW_SITES[ai.newSites] ? ai.newSites : "balanced", programs = ai.pluginPrograms === "auto" ? "auto" : "ask"
+ const level = autonomyOf(ai)
  const name = (id: string) => id ? companions.find(c => c.id === id)?.name ?? id : "Everyone"
  const where = (r: Rule) => `${ACTIONS[r.action]} on ${r.site || "any site"} for ${name(r.companion)}`
  return <div className="perm-settings">
   <p className="tool-caption">Choose what your companions may do without asking. Sensitive steps are buying, sending, deleting, forms that send data, and password or payment fields. Allowed without asking, a sensitive step still waits 8 seconds so you can cancel it. AI apps you connect from outside Still ask in the bar at the top before a sensitive step, and when a rule for everyone or a sensitive site says to.</p>
+  <div className="setting-row"><div><strong>Autonomy</strong><p>{level ? AUTONOMY[level].about : "Your own mix of the rules below."} {ALWAYS_ASKS}</p></div>
+   <Select value={level || "custom"} onValueChange={v => setAutonomy(send, v as Autonomy)}><SelectTrigger size="sm" aria-label="Autonomy"><SelectValue /></SelectTrigger>
+    <SelectContent>{!level && <SelectItem value="custom" disabled>Custom</SelectItem>}{(Object.keys(AUTONOMY) as Autonomy[]).map(id => <SelectItem key={id} value={id}>{AUTONOMY[id].name}</SelectItem>)}</SelectContent></Select></div>
+  <Separator />
   <table className="perm-table"><thead><tr><th>Site</th><th>Who</th><th>Action</th><th>Permission</th><th><span className="sr-only">Remove</span></th></tr></thead>
    <tbody>{rules.map(r => <tr key={r.site + "|" + r.action + "|" + r.companion}>
     <td>{r.site || "Any site"}</td><td>{name(r.companion)}</td><td>{ACTIONS[r.action]}</td>
@@ -122,21 +134,13 @@ export function PermissionsSettings({ ai, send }: { ai: AiState; send: Send }) {
    <Button type="submit" size="sm" variant="outline" disabled={!site.trim() && who === "all"}>Add</Button>
   </form>
   <Separator />
-  <div className="setting-row"><div><strong>New sites after reading the web</strong><p>{NEW_SITES[newSites][1]}</p></div>
-   <Select value={newSites} onValueChange={v => send("permNewSites", { mode: v })}><SelectTrigger size="sm" aria-label="New sites after reading the web"><SelectValue /></SelectTrigger>
-    <SelectContent>{Object.entries(NEW_SITES).map(([id, [text]]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select></div>
-  <Separator />
-  <div className="setting-row"><div><strong>Plugin programs</strong><p>{PROGRAMS[programs][1]}</p></div>
-   <Select value={programs} onValueChange={v => send("permPluginPrograms", { mode: v })}><SelectTrigger size="sm" aria-label="Plugin programs"><SelectValue /></SelectTrigger>
-    <SelectContent>{Object.entries(PROGRAMS).map(([id, [text]]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select></div>
-  <Separator />
   <div className="setting-row"><div><strong>Sensitive sites</strong><p>Every click and keystroke on these sites asks you first, like a purchase does.</p></div></div>
   <div className="perm-sites">{(ai.sensitiveSites ?? []).map(s => <span key={s} className="perm-site">{s}<button aria-label={"Remove " + s} title="Remove" onClick={() => send("permSensitive", { site: s, on: false })}><X /></button></span>)}
    <form onSubmit={e => { e.preventDefault(); if (marked.trim()) send("permSensitive", { site: marked, on: true }); setMarked("") }}>
     <Input aria-label="Add a sensitive site" placeholder="Add a site, like mybank.com" value={marked} onChange={e => setMarked(e.target.value)} /><Button type="submit" size="sm" variant="outline" disabled={!marked.trim()}>Add</Button>
    </form></div>
   <Separator />
-  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, new sites go back to Balanced, and plugin programs ask each time again.</p></div>
+  <div className="setting-row"><div><strong>Reset all</strong><p>Back to the start: reading and opening pages just happen, clicking and typing ask once per site in each chat, sensitive steps ask every time, and autonomy goes back to Balanced.</p></div>
    <Button variant="outline" size="sm" onClick={() => destroy({ key: "perm-reset", title: "Reset all permissions?", action: "Reset all", done: "Permissions reset",
     body: `Your ${(ai.permissions ?? []).length} rules and ${(ai.sensitiveSites ?? []).length} sensitive sites go, and companions ask like the first day.`, run: () => send("permReset") })}>Reset all</Button></div>
  </div>
