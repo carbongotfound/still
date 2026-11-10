@@ -1480,7 +1480,16 @@ if let index = CommandLine.arguments.firstIndex(of: "--read-profile"), index + 1
 if CommandLine.arguments.contains("--mcp") { Mcp.run(); exit(0) }
 if let index = CommandLine.arguments.firstIndex(of: "--cli") { exit(Mcp.cli(Array(CommandLine.arguments[(index + 1)...]))) }
 
-let app = NSApplication.shared
+/// A key a companion sends a page that the page doesn't take, WebKit hands back to the app, which gives it to whatever holds
+/// the keyboard: Still's message box, the user's own tab, a menu shortcut. Those keys stop here instead.
+final class StillApp: NSApplication {
+ override func sendEvent(_ event: NSEvent) {
+  if sentKeys.contains(event) { return }
+  super.sendEvent(event)
+ }
+}
+
+let app = StillApp.shared
 let delegate = AppDelegate()
 app.delegate = delegate
 app.setActivationPolicy(.regular)

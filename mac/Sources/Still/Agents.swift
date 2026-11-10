@@ -447,6 +447,7 @@ let macKeys: [String: (keyCode: UInt16, text: String)] = [
  "Home": (115, "\u{f729}"), "End": (119, "\u{f72b}"), "PageUp": (116, "\u{f72c}"), "PageDown": (121, "\u{f72d}"), "Space": (49, " ")
 ]
 let macKeyOrder = Array("asdfhgzxcv§bqweryt123465=97-80]ou[ip\rlj'k;\\,/nm.\t `")
+@MainActor let sentKeys = NSHashTable<NSEvent>.weakObjects() // the keys sendKey made, which StillApp never passes on
 /// Key events for a key from keyInfo.
 @MainActor func sendKey(_ view: WKWebView, _ info: [String: Any]) -> Bool {
  guard let window = view.window else { return false }
@@ -460,6 +461,7 @@ let macKeyOrder = Array("asdfhgzxcv§bqweryt123465=97-80]ou[ip\rlj'k;\\,/nm.\t `
  for type in [NSEvent.EventType.keyDown, .keyUp] {
   guard let event = NSEvent.keyEvent(with: type, location: .zero, modifierFlags: flags, timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
                                      context: nil, characters: text, charactersIgnoringModifiers: text.lowercased(), isARepeat: false, keyCode: code) else { return false }
+  sentKeys.add(event)
   if type == .keyDown { view.keyDown(with: event) } else { view.keyUp(with: event) }
  }
  if (flags.contains(.command) || flags.contains(.control)) && key.lowercased() == "a" { NSApp.sendAction(#selector(NSText.selectAll(_:)), to: view, from: nil) } // the menu's job on the Mac
