@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon } from "lucide-react"
+import { ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, ThumbsDown, ThumbsUp } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -49,7 +49,7 @@ export type AiState = {
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean; took?: number | null }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean; took?: number | null; rating?: string | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string; plugin?: boolean } // stock: one Still ships (Reset puts it back); source: where an added one came from; plugin: it came with programs
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; tool?: string; target?: string; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
@@ -155,6 +155,33 @@ function Work({ steps, live, took, onLink }: { steps: Message[]; live: boolean; 
  return <details className="ai-work"><summary className="ai-work-head">{took ? "Worked for " + clock(took) : steps.length + " steps"}{state}<ChevronDown className="ai-steps-chevron" /></summary>{list}</details>
 }
 
+// Under each answer: copy it as plain text, share it, a thumb up or down (kept on the reply; the companion hears it once,
+// with your next message), run your message again (the last answer only), and more: copy as Markdown, save as a file.
+const plainOf = (md: string) => md.replace(/^\s*```.*$/gm, "").replace(/^#{1,6}\s+/gm, "").replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, (_, t: string, u: string) => t && t !== u ? `${t} (${u})` : u)
+ .replace(/\*\*|__|`/g, "").replace(/(^|[^\w*])\*(?=\S)([^*\n]+?)\*(?![\w*])/g, "$1$2").replace(/\n{3,}/g, "\n\n").trim()
+function ReplyActions({ m, body, title, again, send }: { m: Message; body: string; title: string; again?: Message; send: Send }) {
+ const [asking, setAsking] = useState(false)
+ const copy = (text: string) => { send("copyText", { text }); toast("Copied") }
+ const share = async () => {
+  const text = plainOf(body)
+  try { if (navigator.share) return await navigator.share({ title, text }) } catch (e) { if ((e as Error).name === "AbortError") return }
+  copy(text) // no share sheet here: copied, to paste where it goes
+ }
+ const rate = (to: string) => send("aiRate", { text: m.text, rating: m.rating === to ? "" : to })
+ if (asking && again) return <div className="ai-actions is-asking"><span>Forget this reply and run your message again?</span><Button size="sm" variant="ghost" onClick={() => setAsking(false)}>Cancel</Button>
+  <Button size="sm" onClick={() => { send("aiEdit", { was: again.text, text: again.text }); setAsking(false) }}>Regenerate</Button></div>
+ return <div className="ai-actions">
+  <IconButton label="Copy" onClick={() => copy(plainOf(body))}><Copy /></IconButton>
+  <IconButton label="Share" onClick={share}><Share /></IconButton>
+  <IconButton label="Good reply" pressed={m.rating === "up"} onClick={() => rate("up")}><ThumbsUp /></IconButton>
+  <IconButton label="Bad reply" pressed={m.rating === "down"} onClick={() => rate("down")}><ThumbsDown /></IconButton>
+  {again && <IconButton label="Regenerate" onClick={() => setAsking(true)}><RefreshCw /></IconButton>}
+  <DropdownMenu><Tip label="More"><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button></DropdownMenuTrigger></Tip>
+   <DropdownMenuContent align="start"><DropdownMenuItem onSelect={() => copy(body)}><Copy />Copy as Markdown</DropdownMenuItem>
+    <DropdownMenuItem onSelect={() => send("saveText", { name: title, text: body })}><Download />Save as file</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+ </div>
+}
+
 // Before setup makes one there's no companion: Still itself talks, with the default look.
 export const companionOf = (ai: AiState | undefined, id?: string) => ai?.companions?.find(c => c.id === id) ?? ai?.companions?.[0] ?? (ai ? FALLBACK : undefined)
 
@@ -163,8 +190,8 @@ function Tip({ label, children }: { label: ReactNode; children: ReactElement }) 
  return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
 }
 
-function IconButton({ label, onClick, disabled, children }: { label: string; onClick: () => void; disabled?: boolean; children: ReactNode }) {
- return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
+function IconButton({ label, onClick, disabled, pressed, children }: { label: string; onClick: () => void; disabled?: boolean; pressed?: boolean; children: ReactNode }) {
+ return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
 // "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
@@ -886,7 +913,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
      {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
-     <div className="ai-actions"><IconButton label="Copy" onClick={() => { send("copyText", { text: body }); toast("Copied") }}><Copy /></IconButton></div>
+     <ReplyActions m={m} body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 20000 ? latestPrompt : undefined} send={send} />
     </div>
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<div className="ai-live">

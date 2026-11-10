@@ -22,6 +22,7 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Reply { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Chat { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Title { get; set; } // what was asked for, in a few words
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Rating { get; set; } // a reply: the user's thumb, up or down
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] public int Took { get; set; } // a run's last step: how long the run took, in seconds ("Worked for…")
 }
 /// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
@@ -272,6 +273,7 @@ public partial class MainWindow
  static bool OnCompanion(string who) => runs.GetValueOrDefault(who) is { } r ? r.Chat is { Ephemeral: false, Profile: CompanionProfile } : sharedState?.Preferences.AgentProfile == CompanionProfile;
  const string CompanionProfile = "companion";
  static string? NewChatProfile(bool incognito) => !incognito && sharedState?.Preferences.AgentProfile == CompanionProfile ? CompanionProfile : null;
+ static readonly Dictionary<string, string> ratings = []; // a thumb the user put on a reply: the chat's AI hears it once, with the next message
  static readonly HashSet<string> profileSwitched = []; // chats whose profile the user just switched: their AI hears it on the next turn
  /// Closing an incognito window ends its chats: their runs stop (the AI app's processes with them) and their files go.
  void EndIncognito()
@@ -521,7 +523,7 @@ public partial class MainWindow
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion,
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, rating = m.Rating, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
    .SelectMany(r => r.Approvals.Select(a => new { id = a.Id, run = r.Chat.Id, who = r.Chat.Companion, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until })),
@@ -618,6 +620,13 @@ public partial class MainWindow
     var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files);
     Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
     await run;
+    break; }
+   case "aiRate" when ShownChat is { } rated && rated.Messages.FindLastIndex(m => m.Role == "assistant" && m.Text == S("text")) is >= 0 and var at: {
+    string? to = S("rating") is "up" or "down" ? S("rating") : null;
+    rated.Messages[at].Rating = to;
+    if (to == null) ratings.Remove(rated.Id);
+    else ratings[rated.Id] = $"[Still] The user gave your reply \"{CompanionMemory.Clip(rated.Messages[at].Text.ReplaceLineEndings(" "), 120)}\" a thumbs {to}" + (to == "up" ? "." : ": something in it missed. If this message doesn't say what, ask.");
+    SaveAiChats(); PublishAiEverywhere();
     break; }
    case "aiEdit" when ShownChat is { } editing && S("text").Trim() is { Length: > 0 and <= 20000 } rewritten: {
     // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
@@ -1131,6 +1140,7 @@ public partial class MainWindow
    + (chat.Ephemeral ? "This is an incognito chat: Still keeps nothing from it, so your memory is read only (you can recall, not remember or forget), knowledge files can be read, not changed, routines and saved files are off, your pages open in private tabs, and connected apps (plugins) are off.\n\n" : chat.NoMemory ? "This chat is off the record: the user asked you not to remember it, so don't call remember.\n\n" : "")
    + (chat.Profile == CompanionProfile && !chat.Ephemeral ? CompanionNote + "\n\n" : ""))
    + (profileSwitched.Remove(chat.Id) && chat.Started ? "[Still] " + (chat.Profile == CompanionProfile ? "The user switched this chat to browse in the companion profile: " + CompanionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : "")
+   + (ratings.Remove(chat.Id, out var rating) ? rating + "\n\n" : "")
    + (changed.Length > 0 ? changed + "\n\n" : "")
    + string.Concat(skills.Select(k => k.Prompt + "\n\n")) + AiContext(chat) + "\n\n" + text;
   if (App.IsQa && !chat.Ephemeral) try { File.AppendAllText(Path.Combine(App.DataRoot, "qa-prompts.jsonl"), JsonSerializer.Serialize(new { chat = chat.Id, companion = chat.Companion, prompt }) + "\n"); } catch (IOException) { }

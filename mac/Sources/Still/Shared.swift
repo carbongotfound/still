@@ -29,11 +29,12 @@ final class AiMessage: Codable {
  var who: String?, to: String?, status: String?, reply: String?, chat: String?
  var title: String? // an ask/tell card: what was asked for, in a few words
  var took: Int? // a run's last step: how long the run took, in seconds ("Worked for…")
+ var rating: String? // a reply: the user's thumb, up or down
  init(_ role: String, _ text: String, who: String? = nil) { self.role = role; self.text = text; self.who = who }
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
   role = c.value(.role, role); text = c.value(.text, text); files = c.value(.files, files)
-  who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat); title = c.value(.title, title); took = c.value(.took, took)
+  who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat); title = c.value(.title, title); took = c.value(.took, took); rating = c.value(.rating, rating)
  }
 }
 final class AiAudit: Codable {

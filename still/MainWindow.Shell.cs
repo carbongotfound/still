@@ -242,7 +242,19 @@ public partial class MainWindow
      case "focus":focusMode=!focusMode;ApplyLayout();break;
      case "panel":panel=S("name");break;
      case "drag":ReleaseCapture();SendMessage(new WindowInteropHelper(this).Handle,0xA1,new IntPtr(2),IntPtr.Zero);break;
-     case "copyText":{var text=S("text");if(text.Length is >0 and <=8192&&!App.IsQa)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
+     case "copyText":{var text=S("text");if(text.Length is >0 and <=100000&&!App.IsQa)try{Clipboard.SetText(text);}catch(System.Runtime.InteropServices.COMException){}break;}
+     case "saveText":{ // a reply, saved where the user picks
+      var body=S("text");if(body.Length==0)break;string file="";
+#if STILL_QA
+      file=qaExportPath;
+#else
+      var name=string.Concat(S("name").Split(Path.GetInvalidFileNameChars())).Trim() is {Length:>0} n?n[..Math.Min(n.Length,80)]:"Reply";
+      var dialog=new SaveFileDialog{Title="Save reply",FileName=name+".md",Filter="Markdown|*.md|Text|*.txt"};
+      if(dialog.ShowDialog(this)==true)file=dialog.FileName;
+#endif
+      if(file.Length==0)break;
+      try{File.WriteAllText(file,body);Toast("Saved "+Path.GetFileName(file)+".");}catch(Exception ex)when(ex is IOException or UnauthorizedAccessException){Toast("Couldn't save it: "+ex.Message);}
+      break;}
      case "fullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>await ToggleFullScreen());break;
      case "exitFullscreen":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,async()=>{if(IsFullScreen){browserFullScreen=false;await ExitContentFullScreen();}});break;
      case "maximize":_=Dispatcher.BeginInvoke(DispatcherPriority.Input,()=>{if(IsFullScreen){browserFullScreen=false;_=ExitContentFullScreen();}else ToggleMaximize();});break;

@@ -263,6 +263,7 @@ func onCompanion(_ who: String) -> Bool {
  return store.prefs["AgentProfile"] as? String == "companion"
 }
 func newChatProfile(_ incognito: Bool) -> String? { !incognito && store.prefs["AgentProfile"] as? String == "companion" ? "companion" : nil }
+var ratings = [String: String]() // a thumb the user put on a reply: the chat's AI hears it once, with the next message
 var profileSwitched = Set<String>() // chats whose profile the user just switched: their AI hears it on the next turn
 let companionNote = "Your pages open in the companion profile: a separate browser profile with its own sign-ins and cookies, apart from the user's. If a site needs the user signed in, open it and ask_user so they can sign in there."
 /// The chats a chat sits with: the saved ones, or its incognito window's.
@@ -1053,6 +1054,12 @@ extension Browser {
    aiChats.insert(kick, at: 0); saveAiChats(); kickoffs.insert(kick.id)
    go(appTab(), "chat:" + kick.id); v.chat = kick
    runAi(kick, activation(fresh, true), shown: "") // the title comes from its hello
+  case "aiRate":
+   guard let rated = shownChat, let at = rated.messages.lastIndex(where: { $0.role == "assistant" && $0.text == s("text") }) else { break }
+   let to = ["up", "down"].contains(s("rating")) ? s("rating") : nil
+   rated.messages[at].rating = to
+   ratings[rated.id] = to.map { "[Still] The user gave your reply \"\(clipped(rated.messages[at].text.replacingOccurrences(of: "\n", with: " "), 120))\" a thumbs \($0)" + ($0 == "up" ? "." : ": something in it missed. If this message doesn't say what, ask.") }
+   saveAiChats(rated); publishAiEverywhere()
   case "aiEdit":
    // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
    let rewritten = tidy(s("text")), was = s("was")
@@ -1453,7 +1460,7 @@ extension Browser {
    + (chat.profile == "companion" && !chat.ephemeral ? companionNote + "\n\n" : "")
   let switched = profileSwitched.remove(chat.id) != nil && chat.started
    ? "[Still] " + (chat.profile == "companion" ? "The user switched this chat to browse in the companion profile: " + companionNote : "The user switched this chat to browse in their own profile, with their sign-ins.") + " Your earlier pages were closed. Before you act on a site, check who you're signed in as.\n\n" : ""
-  let prompt = intro + switched + (changed.isEmpty ? "" : changed + "\n\n") + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
+  let prompt = intro + switched + (ratings.removeValue(forKey: chat.id).map { $0 + "\n\n" } ?? "") + (changed.isEmpty ? "" : changed + "\n\n") + skills.map { $0.prompt + "\n\n" }.joined() + aiContext(chat) + "\n\n" + text
   if isQa, !chat.ephemeral, let line = try? JSONSerialization.data(withJSONObject: ["chat": chat.id, "companion": chat.companion, "prompt": prompt]) { // QA builds: the evals and skill tests read it; never an incognito chat's
    let file = support.appendingPathComponent("qa-prompts.jsonl"), entry = line + Data("\n".utf8)
    if let h = try? FileHandle(forWritingTo: file) { h.seekToEndOfFile(); h.write(entry); try? h.close() } else { try? entry.write(to: file) }
@@ -1628,7 +1635,7 @@ extension Browser {
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(),
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
-    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "took": $0.took ?? 0, "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
+    "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "took": $0.took ?? 0, "rating": $0.rating ?? "", "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
    "companions": companions.map { c -> [String: Any] in ["id": c.id, "name": c.name, "face": c.face, "color": c.color, "look": c.look, "job": c.job, "ai": c.ai, "mode": c.mode, "skills": c.skills, "tone": c.tone, "role": c.role, "personality": c.personality, "length": c.length, "folder": c.folder, "crew": c.crew, "askName": c.askName, "pluginsOff": c.pluginsOff, "instructions": c.instructions, "routines": c.routines.map(\.shell),
     "setup": c.setup == "pending" ? "pending" : "done", "capture": c.capture, "joinSection": !c.joinKept && joinSection(c.instructions) != nil,

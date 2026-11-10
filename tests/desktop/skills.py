@@ -101,6 +101,8 @@ FAKE = textwrap.dedent(r'''
         text('Pick what matters.\n\n```choices\n{"question": "Which should I compare?", "type": "multiple", "options": ["Price", "Weight", "Battery"]}\n```')
     elif verb == "DROP":
         text('Which day?\n\n```choices\n{"question": "Pick a day", "type": "dropdown", "options": ["Day 1", "Day 2", "Day 3", "Day 4", "Day 5", "Day 6", "Day 7", "Day 8", "Day 9"]}\n```')
+    elif verb == "RATE":
+        text("Here's **the plan**: book `Alfama House` and see [the map](https://example.com/map).")
     elif verb == "BADJSON":
         text("Here's a list.\n\n```choices\nnot json at all\n```")
     elif verb == "NEXT":
@@ -415,6 +417,47 @@ def main():
             check(reply.startswith("Here's a list"), f"and across a reply ({reply!r})")
             got = copy_keys(p)
             check(got.startswith("Here's a list") and (clipboard() or "").startswith("Here's a list"), f"Ctrl+C copies it ({got!r})")
+
+        # Under an answer: Copy, Share, a thumb up and down and More; the last answer Regenerate too.
+        again(p, nora, "RATE")
+        acts = "[...document.querySelectorAll('.chat-view .ai-turn > .ai-actions')]"
+        rated = "[...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.querySelector('.ai-msg.is-assistant')?.innerText.startsWith(\"Here's the plan\"))?.querySelector('.ai-actions')"
+        labels = js(p, f"{acts}.map(a => [...a.querySelectorAll('button')].map(b => b.getAttribute('aria-label')).join(','))") or []
+        check(labels and labels[-1] == "Copy,Share,Good reply,Bad reply,Regenerate,More" and all(l == "Copy,Share,Good reply,Bad reply,More" for l in labels[:-1]),
+              f"Every answer has Copy, Share, a thumb up and down and More; the last one Regenerate too ({labels[-2:]})")
+        js(p, "window.__shared = null; navigator.share = d => { window.__shared = d; return Promise.resolve() }")
+        js(p, f"{rated}.querySelector('[aria-label=Share]').click()")
+        shared = until(lambda: js(p, "window.__shared"), 5) or {}
+        check(shared.get("text") == "Here's the plan: book Alfama House and see the map (https://example.com/map).", f"Share hands over the reply as plain text ({shared})")
+        js(p, f"{rated}.querySelector('[aria-label=\"Bad reply\"]').click()")
+        down = until(lambda: next((m.get("Rating") for m in chat(nora)["Messages"] if m["Text"].startswith("Here's **the plan**")), None), 5)
+        pressed = until(lambda: js(p, f"{rated}.querySelector('[aria-label=\"Bad reply\"]').getAttribute('aria-pressed')") == "true", 5)
+        check(down == "down" and pressed, f"A thumb down stays on the reply ({down!r}, {pressed})")
+        n = len(lines("qa-prompts.jsonl"))
+        again(p, nora, "Thanks")
+        sent = [entry["prompt"] for entry in lines("qa-prompts.jsonl")[n:] if entry["chat"] == nora]
+        check(sent and "[Still] The user gave your reply \"Here's **the plan**" in sent[-1] and "a thumbs down" in sent[-1], "The companion hears it with the next message")
+        n = len(lines("qa-prompts.jsonl"))
+        again(p, nora, "And again")
+        sent = [entry["prompt"] for entry in lines("qa-prompts.jsonl")[n:] if entry["chat"] == nora]
+        check(sent and "thumbs" not in sent[-1], "and only once")
+        out = RUN / "reply.md"
+        rpc(p, "osAuth", answer="deny", exportPath=str(out))
+        js(p, f"{rated}.querySelector('[aria-label=More]').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
+        items = until(lambda: js(p, "[...document.querySelectorAll('[role=menuitem]')].map(e => e.innerText.trim())"), 5) or []
+        js(p, "[...document.querySelectorAll('[role=menuitem]')].find(e => e.innerText.trim() === 'Save as file')?.click()")
+        saved = until(lambda: out.exists() and out.read_text(encoding="utf-8"), 5)
+        check(items == ["Copy as Markdown", "Save as file"] and saved == "Here's **the plan**: book `Alfama House` and see [the map](https://example.com/map).",
+              f"More has Copy as Markdown and Save as file, which saves the reply as Markdown ({items}, {saved!r})")
+        js(p, f"{acts}.pop().querySelector('[aria-label=Regenerate]').click()")
+        ask = until(lambda: (t := js(p, f"{acts}.pop().innerText")) and "Forget" in t and t, 5) or ""
+        check("Forget this reply and run your message again?" in ask, f"Regenerate asks first ({ask!r})")
+        before, n = len(chat(nora)["Messages"]), len(lines("qa-prompts.jsonl"))
+        js(p, f"[...{acts}.pop().querySelectorAll('button')].find(b => b.innerText.trim() === 'Regenerate').click()")
+        until(lambda: len(lines("qa-prompts.jsonl")) > n and not chat(nora).get("Running") and chat(nora)["Messages"][-1]["Role"] == "assistant", 30)
+        sent = [entry["prompt"] for entry in lines("qa-prompts.jsonl")[n:] if entry["chat"] == nora]
+        check(len(sent) == 1 and sent[0].rstrip().endswith("And again") and len(chat(nora)["Messages"]) == before and users(nora)[-1] == "And again",
+              "Then it forgets the reply and runs your message again in its place")
 
         # Media: an image and a video link on lines of their own show as cards; the image waits for Show image.
         again(p, nora, "MEDIA")

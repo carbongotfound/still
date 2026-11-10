@@ -490,7 +490,17 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   case "drag": dragWindow()
   case "copyText":
    let value = text("text")
-   if !isQa && !value.isEmpty && value.count <= 8192 { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }
+   if !isQa && !value.isEmpty && value.count <= 100_000 { NSPasteboard.general.clearContents(); NSPasteboard.general.setString(value, forType: .string) }
+  case "saveText": // a reply, saved where the user picks
+   let body = text("text"), name = text("name").components(separatedBy: CharacterSet(charactersIn: "/:\\")).joined().trimmingCharacters(in: .whitespaces)
+   guard !body.isEmpty else { break }
+   let write = { [self] (url: URL) in do { try body.write(to: url, atomically: true, encoding: .utf8); toast("Saved " + url.lastPathComponent + ".") } catch { toast("Couldn't save it: " + error.localizedDescription) } }
+   #if STILL_QA
+   if isQa { if !qaExportPath.isEmpty { write(URL(fileURLWithPath: qaExportPath)) }; break }
+   #endif
+   let picker = NSSavePanel()
+   picker.nameFieldStringValue = (name.isEmpty ? "Reply" : String(name.prefix(80))) + ".md"
+   picker.beginSheetModal(for: window) { if $0 == .OK, let url = picker.url { write(url) } }
   case "fullscreen": window.toggleFullScreen(nil)
   case "exitFullscreen": if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) }
   case "maximize": if window.styleMask.contains(.fullScreen) { window.toggleFullScreen(nil) } else { window.zoom(nil) }
