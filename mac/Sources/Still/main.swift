@@ -598,17 +598,20 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { if version == self.overlayVersion { self.layoutPages() } }
  }
 
- /// The shown page fills the page slot; a split pair shares it, 6 points apart.
+ /// The shown page fills the page slot; a split pair shares it, 6 points apart. A page out of view keeps a real size when the
+ /// slot folds away (a chat in front with no page beside it): laid out at 1x1, a companion working in it could click nothing.
  func layoutPages() {
   let shown = self.shown, partner = self.partner
   let leftWidth = ((pageFrame.width - 6) * splitRatio).rounded()
   for tab in tabs {
    guard let view = tab.view else { continue }
+   let showing = tab === shown || tab === partner
    var frame = pageFrame
    if partner != nil && tab === splitLeft { frame.size.width = max(1, leftWidth) }
    if partner != nil && tab === splitRight { frame.origin.x += leftWidth + 6; frame.size.width = max(1, pageFrame.width - 6 - leftWidth) }
+   if !showing && (frame.width <= 1 || frame.height <= 1) { frame = view.frame.width > 1 && view.frame.height > 1 ? view.frame : root.bounds }
    if view.frame != frame { view.frame = frame }
-   view.isHidden = !(tab === shown || tab === partner) || overlay
+   view.isHidden = !showing || overlay
   }
   cutHoles()
  }

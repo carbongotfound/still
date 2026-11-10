@@ -15,7 +15,7 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
 from mcp_client import Mcp  # noqa: E402
-from qa import launch, rpc  # noqa: E402
+from qa import launch, rpc, send  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[2]
 RUN = ROOT / "artifacts" / ("seen-" + uuid.uuid4().hex[:8])
@@ -26,7 +26,7 @@ FAILED = []
 PAGE = """<!doctype html><meta charset=utf-8><title>Seen</title>
 <style>body{font:15px system-ui;overflow-x:hidden} .sr{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}</style>
 <p>Plain words a person sees</p>
-<button id=shown>Shown button</button>
+<button id=shown onclick="this.textContent='Shown button '+(window.n=(window.n||0)+1)">Shown button</button>
 <div style="opacity:0"><button id=ghost>Ghost button</button><p>Ghost words</p></div>
 <button id=sronly class=sr>Reader-only button</button>
 <p class=sr>Reader-only words</p>
@@ -88,7 +88,9 @@ def main():
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     url = "http://127.0.0.1:%d" % server.server_address[1]
-    PROFILE.mkdir(parents=True)
+    (PROFILE / "ai").mkdir(parents=True)
+    (PROFILE / "ai" / "chats.json").write_text(json.dumps([{"Id": "look", "Title": "A look around", "Harness": "claude", "Started": True, "Updated": "2026-10-01T10:00:00Z",
+        "Messages": [{"Role": "user", "Text": "Look around."}, {"Role": "assistant", "Text": "Done."}]}]))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"AgentsEnabled": True, "ApprovedAgents": ["Tester"]},
         "Tabs": [{"Id": "home", "Title": "Mine", "Url": url + "/frame"}], "ActiveId": "home"}))
     p = launch(EXE, PROFILE)
@@ -138,6 +140,11 @@ def main():
         check("Drawn:hello" in page and "hellohello" not in page, f"and it went in once ({page[page.find('Drawn'):][:40]!r})")
 
         check(rpc(p)["activeId"] != tab, "All this time the user's own tab stayed selected")
+
+        send(p, "chatOpen", id="look")  # a chat in front with no page beside it: the page slot folds away
+        time.sleep(1.5)
+        ok, said = client.call("click", text="Shown button", tabId=tab)
+        check(ok and "outside the visible page" not in said, f"A page out of view keeps its size while a chat fills the window ({said[:90]})")
     finally:
         if client:
             client.close()
