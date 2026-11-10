@@ -585,6 +585,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
   caret.current = restore.current = kept?.sel?.[1] // back where it was, or at the end
   if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); caretAt(el, kept.sel?.[1] ?? Infinity) }
+  else if (kept?.sel && el && !document.hasFocus() && document.activeElement === document.body) caretAt(el, kept.sel[1]) // no focus event comes while the window isn't focused: the caret waits in the box
  }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  // The caret at the end of the box (it isn't in the box yet).
  const end = () => { const el = box.current, s = getSelection(); if (!el || !s) return; el.focus(); s.selectAllChildren(el); s.collapseToEnd() }
