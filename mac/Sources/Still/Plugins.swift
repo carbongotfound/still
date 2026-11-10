@@ -354,7 +354,7 @@ extension Browser {
  @MainActor func pluginTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
   guard let run = runs[who] else { return agentFail("Plugins are only for Still's own companions.") }
   if run.chat.ephemeral { return agentFail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.") }
-  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.") }
+  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on in Skills & plugins.") }
   // A helper works for whoever asked: an app any of them has off stays off.
   let team = exchangeOf(run.chat).chain.map { id in companions.first { $0.id == id } }
   func mine(_ slug: String) -> Bool { team.allSatisfy { $0?.pluginsOff.contains(slug) != true } }

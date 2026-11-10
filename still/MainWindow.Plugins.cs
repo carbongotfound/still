@@ -312,7 +312,7 @@ public partial class MainWindow
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Plugins are only for Still's own companions.");
   if (run.Chat.Ephemeral) return Fail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.");
-  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Tell them they can turn plugins on in Skills & plugins.");
+  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on in Skills & plugins.");
   // A helper works for whoever asked: an app any of them has off stays off.
   var team = ExchangeOf(run.Chat).Chain.Select(id => Companions.FirstOrDefault(c => c.Id == id)).ToList();
   bool Mine(string slug) => team.All(mate => mate?.PluginsOff.Contains(slug) != true);
