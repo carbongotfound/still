@@ -608,6 +608,14 @@ let agentFocusScript = #"""
  const quiet = e => e.stopImmediatePropagation();
  document.addEventListener('visibilitychange', quiet, true); document.addEventListener('webkitvisibilitychange', quiet, true);
  window.addEventListener('blur', e => { if (e.target === window) quiet(e); }, true);
+ // Out of view the page has no focus of its own, so WebKit sends focusin and focusout but no focus or blur, and a page that
+ // saves a field when it's left (Google's document names) never does. Each one it leaves out is sent here.
+ let blurred = null, focused = null;
+ document.addEventListener('blur', e => { if (e.isTrusted) blurred = e.composedPath()[0]; }, true);
+ document.addEventListener('focus', e => { if (e.isTrusted) focused = e.composedPath()[0]; }, true);
+ const also = (type, e, sent) => { const t = e.composedPath()[0]; if (e.isTrusted && sent !== t) t.dispatchEvent(new FocusEvent(type, { relatedTarget: e.relatedTarget })); };
+ document.addEventListener('focusout', e => { also('blur', e, blurred); blurred = null; }, true);
+ document.addEventListener('focusin', e => { also('focus', e, focused); focused = null; }, true);
  return true; })()
 """#
 

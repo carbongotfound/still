@@ -48,6 +48,7 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Seen</title>
 <div style="position:relative;height:30px"><div style="height:0;overflow:hidden"><button style="position:absolute;top:0;left:0">Spilled button</button></div></div>
 <div style="position:relative;height:0;overflow:hidden"><button style="position:absolute;top:0;left:0">Held button</button></div>
 <button onclick="requestAnimationFrame(() => this.textContent = 'Opened on a frame')">Opens on a frame</button>
+<input id=title aria-label="Form name" onblur="saved.textContent = 'Saved as ' + this.value"> <span id=saved></span>
 <input id=stuck placeholder="Stuck field" oninput="this.value=''">
 <div id=canvas onclick="kix.contentDocument.querySelector('[contenteditable]').focus()" style="width:300px;height:60px;border:1px solid #888">Drawn:<span id=drawn></span></div>
 <iframe id=kix src="/kix" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
@@ -148,6 +149,11 @@ def main():
         check(ok and "outside the visible page" not in said, f"A page out of view keeps its size while a chat fills the window ({said[:90]})")
         ok, said = client.call("click", text="Opens on a frame", tabId=tab)
         check(ok, f"and what waits for its next frame still happens, like Google's dialogs ({said[:90]})")
+        client.call("click", selector="#title", tabId=tab)
+        client.call("type", text="Hiring", tabId=tab)
+        client.call("press_key", key="Tab", tabId=tab)
+        page = text_of(client.call("read_page", tabId=tab)[1])
+        check("Saved as Hiring" in page, f"and a field it leaves hears so, like a Google document's name ({page[page.find('Form name'):][:60]!r})")
     finally:
         if client:
             client.close()
