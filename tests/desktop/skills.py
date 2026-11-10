@@ -324,13 +324,15 @@ def main():
         check("Fix the list of options" in typed, "A /skill the user types brings its body into that turn")
         check(any(m["Role"] == "tool" and m["Text"] == "Used skill Compare options" for m in chat(nora)["Messages"][-4:]), "with a Used skill step")
 
-        # Next steps show as light suggestion rows, each with its lightbulb, not as a card, and without the markup.
+        # Next steps show as plain muted lines, each with a small arrow, not as a card or a box, and without the markup.
         again(p, nora, "NEXT")
         steps = "[...document.querySelectorAll('.chat-view .ai-next .ai-next-step')]"
         shown = until(lambda: js(p, steps + ".map(b => b.innerText.trim())"), 10) or []
-        check(shown == ["Compare the two cheapest options", "Check delivery times", "Save the table"] and js(p, steps + ".every(b => b.querySelector('svg'))")
+        plain = js(p, steps + ".every(b => (s => s && getComputedStyle(s).borderTopWidth === '0px' && s.getBoundingClientRect().width <= 16)(b.querySelector('svg'))"
+                      " && getComputedStyle(b).backgroundColor === 'rgba(0, 0, 0, 0)' && getComputedStyle(b).borderTopWidth === '0px')")
+        check(shown == ["Compare the two cheapest options", "Check delivery times", "Save the table"] and plain
               and not js(p, "!![...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.innerText.includes('blue one is cheaper'))?.querySelector('.choice-card')"),
-              f"Next steps show as three suggestion rows with an icon, not a card: {shown}")
+              f"Next steps show as three plain lines with a small arrow, not a card or a box: {shown}")
         body = js(p, "[...document.querySelectorAll('.chat-view .md')].pop()?.innerText || ''") or ""
         check(">>" not in body and "Next steps" not in body and "blue one is cheaper" in body, "and the reply shows without the >> lines or their label")
 
