@@ -407,9 +407,16 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
+// A dialog of the chat lifts Still above the page while it's open, like App's own (the side panel sits beside a page).
+const useLift = (open: boolean) => useEffect(() => {
+ if (!open) return
+ const tell = (n: number) => { dispatchEvent(new CustomEvent("still-dialog", { detail: n })) }
+ tell(1); return () => tell(-1)
+}, [open])
 // An attached file: a picture of it if it's an image (else its kind's icon), its name and size. A picture opens big on a click.
 function FileChip({ file, onRemove }: { file: Attached; onRemove?: () => void }) {
  const thumb = useThumb(file), [open, setOpen] = useState(false)
+ useLift(open)
  const body = <>{thumb ? <img className="file-thumb" src={thumb} alt="" /> : <FileIcon path={file.name} />}<span>{file.name}</span><small>{sizeText(file.size)}</small></>
  return <span className="skill-chip file-chip" title={file.name}>
   {thumb ? <button type="button" className="file-open" aria-label={"Preview " + file.name} onClick={() => setOpen(true)}>{body}</button> : body}
@@ -429,6 +436,7 @@ function Picture({ id, name }: { id: string; name: string }) {
 // A long paste in the box: its first line. It opens to all of it, and in the box it can go back into the message as text.
 function PasteChip({ text, onRemove, onInline }: { text: string; onRemove?: () => void; onInline?: () => void }) {
  const [open, setOpen] = useState(false), inlined = useRef(false)
+ useLift(open)
  return <span className="skill-chip file-chip paste-chip" title="Pasted text">
   <button type="button" className="file-open" aria-label="Open pasted text" onClick={() => setOpen(true)}><ClipboardPaste /><span>{text.trim().split("\n")[0]}</span><small>Pasted text</small></button>
   {onRemove && <button type="button" className="file-x" aria-label="Remove pasted text" onClick={onRemove}><X /></button>}

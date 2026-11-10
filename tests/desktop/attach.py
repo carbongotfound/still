@@ -279,6 +279,7 @@ def main():
         check(until(lambda: js(p, f"!!document.querySelector('{home} .file-chip img.file-thumb')?.src.startsWith('data:image/')"), 10), "An image's chip shows a picture of it")
         js(p, f"document.querySelector('{home} .file-chip .file-open[aria-label=\"Preview dot.png\"]').click()")
         check(until(lambda: js(p, "!!document.querySelector('.file-preview img')?.src.startsWith('data:image/png')"), 5), "A click on a picture opens it big")
+        check(until(lambda: rpc(p)["overlay"] is True, 3), f"...above any page, like every dialog (overlay {rpc(p)['overlay']})")
         js(p, "document.querySelector('.file-preview').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
         check(until(lambda: not js(p, "!!document.querySelector('.file-preview')"), 3), "...and Esc closes it")
         x = f"document.querySelector('{home} .file-chip .file-x')"

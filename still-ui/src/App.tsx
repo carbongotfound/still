@@ -380,6 +380,8 @@ export default function App() {
  // Adding a companion: it gets its own id here, so the joined card can start its first chat.
  const hire = (c: Companion) => { const added = { ...c, id: crypto.randomUUID().replace(/-/g, "").slice(0, 10) }; send("companionSave", added); setJoined(added) }
  const chatWith = (id: string) => { setBuddy(id); send("aiKickoff", { companion: id }) } // a new companion's first chat starts itself
+ const [chatDialogs, setChatDialogs] = useState(0) // the chat's own dialogs open now (a picture, a pasted text)
+ useEffect(() => { const count = (e: Event) => setChatDialogs(n => n + (e as CustomEvent<number>).detail); addEventListener("still-dialog", count); return () => removeEventListener("still-dialog", count) }, [])
  useEffect(() => { const show = (e: Event) => { const d = (e as CustomEvent<{ id: string; tab: string }>).detail; setProfileTab(d.tab); setProfile(d.id) }; addEventListener("still-profile", show); return () => removeEventListener("still-profile", show) }, [])
  const [railOpen, setRailOpenState] = useState(() => { try { return localStorage.getItem("still.chatRail") !== "closed" } catch { return true } })
  const setRailOpen = (v: boolean) => { setRailOpenState(v); try { localStorage.setItem("still.chatRail", v ? "open" : "closed") } catch { /* storage unavailable */ } }
@@ -516,7 +518,7 @@ export default function App() {
  const shownPage = split ? state.tabs.find(t => t.id === state.chatPage?.id) : active
  const driven = working && shownPage?.agent && working.tab === shownPage.id && !shownPage.isPrivate ? shownPage : undefined
  const oldName = state.welcome || state.secondary ? undefined : ai?.companions?.find(c => c.askName) // a companion with an old stock name, asked once
- const modal = whatsNew || !!oldName || (!!pane && pane !== "find") || menu || context || isAsking() || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!draft || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
+ const modal = whatsNew || chatDialogs > 0 || !!oldName || (!!pane && pane !== "find") || menu || context || isAsking() || !!ghost || !!state.welcome || !!upload || extMenu || !!state.dialog || !!draft || !!profile || library || !!meeting || (!!viewing && !sideViewer) || tasksOpen || replay
  const [dialogText, setDialogText] = useState("")
  useEffect(() => { setDialogText(state.dialog?.defaultText ?? "") }, [state.dialog?.id, state.dialog?.message])
  const answerDialog = (accept: boolean) => { if (state.dialog) send("dialogAnswer", { id: state.dialog.id, accept, text: dialogText }) }
