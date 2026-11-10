@@ -1,5 +1,6 @@
 """Drafts and undo. What's typed in a message box and not sent comes back after leaving, a refresh, closing the tab or
-Still being killed, quietly. Send clears it once Still takes the message; a send that
+Still being killed, quietly, with the caret where it was. An edit of your latest message is kept too, open, with its
+caret. Send clears it once Still takes the message; a send that
 fails keeps it and puts the text back. Settings > Save drafts (on by default) turns it off after a confirm, deleting
 every draft, and then nothing comes back. A private window keeps nothing on disk. Ctrl+Z, Ctrl+Shift+Z (and Ctrl+Y on
 Windows; Cmd on the Mac) undo and redo step by step in every box, through switching chats and a restart.
@@ -112,6 +113,29 @@ def clip(p, sel, kind, words=""):
     ev(p, f"""(() => {{ const d = new DataTransfer(); if ({json.dumps(words)}) d.setData('text/plain', {json.dumps(words)})
         document.querySelector({json.dumps(sel)}).dispatchEvent(new ClipboardEvent({json.dumps(kind)}, {{ clipboardData: d, bubbles: true, cancelable: true }})) }})()""")
     time.sleep(.3)
+
+
+def caret(p, sel):
+    """Where the caret is in a message box, in characters, after focusing it the way a key or Tab does (not a click)."""
+    return ev(p, f"""(() => {{ const e = document.querySelector({json.dumps(sel)}); if (!e) return null; if (document.activeElement !== e) e.focus()
+        const s = getSelection(); if (!s.focusNode || !e.contains(s.focusNode)) return null
+        const r = document.createRange(); r.setStart(e, 0); r.setEnd(s.focusNode, s.focusOffset); return r.toString().length }})()""")
+
+
+EDIT, SIDE_EDIT, EDITED = ".chat-view[data-mode=tab] textarea.ai-edit-box", ".chat-view[data-mode=panel] textarea.ai-edit-box", "Hello 9, said again"
+
+
+def edit_state(p):
+    """The open edit box: its text, its caret and whether it has the focus, or None."""
+    return ev(p, f"(() => {{ const e = document.querySelector({json.dumps(EDIT)}); return e ? [e.value, e.selectionStart, document.activeElement === e] : null }})()")
+
+
+def edit_button(p, label):
+    ev(p, f"[...document.querySelectorAll('.chat-view[data-mode=tab] .ai-edit-actions button')].find(b => b.innerText.trim() === {json.dumps(label)})?.click()"); time.sleep(.6)
+
+
+def start_edit(p):
+    ev(p, "document.querySelector(\".chat-view[data-mode=tab] [aria-label='Edit message']\")?.click()"); until(lambda: edit_state(p) is not None, 5)
 
 
 def notice(p):
@@ -299,6 +323,35 @@ try:
     typed(p, SIDE, "Side chat words")
     check(side_key and until(lambda: draft_text(side_key) == "Side chat words", 3), f"The side chat's box keeps a draft ({side_key})")
     send(p, "aiToggle"); time.sleep(.5)
+
+    # The caret comes back where it was.
+    open_chat(p, "chat1")
+    ev(p, f"(() => {{ const e = document.querySelector({json.dumps(CHAT)}); e.focus(); getSelection().collapse(document.createTreeWalker(e, NodeFilter.SHOW_TEXT).nextNode(), 5) }})()")
+    check(until(lambda: (draft("chat.chat1") or {}).get("sel") == [5, 5], 3), f"Moving the caret in a message box keeps where it is ({(draft('chat.chat1') or {}).get('sel')})")
+    open_chat(p, "chat2"); open_chat(p, "chat1")
+    check(caret(p, CHAT) == 5 and text(p, CHAT) == "alpha beta gamma", f"Back in the chat, the caret is where it was ({caret(p, CHAT)})")
+
+    # An edit of your latest message, being written: kept with its caret and the box open.
+    open_chat(p, "chat9")
+    start_edit(p)
+    ev(p, f"(() => {{ const e = document.querySelector({json.dumps(EDIT)}); e.focus(); e.setSelectionRange(7, 7); document.execCommand('insertText', false, ', said again') }})()")
+    ev(p, f"(() => {{ const e = document.querySelector({json.dumps(EDIT)}); e.setSelectionRange(5, 5); e.dispatchEvent(new KeyboardEvent('keyup', {{ key: 'ArrowLeft', bubbles: true }})) }})()")
+    kept_edit = lambda: draft("edit.chat9") or {}
+    check(until(lambda: kept_edit().get("text") == EDITED and kept_edit().get("sel") == [5, 5] and kept_edit().get("open") is True and kept_edit().get("was") == "Hello 9", 3),
+          f"An edit being written is kept, with its caret and the box open ({kept_edit()})")
+    open_chat(p, "chat2")
+    check(edit_state(p) is None, "Another chat shows no edit")
+    open_chat(p, "chat9")
+    check(edit_state(p) == [EDITED, 5, True], f"Back in the chat, the edit is open as it was, caret and all ({edit_state(p)})")
+    js(p, "location.reload()"); time.sleep(1.5); open_chat(p, "chat9")
+    check(until(lambda: edit_state(p) == [EDITED, 5, True], 5), f"...and after a refresh ({edit_state(p)})")
+    # The side chat is the same chat: the same edit, open there too, through closing and opening the panel.
+    side_edit = lambda: ev(p, f"document.querySelector({json.dumps(SIDE_EDIT)})?.value ?? null")
+    select(p, "w2"); send(p, "aiToggle"); until(lambda: box(p, SIDE) is not None, 10); time.sleep(.6)
+    check(until(lambda: side_edit() == EDITED, 5), f"The side chat shows the same edit, open ({side_edit()!r})")
+    send(p, "aiToggle"); time.sleep(.5); send(p, "aiToggle"); until(lambda: box(p, SIDE) is not None, 10); time.sleep(.6)
+    check(side_edit() == EDITED, f"...and closing and opening the panel keeps it ({side_edit()!r})")
+    send(p, "aiToggle"); time.sleep(.5)
 finally:
     kill(p)
 
@@ -314,6 +367,7 @@ try:
     check(not STALE.exists(), "A draft not touched for 7 days is gone when Still starts")
     open_chat(p, "chat1")
     check(text(p, CHAT) == "alpha beta gamma" and not notice(p), f"...and the chat's ({box(p, CHAT)!r})")
+    check(caret(p, CHAT) == 5, f"...with the caret where it was ({caret(p, CHAT)})")
     focus_end(p, CHAT); press(p, "z")
     check(text(p, CHAT) == "alpha beta", f"Undo history survives the restart ({box(p, CHAT)!r})")
     press(p, "z", shift=True)
@@ -321,6 +375,15 @@ try:
     open_chat(p, side_key[5:]); select(p, "w2"); send(p, "aiToggle"); until(lambda: key_of(p, SIDE) == side_key, 10); time.sleep(.6)
     check(text(p, SIDE) == "Side chat words", f"...and the side chat's ({box(p, SIDE)!r})")
     send(p, "aiToggle"); time.sleep(.5)
+    open_chat(p, "chat9")
+    check(until(lambda: edit_state(p) == [EDITED, 5, True], 5), f"After Still is killed, the edit is open again, caret and all ({edit_state(p)})")
+    edit_button(p, "Cancel")
+    check(edit_state(p) is None and (draft("edit.chat9") or {}).get("text") == EDITED, f"Cancel closes it and keeps the text ({draft('edit.chat9')})")
+    start_edit(p)
+    check(edit_state(p) == [EDITED, 5, True], f"...so Edit brings it back, caret and all ({edit_state(p)})")
+    edit_button(p, "Send")
+    went = until(lambda: any(m.get("Text") == EDITED for c in json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8")) if c["Id"] == "chat9" for m in c["Messages"]), 15)
+    check(went and until(lambda: draft("edit.chat9") is None, 5), f"Send sends the edit, and then it's gone ({draft('edit.chat9')})")
     # A draft the interface kept itself before 2.10 (the page's own storage, which a crash can lose) moves to Still's files.
     js(p, f"localStorage.setItem('still.draft.chat.chat9', JSON.stringify({{ at: Date.now(), text: {json.dumps(OLD)} }}))")
     js(p, "location.reload()"); time.sleep(1.5); until(lambda: rpc(p).get("activeId") == "w2", 10)

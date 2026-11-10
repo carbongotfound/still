@@ -8,7 +8,9 @@ import type { Attached } from "./AiSidebar"
 // private window's (kept here in memory while it's open), and none at all with Settings > Save drafts off. Another
 // window's New Tab box ("window.home") lasts while that window is open. One not touched for 7 days is dropped.
 export type Step = { v: Part[] | string; c: number; t?: number; k?: string }
-export type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[]; steps?: Step[]; step?: number }
+// sel: where the caret (or selection) was, so it comes back there. was and open: an edit of one of your messages, the
+// message it edits and whether the edit box was open.
+export type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[]; steps?: Step[]; step?: number; sel?: [number, number]; was?: string; open?: boolean }
 const WEEK = 7 * 86400000
 let saving = true, privateWindow = false
 const kept = new Map<string, Draft>()
@@ -97,6 +99,8 @@ function snap(el: HTMLElement): Step {
  if (s?.focusNode && el.contains(s.focusNode)) { r.setStart(el, 0); r.setEnd(s.focusNode, s.focusOffset); c = units(read(r.cloneContents())) }
  return { v: read(el), c }
 }
+/// Where the caret is in a box, as a step counts it, or undefined when it isn't in the box.
+export const caretIn = (el: HTMLElement) => isField(el) ? el.selectionEnd ?? undefined : getSelection()?.focusNode && el.contains(getSelection()!.focusNode) ? snap(el).c : undefined
 const same = (a: Step, b: Step) => JSON.stringify(a.v) === JSON.stringify(b.v)
 const historyOf = (el: HTMLElement) => el.dataset.history ? histories.get(el.dataset.history) : unkeyed.get(el)
 function start(el: HTMLElement) {
@@ -183,12 +187,18 @@ document.addEventListener("input", e => {
 const timers = new Map<string, { id: number; run: () => void }>()
 function later(key: string, el: HTMLElement) {
  cancel(key)
- const run = () => { timers.delete(key); keepDraft(key, { text: isField(el) ? el.value : textOf(read(el)) }) }
+ const run = () => {
+  timers.delete(key)
+  const d = readDraft(key), field = isField(el)
+  keepDraft(key, { text: field ? el.value : textOf(read(el)), ...(field ? { sel: [el.selectionStart ?? 0, el.selectionEnd ?? 0] as [number, number] } : {}), ...(d?.was !== undefined ? { was: d.was, open: d.open } : {}) })
+ }
  timers.set(key, { id: window.setTimeout(run, 500), run })
 }
 function cancel(key: string) { const t = timers.get(key); if (t) clearTimeout(t.id); timers.delete(key) }
 const flushAll = () => { for (const t of [...timers.values()]) { clearTimeout(t.id); t.run() } }
 addEventListener("beforeunload", flushAll)
+// Moving the caret in a plain box that has a draft keeps where it is too.
+for (const kind of ["keyup", "pointerup"]) document.addEventListener(kind, e => { const el = boxOf(e.target); if (el && isField(el) && el.dataset.draft !== undefined && el.dataset.history && readDraft(el.dataset.history)) later(el.dataset.history, el) }, true)
 document.addEventListener("focusout", e => { const el = boxOf(e.target); const t = el?.dataset.history && timers.get(el.dataset.history); if (t) { clearTimeout(t.id); t.run() } }, true)
 
 /// A plain box (input or textarea) that keeps a draft under `key`: spread `props` on it, call `done` once what's in it
@@ -198,7 +208,8 @@ export function useDraft<T extends HTMLInputElement | HTMLTextAreaElement>(key: 
  useLayoutEffect(() => {
   if (!el || !key) return
   const d = readDraft(key)
-  if (d?.text && d.text !== el.value) apply(el, { v: d.text, c: d.text.length })
+  if (d?.text && d.text !== el.value) apply(el, { v: d.text, c: d.sel?.[1] ?? d.text.length })
+  if (d?.sel && document.activeElement === el) el.setSelectionRange(...d.sel)
   adopt(key, el, d)
   return () => { const t = timers.get(key); if (t) { clearTimeout(t.id); t.run() } }
  }, [key, el])

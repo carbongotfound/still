@@ -24,7 +24,7 @@ import { PluginLogo, usePluginData, type PluginsState } from "./Plugins"
 import { useMascotVersion } from "./Mascot"
 import { ApiForm, PRESETS as API_PRESETS, type ApiState } from "./ApiProviders"
 import { MessageText, caretAt, dress, html, live, markup, mentions, read, shareable, textOf, units, type Known, type Mention, type Part } from "./Mention"
-import { adopt, appliers, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
+import { adopt, appliers, caretIn, keepDraft, readDraft, rekey, sending, useDraft } from "./drafts"
 
 type Harness = { id: string; name: string; app: string; maker: string; installed: boolean; status: string; installer: string; installCommand: string; site: string; secondary?: boolean; compatible?: boolean; forgets?: boolean; gaps?: string[]; terminalSignIn?: string; api?: boolean; billing?: string }
 type ChatRow = { id: string; title: string; harness: string; updated: string; companion?: string; from?: string | null; unread?: boolean; archived?: boolean; noMemory?: boolean; profile?: string }
@@ -382,20 +382,30 @@ const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `
 // Files come from + > Add files, a drop on the box or a paste; Still keeps them and the AI reads them with read_attachment.
 const KEPT = "application/x-still-message" // a copy from the box: its text and mentions, so a paste keeps them whole
 // One of your messages: Copy on any, Edit and Reset on the latest. Either one forgets what came after it and runs it again.
-function MyMessage({ m, known, send, latest }: { m: Message; known: Known; send: Send; latest: boolean }) {
- const [editing, setEditing] = useState<string | null>(null), [resetting, setResetting] = useState(false)
- const again = (text: string) => { send("aiEdit", { was: m.text, text }); setEditing(null); setResetting(false) }
+// An edit not sent yet is a draft under the chat's edit key, with its caret and whether the box was open: it's back,
+// open, after switching tabs or chats, closing the panel, a reload or a restart. Cancel keeps the text for the next Edit,
+// and so does Send until the chat shows the new message (Still can refuse it). It goes once the chat shows the message it
+// was sent as, or another message is the latest.
+function MyMessage({ m, known, send, latest, draft }: { m: Message; known: Known; send: Send; latest: boolean; draft?: string }) {
+ const key = latest ? draft : undefined, kept = readDraft(key), mine = kept?.was === m.text ? kept : null
+ const [editing, setEditing] = useState<string | null>(mine?.open ? mine.text : null), [resetting, setResetting] = useState(false)
+ const box = useDraft<HTMLTextAreaElement>(editing === null ? undefined : key)
+ useEffect(() => { if (key && kept && (!mine || !mine.open && mine.text === m.text)) keepDraft(key, null) }, [key, m.text]) // eslint-disable-line react-hooks/exhaustive-deps
+ const open = () => { const text = mine?.text ?? m.text; setEditing(text); keepDraft(key, { ...mine, text, was: m.text, open: true, sel: mine?.sel ?? [text.length, text.length] }) }
+ const shut = (text: string) => { keepDraft(key, { ...readDraft(key), text, was: m.text, open: false }); setEditing(null) }
+ const close = () => { if (editing !== null && editing !== m.text) shut(editing); else { box.done(); setEditing(null) } }
+ const again = (text: string) => { send("aiEdit", { was: m.text, text }); setResetting(false); if (editing !== null) shut(editing) }
  if (editing !== null && latest) return <div className="ai-msg is-user is-editing">
-  <textarea className="ai-edit-box" aria-label="Edit your message" autoFocus rows={Math.min(8, editing.split("\n").length + 1)} value={editing} onChange={e => setEditing(e.target.value)}
-   onKeyDown={e => { if (e.key === "Escape") setEditing(null); else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (editing.trim()) again(editing.trim()) } }} />
+  <textarea ref={box.ref} {...box.props} className="ai-edit-box" aria-label="Edit your message" autoFocus rows={Math.min(8, editing.split("\n").length + 1)} value={editing} onChange={e => setEditing(e.target.value)}
+   onKeyDown={e => { if (e.key === "Escape") close(); else if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); if (editing.trim()) again(editing.trim()) } }} />
   <p className="ai-edit-note">Sending replaces the reply below and stops anything still running. What it already did on websites stays done.</p>
-  <div className="ai-edit-actions"><Button size="sm" variant="ghost" onClick={() => setEditing(null)}>Cancel</Button><Button size="sm" disabled={!editing.trim()} onClick={() => again(editing.trim())}>Send</Button></div>
+  <div className="ai-edit-actions"><Button size="sm" variant="ghost" onClick={close}>Cancel</Button><Button size="sm" disabled={!editing.trim()} onClick={() => again(editing.trim())}>Send</Button></div>
  </div>
  return <div className={"ai-msg is-user" + (resetting ? " is-resetting" : "")}><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}
   <div className="ai-msg-actions">{resetting && latest
    ? <><span>Forget the reply and run this again?</span><Button size="sm" variant="ghost" onClick={() => setResetting(false)}>Cancel</Button><Button size="sm" onClick={() => again(m.text)}>Reset</Button></>
    : <><Tip label="Copy"><button type="button" aria-label="Copy message" onClick={() => navigator.clipboard?.writeText(m.text).then(() => toast("Copied."), () => toast("Couldn't copy that."))}><Copy /></button></Tip>
-    {latest && <Tip label="Edit"><button type="button" aria-label="Edit message" onClick={() => setEditing(m.text)}><Pencil /></button></Tip>}
+    {latest && <Tip label="Edit"><button type="button" aria-label="Edit message" onClick={open}><Pencil /></button></Tip>}
     {latest && <Tip label="Reset: forget the reply and run this again"><button type="button" aria-label="Reset message" onClick={() => setResetting(true)}><RotateCcw /></button></Tip>}</>}
   </div>
  </div>
@@ -421,10 +431,19 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   document.addEventListener("keydown", key); return () => document.removeEventListener("keydown", key)
  })
  const pending = useRef<(() => void) | null>(null), timer = useRef(0)
+ const caret = useRef<number | undefined>(undefined), restore = useRef<number | undefined>(undefined) // where the caret is, and where it goes on the next focus
+ const sel = () => caret.current === undefined ? {} : { sel: [caret.current, caret.current] as [number, number] }
  const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
+ const later = (run: () => void) => { pending.current = run; clearTimeout(timer.current); timer.current = window.setTimeout(flush, 500) }
  const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
   const key = draft, d = { text: textOf(p), parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined }
-  pending.current = () => keepDraft(key, d); clearTimeout(timer.current); timer.current = window.setTimeout(flush, 500)
+  later(() => keepDraft(key, { ...d, ...sel() }))
+ }
+ // Only the caret moved: kept too, while the box still shows the draft (not once Send emptied it, or sent() would keep it).
+ const moved = (el: HTMLElement) => {
+  const c = caretIn(el), key = drafted.current, d = readDraft(key); caret.current = c
+  if (!pending.current && key && d && c !== undefined && d.sel?.[1] !== c && d.text === textOf(partsRef.current))
+   later(() => { const now = readDraft(key); if (now?.text === d.text) keepDraft(key, { ...now, ...sel() }) })
  }
  const unsent = useRef<Attached[]>([]) // the files of the message being sent, back in the box if Still couldn't send it
  useEffect(() => { addEventListener("beforeunload", flush); return () => { removeEventListener("beforeunload", flush); flush() } }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -474,17 +493,18 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
   setFiles([])
   if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
-  if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); const s = getSelection(); s?.selectAllChildren(el); s?.collapseToEnd() }
+  caret.current = restore.current = kept?.sel?.[1] // back where it was, or at the end
+  if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); caretAt(el, kept.sel?.[1] ?? Infinity) }
  }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  // The caret at the end of the box (it isn't in the box yet).
  const end = () => { const el = box.current, s = getSelection(); if (!el || !s) return; el.focus(); s.selectAllChildren(el); s.collapseToEnd() }
- useEffect(() => { if (autoFocus) end() }, []) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(() => { if (autoFocus && document.activeElement !== box.current) end() }, []) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => {
   const el = box.current; if (!el) return
-  const caret = () => { const s = getSelection(), n = s?.anchorNode; if (n && el.contains(n)) setBefore(n.nodeType === Node.TEXT_NODE ? n.textContent!.slice(0, s.anchorOffset) : "") }
+  const where = () => { const s = getSelection(), n = s?.anchorNode; if (n && el.contains(n)) { setBefore(n.nodeType === Node.TEXT_NODE ? n.textContent!.slice(0, s.anchorOffset) : ""); moved(el) } }
   const plain = (e: InputEvent) => { if (e.inputType.startsWith("format")) e.preventDefault() } // no bold or italics in a message
-  document.addEventListener("selectionchange", caret); el.addEventListener("beforeinput", plain)
-  return () => { document.removeEventListener("selectionchange", caret); el.removeEventListener("beforeinput", plain) }
+  document.addEventListener("selectionchange", where); el.addEventListener("beforeinput", plain)
+  return () => { document.removeEventListener("selectionchange", where); el.removeEventListener("beforeinput", plain) }
  }, [])
  const text = textOf(parts)
  const sync = () => {
@@ -575,7 +595,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   </InputGroupAddon>}
   <div ref={box} data-history={draft} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
-   onInput={sync} onBlur={flush} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
+   onInput={sync} onBlur={flush} onPointerDown={() => { restore.current = undefined }} onFocus={() => { const n = restore.current; restore.current = undefined; if (n !== undefined && box.current) caretAt(box.current, n) }} onCopy={e => copy(e, false)} onCut={e => copy(e, true)} onPaste={paste} onDragStart={e => e.preventDefault()}
    onDrop={e => { // text dropped on the box comes in as plain text
     if (dragging(e)) return
     e.preventDefault()
@@ -819,7 +839,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "search" || m.role === "read") return <div key={i} className={turn(i)}>{face(i)}<LookedUp m={m} onLink={openLink} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
-    if (m.role === "user") return <MyMessage key={i} m={m} known={known} send={send} latest={m === latestPrompt} />
+    if (m.role === "user") return <MyMessage key={(ai.chatId ?? "new") + "." + i} m={m} known={known} send={send} latest={m === latestPrompt} draft={(ai.incognito ? "private." : "") + "edit." + (ai.chatId ?? "new")} />
     if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
     if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Square aria-hidden />Stopped by you</div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
