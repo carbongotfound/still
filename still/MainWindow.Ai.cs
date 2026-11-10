@@ -610,7 +610,7 @@ public partial class MainWindow
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
    case "aiUnqueue" when ShownChat is { } unq && runs.GetValueOrDefault(unq.Id) is { } unqueued: unqueued.Queue.Clear(); break;
    case "aiSend" when SetUpAgain().IsMatch(S("text")) && !incognito: Sent(true); state.Welcome = true; welcomeTalk = true; PublishAll(); break; // "set me up again" reopens setup's interview
-   case "aiSend" when S("text").Trim() is { Length: > 0 and <= 20000 } text: {
+   case "aiSend" when S("text").Trim() is { Length: > 0 and <= 100000 } text: { // long pastes ride in the message, up to 25 KB each
     // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
     // A chat that's still working takes it as a follow-up for when it finishes.
     var target = active?.ChatId is { } chatId ? MyChats.FirstOrDefault(c => c.Id == chatId) : B("home") ? null : aiChat;
@@ -638,7 +638,7 @@ public partial class MainWindow
     else ratings[rated.Id] = $"[Still] The user gave your reply \"{CompanionMemory.Clip(rated.Messages[at].Text.ReplaceLineEndings(" "), 120)}\" a thumbs {to}" + (to == "up" ? "." : ": something in it missed. If this message doesn't say what, ask.");
     SaveAiChats(); PublishAiEverywhere();
     break; }
-   case "aiEdit" when ShownChat is { } editing && S("text").Trim() is { Length: > 0 and <= 20000 } rewritten: {
+   case "aiEdit" when ShownChat is { } editing && S("text").Trim() is { Length: > 0 and <= 100000 } rewritten: {
     // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
     int prompt = editing.Messages.FindLastIndex(m => m.Role == "user" && m.Who == null && !m.Answer);
     if (prompt < 0 || editing.Messages[prompt].Text != S("was")) { Toast("That isn't your latest message anymore."); break; }
@@ -655,7 +655,7 @@ public partial class MainWindow
     ForgetTask(editing.Id);
     await RunAi(editing, keptFiles is { Count: > 0 } ? rewritten + FilesNote(keptFiles) : rewritten, rewritten, files: keptFiles);
     break; }
-   case "aiSend": Sent(false, S("text").Trim().Length > 20000 ? "Messages can be up to 20,000 characters. Yours is still in the box." : "Write a message first."); break;
+   case "aiSend": Sent(false, S("text").Trim().Length > 100000 ? "Messages can be up to 100,000 characters. Yours is still in the box." : "Write a message first."); break;
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Setup: "pending" } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0)
     && !AiChats.Any(c => c.Companion == fresh.Id && c.From == null && !c.Routine && (kickoffs.Contains(c.Id) || c.Messages.Any(m => m.Role == "user"))): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.

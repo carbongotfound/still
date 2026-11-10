@@ -2,6 +2,8 @@
 icon, name and size; x removes one; too big says why and adds nothing. Sending names them to the AI, which reads each
 with read_attachment: text as text, a PDF's text, an image as an image. The sent message shows them, a follow-up from
 the chat's own box works too, and deleting the chat deletes the files. A fake agent app reads every id in the prompt.
+The files are compact pills in one row (x on hover, a picture opens big), files dragged over a chat drop in anywhere on
+it, and a long paste is a Pasted text pill that goes to the AI in the message (over 25 KB, a file).
 
 Run: python tests/desktop/attach.py artifacts/Still-QA/Still.exe
 Out: artifacts/attach-*/ (attach-*.png in the profile folder)
@@ -27,6 +29,7 @@ PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 FAILED = []
 NOTES = "Launch checklist\n- Book the venue\n- Send invites by Friday\n"
+TIDE = "Tide table, North Harbor.\n" + "High water 06:12, low water 12:31. " * 70  # a long paste: 2,476 characters
 # A one-page PDF with a line of real text (Helvetica, uncompressed), so its text has to come out of the PDF.
 PDF_OBJECTS = ["<< /Type /Catalog /Pages 2 0 R >>", "<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
                "<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] /Contents 4 0 R /Resources << /Font << /F1 5 0 R >> >> >>",
@@ -108,7 +111,7 @@ def files_js(spec):
 
 def chips(p, box):
     """The files in a box (not the ones still coming in)."""
-    return js(p, f"[...document.querySelectorAll('{box} .composer .file-chip:not(.is-loading)')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
+    return js(p, f"[...document.querySelectorAll('{box} .composer .file-chip:not(.is-loading):not(.paste-chip)')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
 
 
 def drop_on(p, box, transfer):
@@ -187,6 +190,12 @@ def real_clipboard(p):
         menu()
         got = until(lambda: chips(p, home), 10) or []
         check(got == [f"copied notes.txt {len(NOTES.encode())} B"], f"...and takes a copied file as well ({got})")
+        clear()
+        js(p, f"document.querySelector('{message}').focus()")
+        keys()
+        got = until(lambda: chips(p, home), 10) or []
+        check(got == [f"copied notes.txt {len(NOTES.encode())} B"] and "copied notes" not in (js(p, f"document.querySelector('{message}').innerText") or ""),
+              f"A real {'Cmd' if MAC else 'Ctrl'}+V of a file copied in {'Finder' if MAC else 'Explorer'} adds it ({got})")
         clear()
         board("text", text="Not a picture")
         menu()
@@ -268,13 +277,38 @@ def main():
         got = until(lambda: len(chips(p, home)) == 3 and chips(p, home), 10) or chips(p, home)
         check(got[-1:] == [f"dot.png {len(PNG)} B"], f"Pasting an image adds it too ({got})")
         check(until(lambda: js(p, f"!!document.querySelector('{home} .file-chip img.file-thumb')?.src.startsWith('data:image/')"), 10), "An image's chip shows a picture of it")
+        js(p, f"document.querySelector('{home} .file-chip .file-open[aria-label=\"Preview dot.png\"]').click()")
+        check(until(lambda: js(p, "!!document.querySelector('.file-preview img')?.src.startsWith('data:image/png')"), 5), "A click on a picture opens it big")
+        js(p, "document.querySelector('.file-preview').dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+        check(until(lambda: not js(p, "!!document.querySelector('.file-preview')"), 3), "...and Esc closes it")
+        x = f"document.querySelector('{home} .file-chip .file-x')"
+        check(js(p, f"getComputedStyle({x}).opacity") == "0", "A chip's x hides until the pointer is on it")
+        js(p, f"{x}.focus()")
+        if js(p, f"{x}.matches(':focus')"):
+            check(until(lambda: js(p, f"getComputedStyle({x}).opacity") == "1", 2), "...and shows on focus")
+        else:
+            print("SKIP ...and shows on focus: the QA window isn't the focused one, so nothing in it matches :focus")
+        js(p, f"{x}.blur()")
 
-        # Long text: a file, not text in the box. Short text stays text.
+        # Long text: a Pasted text pill with its first line, not text in the box. It opens, and can go back in as text. Over
+        # 25 KB it's a file. Short text stays text.
         paste_text = "(t => {{ const d = new DataTransfer(), box = document.querySelector('{0} [aria-label=Message]'); d.setData('text/plain', t); box.focus(); box.dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: d }})) }})({1})"
-        js(p, paste_text.format(home, json.dumps("Tide table, North Harbor. " * 80)))
+        typed = lambda: js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""
+        pills = lambda: js(p, f"[...document.querySelectorAll('{home} .paste-chip')].map(c => c.innerText.replace(/\\s+/g, ' ').trim())") or []
+        js(p, paste_text.format(home, json.dumps(TIDE)))
+        check(until(lambda: pills() == ["Tide table, North Harbor. Pasted text"], 5) and "High water" not in typed() and len(chips(p, home)) == 3, f"A long paste is a Pasted text pill with its first line, not text or a file ({pills()}, {chips(p, home)})")
+        rpc(p, "capture", name="attach-paste.png")
+        time.sleep(1)
+        kept = json.loads((PROFILE / "ai" / "drafts" / "home.json").read_text(encoding="utf-8")) if (PROFILE / "ai" / "drafts" / "home.json").exists() else {}
+        check(kept.get("pastes") == [TIDE], "The box's draft keeps it")
+        js(p, f"document.querySelector('{home} .paste-chip .file-open').click()")
+        check(until(lambda: "High water 06:12" in (js(p, "document.querySelector('.paste-dialog pre')?.innerText") or ""), 5), "A click opens all of it")
+        js(p, "[...document.querySelectorAll('.paste-dialog button')].find(b => b.innerText.includes('Put it in the message')).click()")
+        check(until(lambda: not pills() and "High water 06:12" in typed() and not js(p, "!!document.querySelector('.paste-dialog')"), 5), "Put it in the message makes it plain text in the box")
+        js(p, f"(t => {{ t.focus(); document.execCommand('selectAll'); document.execCommand('delete') }})(document.querySelector('{home} [aria-label=Message]'))")
+        js(p, paste_text.format(home, json.dumps("Tide table, North Harbor. " * 1100)))
         got = until(lambda: len(chips(p, home)) == 4 and chips(p, home), 10) or chips(p, home)
-        typed = js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""
-        check(got[-1:] == ["Pasted text.txt 2.0 KB"] and "Tide table" not in typed, f"A long paste goes in as a file, Pasted text.txt ({got})")
+        check(got[-1:] == ["Pasted text.txt 28 KB"] and not pills() and "Tide table" not in typed(), f"Over 25 KB it goes in as a file, Pasted text.txt ({got})")
         js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove Pasted text.txt\"]').click()")
         js(p, paste_text.format(home, json.dumps("Tide table")))
         check(until(lambda: "Tide table" in (js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""), 5) and len(chips(p, home)) == 3, "A short one stays text in the box")
@@ -308,6 +342,8 @@ def main():
         drop_on(p, home, files_js([(f"part-{i}.xyz", "application/octet-stream", 3) for i in range(12)]))
         got = until(lambda: len(chips(p, home)) == 15 and chips(p, home), 20) or chips(p, home)
         check(len(got) == 15 and got[3:] == [f"part-{i}.xyz 3 B" for i in range(12)], f"Twelve more files, of a kind Still doesn't know, all go in ({len(got)})")
+        row = js(p, f"(r => [r.offsetHeight, r.scrollWidth > r.clientWidth])(document.querySelector('{home} .skill-chips'))") or [0, False]
+        check(row[0] < 50 and row[1], f"...in one row that scrolls sideways, so the box keeps its size ({row})")
         for i in range(12):
             js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove part-{i}.xyz\"]')?.click()")
             until(lambda: len(chips(p, home)) == 14 - i, 3)
@@ -354,14 +390,28 @@ def main():
         box = ".chat-view"
         until(lambda: js(p, f"!!document.querySelector('{box} [aria-label=Message]')"), 10)
         done = len(lines("results.jsonl"))
-        js(p, f"document.querySelector('{box} .composer').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: {files_js([('plan.md', 'text/markdown', base64.b64encode(b'# Plan\\nShip it').decode())])} }}))")
-        check(until(lambda: chips(p, box) == ["plan.md 15 B"], 10), "The chat's own box takes files too")
+        js(p, f"window.__plan = {files_js([('plan.md', 'text/markdown', base64.b64encode(b'# Plan\\nShip it').decode())])}; (l => {{ l.dispatchEvent(new DragEvent('dragenter', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }})); l.dispatchEvent(new DragEvent('dragover', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }})) }})(document.querySelector('{box} .ai-log'))")
+        check(until(lambda: js(p, f"!!document.querySelector('{box} > .composer-drop')"), 3), "Dragging files over a chat lights up the whole chat")
+        rpc(p, "capture", name="attach-drop-chat.png")
+        js(p, f"document.querySelector('{box} .ai-log').dispatchEvent(new DragEvent('drop', {{ bubbles: true, cancelable: true, dataTransfer: window.__plan }}))")
+        check(until(lambda: chips(p, box) == ["plan.md 15 B"], 10) and not js(p, f"!!document.querySelector('{box} > .composer-drop')"), "...and a drop anywhere on it adds them to the chat's box")
         js(p, f"(t => {{ t.focus(); document.execCommand('insertText', false, 'TRY A BAD ID') }})(document.querySelector('{box} [aria-label=Message]'))")
         js(p, f"document.querySelector('{box} [aria-label=Message]').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
         until(lambda: len(lines("results.jsonl")) >= done + 2, 30)
         later = lines("results.jsonl")[done:]
         check(any(r["type"] == "text" and "Ship it" in r["text"] for r in later), "and the AI reads a file sent from there")
         check(any(r["error"] and "No attachment has that id" in r["text"] for r in later), "An id that isn't an attachment is refused")
+
+        # Only a long paste: the AI gets it in the message, between marks, and the sent message shows it as a pill again.
+        asked = len(lines("prompts.jsonl"))
+        js(p, paste_text.format(box, json.dumps(TIDE)))
+        until(lambda: js(p, f"!!document.querySelector('{box} .paste-chip')"), 5)
+        js(p, f"document.querySelector('{box} [aria-label=Message]').dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true }}))")
+        until(lambda: len(lines("prompts.jsonl")) > asked, 30)
+        prompt = (lines("prompts.jsonl") or [{}])[-1].get("prompt", "")
+        check("Take a look at what I pasted.\n\n<pasted-text>\n" + TIDE + "\n</pasted-text>" in prompt, "The AI gets the paste in the message, between marks")
+        bubble = until(lambda: js(p, f"(m => m && m.querySelector('.paste-chip') && [m.querySelector('.paste-chip').innerText.replace(/\\s+/g, ' ').trim(), m.innerText.includes('High water')])([...document.querySelectorAll('{box} .ai-msg.is-user')].pop())"), 10) or []
+        check(bubble and bubble[0] == "Tide table, North Harbor. Pasted text" and not bubble[1], f"The sent message shows it as a pill, not the whole text ({bubble})")
         sent_ids = [f["Id"] for c in chats() for m in c["Messages"] for f in m.get("Files") or []]
         check(len(sent_ids) == 4 and all((PROFILE / "ai" / "attachments" / i).is_dir() for i in sent_ids), f"Still keeps each file in the profile's ai/attachments ({len(sent_ids)})")
 

@@ -10,7 +10,7 @@ import type { Attached } from "./AiSidebar"
 export type Step = { v: Part[] | string; c: number; t?: number; k?: string }
 // sel: where the caret (or selection) was, so it comes back there. was and open: an edit of one of your messages, the
 // message it edits and whether the edit box was open.
-export type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[]; steps?: Step[]; step?: number; sel?: [number, number]; was?: string; open?: boolean }
+export type Draft = { at?: number; text: string; parts?: Part[]; files?: Attached[]; pastes?: string[]; steps?: Step[]; step?: number; sel?: [number, number]; was?: string; open?: boolean }
 const WEEK = 7 * 86400000
 let saving = true, privateWindow = false
 const kept = new Map<string, Draft>()
@@ -28,7 +28,7 @@ export function readDraft(key?: string): Draft | null {
 /// Keeps what a box holds now, with its undo steps; null forgets it. An empty box keeps only its steps, if it has any.
 export function keepDraft(key: string | undefined, d: Draft | null) {
  if (!key || !saving) return
- const h = histories.get(key), empty = !d || !d.text.trim() && !d.files?.length
+ const h = histories.get(key), empty = !d || !d.text.trim() && !d.files?.length && !d.pastes?.length
  const full: Draft | null = !d || empty && (h?.steps.length ?? 0) < 2 ? null : { ...d, at: Date.now(), ...(h && { steps: h.steps, step: h.at }) }
  if (full) kept.set(key, full); else kept.delete(key)
  if (memoryOnly(key)) return

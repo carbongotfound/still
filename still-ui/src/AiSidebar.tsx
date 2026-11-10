@@ -4,6 +4,8 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { InputGroup, InputGroupAddon, InputGroupButton } from "@/components/ui/input-group"
+import { Dialog, DialogContent, DialogFooter, DialogTitle } from "@/components/ui/dialog"
+import { createPortal } from "react-dom"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
@@ -405,12 +407,38 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
-// An attached file: a picture of it if it's an image (else its kind's icon), its name and size.
+// An attached file: a picture of it if it's an image (else its kind's icon), its name and size. A picture opens big on a click.
 function FileChip({ file, onRemove }: { file: Attached; onRemove?: () => void }) {
- const thumb = useThumb(file)
- return <span className="skill-chip file-chip" title={file.name}>{thumb ? <img className="file-thumb" src={thumb} alt="" /> : <FileIcon path={file.name} />}<span>{file.name}</span><small>{sizeText(file.size)}</small>
-  {onRemove && <button type="button" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}</span>
+ const thumb = useThumb(file), [open, setOpen] = useState(false)
+ const body = <>{thumb ? <img className="file-thumb" src={thumb} alt="" /> : <FileIcon path={file.name} />}<span>{file.name}</span><small>{sizeText(file.size)}</small></>
+ return <span className="skill-chip file-chip" title={file.name}>
+  {thumb ? <button type="button" className="file-open" aria-label={"Preview " + file.name} onClick={() => setOpen(true)}>{body}</button> : body}
+  {onRemove && <button type="button" className="file-x" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}
+  {open && <Dialog open onOpenChange={setOpen}><DialogContent className="app-dialog file-preview" aria-describedby={undefined}><DialogTitle>{file.name}</DialogTitle><Picture id={file.id} name={file.name} /></DialogContent></Dialog>}</span>
 }
+// The whole picture, asked for when it opens (the chip keeps only a small copy).
+function Picture({ id, name }: { id: string; name: string }) {
+ const [src, setSrc] = useState("")
+ useEffect(() => {
+  const got = (e: Event) => { const d = (e as CustomEvent).detail; if (d.id === id) setSrc(String(d.data ?? "")) }
+  addEventListener("still-thumb", got); window.chrome?.webview?.postMessage({ op: "aiThumb", id })
+  return () => removeEventListener("still-thumb", got)
+ }, [id])
+ return src ? <img src={src} alt={name} /> : <Spinner />
+}
+// A long paste in the box: its first line. It opens to all of it, and in the box it can go back into the message as text.
+function PasteChip({ text, onRemove, onInline }: { text: string; onRemove?: () => void; onInline?: () => void }) {
+ const [open, setOpen] = useState(false), inlined = useRef(false)
+ return <span className="skill-chip file-chip paste-chip" title="Pasted text">
+  <button type="button" className="file-open" aria-label="Open pasted text" onClick={() => setOpen(true)}><ClipboardPaste /><span>{text.trim().split("\n")[0]}</span><small>Pasted text</small></button>
+  {onRemove && <button type="button" className="file-x" aria-label="Remove pasted text" onClick={onRemove}><X /></button>}
+  {open && <Dialog open onOpenChange={setOpen}><DialogContent className="app-dialog paste-dialog" aria-describedby={undefined} onCloseAutoFocus={e => { if (inlined.current) { e.preventDefault(); onInline?.() } }}><DialogTitle>Pasted text</DialogTitle><pre>{text}</pre>
+   {onInline && <DialogFooter><Button variant="outline" onClick={() => { inlined.current = true; setOpen(false) }}>Put it in the message</Button></DialogFooter>}</DialogContent></Dialog>}</span>
+}
+// Long pastes go to the AI in the message, each between these marks, and a sent message shows each as a pill again.
+const PASTED = /\n*<pasted-text>\n([\s\S]*?)\n<\/pasted-text>/g
+const pasted = (t: string) => `<pasted-text>\n${t}\n</pasted-text>`
+const unpaste = (text: string) => { const pastes: string[] = []; return { rest: text.replace(PASTED, (_, t: string) => { pastes.push(t); return "" }), pastes } }
 // Still hands a kept image back as a data URL (aiThumb; the page's rules allow only those) and the chip keeps a 64-pixel copy,
 // so each file is asked for once. "" means there's no picture: the chip shows the icon.
 const thumbs = new Map<string, string>()
@@ -438,7 +466,7 @@ function useThumb(file: Attached) {
  }, [file.id, file.name, file.size, src])
  return src
 }
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i, LONG_PASTE = 2000 // characters: a longer paste goes in as a file
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i, LONG_PASTE = 2000, PASTE_FILE = 25 * 1024 // a paste of 2,000 characters or more is a pill, and over 25 KB a file
 // Any number of files, of any kind, up to 500 MB each (the host checks too: MainWindow.Ai.cs AttachPiece). A file goes to Still 4 MB at a time.
 const MAX_FILE = 500 * 1048576, PIECE = 4 * 1048576
 const tooBig = (f: File) => f.size > MAX_FILE ? `${f.name} is ${sizeText(f.size)}. Files can be up to 500 MB.` : ""
@@ -470,7 +498,8 @@ function MyMessage({ m, known, send, latest, draft }: { m: Message; known: Known
   <p className="ai-edit-note">Sending replaces the reply below and stops anything still running. What it already did on websites stays done.</p>
   <div className="ai-edit-actions"><Button size="sm" variant="ghost" onClick={close}>Cancel</Button><Button size="sm" disabled={!editing.trim()} onClick={() => again(editing.trim())}>Send</Button></div>
  </div>
- return <div className={"ai-msg is-user" + (resetting ? " is-resetting" : "")}><MessageText text={m.text} known={known} />{!!m.files?.length && <div className="msg-files">{m.files.map(f => <FileChip key={f.id} file={f} />)}</div>}
+ const { rest, pastes } = unpaste(m.text)
+ return <div className={"ai-msg is-user" + (resetting ? " is-resetting" : "")}><MessageText text={rest} known={known} />{!!(m.files?.length || pastes.length) && <div className="msg-files">{pastes.map((t, i) => <PasteChip key={i} text={t} />)}{m.files?.map(f => <FileChip key={f.id} file={f} />)}</div>}
   <div className="ai-msg-actions">{resetting && latest
    ? <><span>Forget the reply and run this again?</span><Button size="sm" variant="ghost" onClick={() => setResetting(false)}>Cancel</Button><Button size="sm" onClick={() => again(m.text)}>Reset</Button></>
    : <><Tip label="Copy"><button type="button" aria-label="Copy message" onClick={() => navigator.clipboard?.writeText(m.text).then(() => toast("Copied."), () => toast("Couldn't copy that."))}><Copy /></button></Tip>
@@ -490,12 +519,26 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [coming, setComing] = useState<Coming[]>([])
  const acks = useRef(new Map<string, (done: number) => void>()), stopped = useRef(new Set<string>()), queue = useRef(Promise.resolve())
  const [dropping, setDropping] = useState(false)
+ const [pastes, setPastes] = useState<string[]>([]) // long pastes, a pill each
+ const group = useRef<HTMLDivElement>(null), [zone, setZone] = useState<HTMLElement | null>(null) // where files drop in: the whole chat, or the box on the new tab page
  const me = useId()
  // The folder this chat works in: its own or its companion's; before it starts, the one picked for it.
  const folder = ai.incognito ? "" : (chat ? ai.chatFolder : ai.nextFolder ?? companion?.folder) ?? "", folderName = folder.split(/[\\/]/).filter(Boolean).pop() ?? folder
  const pickFolder = () => send("chatFolder", { chat })
- const partsRef = useRef(parts), filesRef = useRef(files)
- useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files })
+ const partsRef = useRef(parts), filesRef = useRef(files), pastesRef = useRef(pastes), takeRef = useRef<(list: FileList) => void>(() => {}), offRef = useRef(disabled)
+ useLayoutEffect(() => { partsRef.current = parts; filesRef.current = files; pastesRef.current = pastes; offRef.current = disabled })
+ useEffect(() => { // files dragged over the chat light it up, and a drop anywhere on it adds them
+  const el = group.current?.closest<HTMLElement>(".chat-view") ?? group.current; if (!el) return
+  setZone(el) // eslint-disable-line react-hooks/set-state-in-effect
+  let depth = 0 // dragenter and dragleave come for each element inside, so the light goes once the drag has left them all
+  const has = (e: DragEvent) => !!e.dataTransfer?.types.includes("Files")
+  const over = (e: DragEvent) => { if (!has(e)) return; e.preventDefault(); e.dataTransfer!.dropEffect = offRef.current ? "none" : "copy"; if (!offRef.current) setDropping(true) }
+  const enter = (e: DragEvent) => { if (has(e)) depth++ }
+  const leave = (e: DragEvent) => { if (has(e) && --depth <= 0) { depth = 0; setDropping(false) } }
+  const drop = (e: DragEvent) => { if (!has(e)) return; e.preventDefault(); depth = 0; setDropping(false); if (!offRef.current) takeRef.current(e.dataTransfer!.files) }
+  el.addEventListener("dragenter", enter); el.addEventListener("dragover", over); el.addEventListener("dragleave", leave); el.addEventListener("drop", drop)
+  return () => { el.removeEventListener("dragenter", enter); el.removeEventListener("dragover", over); el.removeEventListener("dragleave", leave); el.removeEventListener("drop", drop) }
+ }, [])
  useEffect(() => { // Ctrl+V (Cmd+V on the Mac) with no box in focus: a copied picture lands in the box on show
   const key = (e: KeyboardEvent) => {
    if (e.key.toLowerCase() !== "v" || !(MAC ? e.metaKey : e.ctrlKey) || e.shiftKey || e.altKey || e.defaultPrevented || disabled || !box.current?.checkVisibility()) return
@@ -509,17 +552,18 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const sel = () => caret.current === undefined ? {} : { sel: [caret.current, caret.current] as [number, number] }
  const flush = () => { clearTimeout(timer.current); pending.current?.(); pending.current = null }
  const later = (run: () => void) => { pending.current = run; clearTimeout(timer.current); timer.current = window.setTimeout(flush, 500) }
- const save = (p: Part[], f: Attached[]) => { // a moment after the last change, and right away on leaving the box or Still
-  const key = draft, d = { text: textOf(p), parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined }
+ const save = (p: Part[], f: Attached[], t = pastesRef.current) => { // a moment after the last change, and right away on leaving the box or Still
+  const key = draft, d = { text: textOf(p), parts: mentions(p).length ? p : undefined, files: f.length ? f : undefined, pastes: t.length ? t : undefined }
   later(() => keepDraft(key, { ...d, ...sel() }))
  }
+ const setP = (t: string[]) => { pastesRef.current = t; setPastes(t); save(partsRef.current, filesRef.current, t) }
  // Only the caret moved: kept too, while the box still shows the draft (not once Send emptied it, or sent() would keep it).
  const moved = (el: HTMLElement) => {
   const c = caretIn(el), key = drafted.current, d = readDraft(key); caret.current = c
   if (!pending.current && key && d && c !== undefined && d.sel?.[1] !== c && d.text === textOf(partsRef.current))
    later(() => { const now = readDraft(key); if (now?.text === d.text) keepDraft(key, { ...now, ...sel() }) })
  }
- const unsent = useRef<Attached[]>([]) // the files of the message being sent, back in the box if Still couldn't send it
+ const unsent = useRef<Attached[]>([]), unpasted = useRef<string[]>([]) // the files and pastes of the message being sent, back in the box if Still couldn't send it
  useEffect(() => { addEventListener("beforeunload", flush); return () => { removeEventListener("beforeunload", flush); flush() } }, [draft]) // eslint-disable-line react-hooks/exhaustive-deps
  useEffect(() => { // what Still kept from a pick, drop or paste in this box
   const got = (e: Event) => { // added now, or (.kept) a draft's that are still there
@@ -533,7 +577,11 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
    setComing(l => l.some(x => x.key === d.key) ? l.map(x => x.key === d.key ? { ...x, done: d.done } : x) : [...l, { key: d.key, name: d.name, size: d.size, done: d.done }])
   }
   const acked = (e: Event) => { const d = (e as CustomEvent).detail; acks.current.get(d.key)?.(d.done); acks.current.delete(d.key) }
-  const back = (e: Event) => { if ((e as CustomEvent).detail === draft && unsent.current.length) { setFiles(unsent.current); save(partsRef.current, unsent.current); unsent.current = [] } }
+  const back = (e: Event) => {
+   if ((e as CustomEvent).detail !== draft || !unsent.current.length && !unpasted.current.length) return
+   const f = unsent.current, t = unpasted.current; unsent.current = []; unpasted.current = []
+   setFiles(f); pastesRef.current = t; setPastes(t); save(partsRef.current, f, t)
+  }
   addEventListener("still-attached", got); addEventListener("still-unsent", back); addEventListener("still-attaching", going); addEventListener("still-attach-ack", acked)
   return () => { removeEventListener("still-attached", got); removeEventListener("still-unsent", back); removeEventListener("still-attaching", going); removeEventListener("still-attach-ack", acked) }
  }, [me, draft]) // eslint-disable-line react-hooks/exhaustive-deps
@@ -561,6 +609,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   stopped.current.add(key); acks.current.get(key)?.(-1); acks.current.delete(key)
   setComing(l => l.filter(x => x.key !== key)); send("aiAttachCancel", { key })
  }
+ useLayoutEffect(() => { takeRef.current = take })
  const box = useRef<HTMLDivElement>(null)
  const add = useOverBox<HTMLButtonElement>("start")
  const known: Known = { companions: ai.companions ?? [], tabs: tabs ?? [], plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
@@ -576,8 +625,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  useLayoutEffect(() => {
   flush() // what was typed under the last key is kept under it
   const was = drafted.current, el = box.current; drafted.current = draft
-  if (was && draft && was !== draft && /(^|\.)chat\.new$/.test(was) && (textOf(partsRef.current).trim() || filesRef.current.length)) {
-   keepDraft(was, null); rekey(was, draft); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined })
+  if (was && draft && was !== draft && /(^|\.)chat\.new$/.test(was) && (textOf(partsRef.current).trim() || filesRef.current.length || pastesRef.current.length)) {
+   keepDraft(was, null); rekey(was, draft); keepDraft(draft, { text: textOf(partsRef.current), parts: mentions(partsRef.current).length ? partsRef.current : undefined, files: filesRef.current.length ? filesRef.current : undefined, pastes: pastesRef.current.length ? pastesRef.current : undefined })
    return // the new chat got its id: what's in the box stays, now under it, with its undo steps
   }
   const kept = readDraft(draft)
@@ -585,7 +634,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   if (el) el.innerHTML = markup(p, knownRef.current)
   if (el && draft) adopt(draft, el, kept)
   setParts(read(el ?? document.createElement("div"))) // eslint-disable-line react-hooks/set-state-in-effect
-  setFiles([])
+  setFiles([]); pastesRef.current = kept?.pastes ?? []; setPastes(pastesRef.current)
   if (kept?.files?.length) send("aiReattach", { to: me + ".kept", ids: kept.files.map(f => f.id) })
   caret.current = restore.current = kept?.sel?.[1] // back where it was, or at the end
   if (kept && el && (autoFocus || document.activeElement === el)) { el.focus(); caretAt(el, kept.sel?.[1] ?? Infinity) }
@@ -609,15 +658,16 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   setParts(p); save(p, files); setPick(0); setShut(null); onTyping?.(!!t.trim())
  }
  const attached = mentions(parts).flatMap(m => m.kind === "tab" ? [m.id] : [])
- const message = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : "")
+ const lead = text.trim() || (files.length ? `Take a look at ${files.length === 1 ? "this file" : "these files"}.` : pastes.length ? "Take a look at what I pasted." : "")
+ const message = [lead, ...pastes.map(pasted)].filter(Boolean).join("\n\n")
  // The draft stays until Still says it took the message: if it couldn't, the text comes back (drafts.tsx sent).
  const submit = () => {
   if (!message || disabled) return
   if (coming.length) { toast("Your files are still being added."); return }
-  flush(); sending(draft); unsent.current = files
+  flush(); sending(draft); unsent.current = files; unpasted.current = pastes
   onSubmit(message, attached, files.map(f => f.id), draft)
   if (box.current) box.current.innerHTML = ""
-  setParts([]); setBefore(""); setFiles([]); onTyping?.(false)
+  setParts([]); setBefore(""); setFiles([]); pastesRef.current = []; setPastes([]); onTyping?.(false)
  }
  const skills = ai.skills ?? []
  const typed = /(^|\s)\/([\w-]*)$/.exec(before)?.[2].toLowerCase()
@@ -675,22 +725,21 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
   let p: unknown = null
   try { p = JSON.parse(e.clipboardData.getData(KEPT)) } catch { /* from somewhere else: plain text */ }
   if (Array.isArray(p)) insert(markup(p.map(x => typeof x === "string" ? x : live(x, known) ?? String((x as Mention)?.name ?? "")), known))
-  else if (e.clipboardData.getData("text/plain").length >= LONG_PASTE) take([new File([e.clipboardData.getData("text/plain")], "Pasted text.txt", { type: "text/plain" })])
+  else if (e.clipboardData.getData("text/plain").length >= LONG_PASTE) { const t = e.clipboardData.getData("text/plain"); if (new Blob([t]).size > PASTE_FILE) take([new File([t], "Pasted text.txt", { type: "text/plain" })]); else setP([...pastes, t]) }
   else if (e.clipboardData.getData("text/plain")) document.execCommand("insertText", false, e.clipboardData.getData("text/plain"))
   else send("aiPasteImage", { to: me, quiet: true }) // a picture the box can't read here: Still reads the clipboard itself
  }
  const dragging = (e: { dataTransfer: DataTransfer }) => e.dataTransfer.types.includes("Files")
- return <InputGroup className={"composer" + (dropping ? " is-drop" : "")} style={{ "--hue": hueOf(companion) } as CSSProperties}
-  onDragOver={e => { if (!dragging(e) || disabled) return; e.preventDefault(); e.dataTransfer.dropEffect = "copy"; setDropping(true) }}
-  onDragLeave={e => { if (!e.currentTarget.contains(e.relatedTarget as Node)) setDropping(false) }}
-  onDrop={e => { if (!dragging(e)) return; e.preventDefault(); setDropping(false); if (!disabled) take(e.dataTransfer.files) }}>
-  {dropping && <div className="composer-drop" aria-hidden><Paperclip />Drop to attach</div>}
+ const wide = !!zone?.classList.contains("chat-view")
+ return <InputGroup ref={group} className={"composer" + (dropping && !wide ? " is-drop" : "")} style={{ "--hue": hueOf(companion) } as CSSProperties}>
+  {dropping && zone && createPortal(<div className="composer-drop" aria-hidden style={{ "--hue": hueOf(companion) } as CSSProperties}><Paperclip />Drop to attach</div>, zone)}
   {items.length > 0 && <div className="skill-menu" role="listbox" aria-label={menuLabel}>{items.map((it, i) => <button type="button" key={it.key} role="option" aria-selected={i === pick % items.length} onMouseDown={e => { e.preventDefault(); it.run() }}>{it.icon}<b>{it.label}</b><span>{it.sub}</span></button>)}</div>}
-  {files.length + coming.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
+  {files.length + coming.length + pastes.length > 0 && <InputGroupAddon align="block-start" className="skill-chips">
    {files.map(f => <FileChip key={f.id} file={f} onRemove={() => { const left = files.filter(x => x !== f); setFiles(left); save(parts, left) }} />)}
    {coming.map(c => { const pct = Math.floor(100 * c.done / (c.size || 1)); return <span key={c.key} className="skill-chip file-chip is-loading" title={c.name}><FileIcon path={c.name} /><span>{c.name}</span><small>{pct}%</small>
     <i className="file-progress" role="progressbar" aria-label={"Adding " + c.name} aria-valuenow={pct} style={{ width: pct + "%" }} />
-    <button type="button" aria-label={"Stop adding " + c.name} onClick={() => stopAdding(c.key)}><X /></button></span> })}
+    <button type="button" className="file-x" aria-label={"Stop adding " + c.name} onClick={() => stopAdding(c.key)}><X /></button></span> })}
+   {pastes.map((t, i) => <PasteChip key={i} text={t} onRemove={() => setP(pastes.filter((_, j) => j !== i))} onInline={() => { setP(pastes.filter((_, j) => j !== i)); end(); document.execCommand("insertText", false, t) }} />)}
   </InputGroupAddon>}
   <div ref={box} data-history={draft} role="textbox" aria-multiline aria-label="Message" aria-placeholder={placeholder} aria-disabled={disabled || undefined} data-empty={!text.trim() || undefined}
    contentEditable={!disabled} data-slot="input-group-control" className="composer-input" spellCheck
@@ -708,6 +757,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     if (items.length && (e.key === "Tab" || (e.key === "Enter" && !e.shiftKey))) { e.preventDefault(); items[pick % items.length].run(); return }
     if (items.length && e.key === "Escape") { e.preventDefault(); e.stopPropagation(); setShut(text); return }
     if ((e.key === "Backspace" || e.key === "Delete") && unmention(e.key === "Delete")) { e.preventDefault(); return }
+    if (e.key === "Backspace" && pastes.length && atStart()) { e.preventDefault(); setP(pastes.slice(0, -1)); return }
     if (e.key === "Backspace" && files.length && atStart()) { e.preventDefault(); setFiles(files.slice(0, -1)); save(parts, files.slice(0, -1)); return }
     if (e.key === "Enter") { e.preventDefault(); if (e.shiftKey) document.execCommand("insertLineBreak"); else submit() } }} />
   <InputGroupAddon align="block-end">
@@ -842,7 +892,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
 export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onFile, interests }: { ai: AiState; send: Send; mode: "tab" | "panel"; tabs?: TabRef[]; activeTab?: TabRef; onSettings: () => void; onFile: (path: string) => void; interests?: string[] }) {
  const [tick, setTick] = useState(0)
  const provider = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
- const queued = ai.queued ?? [], upNext = queued.map(q => q.text).filter(Boolean).join(" · "), upFiles = queued.flatMap(q => q.files ?? [])
+ const queued = ai.queued ?? [], upNext = queued.map(q => unpaste(q.text).rest).filter(Boolean).join(" · "), upFiles = queued.flatMap(q => q.files ?? [])
  const log = useRef<HTMLDivElement>(null)
  const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
  const known: Known = { companions: ai.companions ?? [], tabs, plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
@@ -953,7 +1003,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
      {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><ArrowDownRight /><span>{s}</span></button>)}</div>}
-     <ReplyActions m={m} body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 20000 ? latestPrompt : undefined} send={send} />
+     <ReplyActions m={m} body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 100000 ? latestPrompt : undefined} send={send} />
     </div>
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<div className="ai-live">

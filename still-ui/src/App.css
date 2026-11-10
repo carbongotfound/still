@@ -549,7 +549,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-compose { padding:0 14px 14px; } /* the gap above it is the log's --chat-end */
 .ai-compose [data-slot=input-group] { border-radius:18px; background:var(--card); border-color:var(--input); box-shadow:0 1px 2px #2a20140a,0 10px 28px -16px #2a201440; }
 .dark .ai-compose [data-slot=input-group] { box-shadow:0 10px 28px -14px #000c; }
-.ai-compose .composer-input { max-height:180px; }
+.ai-compose .composer-input { min-height:3rem; max-height:180px; }
 .ai-send[data-slot] { width:34px; height:34px; border-radius:50%; background:var(--hue,#7c66f5); color:#fff; }
 .ai-send[data-slot]:hover { background:var(--hue,#7c66f5); opacity:.88; } .ai-send[data-slot]:disabled { background:var(--muted); color:var(--muted-foreground); opacity:1; }
 .ai-send.is-stop[data-slot], .ai-send.is-stop[data-slot]:hover { background:#e5484d; }
@@ -584,6 +584,9 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .composer { position:relative; } .composer.is-drop { outline:2px dashed color-mix(in oklab,var(--hue,#5c7a76) 70%,var(--foreground)); outline-offset:2px; }
 .composer-drop { position:absolute; inset:0; z-index:3; display:flex; align-items:center; justify-content:center; gap:8px; border-radius:inherit; pointer-events:none; font-weight:600;
  background:color-mix(in oklab,var(--hue,#5c7a76) 16%,var(--card)); color:var(--foreground); } .composer-drop svg { width:16px; height:16px; }
+/* Over a chat, the whole chat lights up softly. */
+.chat-view > .composer-drop { inset:10px; z-index:30; flex-direction:column; gap:10px; border:1.5px dashed color-mix(in oklab,var(--hue,#5c7a76) 60%,transparent); border-radius:18px; font-size:14px;
+ background:color-mix(in oklab,var(--hue,#5c7a76) 10%,color-mix(in oklab,var(--background) 82%,transparent)); -webkit-backdrop-filter:blur(2px); backdrop-filter:blur(2px); } .chat-view > .composer-drop svg { width:22px; height:22px; }
 .menu-hint { margin-left:auto; font-size:11px; color:var(--muted-foreground); }
 .composer[data-slot=input-group]:has(:disabled) { opacity:1; background:var(--card); } .ai-send svg { width:15px; height:15px; } .ai-send[aria-label=Stop] svg { width:11px; height:11px; fill:currentColor; }
 /* Chats and setup scroll by wheel, trackpad and keys with no scrollbar; once scrolled, the top edge fades (fadeTop). */
@@ -736,7 +739,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .chat-view[data-mode=tab] .ai-compose { padding:0 44px 20px; }
 .is-split .chat-view[data-mode=tab] .ai-log { padding:56px 28px 0; } .is-split .chat-view[data-mode=tab] .ai-compose { padding:0 28px 16px; }
 .chat-view[data-mode=tab] .composer[data-slot=input-group] { border-radius:24px; }
-.chat-view[data-mode=tab] .composer-input { min-height:64px; padding:16px 18px 4px; font-size:14.5px; }
+.chat-view[data-mode=tab] .composer-input { min-height:56px; padding:14px 18px 4px; font-size:14.5px; }
+.chat-view[data-mode=tab] .composer .skill-chips[data-slot] { padding:14px 18px 0; } .chat-view[data-mode=tab] .composer .skill-chips[data-slot] + .composer-input { padding-top:8px; }
 .chat-view[data-mode=tab] .composer [data-slot=input-group-addon] { padding:4px 10px 10px; }
 .chat-hello { flex:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:8px; text-align:center; }
 .chat-hello h3 { margin:10px 0 0; font-family:var(--font-display); font-size:30px; font-weight:430; letter-spacing:-.02em; }
@@ -982,10 +986,24 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-menu button > img, .skill-menu button > .mascot, .skill-menu .plug-logo { flex:none; width:16px; height:16px; border-radius:4px; } .skill-menu button > .mascot { width:22px; height:22px; }
 .skill-menu .plug-logo { display:grid; place-items:center; overflow:hidden; font-style:normal; font-size:9px; font-weight:700; background:color-mix(in oklab,var(--hue) 75%,white); color:color-mix(in oklab,var(--hue) 25%,black); } .skill-menu .plug-logo.is-image { background:#fff; }
 .skill-menu span { min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; color:var(--muted-foreground); }
-.skill-chips[data-slot] { flex-wrap:wrap; gap:6px; padding:10px 12px 0; }
+/* The box's files and pasted text: one row of compact pills right above the text, sideways when there are many, so the
+   box keeps its size. The x shows on hover (or focus); a picture or a paste opens on a click. */
+.skill-chips[data-slot] { flex-wrap:nowrap; gap:8px; padding:10px 10px 0; overflow-x:auto; scrollbar-width:none; -webkit-mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent); mask-image:linear-gradient(to right,#000 calc(100% - 28px),transparent); } .skill-chips[data-slot]::-webkit-scrollbar { display:none; }
+.skill-chips[data-slot] > * { flex:none; }
+.composer .skill-chips[data-slot] + .composer-input { padding-top:6px; }
+.composer .file-chip { position:relative; height:28px; padding:0 9px 0 5px; gap:6px; border-radius:9px; background:color-mix(in oklab,var(--foreground) 6%,transparent); font-weight:500; }
+.composer .file-chip .file-thumb { width:20px; height:20px; border-radius:5px; }
+.file-chip > .file-open { display:inline-flex; align-items:center; gap:inherit; height:100%; margin:0; opacity:1; color:inherit; font:inherit; cursor:pointer; }
+.file-chip .file-open > span { max-width:150px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .composer .file-chip > span { max-width:150px; }
+.composer .file-chip .file-x { position:absolute; top:-6px; right:-6px; width:18px; height:18px; margin:0; border-radius:50%; background:var(--foreground); color:var(--background); opacity:0; box-shadow:0 0 0 2px var(--card); transition:opacity .12s; }
+.composer .file-chip:hover .file-x, .composer .file-chip:focus-within .file-x { opacity:1; } .composer .file-chip .file-x svg { width:10px; height:10px; }
+@media (hover:none) { .composer .file-chip .file-x { opacity:1; } }
+.paste-chip .file-open > svg { width:14px; height:14px; flex:none; color:var(--muted-foreground); }
+.file-preview[data-slot] { width:auto; max-width:min(92vw,960px); } .file-preview img { display:block; max-width:100%; max-height:72vh; margin:auto; border-radius:8px; object-fit:contain; }
+.paste-dialog pre { max-height:60vh; overflow:auto; margin:0; padding:12px 14px; border-radius:10px; background:var(--muted); font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
 /* The message box: text with mentions in it (Mention.tsx). */
 .composer-input { position:relative; flex:1; width:100%; min-height:4rem; padding:8px 10px; overflow-y:auto; font-size:14px; line-height:1.5; white-space:pre-wrap; overflow-wrap:anywhere; outline:none; cursor:text; }
-.composer-input[data-empty]::before { content:attr(aria-placeholder); position:absolute; color:var(--muted-foreground); pointer-events:none; }
+.composer-input[data-empty]::before { content:attr(aria-placeholder); position:absolute; inset:0; padding:inherit; overflow:hidden; color:var(--muted-foreground); pointer-events:none; } /* exactly where typed text goes */
 .composer-input[aria-disabled] { cursor:not-allowed; opacity:.5; }
 .mention { white-space:nowrap; border-radius:5px; font-weight:550; }
 .mention > img, .mention > i { display:inline-block; width:16px; height:16px; margin:0 4px 0 1px; vertical-align:-3px; border-radius:4px; object-fit:contain; font-style:normal; }

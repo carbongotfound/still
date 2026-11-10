@@ -108,7 +108,7 @@ public partial class MainWindow
     using var document=JsonDocument.Parse(json);
     var data=document.RootElement;
     string op=data.GetProperty("op").GetString()??"";
-    if(json.Length>65536&&op!="aiAttach")return; // only a piece of a file (4 MB, as base64) is bigger
+    if(json.Length>(op=="aiAttach"?6<<20:op is "aiSend" or "aiEdit" or "draftSave"?2<<20:65536))return; // bigger: a piece of a file (4 MB, as base64), a message (100,000 characters) or a draft (2 MB)
     App.Breadcrumb="shell "+op;
     string S(string key)=>data.TryGetProperty(key,out var v)?v.GetString()??"":"";
     // No id means the active tab; an id that names no tab (a closed tab's row still animating out) means none, never the active one.

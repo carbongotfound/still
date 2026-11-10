@@ -395,7 +395,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   guard message.webView === shell, message.frameInfo.isMainFrame, message.frameInfo.securityOrigin.protocol == "still", message.frameInfo.securityOrigin.host == "app",
         let text = message.body as? String, text.utf8.count <= 6 << 20,
         let data = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any], let op = data["op"] as? String,
-        text.utf8.count <= 65536 || op == "aiAttach" else { return } // only a piece of a file (4 MB, as base64) is bigger
+        text.utf8.count <= (op == "aiAttach" ? 6 << 20 : ["aiSend", "aiEdit", "draftSave"].contains(op) ? 2 << 20 : 65536) else { return } // bigger: a piece of a file (4 MB, as base64), a message (100,000 characters) or a draft (2 MB)
   handle(op, data)
   if op != "bounds" && op != "overlay" && op != "pageHoles" { schedulePublish() }
  }

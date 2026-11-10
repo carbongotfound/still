@@ -304,16 +304,16 @@ try:
 
     # A send that fails (too long) keeps the draft and puts the text back.
     open_chat(p, "chat2")
-    long = "x" * 20001
+    long = "x" * 100001
     typed(p, CHAT, long)
     ev(p, f"document.querySelector({json.dumps(CHAT)}).dispatchEvent(new KeyboardEvent('keydown', {{ key: 'Enter', bubbles: true, cancelable: true }}))")
-    told = until(lambda: "20,000" in toast(p), 5)
+    told = until(lambda: "100,000" in toast(p), 5)
     check(told, f"A send Still can't take says why ({toast(p)[:120]!r})")
-    check(until(lambda: len(text(p, CHAT)) == 20001, 3), f"...the text is back in the box ({len(text(p, CHAT))} characters)")
+    check(until(lambda: len(text(p, CHAT)) == 100001, 3), f"...the text is back in the box ({len(text(p, CHAT))} characters)")
     check(draft_text("chat.chat2") == long, "...and the draft is kept")
     select_all(p, CHAT); backspace(p); time.sleep(.8)
     press(p, "z")
-    check(len(text(p, CHAT)) == 20001, "Ctrl+Z brings back a box emptied after a failed send")
+    check(len(text(p, CHAT)) == 100001, "Ctrl+Z brings back a box emptied after a failed send")
     select_all(p, CHAT); backspace(p); time.sleep(.8)
 
     # The side chat.

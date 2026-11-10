@@ -1084,7 +1084,7 @@ extension Browser {
   case "aiSend":
    if setUpAgainAsked(s("text")) && !incognito { sent(true); welcome = true; welcomeTalk = true; publishEverywhere(); break } // "set me up again" reopens setup's interview
    var text = tidy(s("text"))
-   guard (1...20000).contains(text.count) else { sent(false, text.count > 20000 ? "Messages can be up to 20,000 characters. Yours is still in the box." : "Write a message first."); break }
+   guard (1...100000).contains(text.count) else { sent(false, text.count > 100000 ? "Messages can be up to 100,000 characters. Yours is still in the box." : "Write a message first."); break }
    // From the new tab page: a new chat that turns this tab into the chat. From a chat tab: that tab's chat.
    // A chat that's still working takes it as a follow-up for when it finishes.
    let target = active?.chatId.map { id in myChats.first { $0.id == id } } ?? (b("home") ? nil : v.chat)
@@ -1122,7 +1122,7 @@ extension Browser {
   case "aiEdit":
    // The latest prompt, changed or not: what came after it is forgotten, and it runs again from what came before.
    let rewritten = tidy(s("text")), was = s("was")
-   guard let editing = shownChat, (1...20000).contains(rewritten.count) else { break }
+   guard let editing = shownChat, (1...100000).contains(rewritten.count) else { break }
    guard let found = editing.messages.lastIndex(where: { $0.role == "user" && $0.who == nil && $0.answer != true }), editing.messages[found].text == was else { toast("That isn't your latest message anymore."); break }
    if let going = runs[editing.id] { going.queue.removeAll(); stopRun(going) }
    Task { @MainActor [self] in
