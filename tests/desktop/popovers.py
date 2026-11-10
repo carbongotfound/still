@@ -113,7 +113,8 @@ def mode_menu(process, fresh, shot=None):
     box = menu(process, "Mode menu" + (" with companions" if fresh else ""), ".ai-sidebar .mode-chip", ".mode-menu")
     if box:
         above(process, "Mode menu", box, "r")
-        check(js(process, "document.querySelectorAll('.mode-menu .mode-item small').length") == 3
+        # Three modes, then the three Autonomy levels, each with its line inline.
+        check(js(process, "(i => i.length === 6 && i.every(e => e.querySelector('small')))([...document.querySelectorAll('.mode-menu .mode-item')])")
               and not js(process, "!!document.querySelector('.mode-card, [data-slot=tooltip-content]:not([data-state=closed])')"), "Mode menu: each mode's line is inline, no side card")
         if shot:
             copy(rpc(process, "capture", name=shot), shot)
