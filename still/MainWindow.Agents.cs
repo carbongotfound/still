@@ -375,7 +375,7 @@ public partial class MainWindow
     if (c.nodeType === 3) {
      const pe = c.parentElement || c.parentNode?.host; if (!pe) return;
      const cs = view(pe).getComputedStyle(pe);
-     if (sight(pe).kids && cs.visibility === 'visible' && parseFloat(cs.fontSize) >= 3 && !/^rgba\(.*,\s*0\)$|\/\s*0\)$/.test(cs.color)) out.push(/^(pre|break-spaces)/.test(cs.whiteSpace) ? c.data : c.data.replace(/\s+/g, ' '));
+     if (sight(pe).inner && cs.visibility === 'visible' && parseFloat(cs.fontSize) >= 3 && !/^rgba\(.*,\s*0\)$|\/\s*0\)$/.test(cs.color)) out.push(/^(pre|break-spaces)/.test(cs.whiteSpace) ? c.data : c.data.replace(/\s+/g, ' '));
      return;
     }
     if (c.nodeType !== 1 || /^(script|style|noscript|template|select|textarea)$/.test(c.localName)) return;
@@ -398,33 +398,36 @@ public partial class MainWindow
   const parentOf = e => e.parentElement || (e.getRootNode && e.getRootNode().host) || null;
   // Controls, plus clickable things built from plain elements (the outermost element with a pointer cursor).
   const isControl = (e, cs) => e.localName === 'label' ? !!e.control && !visible(e.control) : e.matches(Q) || cs.cursor === 'pointer' && !!parentOf(e) && view(e).getComputedStyle(parentOf(e)).cursor !== 'pointer' && !!(e.innerText || e.getAttribute('aria-label') || '').trim();
-  // What a person can see. ok: the element shows; kids: what's inside it can show; clip: the box its insides are cut to. Out of
-  // sight: no box, invisible or see-through (itself or anything around it), cut away by a box around it that clips, clipped to
-  // nothing, off the page's top or left where no scrolling goes, or off its side when the page doesn't scroll sideways. Hidden
-  // controls and words are how a page talks to the AI behind the user's back, so the AI gets neither. A see-through field or
-  // dropdown laid over its own look still counts. ponytail: words the colour of their background, and fixed or positioned
-  // things that escape a box that's cut away, are judged by the box around them in the page, not by where they're drawn.
+  // What a person can see. ok: the element shows; kids: what's inside it isn't hidden with it; inner: its own words show; clip:
+  // the box what flows inside it is cut to, aclip what's placed absolutely inside it (a box that isn't positioned doesn't cut
+  // those), fclip what's fixed (only a transformed box cuts those). Out of sight: no box, invisible or see-through (itself or
+  // anything around it), cut away by a box that clips it, clipped to nothing, off the page's top or left where no scrolling
+  // goes, or off its side when the page doesn't scroll sideways. Hidden controls and words are how a page talks to the AI behind
+  // the user's back, so the AI gets neither. A see-through field or dropdown laid over its own look still counts. A box with no
+  // height can still show what spills out of it (Google's top bars). ponytail: words the colour of their background count as seen.
   let SEEN = new WeakMap(); const FREE = { l: -1e9, t: -1e9, r: 1e9, b: 1e9 };
+  const holds = cs => cs.transform !== 'none' || cs.filter !== 'none' || cs.perspective !== 'none' || /paint|layout|strict|content/.test(cs.contain);
   const sight = e => {
    let s = SEEN.get(e); if (s) return s;
    const w = view(e), d = e.ownerDocument, p = parentOf(e), f = !p && w.frameElement;
-   const up = p ? sight(p) : f ? { kids: sight(f).kids, clip: FREE } : { kids: true, clip: FREE };
-   s = { ok: false, kids: false, clip: up.clip };
+   const up = p ? sight(p) : { kids: f ? sight(f).ok : true, clip: FREE, aclip: FREE, fclip: { l: 0, t: 0, r: w.innerWidth, b: w.innerHeight } };
+   s = { ok: false, kids: false, inner: false };
    const cs = up.kids ? w.getComputedStyle(e) : null;
-   if (cs && cs.display === 'contents') s = { ok: false, kids: true, clip: up.clip };
+   if (cs && cs.display === 'contents') s = { ...up, ok: false };
    else if (cs && e.getClientRects().length && (cs.opacity !== '0' || /^(input|select)$/.test(e.localName)) && !/inset\(\s*(50|100)%/.test(cs.clipPath)) {
-    const r = e.getBoundingClientRect(), c = cs.position === 'fixed' ? { l: 0, t: 0, r: w.innerWidth, b: w.innerHeight } : up.clip, n = (cs.clip.match(/-?[\d.]+/g) || []).map(Number);
+    const r = e.getBoundingClientRect(), pos = cs.position, c = pos === 'fixed' ? up.fclip : pos === 'absolute' ? up.aclip : up.clip, n = (cs.clip.match(/-?[\d.]+/g) || []).map(Number);
     const page = e === d.documentElement || e === d.body, cuts = x => /^(hidden|clip)$/.test(x), scrolls = x => /^(auto|scroll|overlay)$/.test(x);
-    const out = r.left >= c.r || r.right < c.l || r.top >= c.b || r.bottom < c.t || r.right + w.scrollX <= 0 || r.bottom + w.scrollY <= 0;
-    const kids = !out && !(n.length === 4 && (n[1] - n[3] <= 1 || n[2] - n[0] <= 1)) && !(!page && cuts(cs.overflowX) && r.width <= 1) && !(!page && cuts(cs.overflowY) && r.height <= 1);
+    const out = c.r - c.l <= 1 || c.b - c.t <= 1 || r.left >= c.r || r.right < c.l || r.top >= c.b || r.bottom < c.t || pos !== 'fixed' && (r.right + w.scrollX < 0 || r.bottom + w.scrollY < 0);
+    const kids = !(n.length === 4 && (n[1] - n[3] <= 1 || n[2] - n[0] <= 1));
     const cw = Math.min(r.right, c.r) - Math.max(r.left, c.l), ch = Math.min(r.bottom, c.b) - Math.max(r.top, c.t);
     // Its insides are cut to its box where it clips; where it scrolls, scrolling can bring them into view. A page that doesn't
     // scroll sideways cuts at the window's sides (menus parked off to the side); one that doesn't scroll down still scrolls inside.
     const x = page ? (cuts(cs.overflowX) ? { l: 0, r: w.innerWidth } : { l: c.l, r: c.r }) : cuts(cs.overflowX) ? { l: Math.max(c.l, r.left), r: Math.min(c.r, r.right) } : scrolls(cs.overflowX) ? { l: FREE.l, r: FREE.r } : { l: c.l, r: c.r };
     const y = page ? { t: c.t, b: c.b } : cuts(cs.overflowY) ? { t: Math.max(c.t, r.top), b: Math.min(c.b, r.bottom) } : scrolls(cs.overflowY) ? { t: FREE.t, b: FREE.b } : { t: c.t, b: c.b };
     // A box with no size of its own (a link around a card, say) shows through what's in it.
-    const big = cw > 1 && ch > 1 || (r.width <= 1 || r.height <= 1) && !!e.firstElementChild;
-    s = { ok: kids && big && cs.visibility === 'visible', kids, clip: { ...x, ...y } };
+    const big = cw > 1 && ch > 1 || (r.width <= 1 || r.height <= 1) && !!e.firstElementChild, clip = { ...x, ...y };
+    s = { ok: kids && !out && big && cs.visibility === 'visible', kids, inner: kids && !out && clip.r - clip.l > 1 && clip.b - clip.t > 1, clip,
+     aclip: page || pos !== 'static' || holds(cs) ? clip : up.aclip, fclip: !page && holds(cs) ? clip : up.fclip };
    }
    SEEN.set(e, s);
    return s;

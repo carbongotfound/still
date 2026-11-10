@@ -44,6 +44,9 @@ PAGE = """<!doctype html><meta charset=utf-8><title>Seen</title>
 <x-card><span slot=s>Slotted words</span></x-card>
 <iframe src="/frame" style="width:300px;height:70px"></iframe>
 <iframe src="/frame?hidden" style="display:none"></iframe>
+<div style="position:fixed;top:0;left:0;right:0;height:0"><div style="position:absolute;top:4px;right:8px;background:#fff"><button onclick="this.textContent='Bar pressed'">Bar button</button></div></div>
+<div style="position:relative;height:30px"><div style="height:0;overflow:hidden"><button style="position:absolute;top:0;left:0">Spilled button</button></div></div>
+<div style="position:relative;height:0;overflow:hidden"><button style="position:absolute;top:0;left:0">Held button</button></div>
 <input id=stuck placeholder="Stuck field" oninput="this.value=''">
 <div id=canvas onclick="kix.contentDocument.querySelector('[contenteditable]').focus()" style="width:300px;height:60px;border:1px solid #888">Drawn:<span id=drawn></span></div>
 <iframe id=kix src="/kix" style="position:absolute;top:-10000px;width:20px;height:20px"></iframe>
@@ -99,11 +102,12 @@ def main():
 
         page = text_of(client.call("read_page", tabId=tab)[1])
         for seen in ("Plain words a person sees", 'button "Shown button"', "Shadow words", "Slotted words", 'button "Shadow button"', "Frame words",
-                     'button "Frame button"', "Shown inside hidden", 'label "Styled check"', 'button "Slide one"'):
+                     'button "Frame button"', "Shown inside hidden", 'label "Styled check"', 'button "Slide one"', 'button "Bar button"',
+                     'button "Spilled button"'):
             check(seen in page, f"read_page has what shows: {seen}")
         for hidden in ("Ghost button", "Ghost words", "Reader-only button", "Reader-only words", "Zero-size words", "Clear words", "Far-off words",
                        "Far-off link", "Folded link", "Folded words", "Side menu link", "Slide two", "Hidden inside hidden", "Hidden frame words",
-                       'button "Inert button"', 'button "Under a banner"'):
+                       'button "Inert button"', 'button "Under a banner"', "Held button"):
             check(hidden not in page, f"read_page leaves out what doesn't: {hidden}")
         check("1 more under something on top" in page, "read_page says one control is under something on top")
 
@@ -122,6 +126,8 @@ def main():
         check(not ok, f"A button cut off by its box isn't clicked by its words ({said[:70]})")
         ok, said = client.call("click", text="Shown button", tabId=tab)
         check("hidden" not in said, f"A button that shows is still clicked by its words ({said[:70]})")
+        ok, said = client.call("click", text="Bar button", tabId=tab)
+        check(ok and "hidden" not in said, f"So is one in a bar with no height of its own, like Google's top bars ({said[:70]})")
 
         ok, said = client.call("type", selector="#stuck", text="pears", tabId=tab)
         check(not ok and "didn't change" in said, f"A field that throws typing away isn't called typed ({said[:90]})")
