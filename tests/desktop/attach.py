@@ -258,13 +258,14 @@ def main():
         js(p, f"document.querySelector('{home} [aria-label=Message]').dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: {files_js([('dot.png', 'image/png', base64.b64encode(PNG).decode())])} }}))")
         got = until(lambda: len(chips(p, home)) == 3 and chips(p, home), 10) or chips(p, home)
         check(got[-1:] == [f"dot.png {len(PNG)} B"], f"Pasting an image adds it too ({got})")
+        check(until(lambda: js(p, f"!!document.querySelector('{home} .file-chip img.file-thumb')?.src.startsWith('data:image/')"), 10), "An image's chip shows a picture of it")
 
         # Long text: a file, not text in the box. Short text stays text.
         paste_text = "(t => {{ const d = new DataTransfer(), box = document.querySelector('{0} [aria-label=Message]'); d.setData('text/plain', t); box.focus(); box.dispatchEvent(new ClipboardEvent('paste', {{ bubbles: true, cancelable: true, clipboardData: d }})) }})({1})"
-        js(p, paste_text.format(home, json.dumps("Tide table, North Harbor. " * 40)))
+        js(p, paste_text.format(home, json.dumps("Tide table, North Harbor. " * 80)))
         got = until(lambda: len(chips(p, home)) == 4 and chips(p, home), 10) or chips(p, home)
         typed = js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""
-        check(got[-1:] == ["Pasted text.txt 1.0 KB"] and "Tide table" not in typed, f"A long paste goes in as a file, Pasted text.txt ({got})")
+        check(got[-1:] == ["Pasted text.txt 2.0 KB"] and "Tide table" not in typed, f"A long paste goes in as a file, Pasted text.txt ({got})")
         js(p, f"document.querySelector('{home} .file-chip button[aria-label=\"Remove Pasted text.txt\"]').click()")
         js(p, paste_text.format(home, json.dumps("Tide table")))
         check(until(lambda: "Tide table" in (js(p, f"document.querySelector('{home} [aria-label=Message]').innerText") or ""), 5) and len(chips(p, home)) == 3, "A short one stays text in the box")

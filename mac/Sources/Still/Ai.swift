@@ -1084,6 +1084,10 @@ extension Browser {
    let kept = (data["ids"] as? [Any] ?? []).compactMap { ($0 as? String).flatMap { attachment($0, in: attachmentsHere) } }
    var seen = Set<String>()
    send(["kind": "attached", "to": s("to"), "files": kept.filter { seen.insert($0.id).inserted }.prefix(maxFiles).map { ["id": $0.id, "name": $0.name, "size": $0.size] }, "error": ""])
+  case "aiThumb": // a chip's picture of an attached image
+   if let pic = attachment(s("id"), in: attachmentsHere), let mime = imageMime(pic.name), let bytes = FileManager.default.contents(atPath: attachmentsHere + "/" + pic.id + "/" + pic.name) {
+    send(["kind": "thumb", "id": pic.id, "data": "data:\(mime);base64," + bytes.base64EncodedString()])
+   }
   case "aiPasteImage": // the + menu, or a paste the box can't read itself
    let to = s("to"), quiet = b("quiet")
    DispatchQueue.main.async { [self] in

@@ -645,6 +645,8 @@ public partial class MainWindow
     var picker = new Microsoft.Win32.OpenFileDialog { Multiselect = true, Title = "Add files" };
     if (picker.ShowDialog(this) == true) Attach(S("to"), picker.FileNames.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));
     break; }
+   case "aiThumb" when Attachment(AttachmentsHere, S("id")) is { } pic && ImageMime(pic.Name) is { } picMime: // a chip's picture of an attached image
+    ShellSend(new { kind = "thumb", id = pic.Id, data = $"data:{picMime};base64,{Convert.ToBase64String(File.ReadAllBytes(Path.Combine(AttachmentsHere, pic.Id, pic.Name)))}" }); break;
    case "aiPasteImage": { // the + menu, or a paste the box can't read itself
     var copiedNow = CopiedFiles();
     if (copiedNow.Count > 0) Attach(S("to"), copiedNow.Take(MaxFiles).Select(p => (Path.GetFileName(p), new FileInfo(p).Length, (Func<byte[]>)(() => File.ReadAllBytes(p)))));

@@ -335,11 +335,41 @@ export function useRunMood(ai: AiState | undefined, typing = false): Mood {
 // Where each chat was scrolled to while Still runs; none = at the newest message.
 const scrolls = new Map<string, number>()
 
-// An attached file: its kind, name and size.
-const FileChip = ({ file, onRemove }: { file: Attached; onRemove?: () => void }) => <span className="skill-chip file-chip" title={file.name}><FileIcon path={file.name} /><span>{file.name}</span><small>{sizeText(file.size)}</small>
- {onRemove && <button type="button" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}</span>
+// An attached file: a picture of it if it's an image (else its kind's icon), its name and size.
+function FileChip({ file, onRemove }: { file: Attached; onRemove?: () => void }) {
+ const thumb = useThumb(file)
+ return <span className="skill-chip file-chip" title={file.name}>{thumb ? <img className="file-thumb" src={thumb} alt="" /> : <FileIcon path={file.name} />}<span>{file.name}</span><small>{sizeText(file.size)}</small>
+  {onRemove && <button type="button" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}</span>
+}
+// Still hands a kept image back as a data URL (aiThumb; the page's rules allow only those) and the chip keeps a 64-pixel copy,
+// so each file is asked for once. "" means there's no picture: the chip shows the icon.
+const thumbs = new Map<string, string>()
+const shrink = (src: string) => new Promise<string>(done => {
+ const img = new Image()
+ img.onload = () => {
+  try {
+   const k = Math.min(1, 64 / Math.max(1, Math.min(img.naturalWidth, img.naturalHeight))), c = document.createElement("canvas")
+   c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k))
+   c.getContext("2d")!.drawImage(img, 0, 0, c.width, c.height); done(c.toDataURL("image/png"))
+  } catch { done(src) }
+ }
+ img.onerror = () => done(""); img.src = src
+})
+function useThumb(file: Attached) {
+ const [src, setSrc] = useState(thumbs.get(file.id))
+ useEffect(() => {
+  if (src !== undefined || !IMAGE.test(file.name)) return
+  const got = (e: Event) => {
+   const d = (e as CustomEvent).detail; if (d.id !== file.id) return
+   if (thumbs.has(d.id)) setSrc(thumbs.get(d.id)); else shrink(String(d.data ?? "")).then(s => { thumbs.set(d.id, s); setSrc(s) })
+  }
+  addEventListener("still-thumb", got); window.chrome?.webview?.postMessage({ op: "aiThumb", id: file.id })
+  return () => removeEventListener("still-thumb", got)
+ }, [file.id, file.name, src])
+ return src
+}
 // Limits match the host's (MainWindow.Ai.cs Attach): 10 files a message, files up to 10 MB, images up to 5 MB.
-const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10, LONG_PASTE = 1000 // characters: a longer paste goes in as a file
+const IMAGE = /\.(png|jpe?g|gif|webp)$/i, MAX_FILES = 10, LONG_PASTE = 2000 // characters: a longer paste goes in as a file
 const tooBig = (f: File) => f.size > (IMAGE.test(f.name) ? 5 : 10) * 1048576 ? `${f.name} is ${sizeText(f.size)}. ${IMAGE.test(f.name) ? "Images" : "Files"} can be up to ${IMAGE.test(f.name) ? 5 : 10} MB.` : ""
 
 // The message box. / picks a skill, # an open tab (never a private one) or a connected app, and @ a companion: each goes

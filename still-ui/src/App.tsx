@@ -520,6 +520,7 @@ export default function App() {
    if (data.kind === "ai") { setAi(data.data); resumeOffer(data.data.interrupted ?? []) }
    if (data.kind === "file") setFileData(data.data)
    if (data.kind === "attached") dispatchEvent(new CustomEvent("still-attached", { detail: data }))
+   if (data.kind === "thumb") dispatchEvent(new CustomEvent("still-thumb", { detail: data }))
    if (data.kind === "pluginCatalog" || data.kind === "pluginLogos") dispatchEvent(new CustomEvent("still-" + data.kind, { detail: data.data }))
    if (data.kind === "tools") setToolData(old=>({...old,[data.name]:data.data}))
    if (data.kind === "panel") { setPane(data.name); if (data.name) { commandChoice.current=false; setDisplayPane(data.name); setQuery(data.value ?? ""); setFilter(""); if (data.name === "settings") { setSettingsFind(""); setSettingsPage(OLD_PAGES[data.value] ?? (data.value || "general")) } } }
