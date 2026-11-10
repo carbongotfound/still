@@ -196,7 +196,6 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var panel = ""
  var pageFrame = NSRect.zero
  var shellRatio: CGFloat = 1 // shell points per interface pixel
- let youTube = (try? String(contentsOf: resources.appendingPathComponent("youtube.js"))) ?? ""
  var publishQueued = false, overlayVersion = 0
  var appearanceObserver: NSKeyValueObservation?
  var pendingImport: (id: String, name: String, bookmarks: [[String: Any]], history: [[String: Any]], logins: BrowserLogins.Found, cookies: [HTTPCookie])?
@@ -838,7 +837,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   }
  }
 
- /// Tracker and ad-domain blocking plus the YouTube ad script, unless blocking is off or the site is allowed;
+ /// Tracker and ad-domain blocking, unless blocking is off or the site is allowed;
  /// and Still's own page scripts (draft keeper, login observer, hidden elements).
  func applyBlocking(_ view: WKWebView, host: String? = nil) {
   let controller = view.configuration.userContentController
@@ -848,7 +847,6 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   if let tab = tabs.first(where: { $0.view === view }) { addPageScripts(tab, controller) }
   guard pref("Blocking", true), !unblocked.contains(host ?? view.url?.host ?? "") else { return }
   if let blockingRules { controller.add(blockingRules) }
-  if !youTube.isEmpty { controller.addUserScript(WKUserScript(source: youTube, injectionTime: .atDocumentStart, forMainFrameOnly: false)) }
  }
 
  // MARK: Memory saver

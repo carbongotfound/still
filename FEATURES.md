@@ -56,7 +56,6 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 ## Blocking and privacy
 
 - ✅ **Ad and tracker blocking**: built-in third-party domain list answered with 204; per-site off switch (`MainWindow.Actions.cs` `BlockedDomains`, `UnblockedHosts`).
-- ✅ **YouTube ads**: strips ad data from YouTube's own responses; ads reaching the player are muted, skipped, or sped past (`YouTubeAdScript`).
 - ✅ **Tracking prevention**: Basic, Balanced or Strict via WebView2 `PreferredTrackingPreventionLevel` (Preferences `Tracking`).
 - ✅ **Cookies panel**: search and delete cookies per cookie or per site (`MainWindow.BrowserTools.cs`).
 - ✅ **Form autofill**: on/off for the engine's general autofill; password autosave always off (own manager instead).

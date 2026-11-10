@@ -18,72 +18,9 @@ public partial class MainWindow
   "revcontent.com", "adcolony.com", "applovin.com", "unityads.unity3d.com", "ads.yahoo.com", "advertising.yahoo.com",
   "adsafeprotected.com", "doubleverify.com", "chartbeat.com", "mixpanel.com", "segment.io", "fullstory.com", "newrelic.com"
  ];
- // YouTube serves its ads from youtube.com itself, so blocking ad domains never touched them. This strips the ads
- // out of YouTube's own data and hides any ad slots left in the feed and next to the video. It never skips ads.
- const string YouTubeAdScript = """
- (() => {
-  if (!/(^|\.)(youtube\.com|youtube-nocookie\.com)$/.test(location.hostname) || window.__stillYtAds) return;
-  window.__stillYtAds = true;
-  // Strip ad data out of YouTube's own responses before the page reads them, so pre-roll, mid-roll, feed,
-  // search, masthead and sidebar ads are never requested.
-  const adText = /adPlacements|adSlots|playerAds|adSlotRenderer|promotedSparklesWebRenderer|searchPyvRenderer|PromotedVideoRenderer|bannerPromoRenderer|brandVideo/;
-  const isAd = i => !!i && typeof i === "object" && !!(i.adSlotRenderer || i.richItemRenderer?.content?.adSlotRenderer || i.richSectionRenderer?.content?.statementBannerRenderer || i.promotedSparklesWebRenderer || i.searchPyvRenderer || i.promotedVideoRenderer || i.compactPromotedVideoRenderer || i.bannerPromoRenderer || i.statementBannerRenderer || i.brandVideoShelfRenderer || i.brandVideoSingletonRenderer);
-  const prune = (o, depth = 0) => {
-   if (!o || typeof o !== "object" || depth > 60) return o;
-   if (Array.isArray(o)) { for (let n = o.length - 1; n >= 0; n--) if (isAd(o[n])) o.splice(n, 1); else prune(o[n], depth + 1); return o; }
-   for (const key of ["adPlacements", "adSlots", "playerAds", "adBreakHeartbeatParams"]) delete o[key];
-   if (isAd(o.masthead)) delete o.masthead;
-   for (const key in o) prune(o[key], depth + 1);
-   return o;
-  };
-  const parse = JSON.parse;
-  JSON.parse = function (text, reviver) { const value = parse.call(this, text, reviver); return typeof text === "string" && adText.test(text) ? prune(value) : value; };
-  const json = Response.prototype.json;
-  Response.prototype.json = function () { return json.call(this).then(value => /\/youtubei\//.test(this.url) ? prune(value) : value); };
-  for (const name of ["ytInitialPlayerResponse", "ytInitialData"]) {
-   let value;
-   try { Object.defineProperty(window, name, { configurable: true, get: () => value, set: next => { value = prune(next); } }); } catch {}
-  }
-  const css = "ytd-ad-slot-renderer,ytd-in-feed-ad-layout-renderer,ytd-promoted-sparkles-web-renderer,ytd-banner-promo-renderer,ytd-statement-banner-renderer,ytd-display-ad-renderer,ytd-companion-slot-renderer,ytd-player-legacy-desktop-watch-ads-renderer,ytd-engagement-panel-section-list-renderer[target-id=engagement-panel-ads],#player-ads,#masthead-ad,.ytp-ad-overlay-container,ytd-rich-item-renderer:has(> #content > ytd-ad-slot-renderer),ytd-search-pyv-renderer,ytd-promoted-video-renderer,ytd-compact-promoted-video-renderer,ytd-video-masthead-ad-v3-renderer,ytd-primetime-promo-renderer,ytd-brand-video-shelf-renderer,ytd-brand-video-singleton-renderer,ytd-merch-shelf-renderer,ytd-ads-engagement-panel-content-renderer,ytd-rich-section-renderer:has(ytd-statement-banner-renderer),ytd-reel-video-renderer:has(ytd-ad-slot-renderer),.ytp-ad-module .ytp-ad-image-overlay,.ytp-featured-product,ad-slot-renderer{display:none!important}";
-  const style = () => {
-   if (document.getElementById("still-yt-ads") || !document.head) return;
-   const s = document.createElement("style"); s.id = "still-yt-ads"; s.textContent = css; document.head.append(s);
-  };
-  if (document.head) style(); else document.addEventListener("DOMContentLoaded", style, { once: true });
-  // Ads that still reach the player (signed-in accounts get some stitched into the video stream itself): mute,
-  // press Skip, jump to the end, and put the user's volume and speed back when the video returns.
-  // ponytail: an ad longer than 3 minutes counts as stitched and plays at 16x instead of being jumped over.
-  let inAd = false, muted = false, rate = 1;
-  setInterval(() => {
-   const p = document.querySelector("#movie_player"), v = p?.querySelector("video");
-   const wall = document.querySelector("ytd-enforcement-message-view-model");
-   if (wall) { wall.closest("tp-yt-paper-dialog")?.remove(); document.querySelector("tp-yt-iron-overlay-backdrop")?.remove(); v?.play?.().catch(() => {}); }
-   if (!p || !v) return;
-   if (p.classList.contains("ad-showing") || p.classList.contains("ad-interrupting")) {
-    if (!inAd) { inAd = true; muted = v.muted; rate = v.playbackRate || 1; }
-    v.muted = true;
-    p.querySelector(".ytp-skip-ad-button,.ytp-ad-skip-button,.ytp-ad-skip-button-modern")?.click();
-    if (isFinite(v.duration) && v.duration > 0 && v.duration < 180) { if (v.currentTime < v.duration - 0.2) v.currentTime = v.duration - 0.1; }
-    else v.playbackRate = 16;
-   } else if (inAd) { inAd = false; v.muted = muted; v.playbackRate = rate; }
-  }, 250);
- })();
- """;
  readonly Dictionary<string, List<string>> privateHidden = [];
- // The YouTube ad script follows the switches in open tabs too, so turning blocking back on works after a reload.
- static readonly System.Runtime.CompilerServices.ConditionalWeakTable<CoreWebView2, string> youTubeScripts = new();
- async Task SyncYouTubeScript(CoreWebView2 core)
- {
-  bool on = Prefs.Blocking && !Prefs.UnblockedHosts.Contains("www.youtube.com");
-  if (youTubeScripts.TryGetValue(core, out var id) == on) return;
-  if (!on) { youTubeScripts.Remove(core); if (id is { Length: > 0 }) core.RemoveScriptToExecuteOnDocumentCreated(id); return; }
-  youTubeScripts.AddOrUpdate(core, "");
-  youTubeScripts.AddOrUpdate(core, await core.AddScriptToExecuteOnDocumentCreatedAsync(YouTubeAdScript));
- }
- async Task SyncYouTubeScripts() { foreach (var w in Windows) foreach (var t in w.tabs) if (t.View?.CoreWebView2 is { } c) await w.SyncYouTubeScript(c); }
  void SetupBlocking(BrowserTab tab, CoreWebView2 core)
  {
-  _ = SyncYouTubeScript(core);
   foreach (string domain in BlockedDomains) {
    core.AddWebResourceRequestedFilter("*://" + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
    core.AddWebResourceRequestedFilter("*://*." + domain + "/*", CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
