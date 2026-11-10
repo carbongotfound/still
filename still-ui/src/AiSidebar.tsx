@@ -823,11 +823,12 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
     if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Square aria-hidden />Stopped by you</div>
     if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
-    const { body, choice } = choicesOf(m.text)
-    const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined
+    const { body, choice, next } = choicesOf(m.text)
+    const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined, last = i === items.length - 1 && !busy
     return <div key={i} className={turn(i)}>{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
-     {choice && <ChoiceCard choice={choice} answer={answer} live={i === items.length - 1 && !busy} onPick={text => submit(text)} />}
+     {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
+     {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><Lightbulb /><span>{s}</span></button>)}</div>}
      <div className="ai-actions"><IconButton label="Copy" onClick={() => { send("copyText", { text: body }); toast("Copied") }}><Copy /></IconButton></div>
     </div>
    })}

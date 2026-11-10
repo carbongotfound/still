@@ -561,7 +561,7 @@ def setup(process):
     check(seen.get("opened") and all(p in text for p in ("Pinecrest Weekender 28", "Tallow Daypack 22", "Marlin Trek 32", "$129")) and "nothing here is for sale" in text,
           f"Miso reads the sample page: three made-up packs, labeled as a sample ({seen.get('opened')}, {text[:80]!r})")
     rows = js(process, "[...document.querySelectorAll('.chat-pane .ai-look')].map(r => r.innerText)") or []
-    check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .choice-card .ask-option').length") == 3, 30), f"It finishes with a choice card of three next steps ({rows})")
+    check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-next .ai-next-step').length") == 3, 30), f"It finishes with three next steps ({rows})")
     miso = mate("Miso")
     theirs = [c for c in chats() if c.get("Companion") == miso.get("Id")]
     asked = [m["Text"] for c in theirs for m in c.get("Messages", []) if m["Role"] == "user"]

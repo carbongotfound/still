@@ -434,7 +434,7 @@ def lookup(process):
     click(process, ".chat-pane details.ai-look summary")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-look[open] li').length") == 3, 3), "Opening the search row lists its results")
     check(js(process, "!!document.querySelector('.chat-pane .md-table table') && !!document.querySelector('.chat-pane .md-draft button')"), "The answer has a clean table and a draft with its own Copy button")
-    check(js(process, "document.querySelectorAll('.chat-pane .choice-card .ask-option').length") == 3, "It ends with a choice card of three next steps")
+    check(js(process, "document.querySelectorAll('.chat-pane .ai-next .ai-next-step').length") == 3, "It ends with three next steps")
     time.sleep(.5)
     capture(process, "lookup-v01")
 

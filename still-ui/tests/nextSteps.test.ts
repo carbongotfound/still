@@ -92,6 +92,6 @@ test('a broken block stays in the reply as text', () => {
   assert.deepEqual(choicesOf(text), { body: text })
   assert.deepEqual(choicesOf('Hi.\n```choices\n{"options": []}\n```'), { body: 'Hi.\n```choices\n{"options": []}\n```' })
 })
-test('old next steps still show as a single choice', () =>
-  assert.deepEqual(choicesOf('Done.\n\n>> Compare prices\n>> Show reviews'), { body: 'Done.', choice: { question: '', type: 'single', options: ['Compare prices', 'Show reviews'], other: false } }))
+test('next steps come back as next, not as a choice card', () =>
+  assert.deepEqual(choicesOf('Done.\n\n>> Compare prices\n>> Show reviews'), { body: 'Done.', next: ['Compare prices', 'Show reviews'] }))
 test('a plain reply has no card', () => assert.deepEqual(choicesOf('Just text.\n\n```js\nx()\n```'), { body: 'Just text.\n\n```js\nx()\n```' }))

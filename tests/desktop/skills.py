@@ -3,7 +3,7 @@
 Checks that a companion's first turn carries an index of its skills (under its cap) and no skill bodies, that load_skill
 gives the body of one of its own skills with a "Used skill" step and refuses any other id, that typing /skill still
 brings the body in, that a tier's model and effort reach the AI app and can be reset, that a model the app refuses is
-retried once on its default model with a note in the chat, that next steps show as buttons, that an image or a video link
+retried once on its default model with a note in the chat, that next steps show as suggestion rows with an icon, that an image or a video link
 shows as a card (the image only on Show image, fetched by Still within its limits), and that the end of a reply sits
 close to the message box. Choices: every app is told about the choices block; a card offers one pick, several then
 Submit, a dropdown, or your own words; the pick goes back as your reply, and a card takes one answer. A block that isn't
@@ -322,26 +322,30 @@ def main():
         check("Fix the list of options" in typed, "A /skill the user types brings its body into that turn")
         check(any(m["Role"] == "tool" and m["Text"] == "Used skill Compare options" for m in chat(nora)["Messages"][-4:]), "with a Used skill step")
 
-        # Next steps show as buttons, without the markup.
+        # Next steps show as light suggestion rows, each with its lightbulb, not as a card, and without the markup.
         again(p, nora, "NEXT")
-        shown = until(lambda: js(p, "[...document.querySelectorAll('.choice-card .ask-option')].map(b => b.innerText.trim())"), 10) or []
-        check(shown == ["Compare the two cheapest options", "Check delivery times", "Save the table"], f"Next steps show as three buttons: {shown}")
+        steps = "[...document.querySelectorAll('.chat-view .ai-next .ai-next-step')]"
+        shown = until(lambda: js(p, steps + ".map(b => b.innerText.trim())"), 10) or []
+        check(shown == ["Compare the two cheapest options", "Check delivery times", "Save the table"] and js(p, steps + ".every(b => b.querySelector('svg'))")
+              and not js(p, "!![...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.innerText.includes('blue one is cheaper'))?.querySelector('.choice-card')"),
+              f"Next steps show as three suggestion rows with an icon, not a card: {shown}")
         body = js(p, "[...document.querySelectorAll('.chat-view .md')].pop()?.innerText || ''") or ""
         check(">>" not in body and "Next steps" not in body and "blue one is cheaper" in body, "and the reply shows without the >> lines or their label")
 
+        time.sleep(1)  # the reply finishes scrolling into view before the picture
         rpc(p, "capture", name="skills-next-steps.png")
 
         # Choices: every app is told; a pick goes back as the reply, and a card takes one answer.
         check("one choices block" in first and "```choices" in first, "The first turn tells the AI how to offer choices, with an example")
         check("Don't end a reply by asking whether the user wants more" in first and "start with `>> `" in first, "...and to end a reply with next steps, not by asking if you want more")
+        step = lambda words: js(p, f"(b => {{ b?.click(); return !!b && !b.disabled }})({steps}.find(b => b.innerText.trim() === {json.dumps(words)}))")  # noqa: E731
         n = len(chat(nora)["Messages"])
-        check(option(p, "Check delivery times") and answered(nora, n) and users(nora)[-1] == "Check delivery times", f"Picking a next step sends it as your reply ({users(nora)[-1:]})")
-        c = until(lambda: (c := card(p)) and c.get("done") and c, 5) or {}
-        check(c.get("off") and c.get("on") == ["Check delivery times"], f"Then the card shows your pick and takes no more ({c})")
+        check(step("Check delivery times") and answered(nora, n) and users(nora)[-1] == "Check delivery times", f"Picking a next step sends it as your reply ({users(nora)[-1:]})")
+        check(until(lambda: js(p, steps + ".every(b => b.disabled)"), 5), "Then the rows take no more")
         n = len(chat(nora)["Messages"])
-        option(p, "Save the table")
+        step("Save the table")
         time.sleep(1.5)
-        check(len(chat(nora)["Messages"]) == n, "Clicking it again sends nothing")
+        check(len(chat(nora)["Messages"]) == n, "Clicking one again sends nothing")
         check("Took " not in (js(p, "document.querySelector('.chat-view')?.innerText ?? ''") or ""), "A reply has no Took line")
 
         again(p, nora, "MULTI")
@@ -383,7 +387,7 @@ def main():
         again(p, nora, "BADJSON")
         bad = js(p, "(t => t && [t.innerText, !!t.querySelector('.choice-card')])([...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.innerText.includes(\"Here's a list\")))") or ["", True]
         check("not json at all" in bad[0] and not bad[1], "A choices block that isn't JSON stays as text, with no card")
-        check(js(p, "document.querySelectorAll('.chat-view .choice-card').length") == 4, "Plain replies get no card (four cards in all)")
+        check(js(p, "document.querySelectorAll('.chat-view .choice-card').length") == 3, "Plain replies get no card (three cards in all; next steps are rows)")
 
         # Reply actions show on hover, lined up with the message; message text selects and copies.
         acts = "[...document.querySelectorAll('.chat-view .ai-turn > .ai-actions')].pop()"

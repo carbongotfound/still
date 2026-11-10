@@ -42,11 +42,11 @@ function choiceOf(json: string): Choice | undefined {
 }
 
 /**
- * The reply's body and the choices it offers: its last ```choices block (JSON: question, type single, multiple or
- * dropdown, options, other), or else its trailing ">> " next steps as a single choice. A block that isn't valid JSON
- * with options stays in the body as it came, so nothing the model wrote is lost.
+ * The reply's body and what it offers: its last ```choices block (JSON: question, type single, multiple or
+ * dropdown, options, other) as a choice card, or else its trailing ">> " next steps as suggestion rows. A block that
+ * isn't valid JSON with options stays in the body as it came, so nothing the model wrote is lost.
  */
-export function choicesOf(text: string): { body: string; choice?: Choice } {
+export function choicesOf(text: string): { body: string; choice?: Choice; next?: string[] } {
   const blocks = [...text.matchAll(CHOICES)], last = blocks.at(-1)
   if (last) {
     const choice = choiceOf(last[1])
@@ -54,7 +54,7 @@ export function choicesOf(text: string): { body: string; choice?: Choice } {
     return { body: text.trim() }
   }
   const { body, next } = nextSteps(text)
-  return next.length ? { body, choice: { question: "", type: "single", options: next, other: false } } : { body }
+  return next.length ? { body, next } : { body }
 }
 
 /** Splits a reply into its body and its next steps (at most 3). A step past the limits stays in the body as plain text. */
