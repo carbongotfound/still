@@ -158,7 +158,7 @@ function Work({ steps, live, took, onLink }: { steps: Message[]; live: boolean; 
  return <details className="ai-work"><summary className="ai-work-head">{took ? "Worked for " + clock(took) : steps.length + " steps"}{state}<ChevronDown className="ai-steps-chevron" /></summary>{list}</details>
 }
 
-// Under each answer: copy it as plain text, share it, a thumb up or down (kept on the reply; the companion hears it once,
+// Under a turn's final answer (once a turn, not under the lines between its steps): copy it as plain text, share it, a thumb up or down (kept on the reply; the companion hears it once,
 // with your next message), run your message again (the last answer only), and more: copy as Markdown, save as a file.
 const plainOf = (md: string) => md.replace(/^\s*```.*$/gm, "").replace(/^#{1,6}\s+/gm, "").replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, (_, t: string, u: string) => t && t !== u ? `${t} (${u})` : u)
  .replace(/\*\*|__|`/g, "").replace(/(^|[^\w*])\*(?=\S)([^*\n]+?)\*(?![\w*])/g, "$1$2").replace(/\n{3,}/g, "\n\n").trim()
@@ -955,6 +955,11 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   if (!m || (!("steps" in m) && m.role === "user")) { if (first >= 0 && took) tookAt.set(first, took); first = -1; took = 0 }
   else if ("steps" in m) { took = Math.max(took, ...m.steps.map(s => s.took ?? 0)); if (first < 0 && m.steps.length > 1) first = i }
  }
+ // A turn's actions go once, under its final reply: the last answer before your next message, and none while it still works.
+ const finals = new Set<number>()
+ let reply = -1
+ items.forEach((m, i) => { if ("steps" in m) return; if (m.role === "user") { if (reply >= 0) finals.add(reply); reply = -1 } else if (m.role === "assistant") reply = i })
+ if (reply >= 0 && !busy) finals.add(reply)
  const fromAi = (i: number) => ["assistant", "steps", "file", "search", "read", "ask", "tell"].includes(items[i]?.role)
  // The companion's avatar starts each of its turns, left of the first line, with its name as the tooltip. Everything in
  // the turn lines up right of it, and what follows in the same turn sits closer (is-more). A teammate's line has its face.
@@ -1011,7 +1016,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
      {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><ArrowDownRight /><span>{s}</span></button>)}</div>}
-     <ReplyActions m={m} body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 100000 ? latestPrompt : undefined} send={send} />
+     {finals.has(i) && <ReplyActions m={m} body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 100000 ? latestPrompt : undefined} send={send} />}
     </div>
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<div className="ai-live">

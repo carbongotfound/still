@@ -17,6 +17,7 @@ The fake AI app (its models: good and notonplan) answers the last line of its pr
   NEXT                    replies with a paragraph and three next steps
   CHOOSE / MULTI / DROP   replies with a choices block: one pick and your own words / several / a dropdown
   BADJSON                 replies with a choices block that isn't JSON
+  STEPS                   says a line, takes a step, says another, takes a step, then answers
   MEDIA                   replies with an image whose address doesn't answer and a YouTube link with a start time
   anything else           replies "Okay."
 With --model notonplan it answers the way Claude Code does for a model the user can't use, and exits 1.
@@ -106,6 +107,12 @@ FAKE = textwrap.dedent(r'''
         text("Fewer check-ins? [Have Jonah check in more](still:settings/autonomy/Jonah?to=ask), [use the dark theme](still:settings/theme?to=Dark) or see [your permissions](still:settings/permissions).")
     elif verb == "RATE":
         text("Here's **the plan**: book `Alfama House` and see [the map](https://example.com/map).")
+    elif verb == "STEPS":
+        for n, line in enumerate(["Found it. Pulling frames now.", "Going through the frames now."]):
+            text(line)
+            say({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t%d" % n, "name": "mcp__still__list_tabs", "input": {}}]}})
+            say({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t%d" % n, "content": "[]"}]}})
+        text("All done: the frames are in.")
     elif verb == "BADJSON":
         text("Here's a list.\n\n```choices\nnot json at all\n```")
     elif verb == "NEXT":
@@ -429,6 +436,11 @@ def main():
             got = copy_keys(p)
             check(got.startswith("Here's a list") and (clipboard() or "").startswith("Here's a list"), f"Ctrl+C copies it ({got!r})")
 
+        # A turn's actions show once, under its final reply, not under the lines between its steps.
+        again(p, nora, "STEPS")
+        turn = "[...document.querySelectorAll('.chat-view .ai-turn')].filter(t => /Found it|Going through|All done/.test(t.querySelector('.ai-msg.is-assistant')?.innerText ?? ''))"
+        under = until(lambda: (r := js(p, f"{turn}.map(t => [t.querySelector('.ai-msg.is-assistant').innerText.trim(), !!t.querySelector(':scope > .ai-actions')])")) and len(r) == 3 and r, 10) or []
+        check([u[1] for u in under] == [False, False, True] and under[-1][0].startswith("All done"), f"Only the turn's final reply has the actions, not the lines between its steps ({under})")
         # Under an answer: Copy, Share, a thumb up and down and More; the last answer Regenerate too.
         again(p, nora, "RATE")
         acts = "[...document.querySelectorAll('.chat-view .ai-turn > .ai-actions')]"
