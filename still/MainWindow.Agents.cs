@@ -1291,6 +1291,7 @@ public partial class MainWindow
    case "remember" or "recall" or "forget" or "update_knowledge" or "read_knowledge" or "open_memory_source": return Remembering(who, tool, args);
    case "run_plugin_program": return await PluginProgram(who, args);
    case "list_files" or "read_file" or "write_file" or "edit_file" or "delete_file": return await FolderTool(who, tool, args);
+   case "request_folder": return await RequestFolder(who, args);
    case "load_skill": {
     // Only a skill the companion can use (every one, unless it's limited to others); never matched by keyword. The step shows only when one loads.
     var run = runs.GetValueOrDefault(who);

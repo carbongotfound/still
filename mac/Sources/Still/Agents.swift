@@ -1168,6 +1168,7 @@ extension Browser {
    switch tool {
    case "ask_user": return await withCheckedContinuation { done in askInChat(who, args) { done.resume(returning: $0) } }
    case "offer_routine": return await offerRoutine(who, args)
+   case "request_folder": return await requestFolder(who, args)
    case "ask_companion", "tell_companion", "list_companions": return await exchange(who, tool, args)
    case "list_connected_plugins", "find_plugins", "get_plugin_tools", "run_plugin_action": return await pluginTool(who, tool, args)
    case "remember", "recall", "forget", "update_knowledge", "read_knowledge", "open_memory_source": return memoryTool(who, tool, args)
@@ -1495,7 +1496,7 @@ extension Browser {
    let id = argText(data, "id"), answer = argText(data, "answer")
    if answer == "cancel" && id == wentAhead { toast("Too late to cancel. That step had already gone ahead."); break }
    guard let asking = runs[argText(data, "run").isEmpty ? shownChat?.id ?? "" : argText(data, "run")] else { break }
-   for card in asking.approvals where card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) ? answer : "deny") }
+   for card in asking.approvals where card.id == id { card.answer.set(["once", "chat", "always", "cancel", "now", "connect"].contains(answer) || answer == "pick" && card.action == "folder" ? answer : "deny") }
   case "permSet":
    guard permissionActions.contains(argText(data, "action")) else { break }
    setPermission(siteOf(argText(data, "site")), argText(data, "action"), argText(data, "companion"), argText(data, "mode")); publishAiEverywhere()
@@ -1707,6 +1708,8 @@ enum Mcp {
   tool("offer_routine", "Offer to repeat something that clearly helped on a schedule. Still asks the user in the chat, and the routine is added to your profile only if they say yes. Offer it once, after a useful result.",
        [str("text", "What to do each time, as an instruction to yourself"), str("time", "When, as HH:mm (24-hour)"),
         ("days", ["type": "array", "items": ["type": "integer"], "description": "Days of the week: 0 = Sunday to 6 = Saturday"] as [String: Any])], ["text", "time", "days"]),
+  tool("request_folder", "Ask the user to let you work in a folder on their computer, when the task needs files there and you have no working folder or the wrong one. Still shows a card in the chat: they allow it, pick another folder, or say not now. Once allowed, list_files, read_file, write_file, edit_file and delete_file work there.",
+       [str("path", "The folder's full path, like /Users/you/Photos/frames, or D:\\Photos\\frames on Windows"), str("why", "What you need it for, in a few words. The user sees it.")], ["path"]),
   // Teammates: the user's other companions, each with its own role, memory and tools (Ai.swift, exchange).
   tool("list_companions", "List your teammates: the user's other companions, what each one does, and which one is you.", [], []),
   tool("ask_companion", "Ask a teammate something and wait for their reply (up to 10 minutes). They answer with their own role, memory and tools, and only they see your message. Say what you need and why, with what they need from you. The user sees the exchange.",

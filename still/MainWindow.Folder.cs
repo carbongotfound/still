@@ -65,7 +65,7 @@ public partial class MainWindow
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Only a companion in Still's chat has a working folder.");
   string root = FolderOf(run.Chat), path;
-  if (root.Length == 0) return Fail(run.Chat.Ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If you need one, ask the user to pick a folder for you.");
+  if (root.Length == 0) return Fail(run.Chat.Ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder.");
   try { path = Inside(root, S(args, "path")); } catch (InvalidOperationException ex) { return Fail(ex.Message); }
   string rel = path == root ? "." : Path.GetRelativePath(root, path).Replace('\\', '/');
   if (tool != "list_files" && path == root) return Fail("Give the path of a file in the working folder, like notes/todo.md.");
@@ -113,6 +113,42 @@ public partial class MainWindow
     return Reply(new { done = $"Moved {rel} to the Recycle Bin" });
   }
   return Fail("Still has no tool by that name.");
+ }
+
+ /// request_folder: a companion asks to work in a folder. A card asks every time, at every level: Allow makes it the chat's
+ /// folder, Choose another folder lets the user pick one, Not now refuses. Never a folder that holds Still's data or apps'
+ /// settings and keys (Guarded), which the user can still pick themselves.
+ async Task<string> RequestFolder(string who, JsonElement args)
+ {
+  if (runs.GetValueOrDefault(who) is not { } run) return Fail("Only a companion in Still's chat can ask for a working folder.");
+  if (run.Chat.Ephemeral) return Fail("Chats in a private window don't work in folders.");
+  string given = S(args, "path").Trim(), why = CompanionMemory.Clip(S(args, "why").Trim().ReplaceLineEndings(" "), 200), path = "";
+  try { if (Path.IsPathFullyQualified(given)) path = Path.TrimEndingDirectorySeparator(Path.GetFullPath(given)); }
+  catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { }
+  if (path.Length == 0 || !Directory.Exists(path)) return Fail($"There's no folder at {CompanionMemory.Clip(given, 200)}. Pass the full path of a folder that exists, like D:\\Photos\\frames, or ask the user where it is.");
+  if (Guarded(path)) return Fail("That folder holds Still's data or apps' settings and keys, so Still won't offer it. Ask for the folder with the user's own files.");
+  if (path.Equals(FolderOf(run.Chat), StringComparison.OrdinalIgnoreCase)) return Reply(new { done = "You already work in " + path });
+  string name = Path.GetFileName(path) is { Length: > 0 } n ? n : path, answer = await Approve(run, "Work in " + name, path, "folder", why, countdown: false);
+  if (answer == "pick") {
+   var pick = new Microsoft.Win32.OpenFolderDialog { Title = "Pick a folder for this chat", InitialDirectory = path };
+   if (pick.ShowDialog(this) == true) { path = Path.TrimEndingDirectorySeparator(pick.FolderName); answer = "picked"; } else answer = "deny";
+  }
+  Audit(run.Chat, "Work in " + path, name, answer switch { "once" => "You allowed it", "picked" => "You picked this folder", "stop" => "Stopped", "timeout" => "No answer in 10 minutes", _ => "Not now" });
+  if (answer is not ("once" or "picked")) { PublishAiEverywhere(); return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without the folder, or ask them in your reply."); }
+  run.Chat.Folder = path; run.Chat.FolderTold = path;
+  SaveAiChats(); PublishAiEverywhere();
+  return Reply(new { done = $"You work in {path} now" + (answer == "picked" ? ", the folder the user picked" : "") + ": list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it." });
+ }
+ /// Still's own data, a folder of apps' settings and keys in the user's folder (AppData, .claude, .ssh…), or one holding any.
+ static bool Guarded(string path)
+ {
+  static bool Under(string a, string b) => a.Equals(b, StringComparison.OrdinalIgnoreCase) || a.StartsWith(Path.TrimEndingDirectorySeparator(b) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
+  string home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+  if (new[] { App.DataRoot, App.ProfileHome, home }.Any(d => d.Length > 0 && Under(d, path))) return true; // the folder itself, or one it's in
+  if (Under(path, App.DataRoot) || Under(path, App.ProfileHome)) return true;
+  if (!Under(path, home)) return false;
+  string first = Path.GetRelativePath(home, path).Split(Path.DirectorySeparatorChar)[0];
+  return first.StartsWith('.') || first.Equals("AppData", StringComparison.OrdinalIgnoreCase);
  }
 
  /// Whether a replace or delete goes ahead: a file it made in this chat, Allow in this chat, or (replacing) Keep going say

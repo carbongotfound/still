@@ -690,7 +690,7 @@ public partial class MainWindow
    case "permAnswer" when S("answer") == "cancel" && S("id") == wentAhead: Toast("Too late to cancel. That step had already gone ahead."); break;
    case "permAnswer" when runs.GetValueOrDefault(S("run") is { Length: > 0 } permRun ? permRun : ShownChat?.Id ?? "") is { } asking: // a card's answer, for that card alone
     foreach (var card in asking.Approvals.Where(c => c.Id == S("id")).ToList())
-     card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" or "connect" ? S("answer") : "deny");
+     card.Answer.TrySetResult(S("answer") is "once" or "chat" or "always" or "cancel" or "now" or "connect" || S("answer") == "pick" && card.Action == "folder" ? S("answer") : "deny");
     break;
    case "permSet" when PermissionActions.Contains(S("action")): SetPermission(SiteOf(S("site")), S("action"), S("companion"), S("mode")); PublishAiEverywhere(); break;
    case "permSensitive" when SiteOf(S("site")) is { Length: > 0 } marked:
@@ -872,7 +872,7 @@ public partial class MainWindow
  static string AiInstructions(AgentAdapter cli, string profile, Companion? who, string folder, bool plugins = true) => (who == null ? "" : WhoYouAre(who) + "\n") + $"""
   You are the AI assistant built into Still, the user's web browser, running on {cli.App}. You work with the user in a chat.
   Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
-  {(folder.Length > 0 ? $"You work in the user's folder {folder}: list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it. There's no shell" : "You are not in a terminal: you have no files or shell here")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
+  {(folder.Length > 0 ? $"You work in the user's folder {folder}: list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it. There's no shell" : "You are not in a terminal: you have no shell, and no files until the user lets you work in a folder (when a task needs files on their computer, ask for the folder with request_folder)")}, and you have the `still` browser tools, working in the user's "{profile}" Still profile.
 
   How to work:
   - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).
@@ -1540,7 +1540,7 @@ public partial class MainWindow
    "type" => "Typed “" + arg + "”", "scroll" => "Scrolled " + (arg.Length > 0 ? arg : "the page"), "wait_for" => "Waited for the page",
    "go_back" => "Went back", "go_forward" => "Went forward", "reload" => "Reloaded", "switch_tab" => "Switched tabs", "close_tab" => "Closed a tab", "ask_user" => "",
    "save_file" => "Saved " + (input?["name"]?.ToString() ?? "a file"),
-   "list_files" => "Looked in " + (path.Length > 0 ? path : "the folder"), "read_file" => "Read " + path, "write_file" => "Wrote " + path, "edit_file" => "Edited " + path, "delete_file" => "Deleted " + path,
+   "list_files" => "Looked in " + (path.Length > 0 ? path : "the folder"), "read_file" => "Read " + path, "write_file" => "Wrote " + path, "edit_file" => "Edited " + path, "delete_file" => "Deleted " + path, "request_folder" => "Asked to work in " + path,
    "find" => "Looked for " + (o2(input, "text") ?? "text"), "press_key" => "Pressed " + (input?["key"]?.ToString() ?? "a key"),
    "handle_dialog" => "Answered a dialog", "upload_file" => "Picked a file", "user_confirmed" => "", "list_profiles" => "Looked at profiles",
    "load_skill" => "", "run_plugin_program" => "", "remember" => "Saved to memory", "update_knowledge" => "Updated a knowledge file", "recall" => "Checked memory", "forget" => "Removed from memory", "read_knowledge" => "Read a knowledge file", "open_memory_source" => "Checked where a memory came from", "list_connected_plugins" or "find_plugins" => "Looked at apps", "get_plugin_tools" => "Looked at " + (input?["plugin"]?.ToString() ?? "an app"),

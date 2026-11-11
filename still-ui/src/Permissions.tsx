@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react"
-import { Plug, ShieldAlert, ShieldCheck, X } from "lucide-react"
+import { FolderOpen, Plug, ShieldAlert, ShieldCheck, X } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -38,6 +38,12 @@ export function useArmed(key: string) {
  return armed === key
 }
 
+// A long path cut to its first and last parts, like D:\…\frames; the step under it shows the whole one.
+const elide = (path: string) => {
+ const sep = path.includes("\\") ? "\\" : "/", parts = path.split(sep).filter(Boolean), lead = path.startsWith(sep) ? sep : ""
+ return parts.length > 3 ? lead + parts[0] + sep + "…" + sep + parts[parts.length - 1] : path
+}
+
 // The cards above the message box: steps waiting for your OK, and countdowns. The bottom row always acts on one step, the oldest,
 // shown right above it, and each button keeps its place; a step that arrives later lands above and can't move anything under the
 // cursor. Approve all and Deny all sit at the top, away from that row, and Ctrl+Enter never presses them.
@@ -50,14 +56,16 @@ export function Approvals({ list, companion, companions, send, incognito }: { li
  return <>
   {list.filter(a => a.until).map(a => <Countdown key={a.id} card={a} send={send} />)}
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
-   <div className="ask-q"><Face companion={mate(one)} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
+   <div className="ask-q"><Face companion={mate(one)} size={22} mood="needs" /><p>{one?.action === "connect" ? `${name} needs ${one.site} for this.` : one?.action === "folder" ? `Let ${name} work in ${elide(one.site)}?` : one ? `${name} wants to do this. Is that okay?` : `${name} wants to do ${asks.length} things. Are they okay?`}</p></div>
    {!one && <div className="approve-all"><Button size="sm" variant="ghost" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "deny"))}>Deny all</Button><Button size="sm" variant="outline" disabled={!readyAll} onClick={() => asks.forEach(a => answer(a.id, "once"))}>Approve all ({asks.length})</Button></div>}
    <ul className="approve-steps">{[...asks.slice(1), active].map(a => <li key={a.id} className={cn((a.action === "sensitive" || a.action === "plugin" || a.action === "program") && "is-sensitive", !one && a === active && "is-active")}>
-    {a.action === "connect" ? <Plug /> : a.action === "sensitive" || a.action === "plugin" || a.action === "program" ? <ShieldAlert /> : <ShieldCheck />}
+    {a.action === "connect" ? <Plug /> : a.action === "folder" ? <FolderOpen /> : a.action === "sensitive" || a.action === "plugin" || a.action === "program" ? <ShieldAlert /> : <ShieldCheck />}
     <span><b>{a.what}</b><small>{[a.who && a.who !== companion?.id && mate(a)?.name, a.site, a.why].filter(Boolean).join(" · ")}</small></span>
     {!one && a !== active && <button className="approve-no" aria-label={"Don't " + a.what.toLowerCase()} title="Don't do this" onClick={() => answer(a.id, "deny")}><X /></button>}
    </li>)}</ul>
-   <div className="approve-actions">{active.action === "connect"
+   <div className="approve-actions">{active.action === "folder" // a working folder for this chat: asked every time, on every level
+    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "pick")}>Choose another folder</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow</Button></>
+    : active.action === "connect"
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "connect")}>{active.what}</Button></>
     : active.action === "program" // a plugin's program: once, or from now on for that plugin
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "always")}>Always for this plugin</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>

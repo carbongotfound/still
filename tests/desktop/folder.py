@@ -360,8 +360,42 @@ def main():
         # A companion with no folder.
         cid2, before = calls(p, None, [["list_files", {}]], companion="leo")
         r = got(before, 1)
-        check(r and r[0]["error"] and "no working folder" in r[0]["text"], f"A companion with no folder is told it has none ({r[0]['text'][:90] if r else None})")
+        check(r and r[0]["error"] and "no working folder" in r[0]["text"] and "request_folder" in r[0]["text"], f"A companion with no folder is told it has none, and how to ask ({r[0]['text'][:90] if r else None})")
         idle(p, cid2)
+
+        # request_folder: a card in the chat. Allow makes it the chat's folder and the companion carries on there.
+        frames = RUN / "frames"
+        frames.mkdir()
+        put(frames / "f01.txt", "one")
+        cid2, before = calls(p, cid2, [["request_folder", {"path": str(frames), "why": "to read the frames"}], ["list_files", {}]])
+        asked = card(p)
+        text = asked.get("text", "")
+        check("request_folder" in (results()[before - 1]["tools"] if before else []) and text.startswith("Let Leo work in ") and "frames?" in text and str(frames) in text and "to read the frames" in text
+              and asked.get("buttons") == ["Not now", "Choose another folder", "Allow"], f"Asking for a folder shows a card: Let Leo work in the folder, with the whole path under it ({asked})")
+        press(p, "Allow")
+        r = got(before, 2)
+        own2 = lambda: next((c.get("Folder") for c in chats() if c["Id"] == cid2), None)
+        check(len(r) == 2 and not r[0]["error"] and "You work in" in r[0]["text"] and out(r[1]).get("items") == ["f01.txt (3 B)"] and own2() == str(frames),
+              f"Allow makes it the chat's folder, and the companion carries on there ({[x['text'][:60] for x in r]}, {own2()!r})")
+        check(until(lambda: chip(p, ".chat-view") == "frames", 5), "The chat's box shows the folder")
+        idle(p, cid2)
+
+        # Not now leaves it without; Keep going still asks; Still's data, or a folder holding it, and a folder that isn't there are refused without a card.
+        send(p, "companionAutonomy", id="leo", level="keepgoing")
+        time.sleep(1)
+        cid4, before = calls(p, None, [["request_folder", {"path": str(frames)}]], companion="leo")
+        asked = card(p)
+        check(asked.get("buttons") == ["Not now", "Choose another folder", "Allow"], "On Keep going it still asks")
+        press(p, "Not now")
+        r = got(before, 1)
+        check(r and r[0]["error"] and "not now" in r[0]["text"] and not next((c.get("Folder") for c in chats() if c["Id"] == cid4), None), f"Not now leaves the chat without a folder ({r[0]['text'][:80] if r else None})")
+        idle(p, cid4)
+        send(p, "companionAutonomy", id="leo", level="balanced")
+        cid4, before = calls(p, cid4, [["request_folder", {"path": str(PROFILE)}], ["request_folder", {"path": str(RUN)}], ["request_folder", {"path": str(RUN / "nowhere")}], ["request_folder", {"path": "frames"}]])
+        r = got(before, 4)
+        check(len(r) == 4 and all(x["error"] for x in r) and "Still's data" in r[0]["text"] and "Still's data" in r[1]["text"] and "no folder at" in r[2]["text"] and "no folder at" in r[3]["text"] and no_card(p),
+              f"Still's data, a folder holding it, a folder that isn't there and a path that isn't whole are refused, with no card ({[x['text'][:50] for x in r]})")
+        idle(p, cid4)
         errors = rpc(p).get("shellErrors") or []
         check(not errors, "No interface errors" + (f": {errors[:1]}" if errors else ""))
     finally:

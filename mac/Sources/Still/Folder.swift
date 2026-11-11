@@ -42,7 +42,7 @@ func inside(_ root: String, _ given: String) throws -> String {
 @MainActor func folderTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
  guard let run = runs[who] else { return agentFail("Only a companion in Still's chat has a working folder.") }
  let root = folderOf(run.chat), fm = FileManager.default
- if root.isEmpty { return agentFail(run.chat.ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If you need one, ask the user to pick a folder for you.") }
+ if root.isEmpty { return agentFail(run.chat.ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder.") }
  let path: String
  do { path = try inside(root, argText(args, "path")) } catch { return agentFail((error as? OutOfFolder)?.why ?? "That isn't a path Still can use.") }
  let rel = path == root ? "." : String(path.dropFirst(root.count + 1))
@@ -102,6 +102,51 @@ func inside(_ root: String, _ given: String) throws -> String {
   return agentOk(["done": "Moved \(rel) to the Trash"])
  default: return agentFail("Still has no tool by that name.")
  }
+}
+
+/// request_folder (Windows: RequestFolder): a companion asks to work in a folder. A card asks every time, at every level:
+/// Allow makes it the chat's folder, Choose another folder lets the user pick one, Not now refuses. Never a folder that holds
+/// Still's data or apps' settings and keys (guarded), which the user can still pick themselves.
+@MainActor func requestFolder(_ who: String, _ args: [String: Any]) async -> String {
+ guard let run = runs[who] else { return agentFail("Only a companion in Still's chat can ask for a working folder.") }
+ if run.chat.ephemeral { return agentFail("Chats in a private window don't work in folders.") }
+ let given = argText(args, "path").trimmingCharacters(in: .whitespacesAndNewlines), why = clipped(argText(args, "why").trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " "), 200)
+ var isFolder: ObjCBool = false
+ var path = given.hasPrefix("/") ? URL(fileURLWithPath: given).standardizedFileURL.path : ""
+ guard !path.isEmpty, FileManager.default.fileExists(atPath: path, isDirectory: &isFolder), isFolder.boolValue else {
+  return agentFail("There's no folder at \(clipped(given, 200)). Pass the full path of a folder that exists, like /Users/you/Photos/frames, or ask the user where it is.")
+ }
+ if guarded(path) { return agentFail("That folder holds Still's data or apps' settings and keys, so Still won't offer it. Ask for the folder with the user's own files.") }
+ if path == folderOf(run.chat) { return agentOk(["done": "You already work in " + path]) }
+ let name = (path as NSString).lastPathComponent
+ var answer = await approve(run, "Work in " + name, path, "folder", why, countdown: false)
+ if answer == "pick" {
+  let picker = NSOpenPanel()
+  picker.canChooseDirectories = true; picker.canChooseFiles = false; picker.allowsMultipleSelection = false
+  picker.message = "Pick a folder for this chat"; picker.directoryURL = URL(fileURLWithPath: path)
+  let picked: URL? = await withCheckedContinuation { done in
+   if let window = chatRunner(who)?.window { picker.beginSheetModal(for: window) { done.resume(returning: $0 == .OK ? picker.url : nil) } }
+   else { done.resume(returning: picker.runModal() == .OK ? picker.url : nil) }
+  }
+  if let picked { path = picked.standardizedFileURL.path; answer = "picked" } else { answer = "deny" }
+ }
+ audit(run.chat, "Work in " + path, name, answer == "once" ? "You allowed it" : answer == "picked" ? "You picked this folder" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "Not now")
+ guard answer == "once" || answer == "picked" else {
+  publishAiEverywhere()
+  return agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without the folder, or ask them in your reply.")
+ }
+ run.chat.folder = path; run.chat.folderTold = path
+ saveAiChats(run.chat); publishAiEverywhere()
+ return agentOk(["done": "You work in \(path) now" + (answer == "picked" ? ", the folder the user picked" : "") + ": list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it."])
+}
+/// Still's own data, a folder of apps' settings and keys in the user's folder (Library, .claude, .ssh…), or one holding any.
+func guarded(_ path: String) -> Bool {
+ func under(_ a: String, _ b: String) -> Bool { a == b || a.hasPrefix(b.hasSuffix("/") ? b : b + "/") }
+ let home = URL(fileURLWithPath: NSHomeDirectory()).standardizedFileURL.path, own = [support.path, profileHome.path]
+ if (own + [home]).contains(where: { under($0, path) }) || own.contains(where: { under(path, $0) }) { return true } // the folder itself, one it's in, or one in it
+ guard under(path, home) else { return false }
+ let first = String(path.dropFirst(home.count + 1)).split(separator: "/").first.map(String.init) ?? ""
+ return first.hasPrefix(".") || first == "Library"
 }
 
 /// Whether a replace or delete goes ahead: a file it made in this chat, Allow in this chat, or (replacing) Keep going say

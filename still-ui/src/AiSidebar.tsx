@@ -66,7 +66,7 @@ const DOING: Record<string, string> = {
  remember: "Saving to memory", recall: "Checking memory", forget: "Updating memory", read_knowledge: "Reading notes", update_knowledge: "Updating notes", load_skill: "Getting ready",
  read_attachment: "Reading your file", list_tabs: "Checking the tabs", offer_routine: "Suggesting a routine", list_companions: "Checking the team", list_profiles: "Checking profiles",
  run_plugin_action: "Using $", get_plugin_tools: "Opening $", find_plugins: "Looking for an app", list_connected_plugins: "Checking your apps", open_memory_source: "Opening a source",
- list_files: "Looking in $", read_file: "Reading $", write_file: "Writing $", edit_file: "Editing $", delete_file: "Deleting $",
+ list_files: "Looking in $", read_file: "Reading $", write_file: "Writing $", edit_file: "Editing $", delete_file: "Deleting $", request_folder: "Asking for a folder",
 }
 const ALONE: Record<string, string> = { web_search: "Searching the web", ask_companion: "Asking a teammate", tell_companion: "Handing work to a teammate", run_plugin_action: "Using an app", get_plugin_tools: "Opening an app", save_file: "Saving a file", wait_for: "Waiting for the page", list_files: "Looking through the folder" }
 export const doing = (tool = "", target = "") => !tool ? "Thinking about the next step" : !target && ALONE[tool] ? ALONE[tool] : (DOING[tool] ?? "Working on $").replace("$", target || "the page")
