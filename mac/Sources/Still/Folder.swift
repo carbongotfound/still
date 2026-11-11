@@ -42,7 +42,7 @@ func inside(_ root: String, _ given: String) throws -> String {
  if g.split(separator: "/").contains("..") || g.hasPrefix("~") { throw OutOfFolder(why: "Give a path inside the working folder, like notes/todo.md, with no \"..\".") }
  let full = (g.hasPrefix("/") ? URL(fileURLWithPath: g) : URL(fileURLWithPath: root).appendingPathComponent(g)).standardizedFileURL.path
  if full == root { return root }
- guard full.hasPrefix(root + "/") else { throw OutOfFolder(why: "That's outside the working folder.") }
+ guard full.hasPrefix(root + "/") else { throw OutOfFolder(why: "That's outside the working folder. To look at files elsewhere, ask the user with request_folder.") }
  var at = full
  while at.count > root.count {
   if (try? FileManager.default.destinationOfSymbolicLink(atPath: at)) != nil { throw OutOfFolder(why: String(at.dropFirst(root.count + 1)) + " is a link to somewhere else, so Still keeps you out of it.") }
@@ -53,11 +53,18 @@ func inside(_ root: String, _ given: String) throws -> String {
 
 @MainActor func folderTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
  guard let run = runs[who] else { return agentFail("Only a companion in Still's chat has a working folder.") }
- let root = folderOf(run.chat), fm = FileManager.default
- if root.isEmpty { return agentFail(run.chat.ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder.") }
- let path: String
- do { path = try inside(root, argText(args, "path")) } catch { return agentFail((error as? OutOfFolder)?.why ?? "That isn't a path Still can use.") }
- let rel = path == root ? "." : String(path.dropFirst(root.count + 1))
+ var root = folderOf(run.chat), path = "", why: String?
+ let fm = FileManager.default, given = argText(args, "path")
+ if !root.isEmpty { do { path = try inside(root, given) } catch { why = (error as? OutOfFolder)?.why ?? "That isn't a path Still can use." } }
+ // A folder the user let it see, by its full path: list_files and read_file there, nothing else.
+ var look = false
+ if path.isEmpty, let seen = seenFolder(run, given) {
+  root = seen; look = true
+  do { path = try inside(root, given) } catch { return agentFail((error as? OutOfFolder)?.why ?? "That isn't a path Still can use.") }
+ }
+ if path.isEmpty { return agentFail(why ?? (run.chat.ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder.")) }
+ if look && tool != "list_files" && tool != "read_file" { return agentFail("You can only look in \(root): the user let you see it, not change it. To change files there, ask with request_folder and write: true.") }
+ let rel = look ? path : path == root ? "." : String(path.dropFirst(root.count + 1))
  var isFolder: ObjCBool = false
  let exists = fm.fileExists(atPath: path, isDirectory: &isFolder), folder = exists && isFolder.boolValue
  if tool != "list_files" && path == root { return agentFail("Give the path of a file in the working folder, like notes/todo.md.") }
@@ -116,9 +123,20 @@ func inside(_ root: String, _ given: String) throws -> String {
  }
 }
 
-/// request_folder (Windows: RequestFolder): a companion asks to work in a folder. A card asks every time, at every level:
-/// Allow makes it the chat's folder, Choose another folder lets the user pick one, Not now refuses. Never a folder that holds
-/// Still's data or apps' settings and keys (guarded), which the user can still pick themselves.
+/// The folder the user let this run see (until the reply ends, or for the chat) that holds this full path, if any.
+func seenFolder(_ run: ChatRun, _ given: String) -> String? {
+ let g = given.trimmingCharacters(in: .whitespacesAndNewlines)
+ guard g.hasPrefix("/") else { return nil }
+ let full = URL(fileURLWithPath: g).standardizedFileURL.path
+ var isFolder: ObjCBool = false
+ return (Array(run.seen) + run.chat.allowed.filter { $0.hasPrefix("see ") }.map { String($0.dropFirst(4)) })
+  .first { (full == $0 || full.hasPrefix($0 + "/")) && FileManager.default.fileExists(atPath: $0, isDirectory: &isFolder) && isFolder.boolValue }
+}
+/// request_folder (Windows: RequestFolder): a companion asks to see a folder, or (write) to work in one. A card asks every
+/// time, at every level. To see: Allow once (until the reply ends), Allow for this chat, or Not now; list_files and read_file
+/// then reach it by full path, read-only. To work in: Allow makes it the chat's folder, Choose another folder lets the user
+/// pick one, Not now refuses. Never a folder that holds Still's data or apps' settings and keys (guarded), which the user
+/// can still pick themselves.
 @MainActor func requestFolder(_ who: String, _ args: [String: Any]) async -> String {
  guard let run = runs[who] else { return agentFail("Only a companion in Still's chat can ask for a working folder.") }
  if run.chat.ephemeral { return agentFail("Chats in a private window don't work in folders.") }
@@ -129,8 +147,20 @@ func inside(_ root: String, _ given: String) throws -> String {
   return agentFail("There's no folder at \(clipped(given, 200)). Pass the full path of a folder that exists, like /Users/you/Photos/frames, or ask the user where it is.")
  }
  if guarded(path) { return agentFail("That folder holds Still's data or apps' settings and keys, so Still won't offer it. Ask for the folder with the user's own files.") }
- if path == folderOf(run.chat) { return agentOk(["done": "You already work in " + path]) }
- let name = (path as NSString).lastPathComponent
+ let name = (path as NSString).lastPathComponent, work = folderOf(run.chat)
+ if !argFlag(args, "write") {
+  if !work.isEmpty && (path == work || path.hasPrefix(work + "/")) { return agentOk(["done": path + " is in your working folder: list_files and read_file reach it already."]) }
+  if seenFolder(run, path) != nil { return agentOk(["done": "You can look in " + path + " already: list_files and read_file with full paths there."]) }
+  let seen = await approve(run, "See " + name, path, "see", why, countdown: false)
+  audit(run.chat, "See " + path, name, seen == "once" ? "You allowed it until this reply ends" : seen == "chat" ? "You allowed it for this chat" : seen == "stop" ? "Stopped" : seen == "timeout" ? "No answer in 10 minutes" : "Not now")
+  if seen == "chat" { run.chat.allowed.append("see " + path) } else if seen == "once" { run.seen.insert(path) }
+  publishAiEverywhere()
+  guard seen == "once" || seen == "chat" else {
+   return agentFail(seen == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without it, or ask them in your reply.")
+  }
+  return agentOk(["done": "You can look in \(path) \(seen == "chat" ? "for the rest of this chat" : "until you finish this reply"): list_files and read_file with full paths there, like \(path)/notes.txt. It's read-only: to change files there, ask with request_folder and write: true."])
+ }
+ if path == work { return agentOk(["done": "You already work in " + path]) }
  var answer = await approve(run, "Work in " + name, path, "folder", why, countdown: false)
  if answer == "pick" {
   let picker = NSOpenPanel()

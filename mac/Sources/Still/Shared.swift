@@ -118,6 +118,7 @@ final class ChatRun {
  let chat: AiChat
  let who: String // the AI app's name, as its MCP client
  let started = Date()
+ var seen: Set<String> = [] // folders the user let it see until this reply ends
  var run: AgentRun?
  var stopped = false
  var question: AiQuestion?

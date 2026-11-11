@@ -439,7 +439,7 @@ func toolLabel(_ name: String, _ input: Any?) -> String {
  case "write_file": return "Wrote " + (AgentStream.str(o?["path"]) ?? "")
  case "edit_file": return "Edited " + (AgentStream.str(o?["path"]) ?? "")
  case "delete_file": return "Deleted " + (AgentStream.str(o?["path"]) ?? "")
- case "request_folder": return "Asked to work in " + (AgentStream.str(o?["path"]) ?? "")
+ case "request_folder": return (argFlag(o ?? [:], "write") ? "Asked to work in " : "Asked to see ") + (AgentStream.str(o?["path"]) ?? "")
  case "find": return "Looked for " + (quoted("text") ?? "text")
  case "press_key": return "Pressed " + (AgentStream.str(o?["key"]) ?? "a key")
  case "handle_dialog": return "Answered a dialog"
@@ -635,7 +635,7 @@ func aiInstructions(_ cli: AgentAdapter, _ profile: String, _ who: Companion?, _
  (who.map { whoYouAre($0) + "\n" } ?? "") + """
  You are the AI assistant built into Still, the user's web browser, running on \(cli.app). You work with the user in a chat.
  Talk like a sharp, friendly coworker: in the first person, short and to the point. Never call yourself by your name or in the third person, and no cutesy talk.
- \(folder.isEmpty ? "You are not in a terminal: you have no shell, and no files until the user lets you work in a folder (when a task needs files on their computer, ask for the folder with request_folder)" : "You work in the user's folder \(folder): list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it. There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
+ \(folder.isEmpty ? "You are not in a terminal: you have no shell, and no files until the user lets you work in a folder (when a task needs files on their computer, ask for the folder with request_folder)" : "You work in the user's folder \(folder): list_files, read_file, write_file, edit_file and delete_file reach the files there, and nothing outside it unless the user lets you see another folder (request_folder). There's no shell"), and you have the `still` browser tools, working in the user's "\(profile)" Still profile.
 
  How to work:
  - "This page", "here" or "this" means the active tab named in the [Still] note before each message: switch_tab to it, then read_page (text=false when you only need to click things).

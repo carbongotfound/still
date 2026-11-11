@@ -61,7 +61,7 @@ public partial class MainWindow
   try { full = Path.GetFullPath(Path.IsPathRooted(g) ? g : Path.Combine(root, g)).TrimEnd(Path.DirectorySeparatorChar); }
   catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { throw new InvalidOperationException("That isn't a path Still can use."); }
   if (full.Equals(root, StringComparison.OrdinalIgnoreCase)) return root;
-  if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || full.IndexOf(':', 2) >= 0) throw new InvalidOperationException("That's outside the working folder.");
+  if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || full.IndexOf(':', 2) >= 0) throw new InvalidOperationException("That's outside the working folder. To look at files elsewhere, ask the user with request_folder.");
   for (string at = full; at.Length > root.Length; at = Path.GetDirectoryName(at)!)
    if (Linked(at)) throw new InvalidOperationException(Path.GetRelativePath(root, at).Replace('\\', '/') + " is a link to somewhere else, so Still keeps you out of it.");
   return full;
@@ -76,10 +76,18 @@ public partial class MainWindow
  async Task<string> FolderTool(string who, string tool, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Only a companion in Still's chat has a working folder.");
-  string root = FolderOf(run.Chat), path;
-  if (root.Length == 0) return Fail(run.Chat.Ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder.");
-  try { path = Inside(root, S(args, "path")); } catch (InvalidOperationException ex) { return Fail(ex.Message); }
-  string rel = path == root ? "." : Path.GetRelativePath(root, path).Replace('\\', '/');
+  string root = FolderOf(run.Chat), path = "", given = S(args, "path");
+  string? why = null;
+  if (root.Length > 0) try { path = Inside(root, given); } catch (InvalidOperationException ex) { why = ex.Message; }
+  // A folder the user let it see, by its full path: list_files and read_file there, nothing else.
+  bool look = false;
+  if (path.Length == 0 && SeenFolder(run, given) is { } seen) {
+   root = seen; look = true;
+   try { path = Inside(root, given); } catch (InvalidOperationException ex) { return Fail(ex.Message); }
+  }
+  if (path.Length == 0) return Fail(why ?? (run.Chat.Ephemeral ? "Chats in a private window don't work in folders." : "This chat has no working folder. If the task needs files on the user's computer, ask for the folder with request_folder."));
+  if (look && tool is not ("list_files" or "read_file")) return Fail($"You can only look in {root}: the user let you see it, not change it. To change files there, ask with request_folder and write: true.");
+  string rel = look ? path : path == root ? "." : Path.GetRelativePath(root, path).Replace('\\', '/');
   if (tool != "list_files" && path == root) return Fail("Give the path of a file in the working folder, like notes/todo.md.");
   switch (tool) {
    case "list_files": {
@@ -127,9 +135,19 @@ public partial class MainWindow
   return Fail("Still has no tool by that name.");
  }
 
- /// request_folder: a companion asks to work in a folder. A card asks every time, at every level: Allow makes it the chat's
- /// folder, Choose another folder lets the user pick one, Not now refuses. Never a folder that holds Still's data or apps'
- /// settings and keys (Guarded), which the user can still pick themselves.
+ /// The folder the user let this run see (until the reply ends, or for the chat) that holds this full path, if any.
+ static string? SeenFolder(ChatRun run, string given)
+ {
+  string full;
+  try { if (!Path.IsPathFullyQualified(given.Trim())) return null; full = Path.TrimEndingDirectorySeparator(Path.GetFullPath(given.Trim())); }
+  catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { return null; }
+  return run.Seen.Concat(run.Chat.Allowed.Where(a => a.StartsWith("see ", StringComparison.Ordinal)).Select(a => a[4..]))
+   .FirstOrDefault(f => (full.Equals(f, StringComparison.OrdinalIgnoreCase) || full.StartsWith(f + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)) && Directory.Exists(f));
+ }
+ /// request_folder: a companion asks to see a folder, or (write) to work in one. A card asks every time, at every level.
+ /// To see: Allow once (until the reply ends), Allow for this chat, or Not now; list_files and read_file then reach it by
+ /// full path, read-only. To work in: Allow makes it the chat's folder, Choose another folder lets the user pick one, Not
+ /// now refuses. Never a folder that holds Still's data or apps' settings and keys (Guarded), which the user can still pick themselves.
  async Task<string> RequestFolder(string who, JsonElement args)
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Only a companion in Still's chat can ask for a working folder.");
@@ -139,8 +157,21 @@ public partial class MainWindow
   catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException) { }
   if (path.Length == 0 || !Directory.Exists(path)) return Fail($"There's no folder at {CompanionMemory.Clip(given, 200)}. Pass the full path of a folder that exists, like D:\\Photos\\frames, or ask the user where it is.");
   if (Guarded(path)) return Fail("That folder holds Still's data or apps' settings and keys, so Still won't offer it. Ask for the folder with the user's own files.");
-  if (path.Equals(FolderOf(run.Chat), StringComparison.OrdinalIgnoreCase)) return Reply(new { done = "You already work in " + path });
-  string name = Path.GetFileName(path) is { Length: > 0 } n ? n : path, answer = await Approve(run, "Work in " + name, path, "folder", why, countdown: false);
+  string name = Path.GetFileName(path) is { Length: > 0 } n ? n : path, work = FolderOf(run.Chat);
+  if (!B(args, "write")) {
+   if (work.Length > 0 && (path.Equals(work, StringComparison.OrdinalIgnoreCase) || path.StartsWith(work + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase)))
+    return Reply(new { done = path + " is in your working folder: list_files and read_file reach it already." });
+   if (SeenFolder(run, path) != null) return Reply(new { done = "You can look in " + path + " already: list_files and read_file with full paths there." });
+   string seen = await Approve(run, "See " + name, path, "see", why, countdown: false);
+   Audit(run.Chat, "See " + path, name, seen switch { "once" => "You allowed it until this reply ends", "chat" => "You allowed it for this chat", "stop" => "Stopped", "timeout" => "No answer in 10 minutes", _ => "Not now" });
+   if (seen == "chat") run.Chat.Allowed.Add("see " + path); else if (seen == "once") run.Seen.Add(path);
+   PublishAiEverywhere();
+   return seen is "once" or "chat"
+    ? Reply(new { done = $"You can look in {path} {(seen == "chat" ? "for the rest of this chat" : "until you finish this reply")}: list_files and read_file with full paths there, like {Path.Combine(path, "notes.txt")}. It's read-only: to change files there, ask with request_folder and write: true." })
+    : Fail(seen == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without it, or ask them in your reply.");
+  }
+  if (path.Equals(work, StringComparison.OrdinalIgnoreCase)) return Reply(new { done = "You already work in " + path });
+  string answer = await Approve(run, "Work in " + name, path, "folder", why, countdown: false);
   if (answer == "pick") {
    var pick = new Microsoft.Win32.OpenFolderDialog { Title = "Pick a folder for this chat", InitialDirectory = path };
    if (pick.ShowDialog(this) == true) { path = Path.TrimEndingDirectorySeparator(pick.FolderName); answer = "picked"; } else answer = "deny";

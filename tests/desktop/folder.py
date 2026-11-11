@@ -376,7 +376,7 @@ def main():
         frames = RUN / "frames"
         frames.mkdir()
         put(frames / "f01.txt", "one")
-        cid2, before = calls(p, cid2, [["request_folder", {"path": str(frames), "why": "to read the frames"}], ["list_files", {}]])
+        cid2, before = calls(p, cid2, [["request_folder", {"path": str(frames), "why": "to read the frames", "write": True}], ["list_files", {}]])
         asked = card(p)
         text = asked.get("text", "")
         check("request_folder" in (results()[before - 1]["tools"] if before else []) and text.startswith("Let Leo work in ") and "frames?" in text and str(frames) in text and "to read the frames" in text
@@ -429,7 +429,7 @@ def main():
         # Not now leaves it without; Keep going still asks; Still's data, or a folder holding it, and a folder that isn't there are refused without a card.
         send(p, "companionAutonomy", id="leo", level="keepgoing")
         time.sleep(1)
-        cid4, before = calls(p, None, [["request_folder", {"path": str(frames)}]], companion="leo")
+        cid4, before = calls(p, None, [["request_folder", {"path": str(frames), "write": True}]], companion="leo")
         asked = card(p)
         check(asked.get("buttons") == ["Not now", "Choose another folder", "Allow"], "On Keep going it still asks")
         press(p, "Not now")
@@ -442,6 +442,46 @@ def main():
         check(len(r) == 4 and all(x["error"] for x in r) and "Still's data" in r[0]["text"] and "Still's data" in r[1]["text"] and "no folder at" in r[2]["text"] and "no folder at" in r[3]["text"] and no_card(p),
               f"Still's data, a folder holding it, a folder that isn't there and a path that isn't whole are refused, with no card ({[x['text'][:50] for x in r]})")
         idle(p, cid4)
+
+        # To see a folder outside its working folder (or with none): a card, then list_files and read_file by full path
+        # there, read-only. Allow once lasts until the reply ends; Allow for this chat, the rest of the chat.
+        clips = RUN / "clips"
+        clips.mkdir()
+        put(clips / "take1.txt", "first take")
+        cid5, before = calls(p, None, [["request_folder", {"path": str(clips), "why": "to look at the takes"}], ["list_files", {"path": str(clips)}],
+                                        ["read_file", {"path": str(clips / "take1.txt")}], ["write_file", {"path": str(clips / "new.txt"), "content": "x"}]], companion="leo")
+        asked = card(p)
+        text = asked.get("text", "")
+        check(text.startswith("Let Leo see ") and "clips?" in text and str(clips) in text and "to look at the takes" in text and asked.get("buttons") == ["Not now", "Allow for this chat", "Allow once"],
+              f"Asking to see a folder shows a card: Let Leo see it, with Not now, Allow for this chat and Allow once ({asked})")
+        screens(p, PROFILE, "6-see-card")
+        press(p, "Allow once")
+        r = got(before, 4)
+        check(len(r) == 4 and not r[0]["error"] and "until you finish this reply" in r[0]["text"] and out(r[1]).get("items") == ["take1.txt (10 B)"] and "first take" in r[2]["text"],
+              f"Allow once: it lists and reads the folder by full path ({[x['text'][:60] for x in r]})")
+        check(len(r) == 4 and r[3]["error"] and "only look" in r[3]["text"] and not (clips / "new.txt").exists(), f"...read-only: writing there is refused ({r[3]['text'][:80] if len(r) == 4 else None})")
+        check(not next((c.get("Folder") for c in chats() if c["Id"] == cid5), None), "...and it isn't made the chat's working folder")
+        idle(p, cid5)
+        cid5, before = calls(p, cid5, [["list_files", {"path": str(clips)}]])
+        r = got(before, 1)
+        check(r and r[0]["error"] and no_card(p), f"Once lasts until that reply ends: the next one can't look ({r[0]['text'][:80] if r else None})")
+        idle(p, cid5)
+        cid5, before = calls(p, cid5, [["request_folder", {"path": str(clips)}]])
+        card(p)
+        press(p, "Allow for this chat")
+        r = got(before, 1)
+        check(r and not r[0]["error"] and "for the rest of this chat" in r[0]["text"], f"Allow for this chat ({r[0]['text'][:80] if r else None})")
+        idle(p, cid5)
+        cid5, before = calls(p, cid5, [["read_file", {"path": str(clips / "take1.txt")}], ["request_folder", {"path": str(clips)}]])
+        r = got(before, 2)
+        check(len(r) == 2 and "first take" in r[0]["text"] and "already" in r[1]["text"] and no_card(p), f"...and the next reply still reads there, with no new card ({[x['text'][:50] for x in r]})")
+        idle(p, cid5)
+        cid6, before = calls(p, None, [["request_folder", {"path": str(clips)}]], companion="leo")
+        card(p)
+        press(p, "Not now")
+        r = got(before, 1)
+        check(r and r[0]["error"] and "not now" in r[0]["text"], f"Not now leaves it unable to look, and another chat asks again ({r[0]['text'][:80] if r else None})")
+        idle(p, cid6)
         errors = rpc(p).get("shellErrors") or []
         check(not errors, "No interface errors" + (f": {errors[:1]}" if errors else ""))
     finally:
