@@ -39,6 +39,7 @@ export type AiState = {
  setup: { line: string; url: string; code: string }; pending: boolean
  models?: { harness: string; id: string; name: string; efforts: string[] }[]; model: string; effort: string; usage: string
  chatId?: string; chatHarness?: string; chatCompanion?: string; chatFolder?: string | null; nextFolder?: string | null; messages: Message[]
+ messagesFrom?: number // the host sends a long chat's last 300 messages: where they start in the whole chat
  question?: { text: string; options: string[]; page?: string | null; kickoff?: boolean } | null; companions?: Companion[]
  chats: ChatRow[]
  incognito?: boolean; privateChats?: ChatRow[] // an incognito window's own chats: only ever listed in that window, never with saved chats
@@ -911,14 +912,25 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const back = useRef(ai.chatId ? scrolls.get(ai.chatId) : undefined) // coming back to this chat: where the user left it
  useLayoutEffect(() => {
   const el = log.current; if (!el) return
-  if (back.current != null) { el.scrollTop = back.current; back.current = undefined } else el.scrollTo({ top: el.scrollHeight, behavior: "smooth" })
- }, [ai.messages.length, busy, !!ai.question])
- const pinned = useRef(true) // the user is at the bottom of the chat
+  if (back.current != null) { el.scrollTop = back.current; back.current = undefined }
+  else if (pinned.current || (ai.messages.at(-1)?.role === "user" && !ai.messages.at(-1)?.who)) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }) // not while the user reads further up, unless they just sent
+ }, [(ai.messagesFrom ?? 0) + ai.messages.length, busy, !!ai.question])
+ const pinned = useRef(true), lastTop = useRef(0) // the user is at the bottom of the chat (scrolling down, as a smooth scroll there does, keeps it so)
+ const anchor = useRef<{ row: Element; top: number } | undefined>(undefined) // the row the user is reading, and where it sits in the view
  const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
   fadeTop(e); const el = e.currentTarget
-  pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+  pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8 || (pinned.current && el.scrollTop >= lastTop.current); lastTop.current = el.scrollTop
+  const view = el.getBoundingClientRect().top, row = [...el.firstElementChild?.children ?? []].find(r => r.getBoundingClientRect().bottom > view)
+  anchor.current = row && { row, top: row.getBoundingClientRect().top - view }
   if (ai.chatId) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
  }
+ // Reading further up while steps come in, the row being read stays put though rows above it change (a long chat drops
+ // its oldest ones): WebKit doesn't do this by itself, and where the browser already did, there's nothing left to move.
+ useLayoutEffect(() => {
+  const el = log.current, a = anchor.current; if (!el || !a || pinned.current || !a.row.isConnected) return
+  const moved = a.row.getBoundingClientRect().top - el.getBoundingClientRect().top - a.top
+  if (Math.abs(moved) > 1) el.scrollTop += moved
+ })
  // Timed from when the run started, so it reads right after switching chats.
  useEffect(() => { if (!busy) return; const count = () => setTick(since(started)); count(); const t = setInterval(count, 1000); return () => clearInterval(t) }, [busy, started])
  // While it works, a message waits as a follow-up (Still queues it) until the run ends or the user sends it now.
@@ -933,12 +945,14 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
 
  // Consecutive steps collapse into one row. A question waiting in its card isn't repeated in the log.
  const messages = ai.question && ai.messages.at(-1)?.text === ai.question.text ? ai.messages.slice(0, -1) : ai.messages
- const items: (Message | { role: "steps"; steps: Message[]; who?: string | null })[] = []
- for (const m of messages) {
+ // Each row is keyed by where its first message sits in the whole chat, so a new step updates the chat in place: no row
+ // is redrawn (or fades in again, or folds up) because a long chat's window moved on by one.
+ const items: (Message | { role: "steps"; steps: Message[]; who?: string | null })[] = [], keys: number[] = []
+ messages.forEach((m, n) => {
   const prev = items[items.length - 1]
-  if (m.role === "tool" || m.role === "search" || m.role === "read") { if (prev && "steps" in prev && prev.who == m.who) prev.steps.push(m); else items.push({ role: "steps", steps: [m], who: m.who }) }
-  else items.push(m)
- }
+  if ((m.role === "tool" || m.role === "search" || m.role === "read") && prev && "steps" in prev && prev.who == m.who) prev.steps.push(m)
+  else { items.push(m.role === "tool" || m.role === "search" || m.role === "read" ? { role: "steps", steps: [m], who: m.who } : m); keys.push((ai.messagesFrom ?? 0) + n) }
+ })
  const latestPrompt = messages.findLast(m => m.role === "user" && !m.who && !m.answer)
  const turnAt = busy ? items.findLastIndex(m => m === latestPrompt) : items.length // while it works, every step since the latest message stays in view
  const last = items[items.length - 1], working = !!last && "steps" in last && last.steps[last.steps.length - 1].status === "working"
@@ -997,18 +1011,18 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
    {items.map((m, i) => {
-    if ("steps" in m) return <div key={i} className={turn(i)}>{face(i)}<Work steps={m.steps} live={busy && i > turnAt} took={tookAt.get(i)} onLink={openLink} /></div>
-    if (m.role === "file") return <div key={i} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
-    if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={i} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
+    if ("steps" in m) return <div key={keys[i]} className={turn(i)}>{face(i)}<Work steps={m.steps} live={busy && i > turnAt} took={tookAt.get(i)} onLink={openLink} /></div>
+    if (m.role === "file") return <div key={keys[i]} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
+    if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={keys[i]} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
-    if (m.role === "user") return <MyMessage key={(ai.chatId ?? "new") + "." + i} m={m} known={known} send={send} latest={m === latestPrompt} draft={(ai.incognito ? "private." : "") + "edit." + (ai.chatId ?? "new")} />
-    if (m.role === "ask" || m.role === "tell") return <div key={i} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
-    if (m.role === "note" && m.text === "Stopped.") return <div key={i} className="ai-stopped" role="note"><Pause aria-hidden />You stopped it here
+    if (m.role === "user") return <MyMessage key={(ai.chatId ?? "new") + "." + keys[i]} m={m} known={known} send={send} latest={m === latestPrompt} draft={(ai.incognito ? "private." : "") + "edit." + (ai.chatId ?? "new")} />
+    if (m.role === "ask" || m.role === "tell") return <div key={keys[i]} className={turn(i)}>{face(i)}<DelegationRow m={m} ai={ai} send={send} mode={mode} onLink={openLink} /></div>
+    if (m.role === "note" && m.text === "Stopped.") return <div key={keys[i]} className="ai-stopped" role="note"><Pause aria-hidden />You stopped it here
      {stopped && i === items.length - 1 && <button type="button" onClick={() => send("aiContinue", { id: ai.chatId })}><Play aria-hidden />Continue</button>}</div>
-    if (m.role !== "assistant") return <div key={i} className="ai-msg is-note">{m.text}</div>
+    if (m.role !== "assistant") return <div key={keys[i]} className="ai-msg is-note">{m.text}</div>
     const { body, choice, next } = choicesOf(m.text)
     const after = items[i + 1], answer = after && !("steps" in after) && after.role === "user" ? after.text : undefined, last = i === items.length - 1 && !busy
-    return <div key={i} className={turn(i)}>{face(i)}
+    return <div key={keys[i]} className={turn(i)}>{face(i)}
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
      {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><ArrowDownRight /><span>{s}</span></button>)}</div>}

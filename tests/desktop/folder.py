@@ -61,6 +61,8 @@ FAKE = textwrap.dedent(r'''
         still.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); still.stdin.flush()
         tools = [t["name"] for t in request("tools/list", {})["result"]["tools"]]
         for tool, arguments in json.loads(last[7:]):
+            if tool == "sleep":  # a pause between steps, as a real model takes
+                time.sleep(arguments); continue
             r = request("tools/call", {"name": tool, "arguments": arguments})["result"]
             with open(os.path.join(here, "results.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps({"tool": tool, "tools": tools, "error": bool(r.get("isError")), "text": r["content"][0].get("text", "")}) + "\n")
@@ -149,6 +151,21 @@ def prompt_of(cid):
     return next((l["prompt"] for l in reversed(lines) if l.get("chat") == cid), "")
 
 
+LONG = "long-chat"
+
+
+def long_chat():
+    """A chat past the 300 messages the interface gets, ending with a turn that read 42 files."""
+    messages, k = [], 0
+    while len(messages) < 270:
+        messages += [{"Role": "user", "Text": f"Question {k}"}, {"Role": "tool", "Text": f"Read notes-{k}.txt"}, {"Role": "tool", "Text": f"Read data-{k}.csv"},
+                     {"Role": "assistant", "Text": f"Answer {k}"}]
+        k += 1
+    messages += [{"Role": "user", "Text": "Read every frame"}] + [{"Role": "tool", "Text": f"Read frames/f{i:02d}.txt"} for i in range(42)]
+    messages += [{"Role": "assistant", "Text": "I read all 42 frames."}]
+    return {"Id": LONG, "Title": "A long chat", "Harness": "fake", "Companion": "maya", "Started": True, "Updated": "2026-11-01T10:00:00Z", "Messages": messages}
+
+
 def link(at, to):
     """A link out of the folder: a junction on Windows (no admin needed), a symbolic link on the Mac."""
     if MAC:
@@ -175,6 +192,8 @@ def main():
     OUTSIDE.mkdir()
     put(OUTSIDE / "secret.txt", "secret")
     link(WORK / "door", OUTSIDE)
+    (PROFILE / "ai").mkdir(parents=True)
+    (PROFILE / "ai" / "chats.json").write_text(json.dumps([long_chat()]))
     crew = [{"Id": "maya", "Name": "Maya", "Job": "Builder", "Mode": "default", "Folder": str(WORK), "Autonomy": "balanced"},
             {"Id": "leo", "Name": "Leo", "Job": "Researcher", "Mode": "default", "Autonomy": "balanced"}]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake",
@@ -308,6 +327,35 @@ def main():
         r = got(before, 1)
         check(r and not r[0]["error"] and f"changed your working folder to {WORK}" in prompt_of(cid3), "...and the AI works there, told of the change")
         idle(p, cid3)
+
+        # A long chat updates in place as steps come in: no row is drawn again (fading in again or folding up), and the
+        # view stays on what the user reads further up.
+        send(p, "chatOpen", id=LONG)
+        until(lambda: js(p, "document.querySelectorAll('.chat-view .ai-turn').length > 100"), 15)
+        before = len(results())
+        send(p, "aiSend", text="CALLS: " + json.dumps([["sleep", 3]] + [x for _ in range(45) for x in (["read_file", {"path": "notes.txt"}], ["sleep", .05])]))
+        until(lambda: js(p, "[...document.querySelectorAll('.chat-view .ai-msg.is-user')].some(m => m.innerText.startsWith('CALLS'))"), 10)
+        time.sleep(.8)
+        js(p, """(() => {
+         const w = [...document.querySelectorAll('.chat-view details.ai-work')].find(d => d.querySelector('summary').innerText.startsWith('42 steps'))
+         w.open = true; w.querySelector('details.ai-work-fold').open = true
+         window.__rows = [...document.querySelectorAll('.chat-view .chat-column > *')].slice(-60, -2)
+         window.__fold = w
+         const log = document.querySelector('.chat-view .ai-log')
+         log.scrollTop += w.getBoundingClientRect().top - log.getBoundingClientRect().top - 40
+         log.dispatchEvent(new Event('scroll'))
+        })()""")
+        at = lambda: js(p, "Math.round(window.__fold.getBoundingClientRect().top - document.querySelector('.chat-view .ai-log').getBoundingClientRect().top)")
+        top = at()
+        fold = js(p, "window.__fold.querySelector('details.ai-work-fold summary').innerText.trim()")
+        r = got(before, 45, 60)
+        idle(p, LONG)
+        time.sleep(1)
+        kept = js(p, "[window.__rows.length, window.__rows.filter(r => r.isConnected).length, window.__fold.isConnected && window.__fold.open, !!window.__fold.querySelector('details.ai-work-fold[open]')]")
+        check(len(r) == 45 and fold == "Read 42 files" and kept and kept[0] > 40 and kept[0] == kept[1], f"A chat past 300 messages draws none of its rows again as 45 steps come in ({len(r)}, {fold!r}, {kept})")
+        check(kept and kept[2] and kept[3], "...so the turn the user opened, and its Read 42 files, stay open")
+        moved = at()
+        check(top is not None and moved is not None and abs(moved - top) <= 2, f"...and the view stays on it while the user reads further up ({top} then {moved})")
 
         # A companion with no folder.
         cid2, before = calls(p, None, [["list_files", {}]], companion="leo")

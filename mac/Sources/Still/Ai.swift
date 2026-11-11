@@ -1712,6 +1712,7 @@ extension Browser {
     "gaps": c.gaps, "terminalSignIn": c.terminalSignIn, "api": c is ApiAdapter, "billing": c.billing] },
    "setup": ["line": aiSetupLine, "url": aiSignInUrl, "code": aiSignInCode], "pending": !view.pending.isEmpty,
    "chatId": shown?.id ?? NSNull(), "chatHarness": shown?.harness ?? NSNull(), "chatCompanion": shown?.companion ?? NSNull(), "chatFolder": shown.map { folderOf($0) as Any } ?? NSNull(), "nextFolder": nextFolder.map { $0 as Any } ?? NSNull(),
+   "messagesFrom": max(0, (shown?.messages.count ?? 0) - 300), // where the last 300 start: the interface keys its rows by it, so a long chat doesn't redraw every row on each step
    "messages": (shown?.messages ?? []).suffix(300).map { ["role": $0.role, "text": $0.text, "who": $0.who.map { $0 as Any } ?? NSNull(), "to": $0.to.map { $0 as Any } ?? NSNull(), "status": $0.status.map { $0 as Any } ?? NSNull(),
     "reply": $0.reply.map { $0 as Any } ?? NSNull(), "chat": $0.chat.map { $0 as Any } ?? NSNull(), "title": $0.title.map { $0 as Any } ?? NSNull(), "answer": $0.answer == true, "took": $0.took ?? 0, "files": $0.files.map { $0.map { ["id": $0.id, "name": $0.name, "size": $0.size] } as Any } ?? NSNull()] as [String: Any] },
    "question": run?.question.map { ["text": $0.text, "options": $0.options, "page": $0.page.map { $0 as Any } ?? NSNull(), "kickoff": kickoffs.contains(shown?.id ?? "")] as Any } ?? NSNull(),
