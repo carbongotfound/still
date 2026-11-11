@@ -14,6 +14,18 @@ public partial class MainWindow
  /// The folder a chat works in: its own, or else its companion's; "" for none, one that's gone, or a private window.
  string FolderOf(AiChat chat) => !chat.Ephemeral && (chat.Folder ?? Companions.FirstOrDefault(c => c.Id == chat.Companion)?.Folder) is { Length: > 0 } f && Path.IsPathFullyQualified(f) && Directory.Exists(f)
   ? Path.GetFullPath(f).TrimEnd(Path.DirectorySeparatorChar) : "";
+ /// aiPicture: a picture a companion read in a chat, whose step says Read <path>: from the chat's folder, else a file attached
+ /// in it, as a data: address. Null for anything else, or a picture that's gone or over 5 MB.
+ string? StepPicture(string chatId, string step)
+ {
+  if (MyChats.FirstOrDefault(c => c.Id == chatId) is not { } chat || !step.StartsWith("Read ", StringComparison.Ordinal) || ImageMime(step) is not { } mime
+   || !chat.Messages.Any(m => m is { Role: "tool", Status: null } && m.Text == step)) return null;
+  string name = step[5..], path = "";
+  if (FolderOf(chat) is { Length: > 0 } root) try { path = Inside(root, name); } catch (InvalidOperationException) { }
+  if (!File.Exists(path) && chat.Messages.SelectMany(m => m.Files ?? []).LastOrDefault(f => f.Name == name) is { } sent && Attachment(AttachmentsHere, sent.Id) is { } file)
+   path = Path.Combine(AttachmentsHere, file.Id, file.Name);
+  return File.Exists(path) && new FileInfo(path).Length <= MaxImage ? $"data:{mime};base64,{Convert.ToBase64String(File.ReadAllBytes(path))}" : null;
+ }
  /// What the AI hears when its folder changed since it was last told (a new session's instructions name it).
  static string FolderNote(AiChat chat, string work)
  {

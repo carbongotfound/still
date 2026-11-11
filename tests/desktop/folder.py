@@ -15,6 +15,7 @@ The fake AI app answers a last line "CALLS: <json list of [tool, arguments]>" by
 Still's MCP server and writing each result to results.jsonl as it comes. Deleted files are named still-qa-*.txt, since
 they land in the real Recycle Bin or Trash.
 """
+import base64
 import json
 import os
 import shutil
@@ -23,6 +24,7 @@ import sys
 import textwrap
 import time
 import uuid
+import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
@@ -133,6 +135,12 @@ def idle(p, cid):
 
 def read(name):
     return (WORK / name).read_bytes().decode("utf-8")
+
+
+def png(rgb):
+    """A one-pixel picture in that colour."""
+    chunk = lambda kind, data: len(data).to_bytes(4, "big") + kind + data + zlib.crc32(kind + data).to_bytes(4, "big")
+    return b"\x89PNG\r\n\x1a\n" + chunk(b"IHDR", (1).to_bytes(4, "big") * 2 + bytes([8, 2, 0, 0, 0])) + chunk(b"IDAT", zlib.compress(bytes([0, *rgb]))) + chunk(b"IEND", b"")
 
 
 def put(path, text):
@@ -378,6 +386,41 @@ def main():
         check(len(r) == 2 and not r[0]["error"] and "You work in" in r[0]["text"] and out(r[1]).get("items") == ["f01.txt (3 B)"] and own2() == str(frames),
               f"Allow makes it the chat's folder, and the companion carries on there ({[x['text'][:60] for x in r]}, {own2()!r})")
         check(until(lambda: chip(p, ".chat-view") == "frames", 5), "The chat's box shows the folder")
+        idle(p, cid2)
+
+        # A picture it read opens big on a click; Left and Right step through the others it read in this chat, with no flash.
+        red, blue = png((255, 0, 0)), png((0, 0, 255))
+        (frames / "f01.png").write_bytes(red)
+        (frames / "f02.png").write_bytes(blue)
+        cid2, before = calls(p, cid2, [["read_file", {"path": "f01.png"}], ["read_file", {"path": "f02.png"}]])
+        r = got(before, 2)
+        idle(p, cid2)
+        data = lambda pic: "data:image/png;base64," + base64.b64encode(pic).decode()
+        shown = lambda: js(p, "(d => d && { title: d.querySelector('h2').innerText, src: (d.querySelector('img') || {}).src || '', spinner: !!d.querySelector('[role=status], .animate-spin') })(document.querySelector('.file-preview'))") or {}
+        rows = js(p, "[...document.querySelectorAll('.chat-view .ai-step-picture')].map(b => b.innerText.trim())") or []
+        js(p, "[...document.querySelectorAll('.chat-view .ai-step-picture')].find(b => b.innerText.includes('f01.png')).click()")
+        first = until(lambda: (s := shown()).get("src") and s, 10) or {}
+        check(len(r) == 2 and rows == ["Read f01.png", "Read f02.png"] and first.get("title") == "f01.png · 1 of 2" and first.get("src") == data(red),
+              f"A picture it read opens big on a click ({rows}, {first.get('title')!r}, {first.get('src', '')[:40]!r})")
+        key = lambda k: js(p, f"document.querySelector('.file-preview').dispatchEvent(new KeyboardEvent('keydown', {{ key: '{k}', bubbles: true }}))")
+        key("ArrowRight")
+        seen = []
+        second = until(lambda: (s := shown(), seen.append(s))[0].get("src") == data(blue) and s, 10) or {}
+        check(second.get("title") == "f02.png · 2 of 2" and not any(s.get("spinner") or not s.get("src") for s in seen), f"Right steps to the next one, with no spinner or blank in between ({second.get('title')!r}, {len(seen)} looks)")
+        key("ArrowRight")
+        time.sleep(.5)
+        check(shown().get("src") == data(blue), "...and stops at the last")
+        key("ArrowLeft")
+        check(until(lambda: shown().get("src") == data(red), 10) and shown().get("title") == "f01.png · 1 of 2", "Left steps back")
+        key("Escape")
+        check(until(lambda: not js(p, "!!document.querySelector('.file-preview')"), 5), "Escape closes it")
+        asked = lambda step, chat: js(p, f"""new Promise(done => {{
+         const id = 'probe' + Math.random(), got = e => {{ if (e.detail.id === id) {{ removeEventListener('still-thumb', got); done(e.detail.data) }} }}
+         addEventListener('still-thumb', got); window.chrome.webview.postMessage({{ op: 'aiPicture', id, chat: {json.dumps(chat)}, step: {json.dumps(step)} }})
+         setTimeout(() => done(null), 5000) }})""")
+        put(OUTSIDE / "secret.png", "not for the page")
+        check(asked("Read f01.png", cid2) == data(red) and asked("Read ../outside/secret.png", cid2) == "" and asked("Read f01.png", "nope") == "",
+              "Still only shows a picture its step in that chat names, from the chat's folder")
         idle(p, cid2)
 
         # Not now leaves it without; Keep going still asks; Still's data, or a folder holding it, and a folder that isn't there are refused without a card.

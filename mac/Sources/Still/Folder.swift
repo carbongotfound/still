@@ -24,6 +24,18 @@ func keepGoing(_ chat: AiChat) -> Bool { exchangeOf(chat).chain.allSatisfy { c i
 
 struct OutOfFolder: Error { let why: String }
 /// A path the AI gave (relative, or full and inside), as a full path inside root.
+/// aiPicture (Windows: StepPicture): a picture a companion read in a chat, whose step says Read <path>: from the chat's folder,
+/// else a file attached in it, as a data: address. Nil for anything else, or a picture that's gone or over 5 MB.
+func stepPicture(_ chat: AiChat, _ step: String, attachments: String) -> String? {
+ guard step.hasPrefix("Read "), let mime = imageMime(step), chat.messages.contains(where: { $0.role == "tool" && $0.status == nil && $0.text == step }) else { return nil }
+ let name = String(step.dropFirst(5)), root = folderOf(chat)
+ var path = root.isEmpty ? "" : (try? inside(root, name)) ?? ""
+ if !FileManager.default.fileExists(atPath: path), let sent = chat.messages.flatMap({ $0.files ?? [] }).last(where: { $0.name == name }), let file = attachment(sent.id, in: attachments) {
+  path = attachments + "/" + file.id + "/" + file.name
+ }
+ guard let size = (try? FileManager.default.attributesOfItem(atPath: path))?[.size] as? Int, Int64(size) <= maxImage, let bytes = FileManager.default.contents(atPath: path) else { return nil }
+ return "data:\(mime);base64," + bytes.base64EncodedString()
+}
 func inside(_ root: String, _ given: String) throws -> String {
  let g = given.trimmingCharacters(in: .whitespacesAndNewlines)
  if g.isEmpty || g == "." || g == "/" { return root }

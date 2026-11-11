@@ -667,6 +667,8 @@ public partial class MainWindow
     break; }
    case "aiThumb" when Attachment(AttachmentsHere, S("id")) is { } pic && ImageMime(pic.Name) is { } picMime && pic.Size <= MaxImage: // a chip's picture of an attached image
     ShellSend(new { kind = "thumb", id = pic.Id, data = $"data:{picMime};base64,{Convert.ToBase64String(File.ReadAllBytes(Path.Combine(AttachmentsHere, pic.Id, pic.Name)))}" }); break;
+   case "aiPicture": // a picture a companion read in this chat, shown big from its step
+    ShellSend(new { kind = "thumb", id = S("id"), data = StepPicture(S("chat"), S("step")) ?? "" }); break;
    case "aiPasteImage": { // the + menu, or a paste the box can't read itself
     var copiedNow = CopiedFiles();
     if (copiedNow.Count > 0) AttachPaths(S("to"), copiedNow);

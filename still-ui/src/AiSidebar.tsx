@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -141,17 +141,33 @@ function Look({ m, onLink }: { m: Message; onLink: (url: string) => void }) {
  return <li><details className="ai-look"><summary className="ai-work-row"><span className="ai-step-icon"><Search /></span><span className="ai-step-text">Searched <code className="ai-mono">{data.q}</code><small> · {results.length} result{results.length === 1 ? "" : "s"}</small></span><ChevronDown className="ai-steps-chevron" /></summary>
   <ol className="ai-look-results">{results.map(r => <li key={r.url}>{link(r.url, r.title || host(r.url))}<small>{host(r.url)}</small>{r.snippet && <p>{r.snippet}</p>}</li>)}</ol></details></li>
 }
-function WorkStep({ m, onLink }: { m: Message; onLink: (url: string) => void }) {
+const PICTURE = /^Read \S.*\.(png|jpe?g|gif|webp)$/i // a picture it read, from its folder or your files: it opens big on a click
+const picturesOf = (messages: Message[]) => [...new Set(messages.filter(m => m.role === "tool" && !m.status && PICTURE.test(m.text)).map(m => m.text))]
+function WorkStep({ m, onLink, onPicture }: { m: Message; onLink: (url: string) => void; onPicture?: (step: string) => void }) {
  if (m.role === "search" || m.role === "read") return <Look m={m} onLink={onLink} />
- return <li className={"ai-work-row" + (m.status === "working" ? " is-live" : m.status === "failed" ? " is-failed" : "")}><StepIcon step={m.text} /><span className="ai-step-text"><Words step={m.text} /></span></li>
+ const words = <Words step={m.text} />
+ return <li className={"ai-work-row" + (m.status === "working" ? " is-live" : m.status === "failed" ? " is-failed" : "")}><StepIcon step={m.text} />{onPicture && !m.status && PICTURE.test(m.text)
+  ? <button type="button" className="ai-step-text ai-step-picture" onClick={() => onPicture(m.text)}>{words}</button> : <span className="ai-step-text">{words}</span>}</li>
 }
-function Work({ steps, live, took, onLink }: { steps: Message[]; live: boolean; took?: number; onLink: (url: string) => void }) {
+// A picture a companion read, big. Left and Right (or the arrows under it) step through the others it read in this chat.
+function StepPictures({ chat, step, all, onStep }: { chat: string; step: string; all: string[]; onStep: (step: string | null) => void }) {
+ useLift(true)
+ const at = all.indexOf(step), go = (by: number) => { if (all[at + by]) onStep(all[at + by]) }, id = "step:" + chat + ":" + step
+ return <Dialog open onOpenChange={open => { if (!open) onStep(null) }}><DialogContent className="app-dialog file-preview" aria-describedby={undefined}
+  onKeyDown={e => { if (e.key === "ArrowLeft" || e.key === "ArrowRight") { e.preventDefault(); go(e.key === "ArrowLeft" ? -1 : 1) } }}>
+  <DialogTitle>{step.slice(5).split(/[\\/]/).pop()}{all.length > 1 && at >= 0 && <small> · {at + 1} of {all.length}</small>}</DialogTitle>
+  <Picture id={id} name={step.slice(5)} ask={{ op: "aiPicture", id, chat, step }} />
+  {all.length > 1 && <DialogFooter className="picture-steps"><Button variant="ghost" size="icon" aria-label="Previous picture" disabled={at <= 0} onClick={() => go(-1)}><ChevronLeft /></Button>
+   <Button variant="ghost" size="icon" aria-label="Next picture" disabled={at < 0 || at >= all.length - 1} onClick={() => go(1)}><ChevronRight /></Button></DialogFooter>}
+ </DialogContent></Dialog>
+}
+function Work({ steps, live, took, onLink, onPicture }: { steps: Message[]; live: boolean; took?: number; onLink: (url: string) => void; onPicture?: (step: string) => void }) {
  const rows: { fold: string; steps: Message[] }[] = []
  for (const m of steps) { const fold = foldOf(m), last = rows[rows.length - 1]; if (fold && FOLDS[fold] && last?.fold === fold) last.steps.push(m); else rows.push({ fold, steps: [m] }) }
  const list = <ol className="ai-work-rows">{rows.map((r, i) => {
-  if (r.steps.length === 1) return <WorkStep key={i} m={r.steps[0]} onLink={onLink} />
+  if (r.steps.length === 1) return <WorkStep key={i} m={r.steps[0]} onLink={onLink} onPicture={onPicture} />
   return <li key={i}><details className="ai-work-fold"><summary className="ai-work-row"><StepIcon step={r.fold === "search" ? "Search" : r.fold === "Read" ? "Opened" : r.steps[0].text} /><span className="ai-step-text">{FOLDS[r.fold](r.steps.length)}</span><ChevronDown className="ai-steps-chevron" /></summary>
-   <ol>{r.steps.map((m, j) => <WorkStep key={j} m={m} onLink={onLink} />)}</ol></details></li>
+   <ol>{r.steps.map((m, j) => <WorkStep key={j} m={m} onLink={onLink} onPicture={onPicture} />)}</ol></details></li>
  })}</ol>
  if (live) return <div className="ai-work is-live">{list}</div>
  const state = steps.some(s => s.status === "failed") ? <X className="ai-steps-state is-failed" aria-label="Didn't finish" /> : !steps.some(s => s.status) && <Check className="ai-steps-state is-done" aria-label="Done" />
@@ -420,15 +436,16 @@ function FileChip({ file, onRemove }: { file: Attached; onRemove?: () => void })
   {onRemove && <button type="button" className="file-x" aria-label={"Remove " + file.name} onClick={onRemove}><X /></button>}
   {open && <Dialog open onOpenChange={setOpen}><DialogContent className="app-dialog file-preview" aria-describedby={undefined}><DialogTitle>{file.name}</DialogTitle><Picture id={file.id} name={file.name} /></DialogContent></Dialog>}</span>
 }
-// The whole picture, asked for when it opens (the chip keeps only a small copy).
-function Picture({ id, name }: { id: string; name: string }) {
- const [src, setSrc] = useState("")
+// The whole picture, asked for when it opens (the chip keeps only a small copy); ask: another way to get it. The last one
+// stays up while the next comes, so stepping through doesn't flash.
+function Picture({ id, name, ask }: { id: string; name: string; ask?: Record<string, unknown> }) {
+ const [src, setSrc] = useState<string | null>(null)
  useEffect(() => {
   const got = (e: Event) => { const d = (e as CustomEvent).detail; if (d.id === id) setSrc(String(d.data ?? "")) }
-  addEventListener("still-thumb", got); window.chrome?.webview?.postMessage({ op: "aiThumb", id })
+  addEventListener("still-thumb", got); window.chrome?.webview?.postMessage(ask ?? { op: "aiThumb", id })
   return () => removeEventListener("still-thumb", got)
- }, [id])
- return src ? <img src={src} alt={name} /> : <Spinner />
+ }, [id]) // eslint-disable-line react-hooks/exhaustive-deps -- id names what ask asks for
+ return src ? <img src={src} alt={name} /> : src === "" ? <p className="picture-gone">This picture isn't there any more.</p> : <Spinner />
 }
 // A long paste in the box: its first line. It opens to all of it, and in the box it can go back into the message as text.
 function PasteChip({ text, onRemove, onInline }: { text: string; onRemove?: () => void; onInline?: () => void }) {
@@ -900,6 +917,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const queued = ai.queued ?? [], upNext = queued.map(q => unpaste(q.text).rest).filter(Boolean).join(" · "), upFiles = queued.flatMap(q => q.files ?? [])
  const log = useRef<HTMLDivElement>(null)
  const [picked, setPicked] = useState<string>() // who a new chat in the sidebar is with
+ const [picture, setPicture] = useState<string | null>(null) // the step of a picture open big
  const known: Known = { companions: ai.companions ?? [], tabs, plugins: ai.plugins?.key ? ai.plugins.connected : [], skills: ai.skills ?? [] }
  const fresh = !ai.messages.length
  const companion = companionOf(ai, fresh && picked ? picked : ai.chatCompanion)
@@ -1011,7 +1029,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     <p className="ai-fine"><LockKeyhole />Never sees private tabs, passwords or cookies.</p>
    </div>)}
    {items.map((m, i) => {
-    if ("steps" in m) return <div key={keys[i]} className={turn(i)}>{face(i)}<Work steps={m.steps} live={busy && i > turnAt} took={tookAt.get(i)} onLink={openLink} /></div>
+    if ("steps" in m) return <div key={keys[i]} className={turn(i)}>{face(i)}<Work steps={m.steps} live={busy && i > turnAt} took={tookAt.get(i)} onLink={openLink} onPicture={setPicture} /></div>
     if (m.role === "file") return <div key={keys[i]} className={turn(i)}>{face(i)}<FileCard path={m.text} send={send} onOpen={onFile} /></div>
     if (m.role === "user" && m.who) { const asker = companionOf(ai, m.who); return <div key={keys[i]} className="ai-msg is-user is-teammate" style={{ "--hue": hueOf(asker) } as CSSProperties}>
      <span className="ai-asker"><Face companion={asker} size={20} />{asker?.name ?? "A teammate"} asked</span><MessageText text={m.text} known={known} /></div> }
@@ -1042,6 +1060,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}
+   {picture && ai.chatId && <StepPictures chat={ai.chatId} step={picture} all={picturesOf(ai.messages)} onStep={setPicture} />}
    {ai.question && <QuestionCard q={ai.question} companion={companion} send={send} draft={"answer." + (ai.chatId ?? "new")} />}
    {!!ai.approvals?.length && <Approvals list={ai.approvals} companion={companion} companions={ai.companions} send={send} incognito={ai.incognito} />}
    {queued.length > 0 && <div className="ai-queued"><span className="ai-queued-label">Up next</span>

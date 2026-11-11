@@ -1155,6 +1155,8 @@ extension Browser {
    if let pic = attachment(s("id"), in: attachmentsHere), Int64(pic.size) <= maxImage, let mime = imageMime(pic.name), let bytes = FileManager.default.contents(atPath: attachmentsHere + "/" + pic.id + "/" + pic.name) {
     send(["kind": "thumb", "id": pic.id, "data": "data:\(mime);base64," + bytes.base64EncodedString()])
    }
+  case "aiPicture": // a picture a companion read in this chat, shown big from its step
+   send(["kind": "thumb", "id": s("id"), "data": myChats.first(where: { $0.id == s("chat") }).flatMap { stepPicture($0, s("step"), attachments: attachmentsHere) } ?? ""])
   case "aiPasteImage": // the + menu, or a paste the box can't read itself
    let to = s("to"), quiet = b("quiet")
    DispatchQueue.main.async { [self] in

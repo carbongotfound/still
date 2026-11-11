@@ -990,6 +990,8 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .composer .file-chip:hover .file-x, .composer .file-chip:focus-within .file-x { opacity:1; } .composer .file-chip .file-x svg { width:10px; height:10px; }
 @media (hover:none) { .composer .file-chip .file-x { opacity:1; } }
 .paste-chip .file-open > svg { width:14px; height:14px; flex:none; color:var(--muted-foreground); }
+.ai-step-picture { margin:0; padding:0; border:0; background:none; color:inherit; font:inherit; text-align:left; cursor:zoom-in; } .ai-step-picture:hover .ai-mono { text-decoration:underline; }
+.file-preview .picture-steps { justify-content:center; } .file-preview .picture-gone { margin:24px 0; text-align:center; color:var(--muted-foreground); } .file-preview h2 small { font-weight:400; color:var(--muted-foreground); }
 .file-preview[data-slot] { width:auto; max-width:min(92vw,960px); } .file-preview img { display:block; max-width:100%; max-height:72vh; margin:auto; border-radius:8px; object-fit:contain; }
 .paste-dialog pre { max-height:60vh; overflow:auto; margin:0; padding:12px 14px; border-radius:10px; background:var(--muted); font:12.5px/1.55 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; white-space:pre-wrap; overflow-wrap:anywhere; }
 /* The message box: text with mentions in it (Mention.tsx). */
