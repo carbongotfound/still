@@ -852,41 +852,40 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 [data-kind=claude] { --drive:#de7d58; } [data-kind=chatgpt] { --drive:#3fb79a; } [data-kind=grok] { --drive:#a6d930; }
 .page-glow { position:absolute;inset:0;z-index:4;pointer-events:none;border-radius:inherit;box-shadow:inset 0 0 0 3px var(--drive),inset 0 0 26px 4px color-mix(in oklab,var(--drive) 50%,transparent);animation:page-glow 2.4s ease-in-out infinite; }
 @keyframes page-glow { 50% { box-shadow:inset 0 0 0 3px color-mix(in oklab,var(--drive) 70%,transparent),inset 0 0 18px 2px color-mix(in oklab,var(--drive) 35%,transparent); } }
-/* The pill: who's at work and what they're doing right now, then Take over, Open chat and Stop. A solid card with a
-   border and a shadow, so it reads over any page; the companion's hue only tints it and turns in the ring round its head. */
-.page-dock { position:absolute;z-index:5;left:50%;bottom:22px;translate:-50% 0;max-width:calc(100% - 32px);display:flex;align-items:center;gap:8px; }
-.page-control { position:relative;min-width:0;display:flex;align-items:center;gap:6px;padding:5px 6px 5px 2px;border-radius:999px;background:color-mix(in oklab,var(--drive,#888) 7%,var(--card));color:var(--foreground);border:1px solid color-mix(in oklab,var(--drive,#888) 38%,var(--border));box-shadow:0 14px 34px -16px rgb(0 0 0/.45),0 2px 6px -2px rgb(0 0 0/.16);outline:none;animation:page-control-in 260ms cubic-bezier(.22,1,.36,1); }
-.page-control:focus-visible { box-shadow:0 0 0 2px var(--ring),0 14px 34px -16px rgb(0 0 0/.45); }
-.page-control:is([data-state=paused],[data-state=signin]) { background:color-mix(in oklab,#e2a33b 12%,var(--card));border-color:color-mix(in oklab,#e2a33b 50%,var(--border)); }
-.page-control[data-state=approval] { border-color:color-mix(in oklab,#e2a33b 70%,var(--border)); }
-.page-control[data-state=done] { animation:page-done 2.4s ease forwards; }
-@keyframes page-done { 0%,70% { opacity:1; } 100% { opacity:0; translate:0 6px; } }
-.page-more { width:22px !important;height:32px;padding:0 !important;background:transparent;color:var(--muted-foreground); } .page-more:hover { color:var(--foreground); }
-.page-more svg { transition:rotate 160ms; } .page-more[aria-expanded=true] svg { rotate:180deg; }
-.page-head { position:relative;flex:none;width:32px;height:32px;display:grid;place-items:center; }
+/* The pill: who's at work and what they're doing right now, then Take over or Hand back, Open chat and Stop. Still's own
+   floating surface with its border token and a soft shadow, so it lifts off any page, light or dark; the companion's hue
+   shows only in the ring round its head. Centered without a transform, so nothing in it lands on half a pixel. It doesn't
+   fade in or out: on Windows its rim is drawn over the page from these same colors (pageHoles rim), which can't fade. */
+.page-dock { position:absolute;z-index:5;left:16px;right:16px;bottom:22px;width:fit-content;max-width:calc(100% - 32px);margin-inline:auto;display:flex;align-items:center;gap:8px; }
+.page-control, .page-panel, .page-others { --shade:.16; } .dark :is(.page-control, .page-panel, .page-others) { --shade:.45; }
+.page-control { position:relative;min-width:0;display:flex;align-items:center;gap:6px;padding:4px;border-radius:999px;background:var(--popover);color:var(--popover-foreground);border:1px solid var(--border);box-shadow:0 6px 18px rgb(0 0 0/var(--shade));outline:none; }
+.page-control:focus-visible { box-shadow:0 0 0 2px var(--ring),0 6px 18px rgb(0 0 0/var(--shade)); }
+.page-more { width:32px;padding:0 !important;background:transparent;color:var(--muted-foreground); } .page-more:hover { color:var(--popover-foreground);background:var(--accent); }
+.page-more svg { width:16px !important;height:16px !important;transition:rotate 160ms; } .page-more[aria-expanded=true] svg { rotate:180deg; }
+.page-head { position:relative;flex:none;width:36px;height:36px;display:grid;place-items:center; }
 .page-head::before { content:"";position:absolute;inset:0;border-radius:50%;background:conic-gradient(var(--drive,#888) 0 30%,color-mix(in oklab,var(--drive,#888) 26%,transparent) 30% 100%);-webkit-mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));mask:radial-gradient(farthest-side,transparent calc(100% - 2px),#000 calc(100% - 1.5px));animation:page-ring 3s linear infinite; }
 .page-control:not([data-state=working]) .page-head::before { animation:none;background:color-mix(in oklab,var(--drive,#888) 75%,transparent); }
 @keyframes page-ring { to { rotate:1turn; } }
-.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;gap:1px;padding:0 6px 0 2px;line-height:1.25; }
-.page-control-text b { font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:page-step 200ms ease; }
+.page-control-text { min-width:0;max-width:300px;display:flex;flex-direction:column;justify-content:center;padding:0 6px 0 2px;line-height:1.35; }
+.page-control-text b { font-size:13px;font-weight:400;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;animation:page-step 200ms ease; }
 @keyframes page-step { from { opacity:0; } }
-.page-control-text small { font-size:12px;color:color-mix(in oklab,var(--foreground) 74%,var(--card));white-space:nowrap;overflow:hidden;text-overflow:ellipsis; }
+.page-control-text small { font-size:12px;color:var(--muted-foreground);white-space:nowrap;overflow:hidden;text-overflow:ellipsis; } /* the whole line in a tooltip when it's cut (cut) */
 .page-count { display:none; }
-.page-control button, .page-panel button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:600;flex:none;transition:background 120ms; }
+.page-control button, .page-panel button { display:inline-flex;align-items:center;justify-content:center;gap:6px;height:32px;padding:0 12px;border-radius:999px;font-size:12.5px;font-weight:500;flex:none;transition:background 120ms,color 120ms; }
 .page-control button svg, .page-panel button svg { width:14px;height:14px; }
-.page-take { background:var(--foreground);color:var(--background); } .page-take:hover { background:color-mix(in oklab,var(--foreground) 84%,var(--background)); }
-.page-chat { background:transparent;color:var(--foreground);box-shadow:inset 0 0 0 1px color-mix(in oklab,var(--foreground) 18%,transparent); } .page-chat:hover { background:color-mix(in oklab,var(--foreground) 7%,transparent); }
-.page-stop { width:32px;padding:0 !important;margin-left:4px;background:color-mix(in oklab,var(--destructive) 13%,var(--card));color:var(--destructive); } .page-stop:hover { background:color-mix(in oklab,var(--destructive) 24%,var(--card)); }
+/* Hand back (Take over while it works) is the one filled button, in Still's accent; Open chat is quiet; Stop is calm. */
+.page-take { background:var(--pop);color:var(--ink); } .page-take:hover { background:color-mix(in oklab,var(--pop) 86%,var(--ink)); }
+.page-chat { background:transparent;color:var(--popover-foreground);box-shadow:inset 0 0 0 1px var(--border); } .page-chat:hover { background:var(--accent); }
+.page-stop { width:32px;padding:0 !important;background:transparent;color:color-mix(in oklab,var(--destructive) 55%,var(--muted-foreground)); } .page-stop:hover { color:var(--destructive);background:color-mix(in oklab,var(--destructive) 12%,transparent); }
 .page-stop svg { fill:currentColor;stroke:none; }
-.page-panel { position:absolute;right:0;bottom:calc(100% + 8px);width:min(320px,calc(100vw - 32px));display:grid;gap:10px;padding:12px 12px 10px;border-radius:16px;background:var(--card);color:var(--foreground);border:1px solid var(--border);box-shadow:0 18px 40px -18px rgb(0 0 0/.5);animation:page-control-in 200ms ease; }
-.page-panel > b { display:flex;justify-content:space-between;gap:8px;font-size:13px; } .page-panel > b small { font-weight:400;color:var(--muted-foreground); }
-.page-panel ol { margin:0;padding:0 0 0 18px;display:grid;gap:4px;font-size:12.5px;color:color-mix(in oklab,var(--foreground) 76%,var(--card)); } .page-panel li.is-now { color:var(--foreground);font-weight:600; }
+.page-panel { position:absolute;right:0;bottom:calc(100% + 8px);width:min(320px,calc(100vw - 32px));display:grid;gap:10px;padding:12px 12px 10px;border-radius:16px;background:var(--popover);color:var(--popover-foreground);border:1px solid var(--border);box-shadow:0 6px 18px rgb(0 0 0/var(--shade)); }
+.page-panel > b { display:flex;justify-content:space-between;gap:8px;font-size:13px;font-weight:500; } .page-panel > b small { font-weight:400;color:var(--muted-foreground); }
+.page-panel ol { margin:0;padding:0 0 0 18px;display:grid;gap:4px;font-size:12.5px;color:var(--muted-foreground); } .page-panel li.is-now { color:var(--popover-foreground); }
 .page-panel-buttons { display:flex;gap:6px;justify-content:flex-end; }
-.page-others { display:flex;align-items:center;height:36px;padding:0 10px 0 6px;border-radius:999px;background:var(--card);border:1px solid var(--border);color:var(--foreground);box-shadow:0 10px 24px -14px rgb(0 0 0/.45);font-size:12px;font-weight:600;flex:none; }
+.page-others { display:flex;align-items:center;height:36px;padding:0 10px 0 6px;border-radius:999px;background:var(--popover);border:1px solid var(--border);color:var(--popover-foreground);box-shadow:0 6px 18px rgb(0 0 0/var(--shade));font-size:12px;font-weight:500;flex:none; }
 .page-others .mascot + .mascot { margin-left:-6px; } .page-others b { margin-left:5px; }
 @media (max-width:520px) { .page-take span, .page-chat span { display:none; } .page-take, .page-chat { width:32px;padding:0 !important; } .page-control-text { max-width:150px; } }
-@keyframes page-control-in { from { opacity:0; } }
-@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-control, .page-head::before, .page-control-text b, .page-panel, .page-tabs i { animation:none; } .page-count { display:inline; } }
+@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-head::before, .page-control-text b, .page-tabs i { animation:none; } .page-count { display:inline; } }
 
 /* The home (new tab): a slim rail, the companion switcher, the face, the message box, chips and ideas. Pages swap in on the right. */
 .home-rail { width:56px; flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 0 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 45%,var(--background)); }

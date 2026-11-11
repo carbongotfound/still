@@ -30,24 +30,94 @@ public partial class MainWindow
  [DllImport("gdi32.dll")] static extern IntPtr CreateRoundRectRgn(int left,int top,int right,int bottom,int width,int height);
  [DllImport("gdi32.dll")] static extern int CombineRgn(IntPtr dest,IntPtr a,IntPtr b,int mode);
  [DllImport("gdi32.dll")] static extern bool DeleteObject(IntPtr gdiObject);
+ [DllImport("user32.dll",CharSet=CharSet.Unicode)] static extern IntPtr CreateWindowEx(int exStyle,string className,string? name,int style,int x,int y,int width,int height,IntPtr parent,IntPtr menu,IntPtr instance,IntPtr param);
+ [DllImport("user32.dll")] static extern bool UpdateLayeredWindow(IntPtr hwnd,IntPtr screenDc,IntPtr at,ref POINT size,IntPtr dc,ref POINT from,int key,ref int blend,int flags);
+ [DllImport("user32.dll")] static extern bool ShowWindow(IntPtr hwnd,int command);
+ [DllImport("user32.dll")] static extern IntPtr GetParent(IntPtr hwnd);
+ [DllImport("user32.dll")] static extern bool ScreenToClient(IntPtr hwnd,ref POINT point);
+ [DllImport("gdi32.dll")] static extern IntPtr CreateCompatibleDC(IntPtr dc);
+ [DllImport("gdi32.dll")] static extern bool DeleteDC(IntPtr dc);
+ [DllImport("gdi32.dll")] static extern IntPtr SelectObject(IntPtr dc,IntPtr gdiObject);
+ [DllImport("gdi32.dll")] static extern IntPtr CreateDIBSection(IntPtr dc,ref DibHeader header,uint usage,out IntPtr bits,IntPtr section,uint offset);
+ [StructLayout(LayoutKind.Sequential)] struct DibHeader { public int Size,Width,Height; public short Planes,BitCount; public int Compression,SizeImage,XPerMeter,YPerMeter,Used,Important; }
  // While an AI drives the page in view, the interface draws a glow around it and its controls over it. The page's
  // window leaves those spots open, so the interface beneath shows through and takes the clicks there.
  (string Tab,double Frame,(double X,double Y,double W,double H,double R)[] Spots) holes=("",0,[]);
  IntPtr holedPage;
+ // A window region is all-or-nothing per pixel: round a hole the page's edge is stair-stepped, and nothing the interface
+ // draws past the hole (its shadow, its outline's smoothing) shows. So a click-through layered window above the page draws
+ // each spot's rim: the outline anti-aliased, a 1 px border and a soft shadow, over a band of the spot's own fill that
+ // covers the hole's stepped edge (the hole is cut RimInset inside the outline, under the band). Its colors are the
+ // interface's own (pageHoles rim); the shadow matches the pill's CSS one (0 6px 18px, black at --shade). All in CSS px,
+ // times holesScale (CSS px to DIPs: 1 unless the interface renders at another scale than the window).
+ const double RimBand=3,RimInset=1.5,RimShadowY=6,RimShadowBlur=18;
+ double holesScale=1;
+ IntPtr rim;
+ (byte R,byte G,byte B) rimFill=(41,41,44);
+ (byte R,byte G,byte B,double A) rimLine=(255,255,255,.08);
+ double rimShade=.45;
+ (int[] Pixels,int X,int Y,int W,int H,double Scale)? rimPicture; // the last rim drawn, in physical pixels from the page's corner (for QA capture)
  void CutHoles()
  {
   IntPtr page=Shown?.View is {IsVisible:true} view?view.Handle:IntPtr.Zero;
   if(holedPage!=IntPtr.Zero&&holedPage!=page)SetWindowRgn(holedPage,IntPtr.Zero,true);
   holedPage=IntPtr.Zero;
   if(page==IntPtr.Zero)return;
-  if(holes.Tab!=Shown!.Id||holes.Frame<=0&&holes.Spots.Length==0||overlay||contentFullScreen||Partner!=null){SetWindowRgn(page,IntPtr.Zero,true);return;}
+  if(holes.Tab!=Shown!.Id||holes.Frame<=0&&holes.Spots.Length==0||overlay||contentFullScreen||Partner!=null){SetWindowRgn(page,IntPtr.Zero,true);HideRim();return;}
   var dpi=VisualTreeHelper.GetDpi(this);
   int X(double v)=>(int)Math.Round(v*dpi.DpiScaleX);
   int Y(double v)=>(int)Math.Round(v*dpi.DpiScaleY);
   int frame=X(holes.Frame);
+  bool rimmed=DrawRim(page,dpi.DpiScaleX);
+  double i=rimmed?RimInset*holesScale:0;
   var region=CreateRectRgn(frame,frame,X(pageWidth)-frame,Y(pageHeight)-frame);
-  foreach(var s in holes.Spots){var spot=CreateRoundRectRgn(X(s.X),Y(s.Y),X(s.X+s.W)+1,Y(s.Y+s.H)+1,X(s.R*2),Y(s.R*2));CombineRgn(region,region,spot,4/*RGN_DIFF*/);DeleteObject(spot);}
+  foreach(var s in holes.Spots){var spot=CreateRoundRectRgn(X(s.X+i),Y(s.Y+i),X(s.X+s.W-i)+1,Y(s.Y+s.H-i)+1,X(Math.Max(0,s.R-i)*2),Y(Math.Max(0,s.R-i)*2));CombineRgn(region,region,spot,4/*RGN_DIFF*/);DeleteObject(spot);}
   if(SetWindowRgn(page,region,true)==0)DeleteObject(region);else holedPage=page; // the window owns the region now
+ }
+ void HideRim(){if(rim!=IntPtr.Zero)ShowWindow(rim,0/*SW_HIDE*/);rimPicture=null;}
+ /// Draws the spots' rims into the layered window above the page (premultiplied BGRA, physical pixels): per pixel, the
+ /// signed distance to the nearest spot's outline gives the band and border (and their smoothing), and offset by the
+ /// shadow's drop, a Gaussian falloff outside the outline. Inside the band it's clear, so the interface shows there.
+ bool DrawRim(IntPtr page,double k)
+ {
+  var spots=holes.Spots.Where(s=>s.W>0&&s.H>0).ToArray();
+  IntPtr parent=GetParent(page);
+  if(spots.Length==0||parent==IntPtr.Zero||!GetWindowRect(page,out var at)){HideRim();return false;}
+  if(rim==IntPtr.Zero)rim=CreateWindowEx(0x00080000/*WS_EX_LAYERED*/|0x00000020/*WS_EX_TRANSPARENT*/|0x08000000/*WS_EX_NOACTIVATE*/,"Static",null,0x40000000/*WS_CHILD*/|0x08000000/*WS_DISABLED*/,0,0,1,1,parent,IntPtr.Zero,IntPtr.Zero,IntPtr.Zero);
+  if(rim==IntPtr.Zero)return false;
+  // Each spot as the interface paints it: its box snapped to device pixels.
+  var boxes=spots.Select(s=>(X0:Math.Round(s.X*k),Y0:Math.Round(s.Y*k),X1:Math.Round((s.X+s.W)*k),Y1:Math.Round((s.Y+s.H)*k),R:s.R*k)).ToArray();
+  double css=k*holesScale,pad=Math.Ceiling((RimShadowBlur+RimShadowY)*css),band=RimBand*css,line=Math.Max(1,Math.Floor(css)),drop=RimShadowY*css,sigma=RimShadowBlur/2*css; // a 1 px border is whole device pixels, as the interface draws it
+  int left=(int)(boxes.Min(b=>b.X0)-pad),top=(int)(boxes.Min(b=>b.Y0)-pad),width=(int)(boxes.Max(b=>b.X1)+pad)-left,height=(int)(boxes.Max(b=>b.Y1)+pad)-top;
+  static double Edge(double x,double y,(double X0,double Y0,double X1,double Y1,double R) b) // signed distance to the rounded box, < 0 inside
+  {
+   double r=Math.Min(b.R,Math.Min(b.X1-b.X0,b.Y1-b.Y0)/2),qx=Math.Abs(x-(b.X0+b.X1)/2)-(b.X1-b.X0)/2+r,qy=Math.Abs(y-(b.Y0+b.Y1)/2)-(b.Y1-b.Y0)/2+r;
+   return Math.Sqrt(Math.Pow(Math.Max(qx,0),2)+Math.Pow(Math.Max(qy,0),2))+Math.Min(Math.Max(qx,qy),0)-r;
+  }
+  static double Cover(double d)=>Math.Clamp(.5-d,0,1);
+  var pixels=new int[width*height];
+  for(int y=0;y<height;y++)for(int x=0;x<width;x++)
+  {
+   double px=left+x+.5,py=top+y+.5,d=double.MaxValue,shade=0;
+   foreach(var b in boxes){d=Math.Min(d,Edge(px,py,b));shade=Math.Max(shade,1/(1+Math.Exp(1.702*Edge(px,py-drop,b)/sigma)));} // the logistic stands in for the Gaussian's tail
+   double inside=Cover(d),ring=inside-Cover(d+band),edge=(inside-Cover(d+line))*rimLine.A;
+   double a=edge+ring*(1-edge),r=rimLine.R*edge+rimFill.R*ring*(1-edge),g=rimLine.G*edge+rimFill.G*ring*(1-edge),bl=rimLine.B*edge+rimFill.B*ring*(1-edge);
+   double s=rimShade*shade*(1-inside);a+=s*(1-a); // the shadow only outside the outline, as CSS draws it
+   pixels[y*width+x]=(int)Math.Round(a*255)<<24|(int)Math.Round(r)<<16|(int)Math.Round(g)<<8|(int)Math.Round(bl);
+  }
+  var origin=new POINT{X=at.Left+left,Y=at.Top+top};ScreenToClient(parent,ref origin);
+  var header=new DibHeader{Size=40,Width=width,Height=-height,Planes=1,BitCount=32};
+  IntPtr dc=CreateCompatibleDC(IntPtr.Zero),dib=CreateDIBSection(dc,ref header,0,out var bits,IntPtr.Zero,0);
+  if(dib==IntPtr.Zero){DeleteDC(dc);return false;}
+  Marshal.Copy(pixels,0,bits,pixels.Length);
+  var was=SelectObject(dc,dib);
+  SetWindowPos(rim,IntPtr.Zero/*HWND_TOP*/,origin.X,origin.Y,width,height,0x0010/*SWP_NOACTIVATE*/|0x0040/*SWP_SHOWWINDOW*/);
+  var size=new POINT{X=width,Y=height};var from=new POINT();int blend=0x01FF0000; // AC_SRC_OVER, 255, AC_SRC_ALPHA
+  bool drawn=UpdateLayeredWindow(rim,IntPtr.Zero,IntPtr.Zero,ref size,dc,ref from,0,ref blend,2/*ULW_ALPHA*/);
+  SelectObject(dc,was);DeleteObject(dib);DeleteDC(dc);
+  if(!drawn){HideRim();return false;}
+  rimPicture=(pixels,left,top,width,height,k);
+  return true;
  }
  // A fullscreen video fills the window at once, without waiting for the interface to re-render and report new bounds.
  void PlacePage()
@@ -127,7 +197,12 @@ public partial class MainWindow
      case "pageHoles":{
       double scale=data.TryGetProperty("viewportWidth",out var hv)&&hv.GetDouble()>0?shellView.ActualWidth/hv.GetDouble():1;
       var spots=data.GetProperty("spots").EnumerateArray().Take(4).Select(s=>(s.GetProperty("x").GetDouble()*scale,s.GetProperty("y").GetDouble()*scale,s.GetProperty("width").GetDouble()*scale,s.GetProperty("height").GetDouble()*scale,s.GetProperty("radius").GetDouble()*scale)).ToArray();
-      holes=(data.GetProperty("tab").GetString()??"",Math.Clamp(data.GetProperty("frame").GetDouble()*scale,0,12),spots);
+      holes=(data.GetProperty("tab").GetString()??"",Math.Clamp(data.GetProperty("frame").GetDouble()*scale,0,12),spots);holesScale=scale;
+      if(data.TryGetProperty("rim",out var rimValue)&&rimValue.ValueKind==JsonValueKind.Object&&rimValue.TryGetProperty("fill",out var rimFillValue)&&rimValue.TryGetProperty("line",out var rimLineValue)&&rimFillValue.GetArrayLength()>=3&&rimLineValue.GetArrayLength()>=4){
+       byte Channel(JsonElement a,int n)=>(byte)Math.Clamp(Math.Round(a[n].GetDouble()),0,255);
+       rimFill=(Channel(rimFillValue,0),Channel(rimFillValue,1),Channel(rimFillValue,2));rimLine=(Channel(rimLineValue,0),Channel(rimLineValue,1),Channel(rimLineValue,2),Math.Clamp(rimLineValue[3].GetDouble(),0,1));
+       rimShade=rimValue.TryGetProperty("shade",out var rimShadeValue)?Math.Clamp(rimShadeValue.GetDouble(),0,1):rimShade;
+      }
       CutHoles();return;}
      case "openPanel": ShellOpen(S("name"),S("value"));break;
      case "navigate": await Navigate(S("url"));break;

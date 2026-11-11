@@ -211,7 +211,7 @@ extension Browser {
   for tab in tabs {
    guard let view = tab.view as? PageView else { continue }
    let on = tab === shown && holes.tab == tab.id && (holes.frame > 0 || !holes.spots.isEmpty) && !view.isHidden && !overlay && partner == nil && !contentFullScreen
-   if on { view.cut((holes.frame, holes.spots)) } else if view.holes != nil { view.cut(nil) }
+   if on { view.cut((holes.frame, holes.spots), shade: holesShade) } else if view.holes != nil { view.cut(nil) }
   }
  }
 

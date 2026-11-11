@@ -123,9 +123,11 @@ public partial class MainWindow
          if(page!=null){
           // The page window leaves the AI's glow and controls open (CutHoles): show the picture the same way.
           bool holed=holedPage!=IntPtr.Zero&&holes.Tab==Shown!.Id;
+          double rimInset=holed&&rimPicture!=null?RimInset*holesScale:0;
           System.Windows.Media.Geometry clip=new System.Windows.Media.RectangleGeometry(holed?new System.Windows.Rect(pageRect.X+holes.Frame,pageRect.Y+holes.Frame,Math.Max(0,pageRect.Width-2*holes.Frame),Math.Max(0,pageRect.Height-2*holes.Frame)):pageRect);
-          if(holed)foreach(var s in holes.Spots)clip=new System.Windows.Media.CombinedGeometry(System.Windows.Media.GeometryCombineMode.Exclude,clip,new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(pageRect.X+s.X,pageRect.Y+s.Y,s.W,s.H),s.R,s.R));
+          if(holed)foreach(var s in holes.Spots)clip=new System.Windows.Media.CombinedGeometry(System.Windows.Media.GeometryCombineMode.Exclude,clip,new System.Windows.Media.RectangleGeometry(new System.Windows.Rect(pageRect.X+s.X+rimInset,pageRect.Y+s.Y+rimInset,Math.Max(0,s.W-2*rimInset),Math.Max(0,s.H-2*rimInset)),Math.Max(0,s.R-rimInset),Math.Max(0,s.R-rimInset)));
           dc.PushClip(clip);dc.DrawImage(page,pageRect);dc.Pop();
+          if(holed&&rimPicture is {} rimShot){var rimImage=System.Windows.Media.Imaging.BitmapSource.Create(rimShot.W,rimShot.H,96*rimShot.Scale,96*rimShot.Scale,System.Windows.Media.PixelFormats.Pbgra32,null,rimShot.Pixels,rimShot.W*4);dc.DrawImage(rimImage,new System.Windows.Rect(pageRect.X+rimShot.X/rimShot.Scale,pageRect.Y+rimShot.Y/rimShot.Scale,rimShot.W/rimShot.Scale,rimShot.H/rimShot.Scale));} // the rim over the page (DrawRim)
          }
         }
         var rendered=new System.Windows.Media.Imaging.RenderTargetBitmap(width,height,96,96,System.Windows.Media.PixelFormats.Pbgra32);rendered.Render(visual);

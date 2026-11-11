@@ -1181,7 +1181,9 @@ const cut = (e: React.MouseEvent<HTMLElement>) => { const el = e.currentTarget; 
 /// An AI is driving the page in view: a glow runs around the page and the pill floats over it, with who is working, what
 /// they're doing right now and how to step in; a chevron (or Enter) opens their last steps above it. Others at work
 /// elsewhere sit beside it as a stack of heads that opens Running tasks. The page's window leaves each of those spots
-/// open (pageHoles), so they show through and take the clicks.
+/// open (pageHoles), so they show through and take the clicks; with them go the pill's colors (rim), so Windows can draw
+/// its smooth edge and shadow over the page, which a hole can't show.
+const channels = (color: string) => (color.match(/[\d.]+/g) ?? []).map(Number) // "rgb(r, g, b)" or "rgba(r, g, b, a)": the tokens are plain colors
 function PageControl({ tab, agent, who, chat, ai }: { tab: Tab; agent: NonNullable<State["agent"]>; who: Companion; chat: boolean; ai?: AiState }) {
  const dock = useRef<HTMLDivElement>(null), pill = useRef<HTMLDivElement>(null), panel = useRef<HTMLDivElement>(null), stack = useRef<HTMLButtonElement>(null)
  const [open, setOpen] = useState(false), [gone, setGone] = useState(false), [, tick] = useState(0)
@@ -1200,12 +1202,15 @@ function PageControl({ tab, agent, who, chat, ai }: { tab: Tab; agent: NonNullab
   const sync = () => {
    const s = slot.getBoundingClientRect()
    const spots = [pill.current, panel.current, stack.current].flatMap(el => { if (!el) return []; const r = el.getBoundingClientRect(); return [{ x: r.x - s.x, y: r.y - s.y, width: r.width, height: r.height, radius: el === panel.current ? 16 : r.height / 2 }] })
-   send("pageHoles", { tab: tab.id, frame: 3, spots, viewportWidth: innerWidth })
+   const look = pill.current && getComputedStyle(pill.current), fill = look ? channels(look.backgroundColor) : [], line = look ? channels(look.borderTopColor) : []
+   const rim = fill.length >= 3 && line.length >= 3 ? { fill: fill.slice(0, 3), line: [...line.slice(0, 3), line[3] ?? 1], shade: +look!.getPropertyValue("--shade") || 0 } : undefined
+   send("pageHoles", { tab: tab.id, frame: 3, spots, viewportWidth: innerWidth, rim })
   }
-  const observer = new ResizeObserver(sync)
+  const observer = new ResizeObserver(sync), themed = new MutationObserver(sync) // light or dark changes the rim's colors
   for (const el of [slot, pill.current, panel.current, stack.current]) if (el) observer.observe(el)
+  themed.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] })
   sync()
-  return () => observer.disconnect()
+  return () => { observer.disconnect(); themed.disconnect() }
  }, [tab.id, open, others.length > 0, gone])
  useEffect(() => () => send("pageHoles", { tab: tab.id, frame: 0, spots: [] }), [tab.id])
  useEffect(() => { if (gone) send("pageHoles", { tab: tab.id, frame: 0, spots: [] }) }, [gone, tab.id])
@@ -1220,7 +1225,7 @@ function PageControl({ tab, agent, who, chat, ai }: { tab: Tab; agent: NonNullab
  const buttons = <>
   <button className="page-take" title={agent.paused ? "Hand back to " + who.name : "Take over from " + who.name} onClick={() => send("agentTakeOver", { on: !agent.paused, key: agent.key })}><Hand /><span>{agent.paused ? "Hand back" : "Take over"}</span></button>
   {chat && tab.runChat && <button className="page-chat" title={asks ? "Open the chat to answer" : "Open chat"} onClick={openChat}>{asks ? <MessageSquare /> : <ArrowUpRight />}<span>Open chat</span></button>}
-  <button className="page-stop" aria-label={"Stop " + who.name} title={"Stop " + who.name} onClick={() => send("agentStop", { key: agent.key })}><Square /></button>
+  <button className="page-stop" aria-label={"Stop " + who.name} title="Stop" onClick={() => send("agentStop", { key: agent.key })}><svg viewBox="0 0 14 14" aria-hidden><rect x="2" y="2" width="10" height="10" rx="2" /></svg></button>
  </>
  const state = agent.paused ? agent.signIn ? "signin" : "paused" : done ? "done" : asks ? "approval" : "working"
  return <>
@@ -1237,7 +1242,7 @@ function PageControl({ tab, agent, who, chat, ai }: { tab: Tab; agent: NonNullab
    <div ref={pill} className={cn("page-control", agent.paused && "is-paused")} data-state={state} tabIndex={0} role="group" aria-label={who.name + ": " + title}
     onKeyDown={e => { if (e.key === "Enter" && e.target === e.currentTarget) { e.preventDefault(); setOpen(o => !o) } }}>
     <button className="page-more" tabIndex={-1} aria-expanded={open} aria-label={open ? "Hide steps" : "Show steps"} title={open ? "Hide steps" : "Show steps"} onClick={() => setOpen(o => !o)}><ChevronDown /></button>
-    <span className="page-head" style={{ "--n": n } as CSSProperties}><Face companion={who} size={24} tier="icon" mood={agent.paused ? "listening" : "working"} /></span>
+    <span className="page-head" style={{ "--n": n } as CSSProperties}><Face companion={who} size={32} tier="icon" mood={agent.paused ? "listening" : "working"} /></span>
     <span className="page-control-text" role="status"><b key={title} onMouseEnter={cut}>{title}</b><small onMouseEnter={cut}>{line}{!agent.paused && !done && n > 0 && <span className="page-count">, step {n}</span>}</small></span>
     {!done && buttons}
    </div>

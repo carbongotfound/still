@@ -24,6 +24,9 @@ let version = 0
 const listeners = new Set<() => void>()
 const changed = () => { version++; listeners.forEach(l => l()) }
 const subscribe = (l: () => void) => { listeners.add(l); return () => { listeners.delete(l) } }
+// The screen's scale changing (the window on a monitor with another scale): heads pick their file again, bodies their size.
+const watchScale = (): void => globalThis.matchMedia?.(`(resolution: ${devicePixelRatio}dppx)`).addEventListener("change", () => { changed(); watchScale() }, { once: true })
+watchScale()
 const useVersion = () => useSyncExternalStore(subscribe, () => version)
 export const useSlots = () => { useVersion(); return [...slots.values()] }
 /// Re-renders when a picture finishes or the engine loads.
@@ -131,6 +134,14 @@ function strip(look: Look, state: MascotState, gesture = "") {
  return url && info ? { url, clip, ...info, once: clip === "yes" || state === "done" || state === "error" } : undefined // a nod or a shrug plays once and holds
 }
 
+/// A head's file for px device pixels: the smallest drawn at least that big, else the biggest. Not a srcset: Chrome takes a
+/// bigger file it already has, so a 32px head drew the 60px file shrunk and soft.
+const fileFor = (h: { src: string; srcSet?: string }, px: number) => {
+ if (!h.srcSet) return { f: h.src, w: undefined }
+ const all = h.srcSet.split(", ").map(s => { const [f, w] = s.split(" "); return { f, w: parseInt(w) } })
+ return all.find(c => c.w >= px - .5) ?? all[all.length - 1]
+}
+
 // ---------------------------------------------------------------- the component
 
 export function Mascot({ look, state = "idle", size, tier: want, name = "", follow = false, gesture = "", gestureAt = 0, className, style }: {
@@ -140,7 +151,7 @@ export function Mascot({ look, state = "idle", size, tier: want, name = "", foll
  const tier = want ?? tierOf(size), [broken, setBroken] = useState("")
  const head = tier !== "full" ? headOf(look, tier) : undefined
  if (tier !== "full") return <span className={cn("mascot is-head", className)} data-state={state} data-tier={tier} data-rig={RIG.get(lookKey(look))} style={{ "--s": `${size}px`, ...style } as CSSProperties} aria-hidden>
-  {head && broken !== head.src ? <img src={head.src} srcSet={head.srcSet} sizes={head.srcSet && `${size}px`} alt="" draggable={false} onError={() => setBroken(head.src)} />
+  {head && broken !== head.src ? (file => <img src={file.f} data-w={file.w} alt="" draggable={false} onError={() => setBroken(head.src)} />)(fileFor(head, size * (devicePixelRatio || 1)))
    : <i className="mascot-initial" style={{ background: look.color, color: inkOn(look.color) }}>{name.trim().charAt(0).toUpperCase()}</i>}
  </span>
  return <Body look={look} state={state} size={size} follow={follow} gesture={gesture} gestureAt={gestureAt} className={className} style={style} />

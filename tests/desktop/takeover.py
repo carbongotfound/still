@@ -88,10 +88,21 @@ def main_window(pid):
 
 def host_at(process, x, y):
     """The child window of Still's main window under a point given in interface (CSS) pixels, by its window regions;
-    another app's window over Still (a full-screen lock, say) doesn't count."""
+    another app's window over Still (a full-screen lock, say) doesn't count, nor does the click-through window that draws
+    the pill's edge and shadow over the page."""
     top = main_window(process.pid)
     scale = js(process, "devicePixelRatio")
-    return user32.ChildWindowFromPointEx(top, wt.POINT(int(x * scale), int(y * scale)), 1)  # CWP_SKIPINVISIBLE
+    return user32.ChildWindowFromPointEx(top, wt.POINT(int(x * scale), int(y * scale)), 1 | 2)  # CWP_SKIPINVISIBLE, CWP_SKIPDISABLED (the edge window is disabled)
+
+
+def name(h):
+    """A window's class and its place, so a failed check says which window took the point."""
+    if not h:
+        return "none"
+    buf, r = ctypes.create_unicode_buffer(64), wt.RECT()
+    user32.GetClassNameW(h, buf, 64)
+    user32.GetWindowRect(h, ctypes.byref(r))
+    return f"{buf.value} {r.left},{r.top} {r.right - r.left}x{r.bottom - r.top}"
 
 
 def rect(process, selector):
@@ -126,7 +137,7 @@ try:
     page_host = host_at(process, slot[0] + slot[2] * .5, slot[1] + 60)
     pill_host = host_at(process, pill[0] + pill[2] * .5, pill[1] + pill[3] * .5)
     edge_host = host_at(process, slot[0] + 1, slot[1] + slot[3] * .5)
-    check(page_host and pill_host and pill_host != page_host and edge_host != page_host, "The page window leaves the pill and the glowing edge open, so they take clicks")
+    check(page_host and pill_host and pill_host != page_host and edge_host != page_host, f"The page window leaves the pill and the glowing edge open, so they take clicks (page: {name(page_host)}; pill: {name(pill_host)}; edge: {name(edge_host)})")
 
     ok1, _ = agent.call("type", selector="#who", text="Ada from the agent")
     ok2, _ = agent.call("click", selector="#add")
@@ -155,7 +166,7 @@ try:
       return { h: Math.round(b.getBoundingClientRect().height), icon: i ? Math.round(i.width) : 0, gap: s.columnGap, radius: s.borderTopLeftRadius, label: b.getAttribute('aria-label') || b.innerText.trim(), title: b.title, tab: b.tabIndex } }))"""))
     check(look and all(b["h"] == 32 and b["icon"] == 14 and b["radius"] == look[0]["radius"] for b in look) and all(b["gap"] == "6px" for b in look if b["label"] in ("Take over", "Open chat")),
           "The pill's buttons share height, icon size, spacing and radius: " + json.dumps([(b["label"], b["h"], b["icon"], b["gap"]) for b in look]))
-    check(look[-1]["label"] == "Stop Claude" and look[-1]["title"] == "Stop Claude", "Stop has a tooltip and a name: Stop Claude")
+    check(look[-1]["label"] == "Stop Claude" and look[-1]["title"] == "Stop", "Stop has a tooltip (Stop) and a name: Stop Claude")
     order = [b["label"] for b in look if b["tab"] >= 0]
     check(order in (["Take over", "Stop Claude"], ["Take over", "Open chat", "Stop Claude"]), "The keyboard goes Take over, Open chat, Stop: " + " | ".join(order))
     # Contrast: both lines at 4.5:1 or more on the pill's own card, light and dark (the card is solid, so the page behind doesn't matter).
@@ -179,7 +190,8 @@ try:
     check(js(process, "document.querySelectorAll('.page-panel-buttons button').length") >= 2, "with the same buttons")
     time.sleep(.4)
     panel = rect(process, ".page-panel")
-    check(panel and host_at(process, panel[0] + panel[2] * .5, panel[1] + panel[3] * .5) != page_host, "The open panel shows through the page and takes the clicks")
+    at = panel and host_at(process, panel[0] + panel[2] * .5, panel[1] + panel[3] * .5)
+    check(panel and at != page_host, f"The open panel shows through the page and takes the clicks (panel: {name(at)})")
     shot(process, "pill-open")
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     check(until(lambda: not js(process, "!!document.querySelector('.page-panel')"), 2), "Esc closes it")

@@ -174,8 +174,8 @@ def head_files():
 
 
 SHARE = """JSON.stringify([...document.querySelectorAll('.mascot-reel .mascot')].map(m => { const i = m.querySelector('img')
- const w = i?.srcset ? +(i.srcset.split(', ').find(s => new URL(s.split(' ')[0], location.href).href === i.currentSrc) || ' 0w').split(' ').pop().slice(0, -1) : 0
- const o = { tier: m.dataset.tier || 'full', img: !!i, ok: !!i && i.complete && i.naturalWidth > 0, set: !!i?.srcset, w, src: (i?.currentSrc || '').split('/').pop().slice(0, 40), initial: !!m.querySelector('.mascot-initial') }
+ const w = +(i?.dataset.w || 0) // a shipped head: the width of the file picked for this size at this scale
+ const o = { tier: m.dataset.tier || 'full', img: !!i, ok: !!i && i.complete && i.naturalWidth > 0, set: !!w, w, src: (i?.currentSrc || '').split('/').pop().slice(0, 40), initial: !!m.querySelector('.mascot-initial') }
  if (!o.ok || o.set) return o
  const c = document.createElement('canvas'); c.width = i.naturalWidth; c.height = i.naturalHeight; const g = c.getContext('2d'); g.drawImage(i, 0, 0)
  const d = g.getImageData(0, 0, c.width, c.height).data; let l = 1e9, t = 1e9, r = -1, b = -1, edge = false

@@ -124,9 +124,16 @@ final class PageView: WKWebView {
   }
   return super.hitTest(point)
  }
- func cut(_ value: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])?) {
+ /// The spots' shadow over the page, outside the spots (the mask below clips the one the interface draws round them).
+ let shade = Shade()
+ func cut(_ value: (frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)])?, shade alpha: CGFloat = 0) {
   holes = value
-  guard let value else { layer?.mask = nil; return }
+  guard let value else { layer?.mask = nil; shade.removeFromSuperview(); return }
+  if alpha > 0, let superview {
+   if superview.subviews.firstIndex(of: shade) != superview.subviews.firstIndex(of: self).map({ $0 + 1 }) { superview.addSubview(shade, positioned: .above, relativeTo: self) }
+   shade.frame = frame
+   shade.draw(value.spots, alpha: alpha)
+  } else { shade.removeFromSuperview() }
   wantsLayer = true
   let flipped = isFlipped // the mask draws in the view's own coordinates (the flip comes from a parent layer, not this one's isGeometryFlipped)
   let path = CGMutablePath()
@@ -136,6 +143,33 @@ final class PageView: WKWebView {
   mask.path = path
   mask.fillRule = .evenOdd
   layer?.mask = mask
+ }
+}
+
+/// A page's spots' shadow (PageView.shade): 18pt blur, 6pt down, in its own flipped layer; it takes no clicks.
+final class Shade: NSView {
+ let cast = CALayer(), clip = CAShapeLayer()
+ override init(frame: NSRect) {
+  super.init(frame: frame)
+  layer = CALayer(); wantsLayer = true // a layer-hosting view: its sublayers are Still's own
+  layer!.isGeometryFlipped = true // from the top left, like the spots
+  cast.shadowColor = .black; cast.shadowOffset = .zero; cast.shadowRadius = 9 // CSS blur 18px: a 9px sigma
+  clip.fillRule = .evenOdd; cast.mask = clip
+  layer!.addSublayer(cast)
+ }
+ required init?(coder: NSCoder) { fatalError() }
+ override func hitTest(_ point: NSPoint) -> NSView? { nil }
+ func draw(_ spots: [(rect: NSRect, radius: CGFloat)], alpha: CGFloat) {
+  CATransaction.begin(); CATransaction.setDisableActions(true)
+  let path = CGMutablePath(), keep = CGMutablePath()
+  keep.addRect(bounds)
+  for spot in spots {
+   path.addRoundedRect(in: spot.rect.offsetBy(dx: 0, dy: 6), cornerWidth: spot.radius, cornerHeight: spot.radius)
+   keep.addRoundedRect(in: spot.rect, cornerWidth: spot.radius, cornerHeight: spot.radius)
+  }
+  cast.frame = bounds; clip.frame = bounds
+  cast.shadowPath = path; cast.shadowOpacity = Float(alpha); clip.path = keep
+  CATransaction.commit()
  }
 }
 
@@ -215,6 +249,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  var recent: [Tab]?, recentIndex = 0, recentHeld = false, recentAt = Date(), recentTimer: Timer?
  var pointerOnPage = false
  var holes: (tab: String, frame: CGFloat, spots: [(rect: NSRect, radius: CGFloat)]) = ("", 0, [])
+ var holesShade: CGFloat = 0 // the pill's shadow over the page, black at this alpha (pageHoles rim.shade)
  var privateHidden: [String: [String]] = [:]
  // Browser tools (Tools.swift, Vault.swift)
  var permissions: [PendingPermission] = []

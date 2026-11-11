@@ -32,6 +32,7 @@ extension Browser {
     return (NSRect(x: v("x"), y: v("y"), width: v("width"), height: v("height")), v("radius"))
    }
    holes = (text("tab"), min(12, max(0, CGFloat(number("frame") ?? 0) * scale)), Array(spots))
+   holesShade = min(1, max(0, CGFloat(((data["rim"] as? [String: Any])?["shade"] as? NSNumber)?.doubleValue ?? 0)))
    cutHoles()
   case "uploadAnswer": answerUpload(text("id"), (data["picked"] as? [NSNumber] ?? []).map(\.intValue), flag("browse"))
   case "permissionAnswer": answerPermission(text("id"), flag("allow"))
