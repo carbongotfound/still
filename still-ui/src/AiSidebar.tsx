@@ -344,19 +344,36 @@ function useOverPill() {
  const [at, setAt] = useState<{ boundary?: Element; offset: number; lift: number; width: number }>({ offset: 0, lift: 0, width: MODE_MENU_W })
  const measure = (open: boolean) => {
   const pill = ref.current?.getBoundingClientRect(), box = ref.current?.closest(".composer")?.getBoundingClientRect()
-  const boundary = ref.current?.closest(".ai-sidebar, .page-column") ?? undefined, b = boundary?.getBoundingClientRect()
-  if (!open || !pill || !box || !b) return
-  const width = Math.min(MODE_MENU_W, b.width - 16), right = Math.max(Math.min(pill.right, b.right - 8), b.left + 8 + width)
+  const boundary = ref.current?.closest(".ai-sidebar, .page-column") ?? undefined, r = boundary?.getBoundingClientRect()
+  if (!open || !pill || !box || !boundary || !r) return
+  const b = { left: r.left + boundary.clientLeft, right: r.left + boundary.clientLeft + boundary.clientWidth } // inside its border, as the menu's own fit is
+  const width = Math.min(MODE_MENU_W, b.right - b.left - 16), right = Math.max(Math.min(pill.right, b.right - 8), b.left + 8 + width)
   setAt({ boundary, offset: pill.right - right, lift: pill.top - box.top, width })
  }
  return { ref, measure, props: { side: "top" as const, align: "end" as const, alignOffset: at.offset, sideOffset: 8 + at.lift, avoidCollisions: false, collisionBoundary: at.boundary, style: { width: at.width } } }
 }
-function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
+function ModeMenu({ ai, send, companion, onCompanion, onOpen, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; onOpen?: (open: boolean) => void; disabled?: boolean }) {
  const [find, setFind] = useState("")
  const over = useOverPill()
+ // Advanced flipped from its switch leaves the switch where it was: the modes above it come or go, so the menu scrolls
+ // by the difference, and what scrolling can't cover it takes off its own top (the rows below then scroll) until it
+ // closes. The menu sits on its bottom edge, so the switch's place is worked out from there (the menu's own move to it
+ // lands a frame later).
+ const flip = useRef<{ sw: HTMLElement; y: number; bottom: number } | null>(null), cut = useRef(0)
+ useLayoutEffect(() => {
+  const f = flip.current, m = f?.sw.closest<HTMLElement>(".mode-menu")
+  flip.current = null
+  if (!f || !m) return
+  const off = () => f.bottom - m.offsetHeight + f.sw.getBoundingClientRect().top - m.getBoundingClientRect().top - f.y
+  const shorten = (v: number) => { cut.current = Math.max(0, v); m.style.maxHeight = `calc(var(--radix-dropdown-menu-content-available-height) - ${cut.current}px)` }
+  let d = off()
+  if (d > 0 && cut.current) { const back = Math.min(cut.current, d); shorten(cut.current - back); d = off() }
+  if (d) { m.scrollTop += d; d = off() }
+  if (d < -.5) shorten(cut.current + parseFloat(getComputedStyle(m).maxHeight) - (m.offsetHeight + d))
+ }, [ai.advanced])
  const mode = companion?.mode ?? "default", autonomy = levelOf(companion)
  const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
- return <DropdownMenu onOpenChange={o => { over.measure(o); if (!o) setFind("") }}>
+ return <DropdownMenu onOpenChange={o => { over.measure(o); onOpen?.(o); cut.current = 0; if (!o) setFind("") }}>
   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" ref={over.ref} className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
   <DropdownMenuContent {...over.props} className="mode-menu">
    {onCompanion && <>
@@ -368,7 +385,7 @@ function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState;
    <DropdownMenuLabel className="mode-label">Mode</DropdownMenuLabel>
    {!ai.advanced && MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
-   <DropdownMenuLabel className="mode-advanced"><Settings2 className="mode-icon" /><span className="mode-text">Advanced<small>Pick the model and effort yourself</small></span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
+   <DropdownMenuLabel className="mode-advanced"><Settings2 className="mode-icon" /><span className="mode-text">Advanced<small>Pick the model and effort yourself</small></span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onClick={e => { const sw = e.currentTarget, m = sw.closest(".mode-menu"); if (m) flip.current = { sw, y: sw.getBoundingClientRect().top, bottom: m.getBoundingClientRect().bottom } }} onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
    <DropdownMenuSeparator />
    <DropdownMenuLabel className="mode-label">{companion ? "Autonomy for " + companion.name : "Autonomy"}</DropdownMenuLabel>
    {(Object.keys(AUTONOMY) as Autonomy[]).map(id => { const Icon = AUTONOMY_ICON[id]; return <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionAutonomy", { id: companion.id, level: id }) }}>
@@ -554,6 +571,7 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
  const [pick, setPick] = useState(0)
  const [shut, setShut] = useState<string | null>(null) // Esc closed the picker for this text
  const [files, setFiles] = useState<Attached[]>([])
+ const [held, setHeld] = useState<boolean | null>(null) // Advanced as it was when the mode menu opened: its pill stays put under the open menu
  const [coming, setComing] = useState<Coming[]>([])
  const acks = useRef(new Map<string, (done: number) => void>()), stopped = useRef(new Set<string>()), queue = useRef(Promise.resolve())
  const [dropping, setDropping] = useState(false)
@@ -814,8 +832,8 @@ export function Composer({ ai, send, placeholder, onSubmit, onStop, disabled, au
     </DropdownMenuContent></DropdownMenu>
    {folder && <Tip label={folder}><button type="button" className="folder-chip" aria-label={`Working folder: ${folderName}. Change it`} disabled={disabled} onClick={pickFolder}><FolderOpen /><span>{folderName}</span></button></Tip>}
    <span className="composer-gap" />
-   <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} disabled={!!onStop || disabled} />
-   {ai.advanced && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
+   <ModeMenu ai={ai} send={send} companion={companion} onCompanion={onCompanion} onOpen={o => setHeld(o ? !!ai.advanced : null)} disabled={!!onStop || disabled} />
+   {(held ?? ai.advanced) && <ModelPicker ai={ai} send={send} disabled={!!onStop || disabled} />}
    {onStop && !message ? <Tip label="Stop · Ctrl+."><InputGroupButton className="ai-send is-stop" size="icon-xs" variant="default" aria-label="Stop" onClick={onStop}><Square /></InputGroupButton></Tip>
     : <InputGroupButton className="ai-send" size="icon-xs" variant="default" aria-label="Send" disabled={!message || disabled} onClick={submit}><ArrowUp /></InputGroupButton>}
   </InputGroupAddon>

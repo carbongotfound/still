@@ -114,10 +114,10 @@ def tip(process, name, trigger):
 def mode_menu(process, fresh, shot=None):
     box = menu(process, "Mode menu" + (" with companions" if fresh else ""), ".ai-sidebar .mode-chip", ".mode-menu")
     if box:
-        pill = js(process, "(() => { const p = document.querySelector('.ai-sidebar .mode-chip').getBoundingClientRect(), b = document.querySelector('.ai-sidebar .composer').getBoundingClientRect(); return { r: p.right, t: b.top } })()")
-        held = box["r"] >= min(box["pr"], box["w"]) - PAD - .5 or box["l"] <= max(box["pl"], 0) + PAD + .5
+        pill = js(process, "(() => { const p = document.querySelector('.ai-sidebar .mode-chip').getBoundingClientRect(), b = document.querySelector('.ai-sidebar .composer').getBoundingClientRect(); return { r: p.right, t: b.top, line: document.querySelector('.ai-sidebar').clientLeft } })()")
+        held = box["r"] >= min(box["pr"], box["w"]) - PAD - .5 or box["l"] <= max(box["pl"], 0) + pill["line"] + PAD + .5  # 8 px in from the panel's border line
         check(box["b"] <= pill["t"] and (abs(box["r"] - pill["r"]) <= 1 or held),
-              f"Mode menu opens above the message box, its right edge on its pill's or held inside the panel (bottom {box['b']:.0f} vs {pill['t']:.0f}, edge {box['r']:.0f} vs {pill['r']:.0f})")
+              f"Mode menu opens above the message box, its right edge on its pill's or held inside the panel (bottom {box['b']:.1f} vs {pill['t']:.1f}, edge {box['r']:.1f} vs {pill['r']:.1f}, left {box['l']:.1f} in from {box['pl']:.1f})")
         # Three modes, then the three Autonomy levels, each with its line inline.
         check(js(process, "(i => i.length === 6 && i.every(e => e.querySelector('small')))([...document.querySelectorAll('.mode-menu .mode-item')])")
               and not js(process, "!!document.querySelector('.mode-card, [data-slot=tooltip-content]:not([data-state=closed])')"), "Mode menu: each mode's line is inline, no side card")

@@ -968,7 +968,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mode-settings .mode-icon { color:var(--muted-foreground) !important; }
 /* Six companions before it scrolls. Its bar sits in the menu's right padding (always there, a thumb only when there's
    more), so its rows are as wide as the rest and every check stays in one column. */
-.mode-mates { max-height:240px; overflow-y:scroll; margin-right:-6px; }
+.mode-mates { max-height:240px; overflow-y:scroll; margin-right:-6px; scrollbar-color:auto; } /* the menu's scrollbar-color is inherited and would swap this 6 px bar for a full-width one */
 .mode-mates::-webkit-scrollbar { width:6px; } .mode-mates::-webkit-scrollbar-track { background:none; }
 .mode-mates::-webkit-scrollbar-thumb { border-radius:3px; background:color-mix(in oklab,var(--foreground) 18%,transparent); }
 [data-slot=dropdown-menu-content], [data-slot=context-menu-content], [data-slot=select-content] { scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }

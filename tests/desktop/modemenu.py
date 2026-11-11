@@ -147,13 +147,19 @@ def place(p, name, chip, companions, file):
         js(p, """(e => { const set = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set; set.call(e, ''); e.dispatchEvent(new Event('input', { bubbles: true })) })(document.querySelector('.mode-find'))""")
         until(lambda: ((js(p, f"{GEOM}({q(chip)})") or {}).get("list") or {}).get("rows") == 8, 4)
     shot(p, file, chip)
-    # Advanced from its own switch, with the menu open: the modes go, the switch stays put; off brings them back.
+    # Advanced from its own switch, with the menu open: the modes go, the switch stays put; off brings them back. The
+    # switch is scrolled into view first, as a person would before clicking it.
+    js(p, "document.querySelector('.mode-menu .mode-advanced [role=switch]')?.scrollIntoView({ block: 'nearest' })")
+    g = until(lambda: js(p, f"{GEOM}({q(chip)})"), 4) or g
     before = g["switchAt"]
     js(p, "document.querySelector('.mode-menu .mode-advanced [role=switch]')?.click()")
     on = until(lambda: (lambda x: x if x and x["advanced"] == "true" else None)(js(p, f"{GEOM}({q(chip)})")), 5) or {}
     check(on and not any(w in m for m in on["modes"] for w in ("Quick", "Everyday", "Thorough")) and abs((on.get("switchAt") or 0) - (before or 0)) <= 1,
           f"{name}: Advanced on hides Quick, Everyday and Thorough and keeps its switch in place ({on.get('modes')}, switch {before} -> {on.get('switchAt')})")
     if on:
+        a, z = g["at"], on["at"]
+        check(abs(a["l"] - z["l"]) <= 1 and abs(a["r"] - z["r"]) <= 1 and abs(a["b"] - z["b"]) <= 1,
+              f"{name}: the menu stays where it was when Advanced flips (left {a['l']:.0f} -> {z['l']:.0f}, right {a['r']:.0f} -> {z['r']:.0f}, bottom {a['b']:.0f} -> {z['b']:.0f})")
         rows_ok(name + ", Advanced on", on)
         shot(p, file + "-advanced", chip)
     js(p, "document.querySelector('.mode-menu .mode-advanced [role=switch]')?.click()")
