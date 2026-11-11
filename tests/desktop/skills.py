@@ -441,29 +441,25 @@ def main():
         turn = "[...document.querySelectorAll('.chat-view .ai-turn')].filter(t => /Found it|Going through|All done/.test(t.querySelector('.ai-msg.is-assistant')?.innerText ?? ''))"
         under = until(lambda: (r := js(p, f"{turn}.map(t => [t.querySelector('.ai-msg.is-assistant').innerText.trim(), !!t.querySelector(':scope > .ai-actions')])")) and len(r) == 3 and r, 10) or []
         check([u[1] for u in under] == [False, False, True] and under[-1][0].startswith("All done"), f"Only the turn's final reply has the actions, not the lines between its steps ({under})")
-        # Under an answer: Copy, Share, a thumb up and down and More; the last answer Regenerate too.
+        # Under an answer: Copy, Share and More; the last answer Regenerate too. No thumbs.
         again(p, nora, "RATE")
         acts = "[...document.querySelectorAll('.chat-view .ai-turn > .ai-actions')]"
         rated = "[...document.querySelectorAll('.chat-view .ai-turn')].find(t => t.querySelector('.ai-msg.is-assistant')?.innerText.startsWith(\"Here's the plan\"))?.querySelector('.ai-actions')"
         labels = js(p, f"{acts}.map(a => [...a.querySelectorAll('button')].map(b => b.getAttribute('aria-label')).join(','))") or []
-        check(labels and labels[-1] == "Copy,Share,Good reply,Bad reply,Regenerate,More" and all(l == "Copy,Share,Good reply,Bad reply,More" for l in labels[:-1]),
-              f"Every answer has Copy, Share, a thumb up and down and More; the last one Regenerate too ({labels[-2:]})")
+        check(labels and labels[-1] == "Copy,Share,Regenerate,More" and all(l == "Copy,Share,More" for l in labels[:-1]),
+              f"Every answer has Copy, Share and More, and no thumbs; the last one Regenerate too ({labels[-2:]})")
         js(p, "window.__shared = null; navigator.share = d => { window.__shared = d; return Promise.resolve() }")
         js(p, f"{rated}.querySelector('[aria-label=Share]').click()")
         shared = until(lambda: js(p, "window.__shared"), 5) or {}
         check(shared.get("text") == "Here's the plan: book Alfama House and see the map (https://example.com/map).", f"Share hands over the reply as plain text ({shared})")
-        js(p, f"{rated}.querySelector('[aria-label=\"Bad reply\"]').click()")
-        down = until(lambda: next((m.get("Rating") for m in chat(nora)["Messages"] if m["Text"].startswith("Here's **the plan**")), None), 5)
-        pressed = until(lambda: js(p, f"{rated}.querySelector('[aria-label=\"Bad reply\"]').getAttribute('aria-pressed')") == "true", 5)
-        check(down == "down" and pressed, f"A thumb down stays on the reply ({down!r}, {pressed})")
+        # The old thumbs op does nothing now: no rating kept, and no note to the companion.
+        send(p, "aiRate", text="Here's **the plan**: book `Alfama House` and see [the map](https://example.com/map).", rating="down")
         n = len(lines("qa-prompts.jsonl"))
         again(p, nora, "Thanks")
         sent = [entry["prompt"] for entry in lines("qa-prompts.jsonl")[n:] if entry["chat"] == nora]
-        check(sent and "[Still] The user gave your reply \"Here's **the plan**" in sent[-1] and "a thumbs down" in sent[-1], "The companion hears it with the next message")
-        n = len(lines("qa-prompts.jsonl"))
+        kept = [m.get("Rating") for m in chat(nora)["Messages"] if m.get("Rating")]
+        check(sent and "thumbs" not in sent[-1] and not kept, f"A thumbs op sent anyway is ignored: no rating kept, no note to the companion ({kept})")
         again(p, nora, "And again")
-        sent = [entry["prompt"] for entry in lines("qa-prompts.jsonl")[n:] if entry["chat"] == nora]
-        check(sent and "thumbs" not in sent[-1], "and only once")
         out = RUN / "reply.md"
         rpc(p, "osAuth", answer="deny", exportPath=str(out))
         js(p, f"{rated}.querySelector('[aria-label=More]').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
