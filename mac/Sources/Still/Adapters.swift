@@ -528,6 +528,8 @@ final class ChatGptAdapter: AgentAdapter {
   if r.resume { args.append("resume") }
   if r.forget { args.append("--ephemeral") }
   args += ["--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660"] // ask_user waits for the user
+  // Its own approval for Still's tools can't show in a run (it turns them down: "user cancelled MCP tool call"); Still asks the user itself.
+  args += ["-c", "mcp_servers.still.default_tools_approval_mode='approve'"]
   let servers: String = r.mcp.map(quoted).joined(separator: ",")
   args += ["-c", "mcp_servers.still.command=" + quoted(stillExecutable), "-c", "mcp_servers.still.args=[" + servers + "]"]
   for own in ["shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "in_app_browser", "multi_agent", "image_generation"] { args += ["-c", "features.\(own)=false"] } // like the other apps: Still's tools and nothing else
@@ -955,7 +957,8 @@ enum AgentStream {
   case "item.started" where kind == "mcp_tool_call": return [.toolCall(id: str(item?["id"]) ?? "", name: str(item?["tool"]) ?? "", args: item?["arguments"])]
   case "item.completed" where kind == "mcp_tool_call":
    let failed = str(item?["status"]) == "failed" || (item?["error"] != nil && !(item?["error"] is NSNull))
-   return [.toolResult(id: str(item?["id"]) ?? "", ok: !failed)]
+   let blocked = codexBlocked(str(item?["tool"]) ?? "a", str((item?["error"] as? [String: Any])?["message"]) ?? str(item?["error"]))
+   return [.toolResult(id: str(item?["id"]) ?? "", ok: !failed)] + (blocked.map { [.error($0)] } ?? [])
   case "item.completed" where kind == "reasoning": return [.thinking]
   case "item.completed" where kind == "agent_message": if let text = str(item?["text"]), !text.isEmpty { return [.message(text, join: nil)] }
   case "turn.completed":
@@ -968,6 +971,13 @@ enum AgentStream {
   default: break
   }
   return []
+ }
+
+ /// The ChatGPT app turning down one of Still's tools by itself (Windows: CodexBlocked): its approval step, which can't show in
+ /// a run Still started. Its run has Still's tools pre-approved; this is for an older app or a config that overrides it.
+ static func codexBlocked(_ tool: String, _ why: String?) -> String? {
+  guard let why, why.range(of: "cancel|approv|reject", options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
+  return "it stopped Still's \(tool) tool before it ran, waiting for its own approval, which it can't ask for inside Still (\(why)). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools."
  }
 
  /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,

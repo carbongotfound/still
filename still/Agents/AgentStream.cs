@@ -61,7 +61,10 @@ public static class AgentStream
   switch (Str(e["type"])) {
    case "thread.started" when Str(e["thread_id"]) is { Length: > 0 } thread: yield return new AgentEvent.Session(thread); break;
    case "item.started" when kind == "mcp_tool_call": yield return new AgentEvent.ToolCall(Str(item!["id"]) ?? "", Str(item["tool"]) ?? "", item["arguments"]); break;
-   case "item.completed" when kind == "mcp_tool_call": yield return new AgentEvent.ToolResult(Str(item!["id"]) ?? "", Str(item["status"]) != "failed" && item["error"] == null); break;
+   case "item.completed" when kind == "mcp_tool_call":
+    yield return new AgentEvent.ToolResult(Str(item!["id"]) ?? "", Str(item["status"]) != "failed" && item["error"] == null);
+    if (CodexBlocked(Str(item["tool"]) ?? "a", item["error"] is JsonObject error ? Str(error["message"]) : Str(item["error"])) is { } blocked) yield return new AgentEvent.Error(blocked);
+    break;
    case "item.completed" when kind == "reasoning": yield return new AgentEvent.Thinking(); break;
    case "item.completed" when kind == "agent_message" && Str(item!["text"]) is { Length: > 0 } text: yield return new AgentEvent.Message(text); break;
    case "turn.completed" when e["usage"] is { } u:
@@ -73,6 +76,12 @@ public static class AgentStream
     break;
   }
  }
+
+ /// The ChatGPT app turning down one of Still's tools by itself (its approval step, which can't show in a run Still started:
+ /// "user cancelled MCP tool call", or "requires approval, but approval policy is never"), in words that say what to do.
+ /// Its run has Still's tools pre-approved (default_tools_approval_mode); this is for an older app or a config that overrides it.
+ public static string? CodexBlocked(string tool, string? why) => why != null && System.Text.RegularExpressions.Regex.IsMatch(why, "cancel|approv|reject", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
+  ? $"it stopped Still's {tool} tool before it ran, waiting for its own approval, which it can't ask for inside Still ({why}). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools." : null;
 
  /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
  /// tool_result, error and a closing result. Still's tools come as mcp_still_<tool>.

@@ -196,6 +196,8 @@ sealed class ChatGptAdapter : AgentAdapter
   if (r.Mcp.Append(Environment.ProcessPath!).Any(a => a.Contains('\'') || a.Contains('!'))) throw new InvalidOperationException("ChatGPT can't run Still from a folder whose name has an apostrophe or !.");
   static string Q(string v) => "'" + v + "'";
   List<string> args = ["exec", .. r.Resume ? new[] { "resume" } : [], .. r.Forget ? new[] { "--ephemeral" } : [], "--json", "--skip-git-repo-check", "-c", "sandbox_mode='read-only'", "-c", "mcp_servers.still.tool_timeout_sec=660", // ask_user waits for the user
+   // Its own approval for Still's tools can't show in a run (it turns them down: "user cancelled MCP tool call"); Still asks the user itself.
+   "-c", "mcp_servers.still.default_tools_approval_mode='approve'",
    "-c", "mcp_servers.still.command=" + Q(Environment.ProcessPath!), "-c", "mcp_servers.still.args=[" + string.Join(",", r.Mcp.Select(Q)) + "]"];
   foreach (string own in new[] { "shell_tool", "unified_exec", "apps", "plugins", "browser_use", "computer_use", "in_app_browser", "multi_agent", "image_generation" }) args.AddRange(["-c", "features." + own + "=false"]); // like the other apps: Still's tools and nothing else
   if (r.Model.Length > 0) args.AddRange(["-c", "model=" + Q(r.Model)]);

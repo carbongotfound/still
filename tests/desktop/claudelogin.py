@@ -50,6 +50,16 @@ FAKE = textwrap.dedent(r'''
     if APP == "chatgpt" and args[:2] == ["login", "status"]: print("Logged in using ChatGPT"); sys.exit(0)
     if APP == "grok" and args[:1] == ["models"]: print("  * grok-standin"); sys.exit(0)
     if APP == "opencode" and args[:1] == ["models"]: print("anthropic/claude-standin"); sys.exit(0)
+    if APP == "chatgpt" and not quick:
+        prompt = sys.stdin.read()
+        say({"type": "thread.started", "thread_id": "standin-thread"})
+        if "TURNED DOWN" in prompt:  # its own approval refusing one of Still's tools, as Codex prints it when it can't ask (openai/codex#24135)
+            call = {"id": "item_1", "type": "mcp_tool_call", "server": "still", "tool": "list_tabs", "arguments": {}, "result": None, "error": None, "status": "in_progress"}
+            say({"type": "item.started", "item": call})
+            say({"type": "item.completed", "item": {**call, "error": {"message": "user cancelled MCP tool call"}, "status": "failed"}})
+            say({"type": "item.completed", "item": {"id": "item_2", "type": "agent_message", "text": "I'm not allowed to use the page."}})
+        say({"type": "turn.completed", "usage": {"input_tokens": 10, "cached_input_tokens": 0, "output_tokens": 5}})
+        sys.exit(0)
     if APP != "claude":
         if not quick and APP != "grok": sys.stdin.read()
         sys.exit(0)
@@ -174,6 +184,11 @@ def everything():
             check(ran and not seen, f"{app} ran and saw no API keys, in its checks or its run ({seen})")
             if app == "chatgpt":
                 check(ran and "features.shell_tool=false" in ran[0]["args"] and "features.unified_exec=false" in ran[0]["args"], "ChatGPT runs with its own shell off")
+                check(ran and "mcp_servers.still.default_tools_approval_mode='approve'" in ran[0]["args"], "...and with Still's tools approved in its own settings, as its approval can't show in a run (Still asks you itself)")
+                ask(p, "TURNED DOWN", app)
+                said = until(lambda: (t := text(p) or "") and "stopped Still's list_tabs tool" in t and t, 15) or ""
+                check("approval_mode" in said and "npm install -g @openai/codex" in said,
+                      f"If the ChatGPT app turns one of Still's tools down itself, the chat says what it blocked and how to fix it ({said[said.find('ChatGPT:'):][:160]!r})")
     finally:
         stop(p)
 

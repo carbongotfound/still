@@ -27,6 +27,15 @@ Check(chatgpt.OfType<AgentEvent.ToolCall>().Count() == 2 && chatgpt.OfType<Agent
 Check(chatgpt.OfType<AgentEvent.Message>().Any(), "ChatGPT: answer");
 var signedOut = AgentStream.Codex(JsonNode.Parse("""{"type":"turn.failed","error":{"message":"unexpected status 401 Unauthorized"}}""")!).Single();
 Check(signedOut is AgentEvent.Error { Text: var t } && t.Contains("not signed in"), "ChatGPT: 401 means signed out");
+// The ChatGPT app turning down one of Still's tools by its own approval step (what Codex prints when it can't ask: issue openai/codex#24135).
+foreach (var why in new[] { "\"user cancelled MCP tool call\"", "{\"message\":\"MCP tool call requires approval, but approval policy is never\"}" }) {
+ var turnedDown = AgentStream.Codex(JsonNode.Parse("""{"type":"item.completed","item":{"id":"item_1","type":"mcp_tool_call","server":"still","tool":"navigate","arguments":{},"result":null,"error":""" + why + ""","status":"failed"}}""")!).ToList();
+ Check(turnedDown is [AgentEvent.ToolResult { Ok: false }, AgentEvent.Error { Text: var said }] && said.Contains("stopped Still's navigate tool") && said.Contains("approval_mode") && said.Contains("npm install -g @openai/codex"),
+  "ChatGPT: its own approval turning down a Still tool says what was blocked and how to fix it (" + why + ")");
+}
+var ownError = AgentStream.Codex(JsonNode.Parse("""{"type":"item.completed","item":{"id":"item_2","type":"mcp_tool_call","server":"still","tool":"click","arguments":{},"result":null,"error":{"message":"tool call timed out"},"status":"failed"}}""")!).ToList();
+Check(ownError is [AgentEvent.ToolResult { Ok: false }], "ChatGPT: any other failed tool is just a failed step");
+Check(chatgpt.OfType<AgentEvent.Error>().Count() == 0, "ChatGPT: no errors on a good run");
 
 var map = new Dictionary<string, string> { ["session"] = "session_id when type=init", ["text"] = "content when type=message,role=assistant", ["delta"] = "delta", ["tool"] = "tool_name when type=tool_use", ["toolArgs"] = "parameters" };
 var gemini = Read("manifest-jsonl.jsonl", e => AgentStream.Fields(e, map));
