@@ -28,7 +28,7 @@ import zlib
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import MAC, ROOT, js, launch, launcher, press_ready, rpc, send, until  # noqa: E402
+from qa import MAC, ROOT, js, launch, launcher, press_ready, rpc, screens, send, until  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
 RUN = ROOT / "artifacts" / ("folder-" + uuid.uuid4().hex[:8])
@@ -362,6 +362,7 @@ def main():
         kept = js(p, "[window.__rows.length, window.__rows.filter(r => r.isConnected).length, window.__fold.isConnected && window.__fold.open, !!window.__fold.querySelector('details.ai-work-fold[open]')]")
         check(len(r) == 45 and fold == "Read 42 files" and kept and kept[0] > 40 and kept[0] == kept[1], f"A chat past 300 messages draws none of its rows again as 45 steps come in ({len(r)}, {fold!r}, {kept})")
         check(kept and kept[2] and kept[3], "...so the turn the user opened, and its Read 42 files, stay open")
+        screens(p, PROFILE, "4-long-chat")
         moved = at()
         check(top is not None and moved is not None and abs(moved - top) <= 2, f"...and the view stays on it while the user reads further up ({top} then {moved})")
 
@@ -380,6 +381,7 @@ def main():
         text = asked.get("text", "")
         check("request_folder" in (results()[before - 1]["tools"] if before else []) and text.startswith("Let Leo work in ") and "frames?" in text and str(frames) in text and "to read the frames" in text
               and asked.get("buttons") == ["Not now", "Choose another folder", "Allow"], f"Asking for a folder shows a card: Let Leo work in the folder, with the whole path under it ({asked})")
+        screens(p, PROFILE, "5-folder-card")
         press(p, "Allow")
         r = got(before, 2)
         own2 = lambda: next((c.get("Folder") for c in chats() if c["Id"] == cid2), None)
@@ -402,6 +404,7 @@ def main():
         first = until(lambda: (s := shown()).get("src") and s, 10) or {}
         check(len(r) == 2 and rows == ["Read f01.png", "Read f02.png"] and first.get("title") == "f01.png · 1 of 2" and first.get("src") == data(red),
               f"A picture it read opens big on a click ({rows}, {first.get('title')!r}, {first.get('src', '')[:40]!r})")
+        screens(p, PROFILE, "3-picture")
         key = lambda k: js(p, f"document.querySelector('.file-preview').dispatchEvent(new KeyboardEvent('keydown', {{ key: '{k}', bubbles: true }}))")
         key("ArrowRight")
         seen = []

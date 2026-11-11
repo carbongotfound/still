@@ -156,6 +156,19 @@ ROOT = Path(__file__).resolve().parents[2]
 SIZES = ((1720, 1080), (1280, 800))
 
 
+def screens(process, profile, name):
+    """The window as it is now, in light and in dark, into artifacts/screens as <name>-light.png and <name>-dark.png
+    (-mac on the Mac). It ends in light."""
+    out = ROOT / "artifacts" / "screens"
+    out.mkdir(parents=True, exist_ok=True)
+    for theme in ("Light", "Dark"):
+        send(process, "preference", key="theme", value=theme)
+        time.sleep(.8)
+        rpc(process, "capture", name="screen.png")
+        (out / f"{name}-{theme.lower()}{'-mac' if MAC else ''}.png").write_bytes((Path(profile) / "screen.png").read_bytes())
+    send(process, "preference", key="theme", value="Light")
+
+
 def shots(exe, name, version, setup, preferences=None):
     """Captures one screen at two sizes in light and dark, into docs/agentic/compare as <name>-<version>-<theme>-<width>.png."""
     import shutil

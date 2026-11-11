@@ -34,7 +34,7 @@ import urllib.parse
 import uuid
 
 sys.path.insert(0, str(Path(__file__).parent))
-from qa import CREW, MAC, ROOT, js, launch, launcher, press_ready, rpc, send, until  # noqa: E402
+from qa import CREW, MAC, ROOT, js, launch, launcher, press_ready, rpc, screens, send, until  # noqa: E402
 from mcp_client import Mcp, call_async  # noqa: E402
 
 EXE = Path(sys.argv[1]).resolve()
@@ -1500,6 +1500,7 @@ def settings(process):
     shown = until(lambda: js(process, f"document.querySelector('{picker}')?.innerText.trim()"), 10)
     js(process, f"document.querySelector('{picker}').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
     offered = until(lambda: js(process, "(o => o.length ? o : null)([...document.querySelectorAll('[role=option]')].map(o => o.innerText.trim()))"), 5)
+    screens(process, PROFILE, "6-permission-modes")
     js(process, "document.querySelector('[role=listbox]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     check(shown == "Ask every time" and offered == ["Always allow", "Ask every time"], f"Settings offer only Always allow and Ask every time, and a rule saved as Allow in this chat reads Ask every time ({shown!r}, {offered})")
     send(process, "permSet", site="chat.example", action="interact", companion="", mode="")
