@@ -1037,19 +1037,40 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .history-needs { padding:3px 10px; border-radius:999px; background:#fbf1d6; color:#9a6c00; font-size:12px; font-weight:550; border:1px solid #f0dfae; }
 .dark .history-needs { background:#3a2f12; color:#f0c75e; border-color:#5a4718; }
 .history-act { display:grid; place-items:center; width:30px; height:30px; flex:none; border-radius:8px; color:var(--muted-foreground); opacity:0; transition:opacity .15s,background .15s; }
-.history-row:hover .history-act, .history-act:focus-visible, .skill-row .history-act { opacity:1; } .history-act:hover { background:var(--background); color:var(--foreground); } .history-act svg { width:15px; height:15px; }
+.history-row:hover .history-act, .history-act:focus-visible { opacity:1; } .history-act:hover { background:var(--background); color:var(--foreground); } .history-act svg { width:15px; height:15px; }
 .history-row .history-act:last-child { margin-right:8px; }
 .mate-edit { position:absolute; right:12px; bottom:12px; width:14px; height:14px; opacity:0; color:var(--muted-foreground); transition:opacity .15s; } .mate-portrait:hover .mate-edit { opacity:1; }
 .mate-badge { display:flex; align-items:center; gap:6px; margin:0 0 6px; font-size:11.5px; color:var(--muted-foreground); }
 .home-memory { margin-top:34px; padding:18px; border-radius:16px; border:1px solid var(--border); background:var(--card); }
 .home-memory h2 { margin:0; font-size:15px; font-weight:560; } .home-memory p { margin:4px 0 12px; font-size:13px; color:var(--muted-foreground); }
 .home-memory textarea { width:100%; margin-bottom:10px; padding:10px 12px; border-radius:10px; border:1px solid var(--input); background:var(--background); font-size:13.5px; line-height:1.5; resize:vertical; outline:0; } .home-memory textarea:focus { border-color:var(--ring); }
-.skill-list { display:flex; flex-direction:column; gap:6px; }
-.skill-row { display:flex; align-items:center; gap:12px; padding:8px 10px; border-radius:14px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06); }
-.dark .skill-row { box-shadow:0 0 0 1px var(--border); }
 .skill-icon { display:grid; place-items:center; width:34px; height:34px; flex:none; border-radius:10px; background:var(--muted); } .skill-icon svg { width:16px; height:16px; }
-.skill-open { flex:1; min-width:0; display:flex; flex-direction:column; text-align:left; } .skill-open b { font-size:14px; font-weight:560; }
-.skill-open small { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12.5px; color:var(--muted-foreground); }
+/* Skills page (Home.tsx SkillsPage): tabs with search on the right, then cards two across, grouped by companion */
+.skills-bar { display:flex; align-items:center; gap:12px; margin-bottom:6px; border-bottom:1px solid var(--border); }
+.skills-tabs { display:flex; gap:20px; flex:1; min-width:0; }
+.skills-tabs button { position:relative; height:40px; font-size:14px; font-weight:550; color:var(--muted-foreground); transition:color .15s; }
+.skills-tabs button:hover { color:var(--foreground); }
+.skills-tabs button[aria-selected=true] { color:var(--foreground); } .skills-tabs button[aria-selected=true]::after { content:""; position:absolute; left:0; right:0; bottom:-1px; height:2px; border-radius:2px; background:var(--foreground); }
+.skills-find { display:flex; align-items:center; gap:8px; width:min(260px,45%); height:34px; margin-bottom:6px; padding:0 12px; border-radius:999px; border:1px solid var(--input); background:var(--card); }
+.skills-find:focus-within { border-color:var(--ring); } .skills-find svg { width:15px; height:15px; flex:none; color:var(--muted-foreground); } .skills-find input { flex:1; min-width:0; border:0; outline:0; background:none; font-size:13.5px; }
+.skill-group { margin-top:24px; } .skill-group h2 { display:flex; align-items:center; gap:9px; margin:0 0 10px; font-size:15px; font-weight:600; letter-spacing:-.005em; }
+.skill-group-all { display:grid; place-items:center; width:22px; height:22px; border-radius:999px; background:var(--muted); } .skill-group-all svg { width:13px; height:13px; color:var(--muted-foreground); }
+.skill-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr)); gap:10px; }
+.skills-page > .skill-grid { margin-top:20px; }
+.skill-card { display:flex; flex-direction:column; gap:6px; min-width:0; padding:14px 14px 12px; border-radius:16px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06); }
+.dark .skill-card { box-shadow:0 0 0 1px var(--border); }
+.skill-card-head { display:flex; align-items:center; gap:10px; min-width:0; } .skill-card-head h3 { flex:1; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:14.5px; font-weight:600; }
+.skill-card-head .skill-icon { width:30px; height:30px; border-radius:9px; } .skill-card-head .skill-icon svg { width:15px; height:15px; }
+.skill-more[data-slot] { flex:none; margin:-4px -6px -4px 0; color:var(--muted-foreground); }
+.skill-card-text { display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:2; overflow:hidden; min-height:calc(2 * 1.45em); margin:0; font-size:13px; line-height:1.45; color:var(--muted-foreground); }
+.skill-card-foot { display:flex; align-items:center; gap:10px; margin-top:auto; padding-top:4px; } .skill-card-foot small { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:12px; color:var(--muted-foreground); opacity:.85; }
+.skill-run[data-slot] { flex:none; height:28px; padding:0 12px; border-radius:999px; font-size:12.5px; }
+.skill-limit-pick { display:flex; flex-direction:column; gap:8px; } .skill-limit-pick label, .skill-limit-list label { display:flex; align-items:center; gap:10px; font-size:14px; cursor:pointer; }
+.skill-limit-pick input, .skill-limit-list input { width:16px; height:16px; accent-color:var(--primary); }
+.skill-limit-pick input { appearance:none; flex:none; margin:0; border-radius:50%; border:1.5px solid var(--muted-foreground); background:var(--background); } .skill-limit-pick input:checked { border-color:var(--primary); background:var(--primary); box-shadow:inset 0 0 0 3px var(--background); } .skill-limit-pick input:focus-visible { outline:2px solid var(--ring); outline-offset:2px; }
+.skill-limit-list { list-style:none; display:flex; flex-direction:column; gap:4px; max-height:40vh; overflow:auto; margin:4px 0 0; padding:8px 10px; border-radius:12px; background:var(--muted); }
+.skill-limit-list li { padding:4px 0; }
+.set-buttons { display:flex; flex-wrap:wrap; gap:8px; }
 .plug-head-acts { display:flex; gap:6px; }
 .skill-import-note { margin:0; font-size:13px; color:var(--muted-foreground); } .skill-import-note.is-error { color:var(--destructive); }
 .skill-import-list { display:flex; flex-direction:column; gap:8px; max-height:46vh; overflow:auto; }
@@ -1057,7 +1078,6 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .skill-import-row small { font-size:12.5px; color:var(--muted-foreground); } .skill-import-row small.skill-import-warn { color:var(--foreground); }
 .skill-import-pick { display:flex; align-items:center; gap:8px; } .skill-import-pick b { font-size:14px; font-weight:560; }
 .skill-import-body { width:100%; max-height:240px; overflow:auto; margin:0; padding:8px; border-radius:8px; background:var(--background); font-size:12px; white-space:pre-wrap; word-break:break-word; }
-.skill-always { flex:none; font-size:12px; color:var(--muted-foreground); }
 
 /* The companion editor's extra rows */
 .companion-look { display:flex; flex-direction:column; gap:10px; }
@@ -1566,8 +1586,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 /* Skills & plugins (Home.tsx) */
 .plug-connect { display:grid; gap:12px; padding:20px; border-radius:16px; background:var(--card); box-shadow:0 0 0 1px rgb(0 0 0/.06),0 1px 2px -1px rgb(0 0 0/.06); }
 .dark .plug-connect { box-shadow:0 0 0 1px var(--border); } .plug-connect h3 { margin:0; font-size:15px; font-weight:600; }
-.skills-part .home-page-sub { margin-top:28px; } .skills-part .plug-list.is-found { max-height:none; }
-.skill-row .plug-who { flex:none; max-width:45%; justify-content:flex-end; }
 .ob .plug-chip, .ob .plug-pick { background:var(--ob-card); border-color:var(--ob-line); } .ob .plug-pick .plug-chip { background:none; }
 /* A logo from Composio's catalog sits on white, like an app icon, so dark marks read in the dark theme too. */
 .plug-logo img { width:72%; height:72%; object-fit:contain; } .plug-chip i.is-image, .plug-stack i.is-image { background:#fff; }
@@ -1593,7 +1611,6 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .plug-page .plug-connect { margin-top:18px; } .plug-page > .plug-down, .plug-page > .plug-error { margin-top:14px; }
 .plug-foot { margin-top:30px; } .plug-foot + .plug-note { margin-top:4px; }
 .plug-end { padding:1px 6px; border-radius:6px; background:var(--muted); font-size:11.5px; letter-spacing:.04em; }
-.skills-empty { padding:6px 2px; font-size:13px; } .skills-empty .plug-all { margin-left:4px; }
 @media (max-width:560px) { .plug-tiles { grid-template-columns:1fr; } }
 /* Settings: the Composio key, shown only as set with its last four characters. */
 .setting-row.is-stacked { display:grid; gap:12px; } .plug-keyline { display:flex; align-items:center; gap:24px; } .plug-keyline > div:first-child { flex:1; min-width:0; }

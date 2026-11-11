@@ -116,15 +116,20 @@ def main():
             else:
                 print("capture:", got)
 
-        # Model: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off.
+        # Model: Thorough is saved. Skills: Jonah came with the Sales kit's skills, and a switch turns one off for him.
         click(p, ".profile-modes button", "Thorough")
         check(until(lambda: mates().get("Jonah", {}).get("Mode") == "expert", 5), "Model: picking Thorough saves it")
         press(p, ".profile-tablist [role=tab][id$='-trigger-skills']", "mousedown")
         until(lambda: shown(p, ".profile-list [role=switch]"), 3)
         kit = mates().get("Jonah", {}).get("Skills") or []
         check(sorted(kit) == ["call-brief", "follow-up", "lead-list", "pipeline-check"], f"Skills: Jonah, hired before roles had kits, gets the Sales kit's four when Still starts ({kit})")
-        js(p, "document.querySelector('.profile-list [role=switch][aria-checked=true]')?.click()")
-        check(until(lambda: len(mates().get("Jonah", {}).get("Skills", [])) == 3, 5), "and turning one off saves it for Jonah")
+        js(p, "document.querySelector('.profile-list [role=switch][aria-checked=true]:not([disabled])')?.click()")
+        def limited():
+            for f in (PROFILE / "skills").glob("*.md"):
+                line = next((l for l in f.read_text(encoding="utf-8").splitlines() if l.startswith("only:")), "")
+                if line and "jonah" not in line:
+                    return f.stem
+        check(until(limited, 5), "and turning one off keeps that skill to the other companions, in its file (every skill is for everyone until then)")
 
         # General: rename on blur; instructions autosave.
         press(p, ".profile-tablist [role=tab][id$='-trigger-general']", "mousedown")

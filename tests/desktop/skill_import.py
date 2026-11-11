@@ -1,6 +1,6 @@
 """Plugins and skills from a link: a GitHub repository or an npm package, against a fake GitHub and npm (STILL_QA_SKILL_HUB).
 
-Add a plugin from a link sits at the top of Skills & plugins. Look shows each SKILL.md found, with its name and
+Add a plugin from a link sits at the top of Plugins. Look shows each SKILL.md found, with its name and
 description read the way such files write them, and says what comes with it: the programs in its folder, or a file too
 big to bring. Only the ticked ones are added, as skills that keep where they came from, also after an edit. A skill
 without programs brings only its SKILL.md. A plugin (.claude-plugin/plugin.json) brings its files into the profile's
@@ -151,14 +151,14 @@ def main():
         until(lambda: js(p, "!!document.querySelector('.home-rail')"), 20)
         time.sleep(.4)
         js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
-        click(p, ".home-rail-item[aria-label='Skills & plugins']")
-        until(lambda: js(p, "!!document.querySelector(\".home-page[aria-label='Skills & plugins']\")"), 5)
+        click(p, ".home-rail-item[aria-label='Plugins']")
+        until(lambda: js(p, "!!document.querySelector(\".home-page[aria-label='Plugins']\")"), 5)
 
         # The dialog: look at a repository, see what's there and what won't come over.
         heads = js(p, "[...document.querySelectorAll('.plug-all')].map(b => b.innerText.trim())") or []
         check("Add from a link" not in heads, f"The Skills section's own link is gone ({heads})")
         check(click_text(p, ".home-page-head .plug-all", "Add a plugin from a link") and until(lambda: js(p, "!!document.querySelector('.skill-dialog [aria-label=\"Plugin link\"]')"), 5),
-              "Skills & plugins has Add a plugin from a link at the top, which asks for a link")
+              "Plugins has Add a plugin from a link at the top, which asks for a link")
         type_into(p, ".skill-dialog [aria-label='Plugin link']", "https://github.com/acme/kit")
         click_text(p, ".skill-dialog button[type=submit]", "Look")
         found = until(lambda: (r := rows(p)) and len(r) == 2 and r, 20) or rows(p)
@@ -186,8 +186,9 @@ def main():
         check("source: github.com/acme/kit" in text and "2. Write the summary." in text and "name: Plain notes" in text, "as a skill that keeps where it came from")
         check(not any("runner" in f.name for f in skills.glob("*.md")), "and not the unticked one")
         check(not any(s.endswith(("run.sh", "reference.md", "README.md")) or "skills/big/" in s for s in SEEN), "Only SKILL.md files were fetched: the unticked one's program stayed behind")
-        check(until(lambda: "From github.com/acme/kit" in (js(p, "[...document.querySelectorAll('.skill-row')].find(r => r.innerText.includes('Plain notes'))?.innerText") or ""), 5),
-              "Its row on the page says where it's from")
+        send(p, "appHome", view="skills")
+        check(until(lambda: "From github.com/acme/kit" in (js(p, "document.querySelector(\".skill-card[aria-label='Plain notes']\")?.innerText") or ""), 5),
+              "Its card on the Skills page says where it's from")
 
         # A plugin: its files come into the profile's plugins folder, and its skill names it.
         video = look(p, "https://github.com/acme/video")
@@ -200,8 +201,8 @@ def main():
         check(not list(profile.rglob("evil.py")) and not (profile.parent / "evil.py").exists(), "A path that would leave its folder is skipped")
         check("plugin: video-kit" in (skills / "watch.md").read_text(encoding="utf-8") if (skills / "watch.md").exists() else False, "Its skill names the plugin")
         check(not (profile / "plugins" / "video-kit.part").exists(), "No half-placed folder is left")
-        check(until(lambda: "with its programs" in (js(p, "[...document.querySelectorAll('.skill-row')].find(r => r.innerText.includes('Watch'))?.innerText") or ""), 5),
-              "Its row says it came with its programs")
+        check(until(lambda: "with its programs" in (js(p, "document.querySelector(\".skill-card[aria-label='Watch']\")?.innerText") or ""), 5),
+              "Its card says it came with its programs")
         send(p, "skillDelete", id="watch")
         check(until(lambda: not root.exists(), 10), "Deleting its skill deletes the plugin's folder")
 

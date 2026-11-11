@@ -354,11 +354,11 @@ extension Browser {
  @MainActor func pluginTool(_ who: String, _ tool: String, _ args: [String: Any]) async -> String {
   guard let run = runs[who] else { return agentFail("Plugins are only for Still's own companions.") }
   if run.chat.ephemeral { return agentFail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.") }
-  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on in Skills & plugins.") }
+  guard PluginKey.exists else { return agentFail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on on the Plugins page.") }
   // A helper works for whoever asked: an app any of them has off stays off.
   let team = exchangeOf(run.chat).chain.map { id in companions.first { $0.id == id } }
   func mine(_ slug: String) -> Bool { team.allSatisfy { $0?.pluginsOff.contains(slug) != true } }
-  func unavailable() -> String { pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later." }
+  func unavailable() -> String { pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it on the Plugins page." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later." }
 
   if tool == "list_connected_plugins" {
    if pluginStatus != "ok" { await refreshPlugins() }
@@ -383,7 +383,7 @@ extension Browser {
   let named = argText(args, "plugin")
   guard let slug = pluginSlug(named) else { return agentFail("There's no app called “\(clipped(named, 60))”. Call find_plugins to look it up.") }
   let app = pluginName(slug)
-  guard mine(slug) else { return agentFail("The user turned \(app) off for you. They can turn it on in Skills & plugins.") }
+  guard mine(slug) else { return agentFail("The user turned \(app) off for you. They can turn it on on the Plugins page.") }
   if tool == "get_plugin_tools" {
    let query = argText(args, "query").trimmingCharacters(in: .whitespacesAndNewlines)
    guard let list = await composio("GET", "/tools?toolkit_slug=\(pluginEscape(slug))&limit=25" + (query.isEmpty ? "" : "&query=" + pluginEscape(query))) else { return agentFail(unavailable()) }
@@ -405,7 +405,7 @@ extension Browser {
    guard await approve(run, "Connect " + app, app, "connect", "You sign in through Composio, in a Still window.", countdown: false) == "connect" else {
     return agentFail("The user didn't connect \(app). Don't ask again unless they bring it up.")
    }
-   guard await connectPlugin(slug), let now = pluginAccounts.first(where: { $0.slug == slug }) else { return agentFail(app + " didn't get connected. Tell the user they can connect it in Skills & plugins.") }
+   guard await connectPlugin(slug), let now = pluginAccounts.first(where: { $0.slug == slug }) else { return agentFail(app + " didn't get connected. Tell the user they can connect it on the Plugins page.") }
    account = now
   }
   let arguments = args["args"] as? [String: Any] ?? [:]

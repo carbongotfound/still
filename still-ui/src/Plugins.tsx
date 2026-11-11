@@ -178,10 +178,9 @@ function Group({ title, count, onAll, children }: { title: string; count?: numbe
  return <section className="plug-group" aria-label={title}><div className="plug-group-head"><h2>{title}</h2>{onAll && <button className="plug-all" onClick={onAll}>View all{count ? ` ${count}` : ""}</button>}</div>{children}</section>
 }
 
-/// The Plugins page (Home.tsx's Skills & plugins): the title with connected apps, one search for apps and skills,
-/// category chips (the long tail under More), then Recommended and a section per category. `skills` is the page's
-/// skills list, shown with the apps.
-export function PluginsPage({ ai, send, skills, onNewSkill, onAddPlugin }: { ai: AiState; send: Send; skills: (q: string) => ReactNode; onNewSkill: () => void; onAddPlugin: () => void }) {
+/// The Plugins page (Home.tsx's PluginsView): the title with connected apps, a search for plugins, category chips (the
+/// long tail under More), then Recommended and a section per category.
+export function PluginsPage({ ai, send, onAddPlugin }: { ai: AiState; send: Send; onAddPlugin: () => void }) {
  const p = ai.plugins, apps = usePluginData(send)
  const [find, setFind] = useState(""), [cat, setCat] = useState(""), [more, setMore] = useState(false)
  useEffect(() => { send("pluginRefresh") }, []) // eslint-disable-line react-hooks/exhaustive-deps
@@ -193,11 +192,11 @@ export function PluginsPage({ ai, send, skills, onNewSkill, onAddPlugin }: { ai:
  const inCat = (c: string) => known.filter(a => catsOf(a).includes(c))
  const hits = q ? known.filter(a => `${a.name} ${a.slug} ${a.cats.join(" ")}`.toLowerCase().includes(q)) : []
  const mine = known.filter(a => on.some(c => c.slug === a.slug)).concat(on.filter(c => !known.some(a => a.slug === c.slug)).map(c => ({ slug: c.slug, name: c.name, cats: [], auth: "managed" as const })))
- return <section className="home-page plug-page" aria-label="Skills & plugins">
+ return <section className="home-page plug-page" aria-label="Plugins">
   <header className="home-page-head"><h1>Plugins</h1><button className="plug-all" onClick={onAddPlugin}>Add a plugin from a link</button>
    <button className="plug-count" aria-pressed={cat === "connected"} onClick={() => pick(cat === "connected" ? "" : "connected")} aria-label={`${on.length} connected: show them`}><Stack on={on} />{on.length ? `${on.length} connected` : "None connected"}</button>
   </header>
-  <label className="history-find"><Search /><input aria-label="Search apps and skills" placeholder="Search apps and skills..." value={find} onChange={e => setFind(e.target.value)} /></label>
+  <label className="history-find"><Search /><input aria-label="Search plugins" placeholder="Search plugins..." value={find} onChange={e => setFind(e.target.value)} /></label>
   <div className="history-chips" role="group" aria-label="Categories">{chip("", "All")}{cats.slice(0, shown).map(c => chip(c))}
    {cats.indexOf(cat) >= shown && !more && chip(cat)}
    {cats.length > shown && <button className="history-chip" aria-expanded={more} onClick={() => setMore(!more)}>More<ChevronDown className={cn(more && "rotate-180")} /></button>}
@@ -211,14 +210,12 @@ export function PluginsPage({ ai, send, skills, onNewSkill, onAddPlugin }: { ai:
   {p?.error && <p className="plug-error" role="alert">{p.error}</p>}
 
   {q ? <>
-   {skills(q)}
    <Group title="Apps">{hits.length ? <Tiles apps={hits.slice(0, 60)} ai={ai} send={send} /> : <p className="plug-note">No apps match “{find.trim()}”.{!apps.length && " Once your key is in, you can search every app Composio connects."}</p>}
     {hits.length > 60 && <p className="plug-note">Showing 60 of {hits.length}. Keep typing to narrow it down.</p>}</Group>
   </> : cat === "connected" ? <Group title="Connected">{mine.length ? <Tiles apps={mine} ai={ai} send={send} /> : <p className="plug-note">Nothing connected yet. Pick an app and press Connect.</p>}</Group>
   : cat ? <Group title={cat}><Tiles apps={inCat(cat)} ai={ai} send={send} /></Group>
   : <>
    <Group title={apps.length ? "Recommended" : "Apps you can connect"}><Tiles apps={apps.length ? known.filter(a => a.auth !== "custom").slice(0, 8) : known} ai={ai} send={send} /></Group>
-   <section className="plug-group" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2><span className="plug-head-acts"><button className="plug-all" onClick={onNewSkill}>New skill</button></span></div>{skills("")}</section>
    {cats.map(c => { const all = inCat(c); return <Group key={c} title={c} count={all.length} onAll={all.length > 4 ? () => pick(c) : undefined}><Tiles apps={all.slice(0, 4)} ai={ai} send={send} /></Group> })}
   </>}
 

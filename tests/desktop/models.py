@@ -11,7 +11,7 @@
   Set up, and DeepSeek and Other compatible API, added right there.
 - Runs on, in a companion's Model tab: a styled picker with logos, checked when the tab opens (before the side chat was
   ever opened), listing only what can run: never an app that's Not installed or needs a sign-in.
-- Still's own pages (New tab, Chat History, Companions, Skills, Library) show no scrollbar, and the wheel and the keys
+- Still's own pages (New tab, Chat History, Companions, Skills, Plugins, Files) show no scrollbar, and the wheel and the keys
   still scroll them.
 
 No AI runs and nothing signs in: fake Gemini (signed in with Google), OpenCode (lists a model), Qwen Code (no sign-in

@@ -15,8 +15,8 @@ the catalog over two pages; errors are { error: { message, code, slug, status, .
 user_id back. Every app Composio had when Still was built shows the logo that ships with Still; only the two newer
 apps here (Self Hosted Thing and Weather) get theirs from the stand-in, one with no image type and one missing.
 
-Checks: the Plugins page (Skills & plugins on the home's rail) is titled Plugins with what's connected at the top, one
-search for apps and skills, category chips with the rest under More, Recommended first and then a section per category
+Checks: the Plugins page (Plugins on the home's rail) is titled Plugins with what's connected at the top, one
+search for plugins (skills have their own page), category chips with the rest under More, Recommended first and then a section per category
 with View all, apps two across with their logo, name and Connect (or a Connected check), no description. With no key
 the apps still show and Connect goes to the key field, which says where the key comes from (Platform → Settings →
 Project Settings → API Keys, ak_); a Connect key (ck_) is named as the wrong kind and never sent or kept; off with no
@@ -284,17 +284,17 @@ def turned_off(companion):
 
 
 def open_plugins(process):
-    """Skills & plugins, from the home's rail, in a new tab: once it's open, click until the page is there (a busy Still can be slow)."""
+    """Plugins, from the home's rail, in a new tab: once it's open, click until the page is there (a busy Still can be slow)."""
     count = lambda: sum(len(w["tabs"]) for w in rpc(process, "tabs").get("windows", []))
     before = count()
     send(process, "new")
     until(lambda: count() > before and js(process, "!!document.querySelector('.home-rail')"), 20)
     time.sleep(.3)
-    return until(lambda: js(process, """document.querySelector(".home-page.plug-page[aria-label='Skills & plugins']") ? true
-     : (document.querySelector(".home-rail-item[aria-label='Skills & plugins']")?.click(), false)"""), 15)
+    return until(lambda: js(process, """document.querySelector(".home-page.plug-page[aria-label='Plugins']") ? true
+     : (document.querySelector(".home-rail-item[aria-label='Plugins']")?.click(), false)"""), 15)
 
 
-SEARCH = ".plug-page input[aria-label='Search apps and skills']"
+SEARCH = ".plug-page input[aria-label='Search plugins']"
 
 
 def tiles(process, group=""):
@@ -427,7 +427,7 @@ def stack(process):
 def no_key(process):
     label, tiles_, last = home_stack(process, "plugins-stack-empty.png")
     check(label == "Plugins: none connected yet" and tiles_ == ["icon"] and last, f"With nothing connected, the home row ends with Plugins and a plain plug ({label!r}, {tiles_})")
-    check(open_plugins(process), "Plugins live in Skills & plugins, on the home's rail")
+    check(open_plugins(process), "Plugins have their own page, on the home's rail")
     words = page_text(process)
     check(js(process, "document.querySelector('.plug-page h1')?.innerText") == "Plugins" and head(process) == "None connected", f"The page is titled Plugins, with what's connected at the top ({head(process)!r})")
     check(js(process, "document.querySelector(\".plug-page input[aria-label='Composio API key']\")?.type") == "password", "With no key, it asks for your Composio API key, right there")
@@ -447,12 +447,12 @@ def no_key(process):
     until(lambda: js(process, "!!document.querySelector('.set-shell')"), 10)
     check(until(lambda: "Not set" in (js(process, "document.querySelector('.set-main #set-composio')?.innerText") or ""), 5)
           and js(process, "!!document.querySelector(\".set-main #set-composio input[aria-label='Composio API key']\")"), "Settings → Skills & plugins has the Composio key: not set, with a field to add it")
-    js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Skills & plugins')?.click()")
+    js(process, "[...document.querySelectorAll('.set-main button')].find(b => b.innerText.trim() === 'Open Plugins')?.click()")
     check(until(lambda: not js(process, "!!document.querySelector('.set-shell')") and js(process, "!!document.querySelector('.home-page.plug-page')"), 10), "and a button that opens the Plugins page")
     ask(process, "NOPLUG")
     idle(process)
     done = until(lambda: len(calls("NOPLUG")) == 2 and calls("NOPLUG"), 20) or calls("NOPLUG")  # the run's first chat can start late
-    check(len(done) == 2 and not any(c["ok"] for c in done) and all("Skills & plugins" in c["text"] for c in done), "Without a key, plugin tools say plugins are off and where to turn them on")
+    check(len(done) == 2 and not any(c["ok"] for c in done) and all("Plugins page" in c["text"] for c in done), "Without a key, plugin tools say plugins are off and where to turn them on")
     check(not MOCK["seen"] and not MOCK["pages"], "Without a key, Still never calls Composio, not even for a logo")
     ask(process, "WEB " + SITE)
     idle(process)
@@ -486,7 +486,7 @@ def keys(process):
     chips = js(process, "[...document.querySelectorAll('.plug-page .history-chips .history-chip')].map(b => b.innerText.trim())") or []
     check(chips == ["All", "Productivity", "Communication", "Design", "Developer tools", "Finance", "Marketing", "More"], f"Category chips: All, the main categories, the rest under More ({chips})")
     groups = js(process, "[...document.querySelectorAll('.plug-page .plug-group')].map(g => g.getAttribute('aria-label') + ':' + g.querySelectorAll('.plug-tile').length)") or []
-    check(groups[:3] == ["Recommended:8", "Skills:0", "Productivity:4"] and groups[-1] == "Other:1" and len(groups) == 12, f"Then the skills, and a section per category with up to four apps ({groups})")
+    check(groups[:2] == ["Recommended:8", "Productivity:4"] and groups[-1] == "Other:1" and len(groups) == 11, f"Then a section per category, and no skills with up to four apps ({groups})")
     check(until(lambda: js(process, "(imgs => imgs.length >= 3 && imgs.every(i => i.src.endsWith('/apps/' + i.closest('.plug-tile').dataset.slug + '.svg') && i.naturalWidth > 0))([...document.querySelectorAll('.plug-tile[data-slug=gmail] .plug-logo img, .plug-tile[data-slug=github] .plug-logo img, .plug-tile[data-slug=stripe] .plug-logo img')])"), 10),
           "Each app shows the logo that ships with Still")
     check(until(lambda: js(process, "(i => !!i && i.src.startsWith('data:image/svg+xml') && i.naturalWidth > 0)(document.querySelector('.plug-tile[data-slug=selfhosted] .plug-logo img'))"), 10),
@@ -505,7 +505,7 @@ def keys(process):
     type_into(process, SEARCH, "cal")
     check(until(lambda: tiles(process, "Apps") == ["Google Calendar: Connect"], 5), "Search finds an app")
     type_into(process, SEARCH, "weekly")
-    check(until(lambda: "Weekly report" in (js(process, "document.querySelector(\".plug-group[aria-label='Skills']\")?.innerText") or "") and "No apps match" in page_text(process), 5), "and skills")
+    check(until(lambda: "No apps match" in page_text(process), 5) and not js(process, "!!document.querySelector(\".plug-group[aria-label='Skills']\")"), "and no skills: they're on the Skills page")
     type_into(process, SEARCH, "")
     MOCK["broken"] = True
     send(process, "pluginRefresh", force=True)

@@ -360,7 +360,7 @@ def laptops(process):
 
     # The Library.
     home(process)
-    click(process, ".home-rail-item[aria-label=Library]")
+    click(process, ".home-rail-item[aria-label=Files]")
     check(until(lambda: js(process, "document.querySelectorAll('.library-list .history-row').length") == 1, 5)
           and "LAPTOPS" in (js(process, "document.querySelector('.library-list')?.textContent.toUpperCase() ?? ''") or ""),  # WebKit leaves a row it hasn't painted yet (content-visibility) out of innerText
           "The Library lists the file with its chat")

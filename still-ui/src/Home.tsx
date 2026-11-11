@@ -1,22 +1,24 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from "react"
-import { Archive, ArchiveRestore, ArrowDownUp, BookOpen, Brain, ChevronDown, ExternalLink, FolderOpen, Library, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, UserX, Users } from "lucide-react"
+import { Archive, ArchiveRestore, ArrowDownUp, Blocks, BookOpen, Brain, ChevronDown, Copy, ExternalLink, Folder, FolderOpen, MessageSquare, MoreHorizontal, Pencil, Plus, RotateCcw, Search, Settings2, SquarePen, Trash2, UserX, Users } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } from "@/components/ui/context-menu"
 import { AiLogo } from "./AiLogo"
 import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
 import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
-import { CrewCards, SharedReview, fromPremade, fromShared } from "./crew"
+import { CrewCards, KIT_SKILLS, SharedReview, fromPremade, fromShared } from "./crew"
 import { deleteAllChats, deleteChat, destroy, fire } from "./Undo"
-import { PluginsPage, Who } from "./Plugins"
+import { PluginsPage, andList } from "./Plugins"
 import { toast } from "sonner"
 
-// The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages.
-export type HomeView = "home" | "chats" | "companions" | "skills" | "library"
+// The new tab page is Still's home: a slim rail on the left switches between the chat home and these pages. "library"
+// is the Files page (saved files; it was called Library before Skills and Plugins got pages of their own).
+export type HomeView = "home" | "chats" | "companions" | "skills" | "plugins" | "library"
+const SETUP_ID = "setup"
 type Send = (op: string, payload?: Record<string, unknown>) => void
 /// A new companion: a surprise look, and the user names them.
 export const randomCompanion = (): Companion => ({ id: "", name: "", face: "", color: "", job: "", mode: "default", look: lookKey(surprise()) })
@@ -27,8 +29,9 @@ export function HomeRail({ view, setView, profile, onSettings }: { view: HomeVie
   <span className="still-mark is-small" aria-hidden><i /><i /></span>
   {item("home", "New chat", SquarePen)}
   {item("chats", "Chats", MessageSquare)}
-  {item("library", "Library", Library)}
-  {item("skills", "Skills & plugins", BookOpen)}
+  {item("skills", "Skills", BookOpen)}
+  {item("plugins", "Plugins", Blocks)}
+  {item("library", "Files", Folder)}
   <span className="home-rail-gap" />
   <button className="home-rail-item" aria-label="Settings" title="Settings" onClick={onSettings}><Settings2 /></button>
   <span className="chat-side-avatar" title={profile}>{(profile[0] ?? "S").toUpperCase()}</span>
@@ -138,35 +141,102 @@ export function CompanionsPage({ ai, send, onEdit, onMake, onChat, onHire, onMem
  </section>
 }
 
-/// Skills & plugins: the Plugins page (Plugins.tsx) with the user's skills among the apps. One search finds both.
 /// Reset a skill Still ships to its own version: the user's changes to it go.
 export const resetSkill = (send: Send, k: Skill) => destroy({ key: "skill-reset:" + k.id, title: `Reset ${k.name}?`, body: `Your changes to ${k.name} go, and it's back to the version Still ships.`,
  action: "Reset skill", done: `${k.name} reset`, run: () => send("skillReset", { id: k.id }) })
 
-export function SkillsPage({ ai, send }: { ai: AiState; send: Send }) {
- const [editing, setEditing] = useState<Skill | null>(null)
+/// Plugins: the apps page (Plugins.tsx), and adding a plugin from a link.
+export function PluginsView({ ai, send }: { ai: AiState; send: Send }) {
  const [adding, setAdding] = useState(false)
- const blank = () => setEditing({ id: "", name: "", description: "", when: "", body: "" })
- const skills = (q: string) => {
-  const found = (ai.skills ?? []).filter(k => `${k.name} ${k.id} ${k.description}`.toLowerCase().includes(q))
-  if (q && !found.length) return null
-  const list = <div className="skill-list">{found.map(k => <div key={k.id} className="skill-row">
-   <span className="skill-icon"><BookOpen /></span>
-   <button className="skill-open" onClick={() => setEditing(k)}><b>{k.name}</b><small>/{k.id}{k.source && " · From " + k.source + (k.plugin ? ", with its programs" : "")}{k.description && " · " + k.description}</small></button>
-   {k.id === "setup" ? <small className="skill-always">Every companion, on their first chat</small>
-    : <Who what={k.name} companions={ai.companions ?? []} on={m => !!m.skills?.includes(k.id)} onToggle={(m, on) => send("companionSave", { ...m, skills: on ? [...(m.skills ?? []), k.id] : (m.skills ?? []).filter(x => x !== k.id) })} />}
-   {k.stock && k.edited && <button className="history-act" aria-label={`Reset ${k.name} to Still's version`} title="Reset to Still's version" onClick={() => resetSkill(send, k)}><RotateCcw /></button>}
-   {k.id !== "setup" && <button className="history-act" aria-label={"Delete " + k.name} title="Delete" onClick={() => destroy({ key: "skill:" + k.id, title: `Delete ${k.name}?`, action: "Delete skill", done: `Deleted ${k.name}`,
-    body: `The skill goes, and ${(ai.companions ?? []).filter(m => m.skills?.includes(k.id)).length || "no"} companions stop using it.`, run: () => send("skillDelete", { id: k.id }) })}><Trash2 /></button>}
-  </div>)}</div>
-  return q ? <section className="plug-group skills-part" aria-label="Skills"><div className="plug-group-head"><h2>Skills</h2></div>{list}</section>
-   : found.length ? list : <p className="home-empty skills-empty">Skills are short how-tos your companions follow: type / in a message to use one. <button className="plug-all" onClick={blank}>Write your first one</button></p>
- }
  return <>
-  <PluginsPage ai={ai} send={send} skills={skills} onNewSkill={blank} onAddPlugin={() => setAdding(true)} />
-  {editing && <SkillEditor skill={editing} onClose={() => setEditing(null)} onSave={k => { send("skillSave", k); setEditing(null) }} />}
+  <PluginsPage ai={ai} send={send} onAddPlugin={() => setAdding(true)} />
   {adding && <SkillImport send={send} onClose={() => setAdding(false)} />}
  </>
+}
+
+// Every skill Still ships, by role kit, for the Built-in tab (the kit files themselves, so it's every one, added or not).
+const BUILT_IN = Object.entries(KIT_SKILLS).flatMap(([role, list]) => list.map(k => ({ id: k.id, role, name: k.name, description: k.line })))
+const kitName = (role: string) => role.charAt(0).toUpperCase() + role.slice(1) + " kit"
+
+/// Skills: My skills, grouped under the companion whose kit brought them, then the rest under All companions; and
+/// Built-in, every skill Still ships. Every companion can use every skill and picks one by its description; the ⋯ menu
+/// can limit one to some companions. Run skill starts a new chat with /its-id in the box.
+export function SkillsPage({ ai, send, onRun }: { ai: AiState; send: Send; onRun: (k: Skill) => void }) {
+ const [tab, setTab] = useState<"mine" | "built">("mine")
+ const [find, setFind] = useState("")
+ const [editing, setEditing] = useState<Skill | null>(null)
+ const [limiting, setLimiting] = useState<Skill | null>(null)
+ const q = find.trim().toLowerCase(), team = ai.companions ?? []
+ const hit = (k: { id: string; name: string; description: string }) => `${k.name} ${k.id} ${k.description}`.toLowerCase().includes(q)
+ const have = new Map((ai.skills ?? []).map(k => [k.id, k]))
+ const roleOf = new Map(BUILT_IN.map(k => [k.id, k.role]))
+ const makerOf = (k: Skill) => k.stock ? team.find(c => !!c.crew && c.crew === roleOf.get(k.id)) : undefined
+ const nameOf = (id: string) => team.find(c => c.id === id)?.name
+ const muted = (k: Skill) => [k.id === SETUP_ID ? "Every companion, on their first chat" : k.source ? "From " + k.source + (k.plugin ? ", with its programs" : "") : k.stock ? (k.edited ? "Built in, edited" : "Built in") : "Made by you",
+  k.only?.length ? "Only " + andList(k.only.map(nameOf).filter((n): n is string => !!n)) : ""].filter(Boolean).join(" · ")
+ const remove = (k: Skill) => destroy({ key: "skill:" + k.id, title: `Delete ${k.name}?`, action: "Delete skill", done: `Deleted ${k.name}`,
+  body: "The skill goes, and no companion can use it anymore.", run: () => send("skillDelete", { id: k.id }) })
+ const card = (k: Skill, foot: string, added = true) => <article key={k.id} className="skill-card" aria-label={k.name}>
+  <div className="skill-card-head"><span className="skill-icon" aria-hidden><BookOpen /></span><h3>{k.name}</h3>
+   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" className="skill-more" aria-label={"More for " + k.name}><MoreHorizontal /></Button></DropdownMenuTrigger>
+    <DropdownMenuContent align="end" className="w-52">
+     {!added ? <DropdownMenuItem onSelect={() => send("skillAdd", { id: k.id })}><Plus />Add to my skills</DropdownMenuItem> : <>
+      <DropdownMenuItem onSelect={() => setEditing(k)}><Pencil />Edit</DropdownMenuItem>
+      {k.id !== SETUP_ID && <DropdownMenuItem onSelect={() => setLimiting(k)}><Users />Limit to companions…</DropdownMenuItem>}
+      {k.id !== SETUP_ID && <DropdownMenuItem onSelect={() => { send("skillSave", { id: "", name: (k.name.slice(0, 55) + " copy").trim(), description: k.description, when: k.when, body: k.body }); toast(`Made a copy of ${k.name}.`) }}><Copy />Duplicate</DropdownMenuItem>}
+      {k.stock && k.edited && <DropdownMenuItem onSelect={() => resetSkill(send, k)}><RotateCcw />Reset to Still's version</DropdownMenuItem>}
+      {k.id !== SETUP_ID && <><DropdownMenuSeparator /><DropdownMenuItem className="text-destructive" onSelect={() => remove(k)}><Trash2 />Delete</DropdownMenuItem></>}
+     </>}
+    </DropdownMenuContent></DropdownMenu></div>
+  <p className="skill-card-text">{k.description || "No description yet. Add one so companions know when to use it."}</p>
+  <div className="skill-card-foot"><small>{foot}</small>{k.id !== SETUP_ID && <Button size="sm" variant="secondary" className="skill-run" onClick={() => { if (!added) send("skillAdd", { id: k.id }); onRun(k) }}>Run skill</Button>}</div>
+ </article>
+ const mine = (ai.skills ?? []).filter(k => k.id !== SETUP_ID && hit(k)).sort((a, b) => a.name.localeCompare(b.name))
+ const groups: [Companion | null, Skill[]][] = [...team.map(c => [c, mine.filter(k => makerOf(k) === c)] as [Companion, Skill[]]), [null, mine.filter(k => !makerOf(k))]]
+ const setup = have.get(SETUP_ID)
+ const built = [...(setup && hit(setup) ? [setup] : []), ...BUILT_IN.filter(hit).map(b => have.get(b.id) ?? { ...b, when: "", body: "", stock: true })]
+ return <section className="home-page skills-page" aria-label="Skills">
+  <header className="home-page-head"><h1>Skills</h1><Button className="home-new" onClick={() => setEditing({ id: "", name: "", description: "", when: "", body: "" })}><Plus />New skill</Button></header>
+  <p className="home-page-lead">Reusable instructions your companions can use.</p>
+  <div className="skills-bar">
+   <div className="skills-tabs" role="tablist" aria-label="Skills">
+    <button role="tab" aria-selected={tab === "mine"} onClick={() => setTab("mine")}>My skills</button>
+    <button role="tab" aria-selected={tab === "built"} onClick={() => setTab("built")}>Built-in</button>
+   </div>
+   <label className="skills-find"><Search /><input aria-label="Search skills" placeholder="Search skills..." value={find} onChange={e => setFind(e.target.value)} /></label>
+  </div>
+  {tab === "mine" ? <>
+   {!mine.length && <p className="home-empty">{q ? `No skills match “${find.trim()}”.` : "No skills yet. Write one with New skill, or add one of Still's from Built-in."}</p>}
+   {groups.filter(([, list]) => list.length).map(([c, list]) => <section key={c?.id ?? "all"} className="skill-group" aria-label={c ? c.name : "All companions"}>
+    <h2>{c ? <Face companion={c} size={22} /> : <span className="skill-group-all" aria-hidden><Users /></span>}{c ? c.name : "All companions"}</h2>
+    <div className="skill-grid">{list.map(k => card(k, muted(k)))}</div>
+   </section>)}
+  </> : <>
+   {!built.length && <p className="home-empty">No skills match “{find.trim()}”.</p>}
+   <div className="skill-grid">{built.map(k => { const role = roleOf.get(k.id), added = have.has(k.id)
+    return card(k, k.id === SETUP_ID ? muted(k) : [role ? kitName(role) : "", added ? "In your skills" : ""].filter(Boolean).join(" · "), added) })}</div>
+  </>}
+  {editing && <SkillEditor skill={editing} onClose={() => setEditing(null)} onSave={k => { send("skillSave", k); setEditing(null) }} />}
+  {limiting && <SkillLimit skill={limiting} team={team} onClose={() => setLimiting(null)} onSave={only => { send("skillLimit", { id: limiting.id, only }); setLimiting(null) }} />}
+ </section>
+}
+
+/// Who can use a skill: every companion (the default), or only the ones ticked.
+function SkillLimit({ skill, team, onClose, onSave }: { skill: Skill; team: Companion[]; onClose: () => void; onSave: (only: string[]) => void }) {
+ const [some, setSome] = useState(!!skill.only?.length)
+ const [on, setOn] = useState<string[]>(skill.only?.length ? skill.only : team.map(c => c.id))
+ return <Dialog open onOpenChange={o => { if (!o) onClose() }}>
+  <DialogContent className="app-dialog skill-limit">
+   <DialogHeader><DialogTitle>Who can use {skill.name}?</DialogTitle><DialogDescription>Every companion can use every skill, and picks one by its description. Limit this one if it's only for some of them.</DialogDescription></DialogHeader>
+   <div className="skill-limit-pick" role="radiogroup" aria-label={"Who can use " + skill.name}>
+    <label><input type="radio" name="skill-limit" checked={!some} onChange={() => setSome(false)} />Every companion</label>
+    <label><input type="radio" name="skill-limit" checked={some} onChange={() => setSome(true)} />Only some companions</label>
+   </div>
+   {some && <ul className="skill-limit-list" aria-label="Companions">{team.map(c => <li key={c.id}><label>
+    <input type="checkbox" aria-label={c.name} checked={on.includes(c.id)} onChange={e => setOn(e.target.checked ? [...on, c.id] : on.filter(x => x !== c.id))} /><Face companion={c} size={22} />{c.name}</label></li>)}</ul>}
+   <div className="companion-actions"><Button type="button" variant="ghost" onClick={onClose}>Cancel</Button><Button type="button" disabled={some && !on.length} onClick={() => onSave(some ? on : [])}>Save</Button></div>
+  </DialogContent>
+ </Dialog>
 }
 
 type FoundSkill = { key: number; name: string; description: string; body: string; notes: string[]; added: boolean }
@@ -239,9 +309,9 @@ export function LibraryPage({ ai, send, onOpen }: { ai: AiState; send: Send; onO
  const first = ai.companions?.[0]?.id, mate = companionOf(ai, who)
  const chatOf = (id: string) => ai.chats.find(c => c.id === id)
  const files = (ai.files ?? []).filter(f => f.name.toLowerCase().includes(find.trim().toLowerCase()) && (!who || (chatOf(f.chat)?.companion || first) === who && !!chatOf(f.chat)))
- return <section className="home-page" aria-label="Library">
-  <header className="home-page-head"><h1>Library</h1></header>
-  {!ai.files?.length ? <div className="home-empty is-big"><Library /><p>Nothing here yet. Ask a companion for a table or notes, and the file lands here.</p></div> : <>
+ return <section className="home-page" aria-label="Files">
+  <header className="home-page-head"><h1>Files</h1></header>
+  {!ai.files?.length ? <div className="home-empty is-big"><Folder /><p>Nothing here yet. Ask a companion for a table or notes, and the file lands here.</p></div> : <>
    <label className="history-find"><Search /><input aria-label="Search files" placeholder="Search files..." value={find} onChange={e => setFind(e.target.value)} /></label>
    <div className="history-chips">
     <DropdownMenu><DropdownMenuTrigger asChild><button className="history-chip" aria-pressed={!!who}>{who && mate ? <><Face companion={mate} size={16} />{mate.name}</> : "Companion"}<ChevronDown /></button></DropdownMenuTrigger>

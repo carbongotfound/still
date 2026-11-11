@@ -40,7 +40,7 @@ const shareOf = (c: Companion) => JSON.stringify({ kind: SHARE_KIND, v: 1, name:
  role: c.role ?? "", personality: c.personality ?? "", length: c.length ?? "balanced" })
 
 export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile, onSkills, onHire, onChat, tab: opening = "general" }: {
- ai: AiState; id: string; send: Send; onPick: (id: string) => void; onClose: () => void; onOpenFile: (path: string) => void; onSkills: () => void
+ ai: AiState; id: string; send: Send; onPick: (id: string) => void; onClose: () => void; onOpenFile: (path: string) => void; onSkills: (to?: "skills" | "plugins") => void
  onChat?: (id: string) => void // a new chat with them, when they have none to open
  tab?: string // the tab it opens on ("model": their Model settings)
  draft?: Companion; onHire?: (c: Companion) => void // "Make your own": a companion not hired yet
@@ -85,7 +85,10 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
  const plugins = ai.plugins, pluginsReady = !!plugins?.key && plugins.status === "ok"
  const routines = c.routines ?? []
  // Skills they can use: Setup first (always on), then the user's skills, and in a draft the library skills it picked.
+ // Every skill is for every companion unless it's limited (Skills' ⋯ menu); a switch here limits it the same way.
  const mine = (ai.skills ?? []).filter(k => k.id !== SETUP), setup = ai.skills?.find(k => k.id === SETUP)
+ const everyone = (ai.companions ?? []).map(m => m.id), whoCan = (k: Skill) => k.only?.length ? k.only : everyone
+ const limit = (k: Skill, on: boolean) => { const next = on ? [...new Set([...whoCan(k), c.id])] : whoCan(k).filter(x => x !== c.id); send("skillLimit", { id: k.id, only: next.length >= everyone.length ? [] : next }) }
  const library = draft ? LIBRARY.filter(k => c.skills?.includes(k.id) && !mine.some(m => m.id === k.id)).map(k => ({ id: k.id, name: k.name, description: k.text, when: "", body: "" })) : []
  const suggest = () => { // the generator: what they wrote becomes starting instructions, and 3 or 4 library skills
   const g = generate(c.job.split("\n\nHow you work:")[0], c.role ?? "", LIBRARY, ROLE_TEXT)
@@ -162,25 +165,26 @@ export function ProfilePanel({ ai, id, draft, send, onPick, onClose, onOpenFile,
      </TabsContent>
      <TabsContent value="skills">
       <section className="profile-section"><h4>Skills they can use</h4>
-      <p className="profile-lead">{label} sees this list and loads a skill when a task fits it. You can also use any skill with /its-name in a message.</p>
+      <p className="profile-lead">{label} sees this list and loads a skill when a task fits it. Every skill is on for every companion unless you limit it. You can also use any skill with /its-name in a message.</p>
       <ul className="profile-list">
        {setup && <li><div><b>{setup.name}</b><small>Runs once, on {label}'s first chat. You can edit it, not turn it off.</small></div><SkillActs k={setup} onEdit={setSkill} send={send} /></li>}
-       {[...library, ...mine].map(k => { const on = !!c.skills?.includes(k.id); return <li key={k.id}>
+       {[...library, ...mine].map(k => { const picked = library.includes(k), on = picked ? !!c.skills?.includes(k.id) : !!draft || whoCan(k).includes(c.id); return <li key={k.id}>
         <div><b>{k.name}</b><small>{k.description}</small></div>
-        {!library.includes(k) && <SkillActs k={k} onEdit={setSkill} send={send} />}
-        <Switch checked={on} aria-label={`${k.name} for ${c.name}`} onCheckedChange={v => save({ ...c, skills: v ? [...(c.skills ?? []), k.id] : (c.skills ?? []).filter(x => x !== k.id) })} />
+        {!picked && <SkillActs k={k} onEdit={setSkill} send={send} />}
+        {picked ? <Switch checked={on} aria-label={`${k.name} for ${c.name}`} onCheckedChange={v => save({ ...c, skills: v ? [...(c.skills ?? []), k.id] : (c.skills ?? []).filter(x => x !== k.id) })} />
+         : !draft && <Switch checked={on} disabled={on && whoCan(k).length === 1} title={on && whoCan(k).length === 1 ? `Only ${label} can use it. To stop, delete it in Skills.` : undefined} aria-label={`${k.name} for ${c.name}`} onCheckedChange={v => limit(k, v)} />}
        </li> })}
       </ul>
-      {!mine.length && !library.length && <Empty text="No other skills yet. Write one in Skills & plugins, then turn it on here." action="Open Skills & plugins" onAction={onSkills} />}
+      {!mine.length && !library.length && <Empty text="No other skills yet. Write one in Skills, and every companion can use it." action="Open Skills" onAction={() => onSkills()} />}
       </section>
       {!draft && <section className="profile-section is-plugins"><h4>Plugins</h4>
-      {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={onSkills} />
+      {!pluginsReady ? <Empty text={`Plugins let ${label} work in your apps, like Gmail, Calendar and Slack. They stay off until you add your own Composio key.`} action="Set up plugins" onAction={() => onSkills("plugins")} />
        : plugins!.connected.length ? <><p className="profile-lead">Apps {label} can use. Reading goes ahead. Anything that sends, posts, deletes, pays or changes data asks you first.</p>
         <ul className="profile-list">{plugins!.connected.map(p => { const on = !saved.pluginsOff?.includes(p.slug); return <li key={p.id}>
          <PluginChip slug={p.slug} name={p.name} />
          <Switch checked={on} aria-label={`${p.name} for ${c.name}`} onCheckedChange={v => send("pluginToggle", { companion: c.id, slug: p.slug, on: v })} />
         </li> })}</ul></>
-       : <Empty text="No apps connected yet." action="Connect an app" onAction={onSkills} />}
+       : <Empty text="No apps connected yet." action="Connect an app" onAction={() => onSkills("plugins")} />}
       </section>}
      </TabsContent>
      <TabsContent value="routines">

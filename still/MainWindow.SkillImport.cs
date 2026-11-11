@@ -163,7 +163,7 @@ public partial class MainWindow
     }
   } catch (InvalidDataException ex) { Toast(ex.Message); }
   catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or HttpRequestException or TaskCanceledException) { App.Log(ex); Toast("Couldn't add those skills."); }
-  if (added > 0) Toast(added == 1 ? "Added 1 skill. Give it to a companion to use it." : $"Added {added} skills. Give them to a companion to use them.");
+  if (added > 0) Toast(added == 1 ? "Added 1 skill. Every companion can use it." : $"Added {added} skills. Every companion can use them.");
   PublishAiEverywhere();
  }
 
@@ -214,7 +214,7 @@ public partial class MainWindow
   if (run == null || mine == null) return Fail("Only a companion in Still's chat can run its plugins' programs.");
   if (run.Chat.Ephemeral) return Fail("Plugin programs don't run in a private window.");
   string id = S(args, "plugin").Trim(), root = Path.Combine(PluginsFolder, id);
-  var skill = Regex.IsMatch(id, "^[a-z0-9-]{1,48}$") ? Skill.All.FirstOrDefault(k => k.Plugin == id && mine.Skills.Contains(k.Id)) : null;
+  var skill = Regex.IsMatch(id, "^[a-z0-9-]{1,48}$") ? Skill.All.FirstOrDefault(k => k.Plugin == id && k.For(mine)) : null;
   if (skill == null || !Directory.Exists(root)) return Fail($"You don't have a plugin \"{id}\". Use the plugin id load_skill gave you.");
   string full = Path.GetFullPath(Path.Combine(root, Regex.Replace(S(args, "program").Trim().Replace('\\', '/'), @"^(?:\$\{?CLAUDE_PLUGIN_ROOT\}?|\.)/", "")));
   if (!full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(full) || !IsProgram(full))

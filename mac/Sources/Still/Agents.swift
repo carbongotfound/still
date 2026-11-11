@@ -1173,9 +1173,9 @@ extension Browser {
    case "remember", "recall", "forget", "update_knowledge", "read_knowledge", "open_memory_source": return memoryTool(who, tool, args)
    case "run_plugin_program": return await pluginProgram(who, args)
    case "load_skill":
-    // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
+    // Only a skill the companion can use (every one, unless it's limited to others); never matched by keyword. The step shows only when one loads.
     let id = tidy((args["id"] as? String ?? "")).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
-    guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }), mine.skills.contains(id), let skill = Skill.all.first(where: { $0.id == id }) else {
+    guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }), let skill = Skill.all.first(where: { $0.id == id && $0.usable(by: mine) }) else {
      return agentFail("You don't have a skill with the id \"\(id)\". Use an id from your skills listed at the start of the chat, or carry on without one.")
     }
     if !skill.source.isEmpty { let root = exchangeOf(run.chat).root; root.read = max(root.read, 1) } // someone else's text, like a page

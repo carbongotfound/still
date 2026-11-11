@@ -312,11 +312,11 @@ public partial class MainWindow
  {
   if (runs.GetValueOrDefault(who) is not { } run) return Fail("Plugins are only for Still's own companions.");
   if (run.Chat.Ephemeral) return Fail("Connected apps are off in incognito windows. Tell the user if it matters, and do it another way.");
-  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on in Skills & plugins.");
+  if (!HasPluginKey) return Fail("Plugins are off: the user hasn't added a Composio API key. Do it on the app's website in a tab instead, like mail.google.com for Gmail, where the user may be signed in. If it matters, tell them they can turn plugins on on the Plugins page.");
   // A helper works for whoever asked: an app any of them has off stays off.
   var team = ExchangeOf(run.Chat).Chain.Select(id => Companions.FirstOrDefault(c => c.Id == id)).ToList();
   bool Mine(string slug) => team.All(mate => mate?.PluginsOff.Contains(slug) != true);
-  string Unavailable() => pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it in Skills & plugins." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.";
+  string Unavailable() => pluginStatus == "bad" ? "Composio refused the user's key. Tell them to check it on the Plugins page." : "Composio isn't answering, so plugins are unavailable right now. Do it another way or try later.";
 
   if (tool == "list_connected_plugins") {
    if (pluginStatus != "ok") await RefreshPlugins();
@@ -335,7 +335,7 @@ public partial class MainWindow
   if (PluginCatalog().Count == 0) await LoadPluginCatalog();
   if (PluginSlug(S(args, "plugin")) is not { } slug) return Fail($"There's no app called “{Clip(S(args, "plugin"), 60)}”. Call find_plugins to look it up.");
   string app = PluginName(slug);
-  if (!Mine(slug)) return Fail($"The user turned {app} off for you. They can turn it on in Skills & plugins.");
+  if (!Mine(slug)) return Fail($"The user turned {app} off for you. They can turn it on on the Plugins page.");
   if (tool == "get_plugin_tools") {
    string query = S(args, "query").Trim();
    var list = await Composio(HttpMethod.Get, $"/tools?toolkit_slug={Uri.EscapeDataString(slug)}&limit=25" + (query.Length > 0 ? "&query=" + Uri.EscapeDataString(query) : ""));
@@ -359,7 +359,7 @@ public partial class MainWindow
    // Not connected: a card with a button that connects it, then the work goes on.
    if (await Approve(run, "Connect " + app, app, "connect", "You sign in through Composio, in a Still window.", countdown: false) != "connect")
     return Fail($"The user didn't connect {app}. Don't ask again unless they bring it up.");
-   if (!await ConnectPlugin(slug) || pluginAccounts.FirstOrDefault(a => a.Slug == slug) is not { } now) return Fail(app + " didn't get connected. Tell the user they can connect it in Skills & plugins.");
+   if (!await ConnectPlugin(slug) || pluginAccounts.FirstOrDefault(a => a.Slug == slug) is not { } now) return Fail(app + " didn't get connected. Tell the user they can connect it on the Plugins page.");
    account = now;
   }
   var arguments = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("args", out var given) && given.ValueKind == JsonValueKind.Object ? JsonNode.Parse(given.GetRawText()) : new JsonObject();

@@ -1292,11 +1292,11 @@ public partial class MainWindow
    case "run_plugin_program": return await PluginProgram(who, args);
    case "list_files" or "read_file" or "write_file" or "edit_file" or "delete_file": return await FolderTool(who, tool, args);
    case "load_skill": {
-    // Only a skill the companion has; never matched by keyword. The step shows only when one loads.
+    // Only a skill the companion can use (every one, unless it's limited to others); never matched by keyword. The step shows only when one loads.
     var run = runs.GetValueOrDefault(who);
     var mine = run == null ? null : Companions.FirstOrDefault(c => c.Id == run.Chat.Companion);
     string id = S(args, "id").Trim().TrimStart('/');
-    if (mine == null || !mine.Skills.Contains(id) || Skill.All.FirstOrDefault(k => k.Id == id) is not { } skill)
+    if (mine == null || Skill.All.FirstOrDefault(k => k.Id == id && k.For(mine)) is not { } skill)
      return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
     if (skill.Source.Length > 0 && ExchangeOf(run!.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // someone else's text, like a page
     Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();

@@ -214,7 +214,7 @@ extension Browser {
    }
   } catch let e as SkillImportError { toast(e.message) }
   catch { NSLog("Still: skill import: \(error)"); toast("Couldn't add those skills.") }
-  if added > 0 { toast(added == 1 ? "Added 1 skill. Give it to a companion to use it." : "Added \(added) skills. Give them to a companion to use them.") }
+  if added > 0 { toast(added == 1 ? "Added 1 skill. Every companion can use it." : "Added \(added) skills. Every companion can use them.") }
   publishAiEverywhere()
  }
 
@@ -233,7 +233,7 @@ extension Browser {
   guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }) else { return agentFail("Only a companion in Still's chat can run its plugins' programs.") }
   if run.chat.ephemeral { return agentFail("Plugin programs don't run in a private window.") }
   let id = tidy(args["plugin"] as? String ?? ""), root = pluginsFolder.appendingPathComponent(id).standardizedFileURL
-  guard regexMatch("^[a-z0-9-]{1,48}$", id) != nil, let skill = Skill.all.first(where: { $0.plugin == id && mine.skills.contains($0.id) }), FileManager.default.fileExists(atPath: root.path) else {
+  guard regexMatch("^[a-z0-9-]{1,48}$", id) != nil, let skill = Skill.all.first(where: { $0.plugin == id && $0.usable(by: mine) }), FileManager.default.fileExists(atPath: root.path) else {
    return agentFail("You don't have a plugin \"\(id)\". Use the plugin id load_skill gave you.")
   }
   let named = tidy(args["program"] as? String ?? "").replacingOccurrences(of: "\\", with: "/").replacingOccurrences(of: #"^(?:\$\{?CLAUDE_PLUGIN_ROOT\}?|\.)/"#, with: "", options: .regularExpression)

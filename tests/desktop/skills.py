@@ -1,7 +1,8 @@
 """Skills load when they fit, the model tiers run what Settings says, and a model that isn't on the plan falls back.
 
 Checks that a companion's first turn carries an index of its skills (under its cap) and no skill bodies, that load_skill
-gives the body of one of its own skills with a "Used skill" step and refuses any other id, that typing /skill still
+gives the body of any skill with a "Used skill" step (every skill is for every companion) and refuses one limited to
+another companion or an id that doesn't exist, that typing /skill still
 brings the body in, that a tier's model and effort reach the AI app and can be reset, that a model the app refuses is
 retried once on its default model with a note in the chat, that next steps show as suggestion rows with an icon, that an image or a video link
 shows as a card (the image only on Show image, fetched by Still within its limits), and that the end of a reply sits
@@ -38,7 +39,7 @@ RUN = ROOT / "artifacts" / ("skills-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 RESULT = {"checks": []}
-CAP = 2400  # Skill.IndexCap
+CAP = 4800  # Skill.IndexCap
 # The gap between the end of the chat and the message box: TYPE puts one line or ten in the box, GAP measures.
 VIEW = "[...document.querySelectorAll('.chat-view')].find(v => v.dataset.mode === %s && v.offsetParent)"
 TYPE = """(() => { const view = """ + VIEW + """, field = view?.querySelector('[aria-label=Message]'), log = view?.querySelector('.ai-log'); if (!field) return false;
@@ -268,6 +269,7 @@ def main():
         "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "output": "stream-json",
         "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"], "models": ["good", "notonplan"]}))
     (PROFILE / "skills").mkdir(parents=True)
+    (PROFILE / "skills" / "deal-notes.md").write_text("---\nname: Deal notes\ndescription: Jonah's own notes on a deal\nwhen: Notes on a deal\nonly: jonah\n---\n\nJonah's steps.\n", encoding="utf-8")
     (PROFILE / "skills" / "from-web.md").write_text("---\nname: From the web\ndescription: Someone else's skill\nwhen: Testing\nsource: github.com/acme/kit\n---\n\nStep one from someone else.\n", encoding="utf-8")
     crew = [{"Id": "nora", "Name": "Nora", "Job": "Researcher: reads several sources and cites them.", "Crew": "research", "Mode": "default", "Skills": ["from-web"]},
             {"Id": "jonah", "Name": "Jonah", "Job": "Sales: follow-ups and the pipeline.", "Crew": "sales", "Mode": "efficient"}]
@@ -294,11 +296,14 @@ def main():
         ids = ["claim-check", "market-watch", "option-compare", "research-brief"]
         check(index and all(f"- {i}: " in index for i in ids), "The first turn lists the companion's four skills by id")
         check(0 < len(index) <= CAP, f"and the index stays under its cap ({len(index)} of {CAP} characters)")
+        mine_at = max(index.find(f"- {i}: ") for i in ids)
+        check(index.find("- follow-up: ") > mine_at, "Every companion can use every skill: Jonah's Follow-up drafts is on Nora's list too, after her own")
+        check("- deal-notes: " not in index and "- setup: " not in index, "but not one limited to Jonah, nor Setup")
         check("[Skill \"" not in first and "Agree the options and what matters most" not in first, f"and carries no skill bodies (prompt {len(first)} characters)")
 
-        # load_skill: its own skill, someone else's, one that doesn't exist.
+        # load_skill: its own skill, a teammate's kit skill, one limited to someone else, one that doesn't exist.
         steps_before = sum(1 for m in chat(nora)["Messages"] if m["Role"] == "tool")
-        again(p, nora, "SKILL: option-compare follow-up nope")
+        again(p, nora, "SKILL: option-compare follow-up deal-notes nope")
         got = (lines("results.jsonl") or [{}])[-1]
         calls = {c["id"]: c for c in got.get("calls", [])}
         check("load_skill" in got.get("tools", []), "The AI is offered load_skill")
@@ -306,10 +311,12 @@ def main():
         check(not own.get("error") and "Fix the list of options" in own.get("text", ""), "load_skill gives the body of the companion's own skill")
         used = [m["Text"] for m in chat(nora)["Messages"] if m["Role"] == "tool"][steps_before:]
         check(used.count("Used skill Compare options") == 1, "and the chat shows one step: Used skill Compare options")
-        theirs = calls.get("follow-up", {})
-        check(theirs.get("error") and "You don't have a skill with the id" in theirs.get("text", ""), "A teammate's skill is refused: " + theirs.get("text", "")[:70])
+        kit = calls.get("follow-up", {})
+        check(not kit.get("error") and used.count("Used skill Follow-up drafts") == 1, "A skill from a teammate's kit loads too, with its step: " + kit.get("text", "")[:60])
+        theirs = calls.get("deal-notes", {})
+        check(theirs.get("error") and "You don't have a skill with the id" in theirs.get("text", ""), "A skill limited to another companion is refused: " + theirs.get("text", "")[:70])
         check(calls.get("nope", {}).get("error"), "and so is an id that doesn't exist")
-        check(not any("Used skill Call brief" in s or "follow-up" in s for s in used), "and neither shows a step")
+        check(not any("Deal notes" in s or "nope" in s for s in used), "and neither shows a step")
 
         # A skill added from a link is someone else's text: once it loads, the chat counts as having read from the web.
         check(chat(nora).get("Read", 0) == 0, "Loading one of Still's skills doesn't count as reading the web")
@@ -598,6 +605,61 @@ def main():
         check(until(lambda: not any(v.get("custom") for v in tiers(p).values()), 5), "Reset to defaults clears the picks")
         typed = start(p, "jonah", "/from-web please")
         check(chat(typed).get("Read", 0) >= 1, "Typing a skill added from a link counts the same")
+
+        # The Skills page: My skills under the companion whose kit brought them, then All companions; Built-in; Run skill; the ⋯ menu.
+        send(p, "appHome", view="skills")
+        check(until(lambda: js(p, "!!document.querySelector(\"section.skills-page[aria-label='Skills']\")"), 10), "Skills has a page of its own")
+        page = js(p, "document.querySelector('.skills-page')?.innerText") or ""
+        check("Reusable instructions your companions can use." in page and "New skill" in page, "with its line and New skill at the top")
+        tabs = js(p, "[...document.querySelectorAll('.skills-tabs [role=tab]')].map(t => t.innerText.trim() + ':' + t.getAttribute('aria-selected'))") or []
+        check(tabs == ["My skills:true", "Built-in:false"] and js(p, "!!document.querySelector('.skills-find input[aria-label=\"Search skills\"]')"), f"Two tabs, My skills first, and a search ({tabs})")
+        groups = js(p, "[...document.querySelectorAll('.skill-group')].map(g => g.getAttribute('aria-label'))") or []
+        check(groups[:2] == ["Nora", "Jonah"] and groups[-1:] == ["All companions"], f"My skills sit under the companion whose kit brought them, then All companions ({groups})")
+        cols = js(p, "getComputedStyle(document.querySelector('.skill-grid')).gridTemplateColumns.split(' ').length")
+        check(cols == 2, f"Cards sit two across ({cols})")
+        own = js(p, "document.querySelector(\".skill-group[aria-label='Nora'] .skill-card[aria-label='Compare options']\")?.innerText") or ""
+        check("Run skill" in own and "Built in" in own, f"A card has its name, description, where it's from and Run skill ({own[-60:]!r})")
+        check("Only Jonah" in (js(p, "document.querySelector(\".skill-card[aria-label='Deal notes']\")?.innerText") or ""), "A limited skill says who can use it")
+        check(not js(p, "!!document.querySelector('.skills-page .plug-who, .skills-page [aria-pressed]')"), "and no skill has a row of companion chips")
+        js(p, "[...document.querySelectorAll('.skills-tabs [role=tab]')].find(t => t.innerText.trim() === 'Built-in')?.click()")
+        built = until(lambda: js(p, "document.querySelectorAll('.skills-page > .skill-grid .skill-card').length"), 5) or 0
+        check(built >= 30, f"Built-in lists Setup and every skill in Still's kits ({built})")
+        check("Sales kit" in (js(p, "document.querySelector(\".skill-card[aria-label='Lead list']\")?.innerText") or ""), "each with its kit")
+        js(p, "[...document.querySelectorAll('.skills-tabs [role=tab]')].find(t => t.innerText.trim() === 'My skills')?.click()")
+        js(p, "document.querySelector(\".skill-card[aria-label='Compare options'] .skill-run\")?.click()")
+        box = lambda: js(p, "(document.querySelector('.home-compose [aria-label=Message]')?.innerText ?? '') + '|' + (document.querySelector('.home-compose .mention.is-skill')?.innerText ?? '')") or ""
+        check(until(lambda: "/option-compare" in box() or "Compare options" in box(), 5), f"Run skill opens a new chat with the skill in the box ({box()[:60]!r})")
+
+        def menu(name):  # the last menu fades out first, so only the open one counts
+            until(lambda: not js(p, "!!document.querySelector('[role=menu]')"), 3)
+            send(p, "appHome", view="skills")
+            until(lambda: js(p, f"!!document.querySelector(\".skill-card[aria-label='{name}'] .skill-more\")"), 10)
+            js(p, f"document.querySelector(\".skill-card[aria-label='{name}'] .skill-more\").dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
+            return until(lambda: js(p, "[...document.querySelectorAll('[role=menu][data-state=open] [role=menuitem]')].map(i => i.innerText.trim())"), 5) or []
+
+        def pick(words):
+            js(p, f"[...document.querySelectorAll('[role=menu][data-state=open] [role=menuitem]')].find(i => i.innerText.includes({json.dumps(words)}))?.click()")
+        items = menu("From the web")
+        check(items == ["Edit", "Limit to companions…", "Duplicate", "Delete"], f"⋯ has Edit, Limit to companions, Duplicate and Delete ({items})")
+        pick("Limit")
+        until(lambda: js(p, "!!document.querySelector('.skill-limit')"), 5)
+        js(p, "[...document.querySelectorAll('.skill-limit-pick label')].find(l => l.innerText.includes('Only some'))?.querySelector('input').click()")
+        until(lambda: js(p, "!!document.querySelector(\".skill-limit-list input[aria-label='Jonah']\")"), 5)
+        js(p, "document.querySelector(\".skill-limit-list input[aria-label='Jonah']\").click()")
+        js(p, "[...document.querySelectorAll('.skill-limit button')].find(b => b.innerText.trim() === 'Save')?.click()")
+        web = PROFILE / "skills" / "from-web.md"
+        check(until(lambda: "only: nora" in web.read_text(encoding="utf-8"), 5), "Limit to companions keeps it to Nora, in the skill's file")
+        check(until(lambda: "Only Nora" in (js(p, "document.querySelector(\".skill-card[aria-label='From the web']\")?.innerText") or ""), 5), "and its card says so")
+        menu("Deal notes")
+        pick("Duplicate")
+        copy = lambda: next((f for f in (PROFILE / "skills").glob("*.md") if "name: Deal notes copy" in f.read_text(encoding="utf-8")), None)
+        check(until(copy, 5), "Duplicate makes a copy")
+        until(lambda: js(p, "!!document.querySelector(\".skill-card[aria-label='Deal notes copy']\")"), 5)
+        menu("Deal notes copy")
+        pick("Delete")
+        check(until(lambda: "no companion can use it" in (js(p, "document.querySelector('[role=alertdialog][data-state=open]')?.innerText") or ""), 5), "Delete asks first")
+        js(p, "[...document.querySelectorAll('[role=alertdialog][data-state=open] button')].find(b => b.innerText.trim() === 'Delete skill')?.click()")
+        check(until(lambda: not copy(), 20), "and then deletes it")
         errors = rpc(p).get("shellErrors") or []
         check(not errors, "No interface errors" + (f": {errors[:1]}" if errors else ""))
     finally:

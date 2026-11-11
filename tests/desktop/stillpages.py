@@ -58,6 +58,9 @@ try:
     check(until(lambda: shown("Chat History"), 5) and tabs() == before, "Still://Chat History does too, in the same new tab")
     go(p, "still://companions")
     check(until(lambda: shown("Companions"), 5), "still://companions opens the companions")
+    for url, label in (("still://skills", "Skills"), ("still://plugins", "Plugins"), ("still://files", "Files"), ("still://library", "Files")):
+        go(p, url)
+        check(until(lambda: shown(label), 5), f"{url} opens {label}")
     go(p, "still://settings")
     check(until(lambda: "Changes save as you make them." in js(p, "document.body.innerText"), 5), "still://settings opens Settings")
     js(p, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true })), 1"); rpc(p, "key", key="Escape"); time.sleep(.6)

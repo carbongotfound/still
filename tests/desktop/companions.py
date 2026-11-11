@@ -99,9 +99,9 @@ def main():
     try:
         home(process)
         shown = text(process)
-        check(js(process, "document.querySelectorAll('.home-rail-item').length") == 5 and js(process, "!!document.querySelector('.mate-switch')")
+        check(js(process, "document.querySelectorAll('.home-rail-item').length") == 6 and js(process, "!!document.querySelector('.mate-switch')")
               and js(process, "document.querySelector('.home-face')?.getBoundingClientRect().width >= 160") and "Try one of these" not in shown
-              and all(w in shown for w in ("Skills", "Companions", "Library", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
+              and all(w in shown for w in ("Skills", "Companions", "Files", "Help")), "The new tab is the chat home: rail, switcher, a big companion and chips; no ideas with nothing to go on (ideas.py)")
         check(js(process, "document.querySelector('.home-compose [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Ask Maya anything, or hand over a task…", "The message box asks the active companion")
 
         # Create a companion: Hire a companion opens the library, then Make your own.
@@ -179,9 +179,9 @@ def main():
         until(lambda: not js(process, "!!document.querySelector('.memory-settings')"), 5)
 
         # A skill: make it, then use it with / in the message box.
-        click(process, ".home-rail-item[aria-label='Skills & plugins']")
-        until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills & plugins']\")"), 5)
-        click_text(process, ".plug-all", "New skill")
+        click(process, ".home-rail-item[aria-label='Skills']")
+        until(lambda: js(process, "!!document.querySelector(\".home-page[aria-label='Skills']\")"), 5)
+        click_text(process, ".skills-page .home-new", "New skill")
         until(lambda: js(process, "!!document.querySelector('.skill-dialog')"), 5)
         type_into(process, ".skill-dialog input[required]", "Trip plan")
         type_into(process, ".skill-dialog input[placeholder^='Lays out']", "Lays out a trip day by day")
@@ -203,7 +203,7 @@ def main():
         prompts = BIN / "prompts.jsonl"
         sent = until(lambda: prompts.exists() and prompts.read_text().strip() and json.loads(prompts.read_text().splitlines()[-1])["prompt"], 30) or ""
         check("SKILL-BODY" in sent and '[Skill "Trip plan"' in sent, "The skill's steps go into the AI's prompt")
-        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "Maya" not in sent, "Ines's memory that fits the message goes into the first prompt, and not Maya's")
+        check("What you remember about the user" in sent and "Lisbon and pay in euros" in sent and "lives in Porto" not in sent, "Ines's memory that fits the message goes into the first prompt, and not Maya's")
         check("peer-reviewed" not in sent, "and one that doesn't fit stays out (recall finds it)")
         check("Calm and precise, always with sources." in sent, "So does how Ines talks")
         check("Your name is Ines" in sent and "cites sources" in sent, "Ines's name and job go into the prompt")
@@ -311,7 +311,7 @@ def screens():
         newtab(p)
         send(p, "skillSave", name="Trip plan", description="Lays out a trip day by day, with costs", when="Planning any trip", body="1. Ask where I'm starting from.")
         send(p, "skillSave", name="Price check", description="Compares three stores and shows a table", when="Shopping", body="1. Find three stores.")
-        click(p, ".home-rail-item[aria-label='Skills & plugins']")
+        click(p, ".home-rail-item[aria-label='Skills']")
     shots(EXE, "newtab", "v03", newtab)
     shots(EXE, "modes", "v01", modes)
     shots(EXE, "companions", "v01", companions)

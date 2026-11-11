@@ -105,7 +105,7 @@ print(json.dumps({"type": "assistant", "message": {"content": [{"type": "text", 
 CHATS = ['chat1', 'chat2', 'chat3', 'chat4']
 MISSED = []
 PAGES = {'': '.home-compose', 'chats': 'section[aria-label="Chat History"]', 'companions': 'section[aria-label="Companions"]',
-         'library': 'section[aria-label="Library"]', 'skills': 'section[aria-label="Skills & plugins"]'}
+         'library': 'section[aria-label="Files"]', 'skills': 'section[aria-label="Skills"]', 'plugins': 'section[aria-label="Plugins"]'}
 
 class Site(http.server.BaseHTTPRequestHandler):
     def do_GET(self):
@@ -196,7 +196,7 @@ def app_tab():
     send('new', url=url + '/page'); wait(lambda: active_tab()['Url'].startswith(url))
     web, count = rpc()['activeId'], len(tabs_now())
     send('appHome', view='library')
-    check(settled(lambda: rpc()['activeId'] == app and at('home:library', 3)) and len(tabs_now()) == count, 'From a web page, Library opens in the Still tab used last')
+    check(settled(lambda: rpc()['activeId'] == app and at('home:library', 3)) and len(tabs_now()) == count, 'From a web page, Files opens in the Still tab used last')
     send('select', id=web); wait(lambda: rpc()['activeId'] == web)
     send('chatOpen', id='chat4')
     check(settled(lambda: rpc()['activeId'] == app and at('chat:chat4', 3)) and len(tabs_now()) == count, 'From a web page, a chat opens in that Still tab too')

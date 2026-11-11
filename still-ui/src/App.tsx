@@ -1,10 +1,10 @@
 import { createContext, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import type { CSSProperties, ReactNode } from "react"
 import { AnimatePresence, LayoutGroup, motion, MotionConfig, useReducedMotion } from "motion/react"
-import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, Bug, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Library, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
+import { Bot, Blocks, Cpu, Palette, SlidersHorizontal, Info, Settings, FileText, Flag, Plug, Sparkles, Users, CircleHelp, Bug, PanelLeftClose, PanelRightClose, PanelRightOpen, ArrowUpRight, ChevronDown, Folder, MessageSquare, SquarePen, Sun, Moon, Monitor, type LucideIcon, ArrowLeft, ArrowRight, RotateCw, Plus, X, Minus, Expand, Search, MoreHorizontal, Settings2, Bookmark, Shield, ShieldOff, BookOpen, Download, History, Pin, PinOff, VolumeX, Copy, MoonStar, EyeOff, ExternalLink, Keyboard, LockKeyhole, ChevronRight, Check, Loader2, Trash2, FolderOpen, Globe2, KeyRound, Puzzle, Cookie, ShieldCheck, Pencil, Square, UsersRound, UserX, Gift, Import, Columns2, FolderPlus, FolderMinus, ArrowLeftRight, SeparatorVertical, PanelLeft, Hand, Link2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { ApiProviders } from "./ApiProviders"
-import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, doing, isRunning, since, useSettled, type AiState } from "./AiSidebar"
+import { AiPanel, AiPicker, ChatView, Composer, RunAnnouncer, RunningTasks, TierSettings, chatOf, clock, companionOf, doing, isRunning, since, useSettled, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, FileViewer, type FileData } from "./Files"
 import { AUTONOMY, AuditList, PermissionsSettings, levelOf, useArmed, type Autonomy } from "./Permissions"
 import { SitePermissions } from "./SitePermissions"
@@ -14,7 +14,7 @@ import { ProfilePanel } from "./ProfilePanel"
 import { MemorySettings } from "./Memory"
 import { CompanionLibrary, CompanionProfile, JoinedCard, SharedReview, fromPremade, premadeOf, tasksFor, type Premade } from "./crew"
 import { PluginKeySetting, PluginStack } from "./Plugins"
-import { ChatHistory, ChatLink, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
+import { ChatHistory, ChatLink, CompanionSwitch, CompanionsPage, HomeRail, LibraryPage, PluginsView, RenameAsk, SkillsPage, randomCompanion, type HomeView } from "./Home"
 import { MascotStage } from "./Mascot"
 import { IntroReplay } from "./Intro"
 import { DEFAULT_LOOK } from "./look"
@@ -91,10 +91,10 @@ const IDEA_LOOKS: Record<HomeIdea["kind"], [LucideIcon, string]> = { project: [F
 const HELP = "https://github.com/carbongotfound/still#readme"
 const BUG = "https://github.com/carbongotfound/still/issues/new?template=bug_report.yml"
 // Still's own pages by address, typed in the address bar: still://chats and so on. A home page, a panel, or Help.
-const STILL_PAGES: [name: string, label: string, home?: HomeView][] = [["new", "New chat", "home"], ["chats", "Chat history", "chats"], ["library", "Library", "library"],
- ["companions", "Companions", "companions"], ["skills", "Skills & plugins", "skills"], ["settings", "Settings"], ["history", "History"], ["bookmarks", "Bookmarks"],
+const STILL_PAGES: [name: string, label: string, home?: HomeView][] = [["new", "New chat", "home"], ["chats", "Chat history", "chats"], ["files", "Files", "library"],
+ ["companions", "Companions", "companions"], ["skills", "Skills", "skills"], ["plugins", "Plugins", "plugins"], ["settings", "Settings"], ["history", "History"], ["bookmarks", "Bookmarks"],
  ["downloads", "Downloads"], ["passwords", "Passwords"], ["profiles", "Profiles"], ["import", "Import"], ["extensions", "Extensions"], ["about", "About Still"], ["help", "Help"]]
-const STILL_ALIASES: Record<string, string> = { "chat-history": "chats", "new-chat": "new", home: "new", plugins: "skills", "skills-and-plugins": "skills" }
+const STILL_ALIASES: Record<string, string> = { "chat-history": "chats", "new-chat": "new", home: "new", "skills-and-plugins": "skills", library: "files" }
 /// The page a still:// address names (any case; spaces read as dashes), "" for an unknown one, undefined for any other address.
 const stillPage = (url: string) => { const m = /^still:\/*(.*?)\/*$/i.exec(url.trim()); if (!m) return undefined; const name = m[1].toLowerCase().replace(/[\s_]+/g, "-"); return STILL_PAGES.find(p => p[0] === (STILL_ALIASES[name] ?? name)) ?? null }
 const greeting = () => { const h = new Date().getHours(); return h < 5 ? "Hello, night owl" : h < 12 ? "Good morning" : h < 18 ? "Good afternoon" : "Good evening" }
@@ -390,7 +390,7 @@ export default function App() {
  const [context, setContext] = useState(false)
  const [snapshot, setSnapshot] = useState("")
  const [pairShot, setPairShot] = useState("") // split view: the other half, while a menu covers the pages
- const [viewing, setViewing] = useState("") // a Library file open in the viewer
+ const [viewing, setViewing] = useState("") // a saved file (the Files page) open in the viewer
  const [tasksOpen, setTasksOpen] = useState(false)
  const [fileData, setFileData] = useState<FileData | null>(null)
  const [upload, setUpload] = useState<Upload | null>(null)
@@ -425,6 +425,18 @@ export default function App() {
  const view = active?.home || "home"
  const goHome = (v: HomeView) => send("appHome", { view: v })
  const setView = goHome
+ // Run skill: the new chat page, with /its-id in the box (what was there goes; Ctrl+Z brings it back) and a companion who can use it.
+ const runSkill = (k: Skill) => {
+  if (k.only?.length && !k.only.includes(companion?.id ?? "")) setBuddy(k.only[0])
+  goHome("home")
+  let tries = 0
+  const put = () => {
+   const box = document.querySelector<HTMLElement>(".home-compose [aria-label=Message]")
+   if (!box) { if (++tries < 60) setTimeout(put, 50); return }
+   box.focus(); document.execCommand("selectAll"); document.execCommand("insertText", false, `/${k.id} `)
+  }
+  put()
+ }
  const mine = ai?.incognito ? { ...ai, chats: ai.privateChats ?? [] } : ai // an incognito window lists only its own chats
  const role = premadeOf(companion), plugins = ai?.plugins
  const ideas = !companion ? [] : homeIdeas({ name: companion.name, role: role?.role, asks: role?.asks, fits: tasksFor(state.preferences.interests), uses: role?.uses, memory: companion.memory, activeId: active?.id, tabs: state.tabs,
@@ -753,7 +765,9 @@ export default function App() {
       <nav className="sidebar-links" aria-label="Go to">
        <Button variant="ghost" className="sidebar-link" onClick={() => send("new")}><Plus /><span>New tab</span><kbd>{keys("Ctrl T")}</kbd></Button>
        {ai && !state.noAi && <><Button variant="ghost" className="sidebar-link" onClick={() => goHome("chats")}><MessageSquare /><span>Chat history</span></Button>
-       <Button variant="ghost" className="sidebar-link" onClick={() => goHome("library")}><Library /><span>Library</span></Button></>}
+       <Button variant="ghost" className="sidebar-link" onClick={() => goHome("skills")}><BookOpen /><span>Skills</span></Button>
+       <Button variant="ghost" className="sidebar-link" onClick={() => goHome("plugins")}><Blocks /><span>Plugins</span></Button>
+       <Button variant="ghost" className="sidebar-link" onClick={() => goHome("library")}><Folder /><span>Files</span></Button></>}
       </nav>
       {ordinary.some(t => t.chatId) && <><h3 className="sidebar-head">Chats</h3><div className="tab-list"><FlowTabs tabs={ordinary.filter(t => t.chatId)} /></div></>}
       <h3 className="sidebar-head">Tabs</h3>
@@ -832,7 +846,8 @@ export default function App() {
        <div className="home-main">
         {view === "chats" ? <ChatHistory ai={mine!} send={send} onNew={() => setView("home")} />
          : view === "companions" ? <CompanionsPage ai={ai} send={send} onEdit={edit} onMake={() => setDraft(randomCompanion())} onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} onHire={hire} onMemory={id => { setMemoryFor(id); open("settings", "companions") }} />
-         : view === "skills" ? <SkillsPage ai={ai} send={send} />
+         : view === "skills" ? <SkillsPage ai={ai} send={send} onRun={runSkill} />
+         : view === "plugins" ? <PluginsView ai={ai} send={send} />
          : view === "library" ? <LibraryPage ai={ai} send={send} onOpen={openFile} />
          : <>
           <div className="home-top">
@@ -845,11 +860,11 @@ export default function App() {
             placeholder={`Ask ${companion.name} anything, or hand over a task…`}
             onSubmit={(text, tabs, files, draft) => { send("aiSend", { text, home: true, companion: companion.id, draft, ...(tabs.length && { tabs }), ...(files.length && { files }) }) }} /></div>
            <div className="home-chips">
-            <button onClick={() => setView("skills")}><BookOpen />Skills & plugins</button>
+            <button onClick={() => setView("skills")}><BookOpen />Skills</button>
             <button onClick={() => setView("companions")}><Users />Companions</button>
-            <button onClick={() => setView("library")}><Library />Library</button>
+            <button onClick={() => setView("library")}><Folder />Files</button>
             <button onClick={() => send("new", { url: HELP })}><CircleHelp />Help</button>
-            <PluginStack plugins={ai?.plugins} send={send} onOpen={() => setView("skills")} />
+            <PluginStack plugins={ai?.plugins} send={send} onOpen={() => setView("plugins")} />
            </div>
            {!state.welcome && !state.secondary && <GetStarted isDefault={state.preferences.isDefaultBrowser} layout={state.preferences.tabLayout} send={send} onImport={() => open("import")} />}
            {ideas.length > 0 && <div className="home-ideas"><h2>Try one of these</h2><div>{ideas.map(({ kind, label, why, prompt }) => { const [Icon, color] = IDEA_LOOKS[kind]
@@ -1024,7 +1039,7 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
        </SetCard>
       </>}
       {settingsPage === "skills" && hasAi && <SetCard title="Skills & plugins">
-       <SetRow id="skills" title="Skills & plugins" help="Your apps, like Gmail and Slack, are with your skills: connect apps and pick which companion can use each."><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills & plugins</Button></SetRow>
+       <SetRow id="skills" title="Skills & plugins" help="Skills are instructions every companion can use. Plugins are your apps, like Gmail and Slack: connect them and pick which companion can use each."><div className="set-buttons"><Button size="sm" variant="outline" onClick={() => { close(); goHome("skills") }}>Open Skills</Button><Button size="sm" variant="outline" onClick={() => { close(); goHome("plugins") }}>Open Plugins</Button></div></SetRow>
        <PluginKeySetting plugins={ai?.plugins} send={send} />
       </SetCard>}
       {settingsPage === "privacy" && <>
@@ -1079,14 +1094,14 @@ The first call waits for me to approve you in Still. Private tabs, passwords and
   {upload && <UploadCard upload={upload} send={send} />}
   {viewing && !sideViewer && <Dialog open onOpenChange={o => { if (!o) setViewing("") }}><DialogContent className="app-dialog file-dialog" aria-describedby={undefined}><DialogTitle className="sr-only">File</DialogTitle><FileViewer path={viewing} data={fileData} send={send} onClose={() => setViewing("")} onLink={url => send("new", { url })} /></DialogContent></Dialog>}
   {oldName && !draft && <RenameAsk key={oldName.id} companion={oldName} onSave={c => send("companionSave", c)} />}
-  {profile && ai && <ProfilePanel ai={ai} id={profile} tab={profileTab} send={send} onPick={setProfile} onClose={closeProfile} onOpenFile={path => { closeProfile(); openFile(path) }} onSkills={() => { closeProfile(); goHome("skills") }}
+  {profile && ai && <ProfilePanel ai={ai} id={profile} tab={profileTab} send={send} onPick={setProfile} onClose={closeProfile} onOpenFile={path => { closeProfile(); openFile(path) }} onSkills={(to = "skills") => { closeProfile(); goHome(to) }}
    onChat={id => { setBuddy(id); send("aiKickoff", { companion: id, home: true }) }} />}
   {library && ai && <CompanionLibrary have={ai.companions} onClose={() => setLibrary(false)} onProfile={p => { setLibrary(false); setMeeting(p) }} onAdd={p => hire(fromPremade(p))}
    onOwn={() => { setLibrary(false); setDraft(randomCompanion()) }} onPaste={c => { setLibrary(false); setShared(c) }} />}
   {shared && <SharedReview companion={shared} onClose={() => setShared(null)} onHire={() => { hire(shared); setShared(null) }} />}
   {meeting && ai && <CompanionProfile key={meeting.id} p={meeting} hired={!!ai.companions?.some(c => premadeOf(c) === meeting)} onClose={() => { setMeeting(null); setLibrary(true) }}
    onHire={() => { hire(fromPremade(meeting)); setMeeting(null); setLibrary(true) }} />}
-  {draft && ai && <ProfilePanel ai={ai} id="" draft={draft} send={send} onPick={setProfile} onClose={() => setDraft(null)} onOpenFile={openFile} onSkills={() => { setDraft(null); goHome("skills") }} onHire={c => { hire(c); setDraft(null) }} />}
+  {draft && ai && <ProfilePanel ai={ai} id="" draft={draft} send={send} onPick={setProfile} onClose={() => setDraft(null)} onOpenFile={openFile} onSkills={(to = "skills") => { setDraft(null); goHome(to) }} onHire={c => { hire(c); setDraft(null) }} />}
   {joined && <JoinedCard companion={joined} main={ai?.companions?.[0]?.id === joined.id} onMain={() => send("companionMain", { id: joined.id })} onLater={() => setJoined(null)}
    onStart={() => { setJoined(null); setLibrary(false); chatWith(joined.id) }} />}
   {replay && <IntroReplay look={ai?.companions?.[0] ? lookOf(ai.companions[0]) : DEFAULT_LOOK} sound={sounds} onSound={on => preference("sounds", String(on))} onDone={() => setReplay(false)} />}
@@ -1133,7 +1148,9 @@ function ChatSide({ ai, state, activeChat, open, setOpen, split, onEdit, onSetti
    <button onClick={() => goHome("home")}><SquarePen />New Chat</button>
    <button onClick={() => goHome("chats")}><MessageSquare />Chat History</button>
    <button onClick={() => goHome("companions")}><Users />Companions</button>
-   <button onClick={() => goHome("library")}><Library />Library</button>
+   <button onClick={() => goHome("skills")}><BookOpen />Skills</button>
+   <button onClick={() => goHome("plugins")}><Blocks />Plugins</button>
+   <button onClick={() => goHome("library")}><Folder />Files</button>
   </div>
   <h3>Recent chats</h3>
   <ScrollArea className="chat-side-list">
