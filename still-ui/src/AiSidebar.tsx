@@ -336,29 +336,45 @@ function useOverBox<T extends HTMLElement>(align: "start" | "end") {
  }
  return { ref, measure, props: { side: "top" as const, align, alignOffset: at.offset, sideOffset: 8 + at.lift, style: at.width ? { width: at.width } : undefined } }
 }
+// The mode menu opens above the whole box with a small gap, its right edge on its pill's, kept 8 px inside the chat panel
+// or the page column (so never over the tabs or the address bar). It never flips down: with no room it scrolls inside.
+const MODE_MENU_W = 280
+function useOverPill() {
+ const ref = useRef<HTMLButtonElement>(null)
+ const [at, setAt] = useState<{ boundary?: Element; offset: number; lift: number; width: number }>({ offset: 0, lift: 0, width: MODE_MENU_W })
+ const measure = (open: boolean) => {
+  const pill = ref.current?.getBoundingClientRect(), box = ref.current?.closest(".composer")?.getBoundingClientRect()
+  const boundary = ref.current?.closest(".ai-sidebar, .page-column") ?? undefined, b = boundary?.getBoundingClientRect()
+  if (!open || !pill || !box || !b) return
+  const width = Math.min(MODE_MENU_W, b.width - 16), right = Math.max(Math.min(pill.right, b.right - 8), b.left + 8 + width)
+  setAt({ boundary, offset: pill.right - right, lift: pill.top - box.top, width })
+ }
+ return { ref, measure, props: { side: "top" as const, align: "end" as const, alignOffset: at.offset, sideOffset: 8 + at.lift, avoidCollisions: false, collisionBoundary: at.boundary, style: { width: at.width } } }
+}
 function ModeMenu({ ai, send, companion, onCompanion, disabled }: { ai: AiState; send: Send; companion?: Companion; onCompanion?: (id: string) => void; disabled?: boolean }) {
  const [find, setFind] = useState("")
- const over = useOverBox<HTMLButtonElement>("end")
+ const over = useOverPill()
  const mode = companion?.mode ?? "default", autonomy = levelOf(companion)
  const mates = (ai.companions ?? []).filter(c => c.name.toLowerCase().includes(find.trim().toLowerCase()))
  return <DropdownMenu onOpenChange={o => { over.measure(o); if (!o) setFind("") }}>
   <DropdownMenuTrigger asChild disabled={disabled}><button type="button" ref={over.ref} className="mode-chip" aria-label="Companion and mode"><Face companion={companion} size={20} /><span>{ai.advanced ? "Advanced" : MODES.find(m => m[0] === mode)?.[1]}</span><ChevronDown /></button></DropdownMenuTrigger>
   <DropdownMenuContent {...over.props} className="mode-menu">
    {onCompanion && <>
-    <input className="mode-find" aria-label="Find a companion" placeholder="Find a companion…" value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} />
+    <label className="mode-find-row"><Search className="mode-icon" /><input className="mode-find" aria-label="Find a companion" placeholder="Find a companion…" value={find} onChange={e => setFind(e.target.value)} onKeyDown={e => e.stopPropagation()} /></label>
     <div className="mode-mates">{mates.map(c => <DropdownMenuItem key={c.id} onSelect={() => onCompanion(c.id)}><Face companion={c} size={22} />{c.name}{c.id === companion?.id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}</div>
     {!mates.length && <p className="mode-none">No one by that name.</p>}
     <DropdownMenuSeparator />
    </>}
-   {MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion || ai.advanced} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
-    <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{!ai.advanced && mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
-   <DropdownMenuLabel className="mode-advanced"><span>Advanced</span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
+   <DropdownMenuLabel className="mode-label">Mode</DropdownMenuLabel>
+   {!ai.advanced && MODES.map(([id, label, Icon, about]) => <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionMode", { id: companion.id, mode: id }) }}>
+    <Icon className="mode-icon" /><span className="mode-text">{label}<small>{about}</small></span>{mode === id && <CircleCheck className="mode-check" />}</DropdownMenuItem>)}
+   <DropdownMenuLabel className="mode-advanced"><Settings2 className="mode-icon" /><span className="mode-text">Advanced<small>Pick the model and effort yourself</small></span><Switch checked={!!ai.advanced} aria-label="Pick the model and effort yourself" onCheckedChange={on => send("aiAdvanced", { on })} /></DropdownMenuLabel>
    <DropdownMenuSeparator />
    <DropdownMenuLabel className="mode-label">{companion ? "Autonomy for " + companion.name : "Autonomy"}</DropdownMenuLabel>
    {(Object.keys(AUTONOMY) as Autonomy[]).map(id => { const Icon = AUTONOMY_ICON[id]; return <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionAutonomy", { id: companion.id, level: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{AUTONOMY[id].name}<small>{AUTONOMY[id].short}</small></span>{companion && autonomy === id && <CircleCheck className="mode-check" />}</DropdownMenuItem> })}
    <DropdownMenuSeparator />
-   <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal />Model settings…</DropdownMenuItem>
+   <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal className="mode-icon" />Model settings…</DropdownMenuItem>
   </DropdownMenuContent>
  </DropdownMenu>
 }

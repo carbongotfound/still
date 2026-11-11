@@ -1,6 +1,7 @@
 """Every menu, picker and tooltip in the chat panel stays inside the window and the panel, 8 px in from their edges.
 Each one is opened with the panel 320, 400, 480 and 600 px wide, in a maximized window and in a snapped-half one, in
-light and dark. The mode menu also has to open upward from its chip, line up with the message box's right edge and
+light and dark. The mode menu also has to open upward above the box, its right edge on its pill's (or held 8 px inside the
+panel) and
 keep each mode's line inline (no side card). A fake agent app stands in for the AI, so no plan is used.
 
 Run: python tests/desktop/popovers.py artifacts/Still-QA/Still.exe [--shots DIR]
@@ -113,7 +114,10 @@ def tip(process, name, trigger):
 def mode_menu(process, fresh, shot=None):
     box = menu(process, "Mode menu" + (" with companions" if fresh else ""), ".ai-sidebar .mode-chip", ".mode-menu")
     if box:
-        above(process, "Mode menu", box, "r")
+        pill = js(process, "(() => { const p = document.querySelector('.ai-sidebar .mode-chip').getBoundingClientRect(), b = document.querySelector('.ai-sidebar .composer').getBoundingClientRect(); return { r: p.right, t: b.top } })()")
+        held = box["r"] >= min(box["pr"], box["w"]) - PAD - .5 or box["l"] <= max(box["pl"], 0) + PAD + .5
+        check(box["b"] <= pill["t"] and (abs(box["r"] - pill["r"]) <= 1 or held),
+              f"Mode menu opens above the message box, its right edge on its pill's or held inside the panel (bottom {box['b']:.0f} vs {pill['t']:.0f}, edge {box['r']:.0f} vs {pill['r']:.0f})")
         # Three modes, then the three Autonomy levels, each with its line inline.
         check(js(process, "(i => i.length === 6 && i.every(e => e.querySelector('small')))([...document.querySelectorAll('.mode-menu .mode-item')])")
               and not js(process, "!!document.querySelector('.mode-card, [data-slot=tooltip-content]:not([data-state=closed])')"), "Mode menu: each mode's line is inline, no side card")

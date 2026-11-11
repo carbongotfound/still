@@ -955,19 +955,29 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .folder-chip { display:flex; align-items:center; gap:5px; min-width:0; max-width:180px; height:26px; padding:0 9px 0 7px; border-radius:999px; color:var(--muted-foreground); font-size:12px; font-weight:500; transition:background .15s, color .15s; }
 .folder-chip:hover { background:var(--muted); color:var(--foreground); } .folder-chip:disabled { opacity:.5; }
 .folder-chip > svg { width:13px; height:13px; flex:none; } .folder-chip > span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.mode-menu[data-slot=dropdown-menu-content] { width:272px; padding:6px; border-radius:14px; }
-.mode-menu [data-slot=dropdown-menu-item] { height:38px; gap:10px; border-radius:10px; font-size:14px; }
-.mode-find { width:100%; height:36px; padding:0 10px; margin-bottom:2px; border:0; outline:0; background:none; font-size:13.5px; color:var(--foreground); }
+/* The mode menu: one row style everywhere (40 px or taller, 10 px in, a 22 px icon column, the check in one column at the
+   right). Rows never squeeze to fit: the menu scrolls inside itself instead, so nothing overlaps or clips. */
+.mode-menu[data-slot=dropdown-menu-content] { display:flex; flex-direction:column; padding:6px; border-radius:14px; }
+.mode-menu[data-slot=dropdown-menu-content] > * { flex:none; }
+.mode-menu [data-slot=dropdown-menu-item] { min-height:40px; padding:7px 10px; gap:10px; border-radius:10px; font-size:14px; line-height:1.3; }
+.mode-menu [data-slot=dropdown-menu-separator] { margin:6px -6px; }
+.mode-find-row { display:flex; align-items:center; gap:10px; padding:0 10px; }
+.mode-find { flex:1; min-width:0; height:40px; padding:0; border:0; outline:0; background:none; font-size:14px; color:var(--foreground); }
 .mode-find::placeholder { color:var(--muted-foreground); }
-.mode-check { margin-left:auto; width:17px !important; height:17px !important; color:var(--card) !important; fill:var(--foreground); }
-.mode-icon { width:16px !important; height:16px !important; color:var(--foreground) !important; }
-.mode-menu .mode-item[data-slot=dropdown-menu-item] { height:auto; padding-block:7px; }
-.mode-mates { max-height:171px; overflow-y:auto; } /* four and a half companions: the half shows there are more */
-[data-slot=dropdown-menu-content], [data-slot=context-menu-content], [data-slot=select-content], .mode-mates { scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }
-.mode-text { display:flex; flex-direction:column; gap:1px; } .mode-text small { font-size:11.5px; line-height:1.35; color:var(--muted-foreground); }
+.mode-check { flex:none; margin-left:auto; width:17px !important; height:17px !important; color:var(--card) !important; fill:var(--foreground); }
+.mode-icon { width:16px !important; height:16px !important; margin-inline:3px; color:var(--foreground) !important; }
+.mode-settings .mode-icon { color:var(--muted-foreground) !important; }
+/* Six companions before it scrolls. Its bar sits in the menu's right padding (always there, a thumb only when there's
+   more), so its rows are as wide as the rest and every check stays in one column. */
+.mode-mates { max-height:240px; overflow-y:scroll; margin-right:-6px; }
+.mode-mates::-webkit-scrollbar { width:6px; } .mode-mates::-webkit-scrollbar-track { background:none; }
+.mode-mates::-webkit-scrollbar-thumb { border-radius:3px; background:color-mix(in oklab,var(--foreground) 18%,transparent); }
+[data-slot=dropdown-menu-content], [data-slot=context-menu-content], [data-slot=select-content] { scrollbar-width:thin; scrollbar-color:color-mix(in oklab,var(--foreground) 18%,transparent) transparent; }
+.mode-text { flex:1; min-width:0; display:flex; flex-direction:column; gap:2px; } .mode-text small { font-size:12px; line-height:1.35; color:var(--muted-foreground); }
 .mode-none { padding:6px 10px 8px; font-size:12.5px; color:var(--muted-foreground); }
-.mode-label { padding:10px 8px 4px !important; font-weight:450 !important; color:var(--muted-foreground); }
-.mode-advanced { display:flex; align-items:center; justify-content:space-between; padding:10px 8px 6px !important; font-weight:450 !important; color:var(--muted-foreground); }
+.mode-label { display:flex; align-items:center; min-height:30px; padding:6px 10px 2px !important; font-size:12px !important; font-weight:500 !important; color:var(--muted-foreground); }
+.mode-advanced { display:flex; align-items:center; gap:10px; min-height:40px; padding:7px 10px !important; font-size:14px !important; font-weight:400 !important; line-height:1.3; color:var(--foreground) !important; }
+.mode-advanced [data-slot=switch] { flex:none; margin-left:auto; }
 
 /* Skills in the message box: "/" opens a list, a picked skill shows as a chip */
 .composer-add[data-slot] { color:var(--muted-foreground); } .composer-add[data-slot]:hover { color:var(--foreground); }
@@ -1778,9 +1788,7 @@ html.is-waiting #root { opacity:0; } /* not visibility: what mounts with the fir
 .profile-key { display:flex; align-items:center; gap:8px; font-size:13px; } .profile-key > svg { width:16px; height:16px; color:var(--muted-foreground); } .profile-key > span { flex:1; min-width:0; } .profile-key code { font-size:12px; }
 .profile-field .tiers { margin:0; }
 .ai-pick-foot { flex:none; padding:0 4px 4px; } .ai-pick-foot [data-slot=select-separator] { margin:0 -4px 4px; }
-/* The mode menu fits above the box: its list of companions gives up room first, so Advanced and AI settings… stay in view */
-.mode-menu[data-slot=dropdown-menu-content] { display:flex; flex-direction:column; } .mode-mates { min-height:80px; }
-.ai-pick-settings, .mode-settings { color:var(--muted-foreground); } .ai-pick-settings svg, .mode-settings svg { width:15px; height:15px; }
+.ai-pick-settings, .mode-settings { color:var(--muted-foreground); } .ai-pick-settings svg { width:15px; height:15px; }
 /* Make your own: the generator under Instructions, and Hire at the bottom of the panel. */
 .profile-suggest { display:flex; flex-direction:column; align-items:flex-start; gap:6px; margin-top:-8px; }
 .profile-draft-title { font-size:15px; font-weight:600; }
