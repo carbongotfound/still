@@ -626,7 +626,7 @@ public partial class MainWindow
     if (files.Count > 0) asked += FilesNote(files);
     if (target != null && runs.TryGetValue(target.Id, out var working)) { working.Queue.Add(new(typed, text, asked, files)); Sent(true); break; }
     if (active?.ChatId != null || B("home")) aiChat = target;
-    var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files, folder: target == null ? nextFolder : null);
+    var run = RunAi(target, asked, text, into: B("home") || active?.ChatId != null ? active : null, companion: S("companion"), noMemory: B("noMemory"), files: files, startFolder: target == null ? nextFolder : null);
     if (target == null) nextFolder = null;
     Sent(true); // by now the chat has the message (or holds it until an AI app is set up)
     await run;
@@ -1095,11 +1095,11 @@ public partial class MainWindow
 
  /// into: the tab that becomes this chat's tab when the message starts a new chat (chat is null). asker: the teammate
  /// whose message this is, when one companion asks another (Exchange).
- async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null, bool routine = false, string? folder = null)
+ async Task RunAi(AiChat? chat, string text, string? shown = null, BrowserTab? into = null, string companion = "", bool noMemory = false, string? asker = null, List<AiFile>? files = null, bool routine = false, string? startFolder = null)
  {
   if (chat == null) {
    var with = Companions.FirstOrDefault(c => c.Id == companion) ?? Companions.FirstOrDefault();
-   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", Folder = folder, NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito), Routine = routine }; // a private window remembers nothing
+   chat = aiChat = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = (shown ?? text).ReplaceLineEndings(" ") is var t && t.Length > 60 ? t[..60] + "…" : t, Companion = with?.Id ?? "", Folder = startFolder, NoMemory = noMemory || incognito, Ephemeral = incognito, Profile = NewChatProfile(incognito), Routine = routine }; // a private window remembers nothing
    MyChats.Insert(0, chat); SaveAiChats();
    if (into is { Closed: false }) { if (into.ChatId != chat.Id) { into.Back.Add(Spot(into)); into.Forward.Clear(); } into.ChatId = chat.Id; into.Home = ""; into.Title = chat.Title; SaveLater(); }
    if (asker == null) _ = NameChat(chat, shown ?? text);
