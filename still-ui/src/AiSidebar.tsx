@@ -963,20 +963,28 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  const now = useSettled(doing(run?.tool, run?.target), 600) // what it's doing right now, as the page pill says it
  const [typing, setTyping] = useState(false)
  const mood = useRunMood(ai, typing)
- const back = useRef(ai.chatId ? scrolls.get(ai.chatId) : undefined) // coming back to this chat: where the user left it
- useLayoutEffect(() => {
-  const el = log.current; if (!el) return
-  if (back.current != null) { el.scrollTop = back.current; back.current = undefined }
-  else if (pinned.current || (ai.messages.at(-1)?.role === "user" && !ai.messages.at(-1)?.who)) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }) // not while the user reads further up, unless they just sent
- }, [(ai.messagesFrom ?? 0) + ai.messages.length, busy, !!ai.question])
  const pinned = useRef(true), lastTop = useRef(0) // the user is at the bottom of the chat (scrolling down, as a smooth scroll there does, keeps it so)
  const anchor = useRef<{ row: Element; top: number } | undefined>(undefined) // the row the user is reading, and where it sits in the view
+ // Opening a chat (the side panel keeps one view from chat to chat): where the user scrolled up to in it, or else its
+ // end, where a running chat's live step is. Then the end stays in view as it grows, unless the user reads further up.
+ const opened = useRef<string | undefined>(undefined)
+ useLayoutEffect(() => {
+  const el = log.current; if (!el) return
+  if (opened.current !== (ai.chatId ?? "")) {
+   if (!ai.messages.length) return
+   const back = ai.chatId ? scrolls.get(ai.chatId) : undefined
+   opened.current = ai.chatId ?? ""; anchor.current = undefined
+   el.scrollTop = back ?? el.scrollHeight; pinned.current = back == null; lastTop.current = el.scrollTop
+  }
+  else if (pinned.current || (ai.messages.at(-1)?.role === "user" && !ai.messages.at(-1)?.who)) el.scrollTo({ top: el.scrollHeight, behavior: "smooth" }) // not while the user reads further up, unless they just sent
+ }, [ai.chatId, (ai.messagesFrom ?? 0) + ai.messages.length, busy, !!ai.question])
  const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
   fadeTop(e); const el = e.currentTarget
   pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8 || (pinned.current && el.scrollTop >= lastTop.current); lastTop.current = el.scrollTop
   const view = el.getBoundingClientRect().top, row = [...el.firstElementChild?.children ?? []].find(r => r.getBoundingClientRect().bottom > view)
   anchor.current = row && { row, top: row.getBoundingClientRect().top - view }
-  if (ai.chatId) { if (el.scrollHeight - el.scrollTop - el.clientHeight < 8) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
+  // Kept only where the user scrolled up to: the chat's own scrolling (to its end, smooth or not) never leaves it unpinned.
+  if (ai.chatId && opened.current === ai.chatId) { if (pinned.current) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
  }
  // Reading further up while steps come in, the row being read stays put though rows above it change (a long chat drops
  // its oldest ones): WebKit doesn't do this by itself, and where the browser already did, there's nothing left to move.
