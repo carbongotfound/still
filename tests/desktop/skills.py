@@ -562,6 +562,8 @@ def main():
         lit = until(lambda: js(p, "document.querySelector('#set-autonomy-jonah')?.classList.contains('set-flash')"), 10)
         said = until(offer, 5) or ""
         check(lit and said.startswith("Set Jonah to Ask more?"), f"A settings link opens that setting, lit up, and offers the change ({said!r})")
+        time.sleep(1)  # the list has scrolled to the row
+        check(js(p, "document.querySelector('.settings-dialog').scrollTop") == 0, "...scrolling only the list, so the dialog keeps its title in view")
         time.sleep(.5)
         rpc(p, "capture", name="skills-setlink.png")
         js(p, "[...document.querySelectorAll('.set-offer button')].find(b => b.innerText.trim() === 'Change it').click()")

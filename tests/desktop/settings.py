@@ -58,8 +58,8 @@ def search(p, words):
 
 
 def lit(p, row):
-    """The row a search jumped to: lit up, and on screen."""
-    return until(lambda: js(p, f"(() => {{ const r = document.getElementById({json.dumps('set-' + row)}); if (!r?.classList.contains('set-flash')) return false; const b = r.getBoundingClientRect(), m = document.querySelector('.set-main').getBoundingClientRect(); return b.top >= m.top - 1 && b.bottom <= m.bottom + 1 }})()"), 3)
+    """The row a search jumped to: lit up, and on screen, with the dialog itself left where it was (its title in view)."""
+    return until(lambda: js(p, f"(() => {{ const r = document.getElementById({json.dumps('set-' + row)}); if (!r?.classList.contains('set-flash')) return false; const b = r.getBoundingClientRect(), m = document.querySelector('.set-main').getBoundingClientRect(); return b.top >= m.top - 1 && b.bottom <= m.bottom + 1 && !document.querySelector('.settings-dialog').scrollTop }})()"), 3)
 
 
 def escape(p):

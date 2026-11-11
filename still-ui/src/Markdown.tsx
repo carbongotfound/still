@@ -23,7 +23,8 @@ function inline(text: string, onLink: Link, key = ""): ReactNode[] {
   else {
    const [label, url] = m[5] ? [t.slice(1, t.indexOf("](")), t.slice(t.indexOf("](") + 2, -1)] : [t, t]
    const setting = url.startsWith("still:")
-   out.push(<a key={k} href={url} title={setting ? "Opens in Settings" : url} className={setting ? "md-setting" : undefined} onClick={e => { e.preventDefault(); onLink(url) }}>{setting && <Settings2 />}{m[5] ? inline(label, onLink, k) : label}</a>)
+   const lead = setting ? /^\S*/.exec(label)![0] : "", md = (s: string, at: string) => m[5] ? inline(s, onLink, at) : s // the icon wraps with the first word, never alone
+   out.push(<a key={k} href={url} title={setting ? "Opens in Settings" : url} className={setting ? "md-setting" : undefined} onClick={e => { e.preventDefault(); onLink(url) }}>{setting && <span className="md-lead"><Settings2 />{md(lead, k + "a")}</span>}{md(label.slice(lead.length), k)}</a>)
   }
   last = m.index + t.length
  }

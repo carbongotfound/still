@@ -121,7 +121,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .set-main { overflow-y:auto; scrollbar-width:thin; padding:22px 28px 32px; display:flex; flex-direction:column; gap:22px; }
 .set-offer { position:sticky; top:0; z-index:2; display:flex; align-items:center; gap:8px; margin:12px 0 0; padding:8px 8px 8px 12px; border-radius:10px; border:1px solid color-mix(in oklab,var(--primary) 30%,var(--border)); background:color-mix(in oklab,var(--primary) 6%,var(--background)); font-size:13px; }
 .set-offer > svg { width:15px; height:15px; color:var(--primary); flex:none; } .set-offer > span { flex:1; min-width:0; }
-.md-setting > svg { width:.95em; height:.95em; margin-right:3px; vertical-align:-.12em; }
+.md-setting svg { display:inline; width:.95em; height:.95em; margin-right:3px; vertical-align:-.12em; }
+.md-lead { white-space:nowrap; }
 .set-title { margin:0; font-size:22px; font-weight:600; letter-spacing:-.02em; line-height:1.25; }
 .set-group h3 { margin:0 0 8px 2px; font:600 10.5px var(--font-ui); letter-spacing:.07em; text-transform:uppercase; color:var(--muted-foreground); }
 .set-card { border:1px solid var(--border); border-radius:14px; background:var(--card); overflow:hidden; }
@@ -1176,6 +1177,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .audit-list b { font-weight:500; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; } .audit-list small { color:var(--muted-foreground); font-size:11.5px; }
 .perm-settings { display:flex; flex-direction:column; gap:12px; }
 .perm-level strong { display:flex; align-items:center; gap:8px; }
+.perm-level.set-flash { margin-inline:-12px; padding-inline:12px; } /* the lit bar sits clear of the face, and nothing moves */
 .perm-table { width:100%; border-collapse:collapse; font-size:12.5px; }
 .perm-table th { padding:0 6px 6px; text-align:left; font-weight:500; color:var(--muted-foreground); border-bottom:1px solid var(--border); }
 .perm-table td { padding:5px 6px; border-bottom:1px solid var(--border); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:140px; }

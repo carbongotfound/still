@@ -354,7 +354,8 @@ export default function App() {
   const go = () => {
    const row = document.getElementById("set-" + flash)
    if (!row) { t = window.setTimeout(() => tries++ < 20 ? go() : setFlash(""), 100); return }
-   row.scrollIntoView({ block: "center", behavior: reduced ? "auto" : "smooth" }); row.classList.add("set-flash")
+   const main = row.closest(".set-main"), r = row.getBoundingClientRect(), m = main?.getBoundingClientRect() // scroll only the settings list: scrollIntoView also scrolled the dialog under its title
+   main?.scrollBy({ top: r.top - m!.top - (m!.height - r.height) / 2, behavior: reduced ? "auto" : "smooth" }); row.classList.add("set-flash")
    t = window.setTimeout(() => { row.classList.remove("set-flash"); setFlash("") }, 1600)
   }
   go()
