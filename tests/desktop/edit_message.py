@@ -107,6 +107,14 @@ def running(p):
     return js(p, "document.querySelector('.tasks-button')?.getAttribute('aria-label')?.match(/[1-9]\\d* running/) != null")
 
 
+def shot(p, name):
+    """The window as it is, saved to --shots when given."""
+    rpc(p, "capture", name=name)
+    if SHOTS:
+        SHOTS.mkdir(parents=True, exist_ok=True)
+        shutil.copy(PROFILE / name, SHOTS / name)
+
+
 def idle(p, seconds=60):
     return until(lambda: not running(p), seconds)
 
@@ -164,10 +172,7 @@ def fake_run(p, port):
         js(p, f"(b => {{ b.focus(); b.dispatchEvent(new PointerEvent('pointermove', {{ bubbles: true, pointerType: 'mouse' }})) }})([...document.querySelectorAll('.ai-msg.is-user:not(.is-teammate) [aria-label=\"{label}\"]')].at(-1))")
         tips.append(until(lambda: js(p, "[...document.querySelectorAll('[data-slot=tooltip-content]')].filter(e => e.dataset.state !== 'closed').map(e => e.innerText.trim()).pop() || ''"), 3) or "")
         if label == "Edit message":
-            rpc(p, "capture", name="message-actions.png")
-            if SHOTS:
-                SHOTS.mkdir(parents=True, exist_ok=True)
-                shutil.copy(PROFILE / "message-actions.png", SHOTS / "message-actions.png")
+            shot(p, "message-actions.png")
         js(p, "document.activeElement?.blur()")
         time.sleep(.4)
     check(tips[0].startswith("Copy") and tips[1].startswith("Edit") and tips[2].startswith("Reset"), f"...each with a tooltip ({tips})")
@@ -279,6 +284,57 @@ def fake_run(p, port):
     time.sleep(1)
     check(len(prompts()) == runs and not any("WORDBAD" in t for t in said(p)), "An earlier message can't be edited, whatever asks")
 
+    # Resend runs on the model and effort picked now, not the ones it was sent with, and the reply says which.
+    def used():
+        return js(p, "[...document.querySelectorAll('.ai-turn > .ai-actions')].pop()?.querySelector('.ai-used')?.innerText ?? ''")
+    def given():
+        a = prompts()[-1]["args"]
+        return [a[a.index(k) + 1] if k in a else "" for k in ("--model", "--effort")]
+    send(p, "aiAdvanced", on=True)
+    send(p, "aiModel", harness="fake", model="fast-1", effort="low")
+    time.sleep(.5)
+    send(p, "aiSend", text="WORDTWELVE on the fast one")
+    check(until(lambda: any("Answered WORDTWELVE" in t for t in said(p)), 30), "A message on fast-1 with low effort gets its reply")
+    idle(p)
+    check(given() == ["fast-1", "low"], f"...the AI was given fast-1 and low ({given()})")
+    check(until(lambda: used() == "fast-1 · Low effort", 5), f"...and the reply says so ({used()!r})")
+    send(p, "aiModel", harness="fake", model="deep-2", effort="high")
+    time.sleep(.5)
+    runs = len(prompts())
+    press(p, "Reset message")
+    time.sleep(.3)
+    press_word(p, "Reset")
+    check(until(lambda: len(prompts()) == runs + 1, 30) and given() == ["deep-2", "high"], f"Reset after picking deep-2 and high runs on them ({given()})")
+    idle(p)
+    check(until(lambda: used() == "deep-2 · High effort", 10), f"...and the new reply says so ({used()!r})")
+    if SHOTS:  # the bar shows on hover: as if the pointer were on the reply
+        js(p, "[...document.querySelectorAll('.ai-turn > .ai-actions')].pop().style.opacity = 1")
+        shot(p, "reply-used.png")
+        js(p, "[...document.querySelectorAll('.ai-turn > .ai-actions')].pop().style.opacity = ''")
+    last = [m for m in chat(p)["Messages"] if m["Role"] == "assistant"][-1]
+    check((last.get("Model"), last.get("Effort")) == ("deep-2", "high"), f"...in the saved chat too ({last.get('Model')}, {last.get('Effort')})")
+    send(p, "aiModel", harness="fake", model="", effort="")
+    time.sleep(.5)
+    runs = len(prompts())
+    js(p, "[...document.querySelectorAll('.ai-turn > .ai-actions')].pop()?.querySelector('[aria-label=Regenerate]')?.click()")
+    time.sleep(.3)
+    js(p, "[...document.querySelectorAll('.ai-actions.is-asking button')].find(b => b.innerText.trim() === 'Regenerate')?.click()")
+    check(until(lambda: len(prompts()) == runs + 1, 30) and given() == ["", ""], f"Regenerate on the default model gives no model or effort ({given()})")
+    idle(p)
+    check(until(lambda: used() == "Fake agent's default model · Default effort", 10), f"...and says it ran on the default ({used()!r})")
+    send(p, "aiAdvanced", on=False)
+    # Without Advanced, the mode (Quick, Everyday, Thorough) picks them: switching it before Reset counts too.
+    send(p, "companionMode", id=chat(p)["Companion"], mode="expert")
+    time.sleep(.5)
+    runs = len(prompts())
+    press(p, "Reset message")
+    time.sleep(.3)
+    press_word(p, "Reset")
+    check(until(lambda: len(prompts()) == runs + 1, 30) and given() == ["", "high"], f"Reset after switching to Thorough runs with high effort ({given()})")
+    idle(p)
+    check(until(lambda: used() == "Fake agent's default model · High effort", 10), f"...and the reply says so ({used()!r})")
+    send(p, "companionMode", id=chat(p)["Companion"], mode="default")
+
 
 def live_run(p):
     """A short real run on Claude Haiku: after an edit, the old message and reply really are forgotten."""
@@ -314,7 +370,8 @@ def main():
         (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
         launcher(BIN / "fakeagent", BIN / "fake_agent.py")
         (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
-            "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json"}))
+            "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json",
+            "models": ["fast-1", "deep-2"], "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"]}))
     (PROFILE / "state.json").write_text(json.dumps(state))
     p = launch(EXE, PROFILE)
     try:

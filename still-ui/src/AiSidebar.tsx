@@ -52,7 +52,7 @@ export type AiState = {
 // who: a teammate's line (old team chats), or the teammate who asked. An ask/tell card: who asked whom for what (title),
 // how it's going, the result and the child task (chat) doing it.
 export type Attached = { id: string; name: string; size: number }
-export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean; took?: number | null }
+export type Message = { role: string; text: string; who?: string | null; to?: string | null; status?: string | null; reply?: string | null; chat?: string | null; title?: string | null; files?: Attached[] | null; answer?: boolean; took?: number | null; model?: string | null; effort?: string | null }
 export type Skill = { id: string; name: string; description: string; when: string; body: string; stock?: boolean; edited?: boolean; source?: string; plugin?: boolean; only?: string[] } // stock: one Still ships (Reset puts it back); source: where an added one came from; plugin: it came with programs
 // A chat at work. Any number run at once. root: the user's chat a child task (a teammate asked it) started from.
 export type Run = { id: string; root?: string | null; started: string; question?: string | null; options?: string[] | null; tool?: string; target?: string; asks?: { id: string; what: string; site: string; action?: string; why?: string }[] }
@@ -178,7 +178,8 @@ function Work({ steps, live, took, onLink, onPicture }: { steps: Message[]; live
 // Under a turn's final answer (once a turn, not under the lines between its steps): copy it as plain text, share it, run your message again (the last answer only), and more: copy as Markdown, save as a file.
 const plainOf = (md: string) => md.replace(/^\s*```.*$/gm, "").replace(/^#{1,6}\s+/gm, "").replace(/!?\[([^\]]*)\]\(([^)\s]+)\)/g, (_, t: string, u: string) => t && t !== u ? `${t} (${u})` : u)
  .replace(/\*\*|__|`/g, "").replace(/(^|[^\w*])\*(?=\S)([^*\n]+?)\*(?![\w*])/g, "$1$2").replace(/\n{3,}/g, "\n\n").trim()
-function ReplyActions({ body, title, again, send }: { body: string; title: string; again?: Message; send: Send }) {
+// used: the reply that ends its run, which says the model and effort it ran on.
+function ReplyActions({ body, title, again, used, send }: { body: string; title: string; again?: Message; used?: Message; send: Send }) {
  const [asking, setAsking] = useState(false)
  const copy = (text: string) => { send("copyText", { text }); toast("Copied") }
  const share = async () => {
@@ -195,6 +196,7 @@ function ReplyActions({ body, title, again, send }: { body: string; title: strin
   <DropdownMenu><Tip label="More"><DropdownMenuTrigger asChild><Button variant="ghost" size="icon-sm" aria-label="More"><Ellipsis /></Button></DropdownMenuTrigger></Tip>
    <DropdownMenuContent align="start"><DropdownMenuItem onSelect={() => copy(body)}><Copy />Copy as Markdown</DropdownMenuItem>
     <DropdownMenuItem onSelect={() => send("saveText", { name: title, text: body })}><Download />Save as file</DropdownMenuItem></DropdownMenuContent></DropdownMenu>
+  {used?.model && <span className="ai-used">{used.model} · {used.effort ? effortName(used.effort) + " effort" : "Default effort"}</span>}
  </div>
 }
 
@@ -1078,7 +1080,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
      <div className="ai-msg is-assistant"><Markdown text={body} onLink={openLink} onCopy={text => { send("copyText", { text }); toast("Copied") }} /></div>
      {choice && <ChoiceCard choice={choice} answer={answer} live={last} onPick={text => submit(text)} />}
      {!!next?.length && <div className="ai-next">{next.map(s => <button key={s} className="ai-next-step" disabled={!last} onClick={() => submit(s)}><ArrowDownRight /><span>{s}</span></button>)}</div>}
-     {finals.has(i) && <ReplyActions body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 100000 ? latestPrompt : undefined} send={send} />}
+     {finals.has(i) && <ReplyActions body={body} title={chatOf(ai, ai.chatId)?.title || name} again={last && latestPrompt && latestPrompt.text.length <= 100000 ? latestPrompt : undefined} used={m} send={send} />}
     </div>
    })}
    {busy && !ai.question && <div className={turn(items.length)}>{face(items.length)}<div className="ai-live">

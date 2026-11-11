@@ -23,6 +23,8 @@ public sealed class AiMessage
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Chat { get; set; }
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Title { get; set; } // what was asked for, in a few words
  [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingDefault)] public int Took { get; set; } // a run's last step: how long the run took, in seconds ("Worked for…")
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Model { get; set; } // a run's last reply: the model it ran on, by name
+ [System.Text.Json.Serialization.JsonIgnore(Condition = System.Text.Json.Serialization.JsonIgnoreCondition.WhenWritingNull)] public string? Effort { get; set; } // ...and its effort, "" for the model's own
 }
 /// A file the user attached to a message: kept in the profile's ai/attachments/<Id>, read with read_attachment.
 public sealed class AiFile { public string Id { get; set; } = ""; public string Name { get; set; } = ""; public long Size { get; set; } }
@@ -533,7 +535,7 @@ public partial class MainWindow
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion, chatFolder = shown == null ? null : FolderOf(shown), nextFolder,
   messagesFrom = Math.Max(0, (shown?.Messages.Count ?? 0) - 300), // where the last 300 start: the interface keys its rows by it, so a long chat doesn't redraw every row on each step
-  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
+  messages = (shown?.Messages ?? []).TakeLast(300).Select(m => new { role = m.Role, text = m.Text, who = m.Who, to = m.To, status = m.Status, reply = m.Reply, chat = m.Chat, title = m.Title, answer = m.Answer, took = m.Took, model = m.Model, effort = m.Effort, files = m.Files?.Select(f => new { id = f.Id, name = f.Name, size = f.Size }) }),
   question = run?.Question is { } q ? new { text = q.Text, options = q.Options, page = q.Page, kickoff = kickoffs.Contains(run.Chat.Id) } : null,
   approvals = runs.Values.Where(r => shown != null && (r.Chat == shown || r.Chat.From != null && ExchangeOf(r.Chat).Root == shown))
    .SelectMany(r => r.Approvals.Select(a => new { id = a.Id, run = r.Chat.Id, who = r.Chat.Companion, what = a.What, site = a.Site, action = a.Action, why = a.Why, until = a.Until })),
@@ -1240,7 +1242,8 @@ public partial class MainWindow
    }
    run?.Dispose();
    if (runs.GetValueOrDefault(chat.Id) == me) { runs.Remove(chat.Id); workers.Remove(chat.Id); ReleaseAgentTabs(chat.Id); chat.Worked = (int)(DateTime.UtcNow - me.Started).TotalSeconds; chat.Running = false;
-    if (chat.Messages.Skip(from).LastOrDefault(m => m.Role is "tool" or "search" or "read") is { } last) last.Took = Math.Max(1, chat.Worked); }
+    if (chat.Messages.Skip(from).LastOrDefault(m => m.Role is "tool" or "search" or "read") is { } last) last.Took = Math.Max(1, chat.Worked);
+    if (chat.Messages.Skip(from).LastOrDefault(m => m.Role == "assistant") is { } answer) { answer.Model = model.Length > 0 ? ModelName(cli.Id, model) : cli.Name + "'s default model"; answer.Effort = effort; } }
    // Still quitting cuts the run off: the task stays unfinished, so the next start offers it again.
    if (Windows.Any(w => !w.closing)) { me.Task.Pending = ""; TaskState(me, ended, stopped ? "stopped" : ""); }
    me.Question?.Answer.TrySetResult("The chat ended."); me.Question = null;
