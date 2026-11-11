@@ -1494,6 +1494,16 @@ def settings(process):
     until(lambda: js(process, "!!document.querySelector('[data-slot=alert-dialog-action]')"), 3)
     js(process, "document.querySelector('[data-slot=alert-dialog-action]')?.click()")
     check(until(lambda: not rules() and "shop.example" not in (js(process, "document.querySelector('.perm-table')?.textContent ?? ''") or ""), 15), "Reset all asks, then goes back to the defaults once Undo is gone")
+    # Settings offer Always allow and Ask every time; a rule saved as Allow in this chat reads Ask every time.
+    send(process, "permSet", site="chat.example", action="interact", companion="", mode="chat")
+    picker = "[aria-label=\"Click, type and scroll on chat.example for Everyone\"]"
+    shown = until(lambda: js(process, f"document.querySelector('{picker}')?.innerText.trim()"), 10)
+    js(process, f"document.querySelector('{picker}').dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }}))")
+    offered = until(lambda: js(process, "(o => o.length ? o : null)([...document.querySelectorAll('[role=option]')].map(o => o.innerText.trim()))"), 5)
+    js(process, "document.querySelector('[role=listbox]')?.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
+    check(shown == "Ask every time" and offered == ["Always allow", "Ask every time"], f"Settings offer only Always allow and Ask every time, and a rule saved as Allow in this chat reads Ask every time ({shown!r}, {offered})")
+    send(process, "permSet", site="chat.example", action="interact", companion="", mode="")
+    until(lambda: not rules(), 5)
     js(process, "document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', bubbles: true }))")
     until(lambda: not js(process, "!!document.querySelector('.set-shell')"), 5)
 

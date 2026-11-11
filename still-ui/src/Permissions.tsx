@@ -17,7 +17,9 @@ export type Rule = { site: string; action: string; companion: string; mode: stri
 export type AuditEntry = { at: string; what: string; site: string; result: string }
 
 const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pages", interact: "Click, type and scroll", sensitive: "Sensitive steps" }
-const MODES: Record<string, string> = { always: "Always allow", chat: "Allow in this chat", ask: "Ask every time" }
+// Settings set one of two: Allow in this chat is only a card's answer, in that chat. A rule saved as "chat" asks in
+// every new chat, so it reads Ask every time.
+const MODES: Record<string, string> = { always: "Always allow", ask: "Ask every time" }
 // How much a companion does on its own: one pick per companion. Still holds what each level allows (Windows LevelOf, Mac
 // levelOf): clicking and typing on any site, new sites after reading the web, plugin programs, and a line in its instructions.
 export const AUTONOMY = {
@@ -92,7 +94,7 @@ export function AuditList({ list }: { list: AuditEntry[] }) {
 }
 
 function ModeSelect({ value, onChange, label }: { value: string; onChange: (mode: string) => void; label: string }) {
- return <Select value={value} onValueChange={onChange}><SelectTrigger size="sm" aria-label={label} className="perm-mode"><SelectValue /></SelectTrigger>
+ return <Select value={value === "chat" ? "ask" : value} onValueChange={onChange}><SelectTrigger size="sm" aria-label={label} className="perm-mode"><SelectValue /></SelectTrigger>
   <SelectContent>{Object.entries(MODES).map(([id, text]) => <SelectItem key={id} value={id}>{text}</SelectItem>)}</SelectContent></Select>
 }
 
