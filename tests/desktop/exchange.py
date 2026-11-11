@@ -211,6 +211,20 @@ def tops():
     return [c["Id"] for c in chats() if not c.get("From")]
 
 
+HEAD_CLASH = """(() => { const box = e => e.getBoundingClientRect(), out = [];
+ const hit = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1;
+ const items = [...document.querySelectorAll('.chat-view .task-head .chat-column > *')];
+ const tools = [...document.querySelectorAll('.chat-pane .chat-tools > *')].filter(t => box(t).width);
+ const label = e => (e.innerText || e.getAttribute('aria-label') || e.className || '').trim().replace(/\\s+/g, ' ').slice(0, 24);
+ items.forEach((i, k) => { const a = box(i);
+  tools.forEach(t => hit(a, box(t)) && out.push(label(i) + ' under ' + label(t)));
+  items.slice(k + 1).forEach(j => hit(a, box(j)) && out.push(label(i) + ' over ' + label(j)));
+  const walk = document.createTreeWalker(i, NodeFilter.SHOW_TEXT); let n;
+  while ((n = walk.nextNode())) { if (!n.data.trim()) continue; const r = document.createRange(); r.selectNodeContents(n);
+   if (new Set([...r.getClientRects()].filter(b => b.width).map(b => Math.round(b.top))).size > 1) out.push(label(i) + ' wraps') } });
+ return out })()"""  # what in the task view's head overlaps the chat's buttons or another item, or wraps
+
+
 def shown_chat():
     return next((t for t in rpc(P)["tabs"] if t["Id"] == rpc(P)["activeId"]), {}).get("ChatId")
 
@@ -359,6 +373,11 @@ def main():
         check(until(lambda: "Maya asked" in (js(P, "document.querySelector('.ai-msg.is-teammate')?.innerText") or ""), 3), "where Maya's message says Maya asked")
         head = js(P, "document.querySelector('.chat-view .task-head')?.innerText") or ""
         check("Back to Find me a desk lamp" in head and "Done" in head and not js(P, "!!document.querySelector('.chat-view [aria-label=Message]')"), f"The task view: back to Maya's chat, Done, no message box ({head!r})")
+        for width in (480, 640, 0):  # a narrow chat (as when the page is beside it), then as it was
+            js(P, f"(c => {{ c.style.flex = {'none' if width else ''!r}; c.style.width = {f'{width}px' if width else ''!r} }})(document.querySelector('.chat-pane'))")
+            time.sleep(.4)
+            clash = js(P, HEAD_CLASH)
+            check(clash == [], f"In a {width or 'full'}-px chat the task view's head is clear of the chat's buttons and on one line ({clash})")
         shot("asked-side.png")
         js(P, "document.querySelector('.task-back').click()")
         check(until(lambda: shown_chat() == ask, 5), "Back returns to Maya's chat")

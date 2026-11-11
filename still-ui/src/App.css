@@ -610,7 +610,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .delegation-asked { margin:0; color:var(--muted-foreground); white-space:pre-wrap; overflow-wrap:anywhere; display:-webkit-box; -webkit-box-orient:vertical; -webkit-line-clamp:3; overflow:hidden; }
 .delegation-result { align-self:stretch; max-height:14em; overflow:hidden; padding:8px 11px; border-radius:10px; background:var(--background); box-shadow:inset 0 0 0 1px var(--border); }
 /* A child task: back to the chat it came from, and how it's going. */
-.task-head { flex:none; padding:8px 0 0; } .task-head .chat-column { display:flex; align-items:center; gap:8px; }
+.task-head { flex:none; padding:8px 0 0; } .task-head .chat-column { display:flex; align-items:center; gap:8px; } .task-head .chat-column > :not(.task-back) { flex:none; white-space:nowrap; } /* only Back gives way (its title ends in ...) */
 .task-back { min-width:0; } .task-back span { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 /* A message a teammate sent this companion: their face and name over it, tinted in their color. */
 .ai-msg.is-user.is-teammate { background:color-mix(in oklab,var(--hue) 12%,var(--muted)); }
@@ -729,6 +729,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .chat-view[data-mode=tab] .ai-log { padding:60px 44px 0; }
 .chat-view[data-mode=tab] .ai-compose { padding:0 44px 20px; }
 .is-split .chat-view[data-mode=tab] .ai-log { padding:56px 28px 0; } .is-split .chat-view[data-mode=tab] .ai-compose { padding:0 28px 16px; }
+.chat-view[data-mode=tab] .task-head { padding:52px 44px 0; } .is-split .chat-view[data-mode=tab] .task-head { padding:52px 28px 0; } .chat-view[data-mode=tab] .task-head + .ai-log { padding-top:16px; } /* below the chat's own buttons (.chat-tools, top right), which a narrow chat's head ran under; the messages start where they did */
 .chat-view[data-mode=tab] .composer[data-slot=input-group] { border-radius:24px; }
 .chat-view[data-mode=tab] .composer-input { min-height:56px; padding:14px 18px 4px; font-size:14.5px; }
 .chat-view[data-mode=tab] .composer .skill-chips[data-slot] { padding:14px 18px 0; } .chat-view[data-mode=tab] .composer .skill-chips[data-slot] + .composer-input { padding-top:8px; }
