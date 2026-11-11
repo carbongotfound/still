@@ -1096,11 +1096,12 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     <p className="ai-timer"><span className="still-mark is-small is-live" aria-hidden><i /><i /></span>Working for {clock(tick)}</p></div></div>}
   </div></div>}
   {!busy && ai.chatId && ai.task?.state === "interrupted" && <Alert className="task-bar"><AlertDescription>{ai.task.unsure
-    ? `Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
-    : `Still closed while ${name} was mid-task.`}</AlertDescription><Button size="sm" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button></Alert>}
+    ? `Stopped: Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
+    : `Stopped: Still closed while ${name} was mid-task.`}</AlertDescription><Button size="sm" onClick={() => send("aiResume", { id: ai.chatId })}><Play aria-hidden />Continue</Button></Alert>}
   {!busy && ai.chatId && ai.task?.state === "waiting" && ai.task.reason === "signin" && <Alert className="task-bar"><AlertDescription>{name} is waiting: sign in to carry on.</AlertDescription>
    <Button size="sm" variant="outline" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button><Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button></Alert>}
-  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button></Alert>}
+  {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button>
+   {!busy && ai.chatId && ai.task?.state === "failed" && !chat?.from && <Button size="sm" onClick={() => send("aiContinue", { id: ai.chatId })}><Play aria-hidden />Continue</Button>}</Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">
    {mode === "panel" && pages.length > 0 && <button className="chat-chip is-pages" onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 />{name} has {pages.length === 1 ? "a page" : pages.length + " pages"} open<b>Show</b></button>}
    {mode === "panel" && activeTab?.url && !activeTab.inChat && <Tip label={activeTab.url}><span className="chat-chip"><Globe />{activeTab.title || host(activeTab.url)}</span></Tip>}

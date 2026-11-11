@@ -1,14 +1,19 @@
 """Switching chats: each opens at its end (where a running chat's live step is), or where you scrolled up to in it
-yourself, in the side panel and on the full chat page alike. A fake app stands in for the AI.
+yourself, in the side panel and on the full chat page alike. A run keeps going in the background through chat, page and
+tab switches, a sign-in handoff and an interface reload, and the side panel follows the tab a chat works in. A run that
+dies says so, with Continue. A fake app stands in for the AI.
 
 Run: python tests/desktop/chat_switch.py artifacts/Still-QA/Still.exe
 Out: artifacts/chat-switch-*/
 """
+import http.server
 import json
 from pathlib import Path
+import re
 import shutil
 import sys
 import textwrap
+import threading
 import time
 import uuid
 
@@ -21,13 +26,47 @@ PROFILE = RUN / "profile"
 BIN = RUN / "bin"
 FAILED = []
 FAKE = textwrap.dedent(r'''
-    import json, os, re, sys, time
+    import json, os, re, subprocess, sys, time
     here = os.path.dirname(os.path.abspath(__file__))
     args = sys.argv[1:]
     if args[:1] == ["status"]: print("signed in"); sys.exit(0)
-    tail = sys.stdin.read()[-1500:]
+    prompt = sys.stdin.read()
+    with open(os.path.join(here, "prompts.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps(prompt) + "\n")
+    tail = prompt[-1500:]
     def say(e): print(json.dumps(e), flush=True)
     say({"type": "system", "subtype": "init", "session_id": "s-%d" % time.time_ns()})
+    if "CRASH" in tail and "stopped before you finished" not in tail:
+        sys.stderr.write("boom, the fake app fell over\n"); sys.exit(3)
+    work = re.search(r"STEPS(\d+) (\S+)", tail)
+    if work:
+        # Works in a tab of its own: a step each second, and a sign-in page at step 5.
+        server = json.load(open(args[args.index("--mcp") + 1]))["mcpServers"]["still"]
+        still = subprocess.Popen([server["command"]] + server["args"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
+        n = 0
+        def request(name, a):
+            global n
+            n += 1
+            still.stdin.write((json.dumps({"jsonrpc": "2.0", "id": n, "method": name, "params": a}) + "\n").encode()); still.stdin.flush()
+            for line in still.stdout:
+                try: m = json.loads(line)
+                except ValueError: continue
+                if m.get("id") == n:
+                    with open(os.path.join(here, "replies.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps([name, a, m]) + "\n")
+                    return m
+        request("initialize", {"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "fake", "version": "1"}})
+        still.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n'); still.stdin.flush()
+        def step(i, name, a, tool, targs):
+            say({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": "t%d" % i, "name": name, "input": a}]}})
+            request("tools/call", {"name": tool, "arguments": targs})
+            say({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": "t%d" % i}]}})
+        url = work.group(2)
+        step(0, "mcp__still__open_tab", {"url": url + "work"}, "open_tab", {"url": url + "work", "background": False})
+        open(os.path.join(here, "work-started"), "w").close()
+        for i in range(1, int(work.group(1)) + 1):
+            if i == 5: step(100, "mcp__still__navigate", {"url": url + "login"}, "navigate", {"url": url + "login"})
+            step(i, "check_step", {"text": str(i)}, "read_page", {})
+            time.sleep(1)
+        still.stdin.close()
     slow = re.search(r"SLOW(\d+)", tail)
     if slow:
         open(os.path.join(here, "slow-started"), "w").close()
@@ -35,6 +74,20 @@ FAKE = textwrap.dedent(r'''
     say({"type": "assistant", "message": {"content": [{"type": "text", "text": "Answered " + re.findall(r"WORD\w+", tail)[-1] if "WORD" in tail else "Done."}]}})
 ''')
 PANEL, PAGE = ".ai-sidebar .ai-log", ".chat-view[data-mode=tab] .ai-log"
+
+
+class Site(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = (b"<!doctype html><title>Sign in</title><form><input name=user><input type=password name=pass></form>" if self.path == "/login"
+                else b"<!doctype html><title>Work</title><p>The page the chat works on.</p>")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *a):
+        pass
 
 
 def check(ok, label):
@@ -72,6 +125,22 @@ def open_in_panel(p, id, title):
     return ok
 
 
+def progress(p, view):
+    """How far the run in view has got: its highest step, its timer's seconds, and whether it shows as working."""
+    return json.loads(js(p, f"""(el => el ? JSON.stringify({{ step: Math.max(0, ...[...el.querySelectorAll('.ai-step-text')].map(e => +((e.textContent.match(/check step (\\d+)/) || [0, 0])[1]))),
+        timer: el.querySelector('.ai-timer')?.textContent ?? '', live: !!el.querySelector('.ai-live') }}) : 'null')(document.querySelector('{view}'))""") or "null")
+
+
+def seconds(timer):
+    m = re.search(r"(?:(\d+)m )?(\d+)s", timer or "")
+    return int(m.group(1) or 0) * 60 + int(m.group(2)) if m else -1
+
+
+def prompts(word):
+    f = BIN / "prompts.jsonl"
+    return [p for p in map(json.loads, f.read_text(encoding="utf-8").splitlines()) if word in p] if f.exists() else []
+
+
 def scroll_to(p, view, top):
     """As the user would: the view moves, and its scroll event follows."""
     js(p, f"document.querySelector('{view}').scrollTop = {top}")
@@ -85,7 +154,7 @@ def main():
     (BIN / "fake_agent.py").write_text(FAKE, encoding="utf-8")
     launcher(BIN / "fakeagent", BIN / "fake_agent.py")
     (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
-        "detect": ["status"], "expect": "signed in", "run": ["run"], "resume": ["--resume", "{session}"], "output": "stream-json"}))
+        "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json"}))
     (PROFILE / "ai" / "chats.json").write_text(json.dumps([long_chat("lamps", "Lamps"), long_chat("chairs", "Chairs")]))
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True, "AiHarness": "fake", "Width": 1400, "Height": 900},
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
@@ -101,7 +170,8 @@ def main():
         check(open_in_panel(p, "lamps", "Lamps") and abs(where(p, PANEL)["top"] - 300) <= 2, f"Back to the first, it's where you scrolled up to ({where(p, PANEL)})")
 
         send(p, "chatOpen", id="lamps")
-        check(until(lambda: shows(p, PAGE, "Lamps"), 10) and until(lambda: abs((where(p, PAGE) or {"top": -99})["top"] - 300) <= 2, 3), f"...and on its full chat page too ({where(p, PAGE)})")
+        # The page is wider than the panel: rows settle as it opens, and the row in view stays put, a few pixels off 300.
+        check(until(lambda: shows(p, PAGE, "Lamps"), 10) and until(lambda: abs((where(p, PAGE) or {"top": -99})["top"] - 300) <= 12, 3), f"...and on its full chat page too ({where(p, PAGE)})")
         scroll_to(p, PAGE, 10 ** 6)
         send(p, "chatOpen", id="chairs")
         check(until(lambda: shows(p, PAGE, "Chairs"), 10) and until(lambda: at_end(where(p, PAGE)), 3), f"The other chat's page opens at its end ({where(p, PAGE)})")
@@ -128,6 +198,60 @@ def main():
         open_in_panel(p, "lamps", "Lamps")
         open_in_panel(p, "chairs", "Chairs")
         check(at_end(where(p, PANEL)), f"The chat's own scrolling to its answer isn't kept as yours ({where(p, PANEL)})")
+
+        # A run keeps going through chat, page and tab switches, a sign-in handoff and an interface reload, and the side
+        # panel follows it to the tab it works in.
+        site = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Site)
+        threading.Thread(target=site.serve_forever, daemon=True).start()
+        mine = rpc(p)["activeId"]
+        open_in_panel(p, "chairs", "Chairs")
+        send(p, "aiSend", text=f"WORDWORK STEPS40 http://127.0.0.1:{site.server_port}/", companion="maya")
+        check(until(lambda: (BIN / "work-started").exists(), 30), "The chat starts work in a tab of its own")
+        work = next((t["Id"] for t in rpc(p)["tabs"] if t.get("RunChat") == "chairs"), None)
+        check(work is not None and work != mine, f"...a tab beside yours ({[(t['Id'], t.get('RunChat')) for t in rpc(p)['tabs']]})")
+        send(p, "select", id=mine)
+        open_in_panel(p, "lamps", "Lamps")
+        check(until(lambda: rpc(p)["activeId"] == mine, 5) and shows(p, PANEL, "Lamps"), "You go back to your own tab and another chat")
+        signin = until(lambda: any("sign-in page" in json.dumps(r[2]) for r in map(json.loads, (BIN / "replies.jsonl").read_text(encoding="utf-8").splitlines())) if (BIN / "replies.jsonl").exists() else False, 30)
+        check(signin and until(lambda: rpc(p)["activeId"] == work, 5), "A sign-in page brings the chat's tab to the front")
+        check(until(lambda: shows(p, PANEL, "Chairs"), 5) and (progress(p, PANEL) or {}).get("live"), f"...and the side panel follows, to the chat at work there ({progress(p, PANEL)})")
+        last, timer = progress(p, PANEL) or {"step": 0}, 0
+        for n in range(3):
+            open_in_panel(p, "lamps", "Lamps")
+            send(p, "select", id=mine)
+            check(until(lambda: rpc(p)["activeId"] == mine, 5) and shows(p, PANEL, "Lamps"), f"Away {n + 1}: your tab, another chat in the panel")
+            time.sleep(1.5)
+            send(p, "select", id=work)
+            ok = until(lambda: rpc(p)["activeId"] == work and shows(p, PANEL, "Chairs"), 5)
+            now = progress(p, PANEL) or {}
+            check(ok and now.get("live") and now["step"] >= last["step"] and seconds(now["timer"]) > timer, f"Back {n + 1} to the chat's tab: the panel shows it, still working, nothing lost ({last} -> {now})")
+            last, timer = now, seconds(now["timer"])
+        send(p, "chatOpen", id="chairs")
+        check(until(lambda: shows(p, PAGE, "Chairs") and (progress(p, PAGE) or {}).get("live"), 10) and progress(p, PAGE)["step"] >= last["step"] and seconds(progress(p, PAGE)["timer"]) >= timer,
+              f"Its full chat page shows the same live run ({progress(p, PAGE)})")
+        send(p, "agentTakeOver", on=False, key="chairs")
+        check(until(lambda: (progress(p, PAGE) or {"step": 0})["step"] > last["step"], 50), f"Signed in and handed back, the run carries on ({last} -> {progress(p, PAGE)})")
+        send(p, "select", id=work)
+        check(until(lambda: shows(p, PANEL, "Chairs") and (progress(p, PANEL) or {}).get("live"), 10), f"From its page back to its tab: the panel shows it working ({progress(p, PANEL)})")
+        before = progress(p, PANEL)
+        js(p, "setTimeout(() => location.reload(), 50); 1")
+        time.sleep(1)
+        check(until(lambda: shows(p, PANEL, "Chairs") and (progress(p, PANEL) or {}).get("live"), 20) and progress(p, PANEL)["step"] >= before["step"] and seconds(progress(p, PANEL)["timer"]) >= seconds(before["timer"]),
+              f"After the interface reloads, it's still working, steps and timer intact ({before} -> {progress(p, PANEL)})")
+        check(until(lambda: "Answered WORDWORK" in (js(p, f"document.querySelector('{PANEL}')?.innerText ?? ''") or ""), 90), "The run finishes")
+        done = progress(p, PANEL) or {"step": 0}
+        check(done["step"] == 40 and len(prompts("STEPS40")) == 1, f"...with all 40 steps, from one start: never restarted ({done}, {len(prompts('STEPS40'))} starts)")
+        site.shutdown()
+
+        # A run that dies says so in the chat, with Continue.
+        open_in_panel(p, "lamps", "Lamps")
+        send(p, "aiSend", text="WORDBOOM CRASH", companion="maya")
+        error = lambda: js(p, "document.querySelector('.ai-sidebar .ai-error')?.innerText ?? ''") or ""
+        check(until(lambda: error().startswith("Stopped: ") and "boom" in error(), 20), f"A run whose app quits says Stopped, and why ({error()!r})")
+        check(js(p, "[...document.querySelectorAll('.ai-sidebar .ai-error button')].some(b => b.textContent.trim() === 'Continue')"), "...with a Continue button")
+        js(p, "[...document.querySelectorAll('.ai-sidebar .ai-error button')].find(b => b.textContent.trim() === 'Continue').click()")
+        check(until(lambda: any("stopped before you finished" in q for q in prompts("")), 20), "Continue starts it again, told why it stopped")
+        check(until(lambda: not error() and "Done." in (js(p, f"document.querySelector('{PANEL}')?.innerText ?? ''") or ""), 20), f"...and it answers, the error gone ({error()!r})")
 
         errors = rpc(p).get("shellErrors")
         check(not errors, f"No interface errors ({errors})" if errors else "No interface errors")

@@ -396,6 +396,7 @@ func endStep(_ step: AiMessage, _ ok: Bool) {
  if !ok { step.text = "Didn't finish " + step.text } // a tool with no words of its own shows its name, which claims nothing
 }
 /// The run was cut off with steps still going. Each may or may not have happened, so it says neither.
+func diedBrief(_ why: String) -> String { "[Still] Your last reply stopped before you finished it (\(why.prefix(300))). Carry on from where it stopped, without redoing steps that worked." }
 func stopSteps(_ chat: AiChat) {
  for m in chat.messages where m.role == "tool" && m.status == "working" { m.text = "Stopped " + m.text.prefix(1).lowercased() + m.text.dropFirst(); m.status = "failed" }
 }
@@ -787,6 +788,10 @@ extension Browser {
   if let view = aiViews[ObjectIdentifier(self)] { return view }
   let view = AiView(); aiViews[ObjectIdentifier(self)] = view; return view
  }
+ /// The chat at work in a tab: the run driving it, or the one that opened it, while it runs.
+ func workingIn(_ t: Tab) -> AiChat? {
+  (agentTabs.filter { $0.value == t.id }.map(\.key) + [t.runChat].compactMap { $0 }).filter { runs[$0] != nil }.lazy.compactMap { id in self.myChats.first { $0.id == id } }.first
+ }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
  var shownChat: AiChat? { if let id = active?.chatId { return myChats.first { $0.id == id } }; return aiView.chat }
  /// Is this chat on screen in this window: its tab, or the open sidebar beside an ordinary tab.
@@ -1082,6 +1087,8 @@ extension Browser {
   case "aiResume": if let c = myChats.first(where: { $0.id == s("id") }) { resumeTask(c) }
   case "aiContinue": // picks the stopped reply up, with no message of the user's
    if let c = myChats.first(where: { $0.id == s("id") }), c.from == nil, runs[c.id] == nil, let last = c.messages.last, last.role == "note", last.text == "Stopped." { runAi(c, continueBrief, shown: "") }
+   // A run that died carries on, told why it stopped.
+   else if let c = myChats.first(where: { $0.id == s("id") }), c.from == nil, runs[c.id] == nil, !c.error.isEmpty, aiTasks[c.id]?.state == "failed" { runAi(c, diedBrief(c.error), shown: "") }
   case "aiResumeAll" where !incognito: // not one with a step that may not have finished: that one is resumed on its own
    resumeAnswered = true
    for cut in interruptedChats where !(aiTasks[cut.id]?.sensitive.contains { $0.outcome == nil } ?? false) { resumeTask(cut) }
@@ -1623,9 +1630,9 @@ extension Browser {
       chat.messages.contains(where: { $0.role == "tool" && $0.text == "Used skill " + setupSkill.name }) {
     who.setup = "done"; who.setupAt = Date(); who.setupVersion = CompanionMemory.ver(setupSkill.body); storeCompanions()
    }
-   if started.timedOut { chat.error = "\(cli.name) stopped after \(Int(AgentRun.limit / 60)) minutes. Ask again to carry on." }
-   else if started.exitCode != 0 && !said && !stopped && chat.error.isEmpty { chat.error = "\(cli.app) stopped: " + (started.errors.last { !tidy($0).isEmpty } ?? "exit code \(started.exitCode)") }
-  } catch { chat.error = "\(cli.app) failed: \(error.localizedDescription)" }
+   if started.timedOut { chat.error = "Stopped: \(cli.name) reached the \(Int(AgentRun.limit / 60))-minute limit for one reply." }
+   else if started.exitCode != 0 && !said && !stopped && chat.error.isEmpty { chat.error = "Stopped: \(cli.app) quit before it finished (\(started.errors.last { !tidy($0).isEmpty }.map(tidy) ?? "exit code \(started.exitCode)"))" }
+  } catch { chat.error = "Stopped: \(cli.app) couldn't run (\(error.localizedDescription))" }
   finish()
   if !said, await needsSignIn(cli, chat.error) {
    // Signed out: sign in right here, then the message runs again by itself.

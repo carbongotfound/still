@@ -47,6 +47,8 @@ public partial class MainWindow
   // From before tasks: a chat still marked as running.
   foreach (var c in chats.Where(c => c.Running && !aiTasks.ContainsKey(c.Id)))
    aiTasks[c.Id] = new() { Chat = c.Id, State = "interrupted", Ask = c.Messages.LastOrDefault(m => m.Role == "user")?.Text ?? "" };
+  // Their steps stopped with Still: none goes on looking live.
+  foreach (var c in chats.Where(c => aiTasks.GetValueOrDefault(c.Id)?.State == "interrupted")) StopSteps(c);
   // Approvals given in a chat end with Still; rules in Settings stay.
   foreach (var c in chats) c.Allowed.Clear();
  }

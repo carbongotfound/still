@@ -753,6 +753,7 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   active = tab
   tab.lastSeen = Date()
   if tab.chatId != nil || leaving?.chatId != nil { publishAi() }
+  if tab.chatId == nil, let working = workingIn(tab) { if aiView.chat !== working { aiView.chat = working; aiView.error = "" }; publishAi() } // the side panel follows a chat at work to the tab it works in
   if tab.view != nil { tab.restoreScroll = 0 } // still loaded: it shows exactly as it was left
   for page in [shown, partner] { if let page, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } }
   layoutPages()

@@ -37,6 +37,8 @@ func loadTasks(_ chats: [AiChat]) {
  for c in chats where c.running && aiTasks[c.id] == nil {
   let t = AiTask(); t.chat = c.id; t.state = "interrupted"; t.ask = c.messages.last { $0.role == "user" }?.text ?? ""; aiTasks[c.id] = t
  }
+ // Their steps stopped with Still: none goes on looking live.
+ for c in chats where aiTasks[c.id]?.state == "interrupted" { stopSteps(c) }
  // Approvals given in a chat end with Still; rules in Settings stay.
  for c in chats { c.allowed = [] }
 }

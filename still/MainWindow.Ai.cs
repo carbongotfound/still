@@ -504,6 +504,9 @@ public partial class MainWindow
  }
  /// The chat on screen: the active chat tab's, otherwise the sidebar's.
  AiChat? ShownChat => active?.ChatId is { } id ? MyChats.FirstOrDefault(c => c.Id == id) : aiChat;
+ /// The chat at work in a tab: the run driving it, or the one that opened it, while it runs.
+ AiChat? WorkingIn(BrowserTab t) => agentTabs.Where(a => a.Value == t.Id).Select(a => (string?)a.Key).Append(t.RunChat)
+  .Where(id => id != null && runs.ContainsKey(id)).Select(id => MyChats.FirstOrDefault(c => c.Id == id)).FirstOrDefault(c => c != null);
  bool aiOpen;
  string aiError = "";
  AiChat? aiChat; // null = a new, empty chat
@@ -611,6 +614,8 @@ public partial class MainWindow
     resumeAnswered = true; PublishAiEverywhere(); break;
    case "aiContinue" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { From: null } stopped && !Busy(stopped) && stopped.Messages.LastOrDefault() is { Role: "note", Text: "Stopped." }:
     await RunAi(stopped, ContinueBrief, shown: ""); break; // picks the stopped reply up, with no message of the user's
+   case "aiContinue" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { From: null, Error.Length: > 0 } died && !Busy(died) && aiTasks.GetValueOrDefault(died.Id)?.State == "failed":
+    await RunAi(died, DiedBrief(died.Error), shown: ""); break; // a run that died carries on, told why it stopped
    case "aiResume" when MyChats.FirstOrDefault(c => c.Id == S("id")) is { } resumed:
     await ResumeTask(resumed); break;
    case "aiNow" when ShownChat is { } now && runs.GetValueOrDefault(now.Id) is { Queue.Count: > 0 } interrupted: StopRun(interrupted); break; // what's queued runs right away
@@ -1228,10 +1233,10 @@ public partial class MainWindow
    }
    // Setup is done once the companion has answered the user in a regular chat that had it.
    if (said && regular && (setup || hadSetup) && who!.Setup == "pending") { who.Setup = "done"; who.SetupAt = DateTime.UtcNow; who.SetupVersion = CompanionMemory.Ver(setupSkill!.Body); SaveLater(); }
-   if (run.TimedOut) chat.Error = $"{cli.Name} stopped after {AgentRun.Limit.TotalMinutes:0} minutes. Ask again to carry on.";
+   if (run.TimedOut) chat.Error = $"Stopped: {cli.Name} reached the {AgentRun.Limit.TotalMinutes:0}-minute limit for one reply.";
    else if (run.ExitCode != 0 && !said && !stopped && chat.Error.Length == 0)
-    chat.Error = $"{cli.App} stopped: " + (run.Errors.LastOrDefault(l => l.Trim().Length > 0) ?? $"exit code {run.ExitCode}");
-  } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { chat.Error = $"{cli.App} failed: {ex.Message}"; }
+    chat.Error = $"Stopped: {cli.App} quit before it finished ({run.Errors.LastOrDefault(l => l.Trim().Length > 0)?.Trim() ?? $"exit code {run.ExitCode}"})";
+  } catch (Exception ex) when (ex is IOException or InvalidOperationException or System.ComponentModel.Win32Exception) { chat.Error = $"Stopped: {cli.App} couldn't run ({ex.Message})"; }
   finally {
    if (run is { Cancelled: false } && run.ExitCode != 0) run.SaveLog(folder, chat.Id);
    string ended = stopped ? "completed" : run == null || run.ExitCode != 0 || chat.Error.Length > 0 ? "failed" : "completed"; // before Dispose, which takes the exit code with it
@@ -1592,6 +1597,7 @@ public partial class MainWindow
   if (!ok) step.Text = "Didn't finish " + step.Text; // a tool with no words of its own shows its name, which claims nothing
  }
  /// The run was cut off with steps still going. Each may or may not have happened, so it says neither.
+ static string DiedBrief(string why) => $"[Still] Your last reply stopped before you finished it ({Clip(why, 300)}). Carry on from where it stopped, without redoing steps that worked.";
  static void StopSteps(AiChat chat) { foreach (var m in chat.Messages) if (m is { Role: "tool", Status: "working" }) { m.Text = "Stopped " + char.ToLowerInvariant(m.Text[0]) + m.Text[1..]; m.Status = "failed"; } }
 
  /// ask_user: the question shows in the chat with its options, and the AI waits (up to 10 minutes) for the answer.

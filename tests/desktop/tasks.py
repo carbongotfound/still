@@ -263,8 +263,8 @@ try:
     (BIN / "forget").write_text("")
     send(p, "chatOpen", id=buy)
     bar = until(lambda: js(p, "document.querySelector('.task-bar')?.innerText ?? ''"), 15) or ""
-    check("may not have finished" in bar, f"The chat says a step may not have finished ({bar!r})")
-    press(p, "Resume", ".task-bar")
+    check("may not have finished" in bar and bar.startswith("Stopped: "), f"The chat says it stopped, and a step may not have finished ({bar!r})")
+    press(p, "Continue", ".task-bar")
     check(until(lambda: any("--resume" not in x["args"] for x in prompts("RESUME BUY")), 20), "The lost session is replaced by a new one")
     check(any("--resume" in x["args"] for x in prompts("RESUME BUY")), "It tried the saved session first")
     check(until(lambda: any("started a new one from where the task got to" in n for n in note(buy)), 10), f"...and the chat says so ({note(buy)})")
