@@ -77,6 +77,24 @@ try:
 finally:
     quit(process)
 
+# An answer to the AI's question stays an answer after a restart: your prompt is still the one to edit, not the answer.
+chats = json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8"))
+chats.append({"Id": "asked1", "Title": "Asked chat", "Harness": "fake", "Companion": "maya", "Started": True, "Messages": [
+    {"Role": "user", "Text": "Pick a color for the poster"}, {"Role": "assistant", "Text": "Which one?"},
+    {"Role": "user", "Text": "The blue one", "Answer": True}, {"Role": "assistant", "Text": "Blue it is."}]})
+(PROFILE / "ai" / "chats.json").write_text(json.dumps(chats), encoding="utf-8")
+process = qa.launch(EXE, PROFILE)
+try:
+    qa.until(lambda: qa.js(process, "!!document.body.innerText.length"), 20)
+    qa.send(process, "chatOpen", id="asked1")
+    qa.until(lambda: "Blue it is." in (qa.text(process) or ""), 10)
+    mine = "[...document.querySelectorAll('.ai-msg.is-user:not(.is-teammate)')].map(m => [...m.querySelectorAll('.ai-msg-actions button')].map(b => b.getAttribute('aria-label')))"
+    qa.until(lambda: len(qa.js(process, mine) or []) == 2, 10)
+    got = qa.js(process, mine)
+    check(got == [["Copy message", "Edit message", "Reset message"], ["Copy message"]], f"After a restart, your answer to its question still can't be edited and your prompt can ({got})")
+finally:
+    quit(process)
+
 (RUN / "results.json").write_text(json.dumps(results, indent=1))
 failed = [r for r in results if not r["ok"]]
 print(f"{'FAILED' if failed else 'PASSED'} {len(results) - len(failed)}/{len(results)} -> {RUN}")

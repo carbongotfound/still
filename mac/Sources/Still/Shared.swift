@@ -33,7 +33,7 @@ final class AiMessage: Codable {
  init(_ role: String, _ text: String, who: String? = nil) { self.role = role; self.text = text; self.who = who }
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
-  role = c.value(.role, role); text = c.value(.text, text); files = c.value(.files, files)
+  role = c.value(.role, role); text = c.value(.text, text); files = c.value(.files, files); answer = c.value(.answer, answer)
   who = c.value(.who, who); to = c.value(.to, to); status = c.value(.status, status); reply = c.value(.reply, reply); chat = c.value(.chat, chat); title = c.value(.title, title); took = c.value(.took, took); rating = c.value(.rating, rating)
  }
 }
