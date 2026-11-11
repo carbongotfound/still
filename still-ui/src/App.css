@@ -455,12 +455,12 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-msg.is-user { align-self:flex-end; max-width:min(560px,85%); margin:18px 0 10px; padding:11px 18px; border-radius:20px 20px 6px 20px; background:var(--muted); white-space:pre-wrap; }
 .ai-msg.is-user:first-child { margin-top:0; }
 .ai-msg.is-user { position:relative; }
-.ai-msg-actions { position:absolute; top:100%; right:2px; z-index:1; display:flex; align-items:center; gap:2px; padding-top:2px; font-size:12px; white-space:nowrap; opacity:0; transition:opacity .12s; }
+.ai-msg-actions { position:absolute; top:100%; right:2px; z-index:1; display:flex; align-items:center; gap:8px; padding-top:2px; font-size:12px; white-space:nowrap; opacity:0; transition:opacity .12s; }
 .ai-msg.is-user:hover .ai-msg-actions, .ai-msg-actions:focus-within, .ai-msg.is-resetting .ai-msg-actions { opacity:1; }
 .ai-msg.is-resetting { margin-bottom:38px; }
 .ai-msg-actions > span { padding-right:4px; color:var(--muted-foreground); }
-.ai-msg-actions button:not([data-slot]) { display:grid; place-items:center; width:24px; height:24px; border-radius:6px; color:var(--muted-foreground); background:var(--background); }
-.ai-msg-actions button:not([data-slot]):hover { color:var(--foreground); background:var(--muted); }
+.ai-msg-actions button:not([data-slot=button]) { display:grid; place-items:center; width:28px; height:28px; border-radius:6px; color:var(--muted-foreground); background:var(--background); }
+.ai-msg-actions button:not([data-slot=button]):hover { color:var(--foreground); background:var(--muted); }
 .ai-msg-actions svg { width:14px; height:14px; }
 .ai-msg.is-editing { width:min(560px,85%); }
 .ai-edit-box { display:block; width:100%; padding:4px 0; resize:none; font:inherit; color:inherit; background:none; border:0; outline:0; }
@@ -532,7 +532,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .tier-failed { grid-column:2 / -1; color:var(--destructive); font-size:.85em; }
 /* A reply's actions (Copy) show while the pointer is on the reply or a key is on them, lined up with its text. Their
    row keeps its place, so nothing moves when they appear. */
-.ai-actions { display:flex; gap:2px; margin:-8px 0 0 -6px; opacity:0; transition:opacity .15s; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
+.ai-actions { display:flex; gap:8px; margin:-8px 0 0 -6px; opacity:0; transition:opacity .15s; } .ai-actions [data-slot=button] { color:var(--muted-foreground); } .ai-actions [data-slot=button]:hover { color:var(--foreground); }
 .ai-turn:hover > .ai-actions, .ai-actions:focus-within, .ai-actions.is-asking { opacity:1; }
 .ai-actions [aria-pressed=true] { color:var(--foreground); } .ai-actions [aria-pressed=true] svg { fill:currentColor; fill-opacity:.2; }
 .ai-actions.is-asking { align-items:center; gap:6px; margin:-4px 0 0; font-size:13px; color:var(--muted-foreground); } .ai-actions.is-asking > span { margin-right:4px; }

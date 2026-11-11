@@ -2,7 +2,7 @@
 running, forgets the reply and what it saved, and runs the message again on a new session. A fake app stands in for the
 AI; with --live, one short real run on Claude Haiku shows the reply really is forgotten.
 
-Run: python tests/desktop/edit_message.py artifacts/Still-QA/Still.exe [--live]
+Run: python tests/desktop/edit_message.py artifacts/Still-QA/Still.exe [--live] [--shots DIR]
 Out: artifacts/edit-message-*/
 """
 import base64
@@ -22,6 +22,7 @@ from qa import CREW, MAC, ROOT, js, launch, launcher, press_ready, rpc, send, un
 
 EXE = Path(sys.argv[1]).resolve()
 LIVE = "--live" in sys.argv
+SHOTS = Path(sys.argv[sys.argv.index("--shots") + 1]) if "--shots" in sys.argv else None
 RUN = ROOT / "artifacts" / ("edit-message-" + uuid.uuid4().hex[:8])
 PROFILE = RUN / "profile"
 BIN = RUN / "bin"
@@ -145,6 +146,31 @@ def fake_run(p, port):
     buttons = mine(p)
     check(buttons[0] == ["Copy message"], f"An earlier message can only be copied ({buttons})")
     check(buttons[-1] == ["Copy message", "Edit message", "Reset message"], "The latest prompt can also be edited and reset")
+    # Their buttons: 28 px targets 8 px apart, like the bar under replies, each with a tooltip, and the bar that shows
+    # under a message on hover doesn't cover the reply's first line.
+    bars = js(p, """[...document.querySelectorAll('.ai-msg.is-user:not(.is-teammate)')].map(m => {
+     const bs = [...m.querySelectorAll('.ai-msg-actions button')].map(b => b.getBoundingClientRect())
+     const w = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT); w.currentNode = m
+     let next = null, n
+     while ((n = w.nextNode())) { if (m.contains(n) || !n.textContent.trim()) continue; const r = document.createRange(); r.selectNodeContents(n); const b = r.getBoundingClientRect(); if (b.height > 2) { next = b.top; break } }
+     return { size: bs.map(r => [Math.round(r.width), Math.round(r.height)]), gaps: bs.slice(1).map((r, i) => Math.round(r.left - bs[i].right)), bottom: Math.round(m.querySelector('.ai-msg-actions').getBoundingClientRect().bottom), next: next && Math.round(next) } })""") or []
+    check(bars and all(w >= 28 and h >= 28 for b in bars for w, h in b["size"]), f"Each button under your messages is a 28 px target ({[b['size'] for b in bars]})")
+    check(bars and all(7 <= g <= 10 for b in bars for g in b["gaps"]) and bars[-1]["gaps"], f"...about 8 px apart ({[b['gaps'] for b in bars]})")
+    check(bars and all(b["next"] is None or b["bottom"] <= b["next"] + 1 for b in bars), f"...and the bar doesn't cover the reply under it ({[(b['bottom'], b['next']) for b in bars]})")  # its line box, leading and all
+    reply = js(p, """(bs => ({ size: bs.map(r => [Math.round(r.width), Math.round(r.height)]), gaps: bs.slice(1).map((r, i) => Math.round(r.left - bs[i].right)) }))([...[...document.querySelectorAll('.ai-turn > .ai-actions')].pop()?.querySelectorAll('button') ?? []].map(b => b.getBoundingClientRect()))""") or {}
+    check(reply.get("size") and {tuple(x) for x in reply["size"]} == {(28, 28)} and reply["gaps"] and all(g == bars[-1]["gaps"][0] for g in reply["gaps"]), f"...the same as the bar under replies ({reply})")
+    tips = []
+    for label in ("Copy message", "Edit message", "Reset message"):
+        js(p, f"(b => {{ b.focus(); b.dispatchEvent(new PointerEvent('pointermove', {{ bubbles: true, pointerType: 'mouse' }})) }})([...document.querySelectorAll('.ai-msg.is-user:not(.is-teammate) [aria-label=\"{label}\"]')].at(-1))")
+        tips.append(until(lambda: js(p, "[...document.querySelectorAll('[data-slot=tooltip-content]')].filter(e => e.dataset.state !== 'closed').map(e => e.innerText.trim()).pop() || ''"), 3) or "")
+        if label == "Edit message":
+            rpc(p, "capture", name="message-actions.png")
+            if SHOTS:
+                SHOTS.mkdir(parents=True, exist_ok=True)
+                shutil.copy(PROFILE / "message-actions.png", SHOTS / "message-actions.png")
+        js(p, "document.activeElement?.blur()")
+        time.sleep(.4)
+    check(tips[0].startswith("Copy") and tips[1].startswith("Edit") and tips[2].startswith("Reset"), f"...each with a tooltip ({tips})")
 
     first_session = chat(p)["Session"]
     runs = len(prompts())
