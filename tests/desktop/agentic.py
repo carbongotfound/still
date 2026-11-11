@@ -172,7 +172,7 @@ FAKE = textwrap.dedent(r'''
         found = json.loads(text)["results"] if ok else []
         log("calls.jsonl", {"tool": "marker", "text": "found %d" % len(found), "t": time.time()})
         if found: call("read_url", url=found[0]["url"])
-        reply("**The Acer Swift Go 14 is the one to get under $800.**\n\n| Laptop | Price | Why |\n|---|---|---|\n| Acer Swift Go 14 | $779 | Bright screen, long battery |\n| Lenovo IdeaPad Slim 3 | $479 | Best value |\n\n"
+        reply("**The Acer Swift Go 14 is the one to get under $800.**\n\n| Laptop | Price | Why |\n|---|---|---|\n| Acer Swift Go 14 | $779 | Bright screen and long battery, and the lightest of the three, so it is easy to carry around all day |\n| Lenovo IdeaPad Slim 3 | $479 | Best value |\n\n"
               "Here's a note you could send:\n\n```draft\nHi Sam, I'd go with the Acer Swift Go 14. It's $779 and lasts about 10 hours on a charge.\n```\n\n>> Find it cheaper\n>> Compare battery life\n>> Save this as a CSV")
     elif "ASK" in asked:
         ok, text = call("ask_user", question="Which screen size do you want?", options=["13 inch", "15 inch"])
@@ -238,6 +238,15 @@ def home(process):
 def ask(process, words, companion="maya"):
     home(process)
     send(process, "aiSend", text=words, home=True, companion=companion)
+
+
+SPLIT_WORDS = """(() => { const out = [];
+ for (const cell of document.querySelectorAll('.chat-pane .md-table th, .chat-pane .md-table td')) {
+  const walk = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT); let n;
+  while ((n = walk.nextNode())) for (const m of n.data.matchAll(/\\S+/g)) {
+   const r = document.createRange(); r.setStart(n, m.index); r.setEnd(n, m.index + m[0].length);
+   if (new Set([...r.getClientRects()].filter(b => b.width).map(b => Math.round(b.top))).size > 1) out.push(m[0]) } }
+ return out })()"""  # words of the chat's tables that break across lines
 
 
 def capture(process, name):
@@ -440,6 +449,11 @@ def lookup(process):
     click(process, ".chat-pane details.ai-look summary")
     check(until(lambda: js(process, "document.querySelectorAll('.chat-pane .ai-look[open] li').length") == 3, 3), "Opening the search row lists its results")
     check(js(process, "!!document.querySelector('.chat-pane .md-table table') && !!document.querySelector('.chat-pane .md-draft button')"), "The answer has a clean table and a draft with its own Copy button")
+    for width in (480, 640, 0):  # a narrow chat (as when the page is beside it), then as it was
+        js(process, f"(c => {{ c.style.flex = {'none' if width else ''!r}; c.style.width = {f'{width}px' if width else ''!r} }})(document.querySelector('.chat-pane'))")
+        time.sleep(.4)
+        split = js(process, SPLIT_WORDS)
+        check(split == [], f"In a {width or 'full'}-px chat the table wraps only between words: no column squeezed to a letter a line ({split})")
     check(js(process, "document.querySelectorAll('.chat-pane .ai-next .ai-next-step').length") == 3, "It ends with three next steps")
     time.sleep(.5)
     capture(process, "lookup-v01")
