@@ -572,7 +572,7 @@ public partial class MainWindow
    // One list holds every AI's models: picking another AI's model moves the chat to it.
    // The menus under the message box: for the chat on screen, which in a chat tab isn't the side chat's (that one keeps its app).
    case "aiModel" when AiClis.FirstOrDefault(c => c.Id == (S("harness") is { Length: > 0 } hh ? hh : ShownChat?.Harness is { Length: > 0 } sh ? sh : Prefs.AiHarness)) is { } cli && aiModels.GetValueOrDefault(cli.Id) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
-    if (ShownChat is { } mine && mine != aiChat) { if (cli.Id != mine.Harness) { if (Busy(mine)) break; mine.Harness = cli.Id; mine.Session = null; mine.Started = false; SaveAiChats(); } }
+    if (ShownChat is { } onScreen && onScreen != aiChat) { if (cli.Id != onScreen.Harness) { if (Busy(onScreen)) break; onScreen.Harness = cli.Id; onScreen.Session = null; onScreen.Started = false; SaveAiChats(); } }
     else if (cli.Id != harness) { if (Busy(aiChat)) break; UseAi(cli.Id); harness = cli.Id; }
     Prefs.AiModels[cli.Id] = model.Id;
     Prefs.AiEfforts[cli.Id] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
