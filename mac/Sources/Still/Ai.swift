@@ -1044,8 +1044,11 @@ extension Browser {
 
   // One list holds every AI's models: picking another AI's model moves the chat to it.
   case "aiModel":
-   guard let cli = aiClis.first(where: { $0.id == (s("harness").isEmpty ? harness : s("harness")) }), let model = aiModels[cli.id]?.first(where: { $0.id == s("model") }) else { break }
-   if cli.id != harness { if v.chat.map({ runs[$0.id] != nil }) == true { break }; useAi(cli.id); harness = cli.id }
+   // The menus under the message box: for the chat on screen, which in a chat tab isn't the side chat's (that one keeps its app).
+   let mine = shownChat
+   guard let cli = aiClis.first(where: { $0.id == (s("harness").isEmpty ? (mine?.harness).flatMap { $0.isEmpty ? nil : $0 } ?? pref("AiHarness", "") : s("harness")) }), let model = aiModels[cli.id]?.first(where: { $0.id == s("model") }) else { break }
+   if let mine, mine !== v.chat { if cli.id != mine.harness { if runs[mine.id] != nil { break }; mine.harness = cli.id; mine.session = nil; mine.started = false; saveAiChats(mine) } }
+   else if cli.id != harness { if v.chat.map({ runs[$0.id] != nil }) == true { break }; useAi(cli.id); harness = cli.id }
    var models = pref("AiModels", [String: String]()), efforts = pref("AiEfforts", [String: String]())
    models[cli.id] = model.id; efforts[cli.id] = model.efforts.contains(s("effort")) ? s("effort") : ""
    prefs["AiModels"] = models; prefs["AiEfforts"] = efforts
@@ -1705,7 +1708,7 @@ extension Browser {
   let shown = shownChat
   if let shown, shown.unread, showing(shown) { shown.unread = false }
   let run = shown.flatMap { runs[$0.id] }, view = aiView
-  let harness = view.chat?.harness ?? pref("AiHarness", "")
+  let harness = (shown?.harness).flatMap { $0.isEmpty ? nil : $0 } ?? pref("AiHarness", "") // the chat on screen's app, for its model and effort
   let day = { (date: Date) in isoText(date) }
   var data: [String: Any] = [
    "open": view.open, "harness": pref("AiHarness", ""), "busy": run != nil, "queued": run.map { $0.queue.map { ["text": $0.typed, "files": $0.files.map { ["name": $0.name, "size": $0.size] }] } as Any } ?? NSNull(), "worked": shown.map { $0.worked as Any } ?? NSNull(),

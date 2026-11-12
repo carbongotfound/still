@@ -527,14 +527,14 @@ public partial class MainWindow
   return null;
  }
 
- void PublishAi() { var shown = ShownChat; if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
+ void PublishAi() { var shown = ShownChat; var on = shown?.Harness is { Length: > 0 } sh ? sh : Prefs.AiHarness; /* the chat on screen's app, for its model and effort */ if (shown is { Unread: true } && Showing(shown)) shown.Unread = false; var run = shown == null ? null : runs.GetValueOrDefault(shown.Id); ShellSend(new { kind = "ai", data = new {
   open = aiOpen, harness = Prefs.AiHarness, busy = run != null, queued = run?.Queue.Select(q => new { text = q.Typed, files = q.Files.Select(f => new { name = f.Name, size = f.Size }) }), worked = shown?.Worked, interrupted = Interrupted.Where(_ => !incognito && !resumeAnswered).Select(c => new { id = c.Id, title = c.Title, unsure = aiTasks[c.Id].Sensitive.Any(s => s.Outcome == null) }), task = TaskView(shown), incognito,
   runs = runs.Values.Where(r => MyChats.Contains(r.Chat)).Select(r => new { id = r.Chat.Id, root = r.Chat.From != null ? ExchangeOf(r.Chat).Root.Id : null, started = r.Started, tool = workers.GetValueOrDefault(r.Chat.Id)?.Tool, target = workers.GetValueOrDefault(r.Chat.Id)?.Target, question = r.Question?.Text, options = r.Question?.Options, asks = r.Approvals.Where(a => a.Until == null).Select(a => new { id = a.Id, what = a.What, site = a.Site, action = a.Action, why = a.Why }) }), error = shown?.Error is { Length: > 0 } failed ? failed : aiError, profile = ProfileCatalog.CurrentName(), files = Library(),
   models = AiClis.SelectMany(c => aiModels.GetValueOrDefault(c.Id, []).Select(m => new { harness = c.Id, id = m.Id, name = m.Name, efforts = m.Efforts })),
   advanced = Prefs.AiAdvanced, tiers = TiersOf(),
   skills = Skill.All.Select(k => new { id = k.Id, name = k.Name, description = k.Description, when = k.When, body = k.Body, stock = Skill.Stock.ContainsKey(k.Id), edited = k.Edited, source = k.Source, plugin = k.Plugin.Length > 0, only = k.Only.Length > 0 ? k.Only.Split(',') : [] }),
-  model = Prefs.AiModels.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), effort = Prefs.AiEfforts.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""),
-  usage = aiUsage.GetValueOrDefault(aiChat?.Harness ?? Prefs.AiHarness, ""), @checked = aiChecked,
+  model = Prefs.AiModels.GetValueOrDefault(on, ""), effort = Prefs.AiEfforts.GetValueOrDefault(on, ""),
+  usage = aiUsage.GetValueOrDefault(on, ""), @checked = aiChecked,
   harnesses = AiClis.Select(c => new { id = c.Id, name = c.Name, app = c.App, maker = c.Maker, installed = FindCli(c.Command) != null, status = aiStatus.GetValueOrDefault(c.Id, ""), installer = c.Installer, installCommand = c.InstallCommand, site = c.Site, secondary = c.Secondary, compatible = c.Compatible, forgets = c.Forgets, gaps = c.Gaps, terminalSignIn = c.TerminalSignIn, api = c is ApiAdapter, billing = c.Billing }),
   setup = new { line = aiSetupLine, url = aiSignInUrl, code = aiSignInCode }, pending = aiPending.Length > 0,
   chatId = shown?.Id, chatHarness = shown?.Harness, chatCompanion = shown?.Companion, chatFolder = shown == null ? null : FolderOf(shown), nextFolder,
@@ -570,8 +570,10 @@ public partial class MainWindow
   string harness = aiChat?.Harness ?? Prefs.AiHarness;
   switch (op) {
    // One list holds every AI's models: picking another AI's model moves the chat to it.
-   case "aiModel" when AiClis.FirstOrDefault(c => c.Id == (S("harness") is { Length: > 0 } hh ? hh : harness)) is { } cli && aiModels.GetValueOrDefault(cli.Id) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
-    if (cli.Id != harness) { if (Busy(aiChat)) break; UseAi(cli.Id); harness = cli.Id; }
+   // The menus under the message box: for the chat on screen, which in a chat tab isn't the side chat's (that one keeps its app).
+   case "aiModel" when AiClis.FirstOrDefault(c => c.Id == (S("harness") is { Length: > 0 } hh ? hh : ShownChat?.Harness is { Length: > 0 } sh ? sh : Prefs.AiHarness)) is { } cli && aiModels.GetValueOrDefault(cli.Id) is { } models && models.FirstOrDefault(m => m.Id == S("model")) is { } model:
+    if (ShownChat is { } mine && mine != aiChat) { if (cli.Id != mine.Harness) { if (Busy(mine)) break; mine.Harness = cli.Id; mine.Session = null; mine.Started = false; SaveAiChats(); } }
+    else if (cli.Id != harness) { if (Busy(aiChat)) break; UseAi(cli.Id); harness = cli.Id; }
     Prefs.AiModels[cli.Id] = model.Id;
     Prefs.AiEfforts[cli.Id] = model.Efforts.Contains(S("effort")) ? S("effort") : "";
     SaveLater(); foreach (var w in Windows) if (w != this) w.PublishAi();

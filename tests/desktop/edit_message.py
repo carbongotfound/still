@@ -334,6 +334,57 @@ def fake_run(p, port):
     idle(p)
     check(until(lambda: used() == "Fake agent's default model · High effort", 10), f"...and the reply says so ({used()!r})")
     send(p, "companionMode", id=chat(p)["Companion"], mode="default")
+    picked_in_menus(p)
+
+
+def picked_in_menus(p):
+    """The model and effort picked with the menus under the message box, then Edit and Send: the run gets them. The side
+    chat holds another chat, on another app and busy, so the picks must go to the chat on screen, not to that one."""
+    def menu(label, words):
+        js(p, f"""(e => e && (e.dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }})), e.click()))(document.querySelector(".chat-view [aria-label='{label}']"))""")
+        until(lambda: js(p, "!!document.querySelector('[role=menu][data-state=open]')"), 3)
+        time.sleep(.3)
+        js(p, f"""(e => e && (e.dispatchEvent(new PointerEvent('pointerdown', {{ bubbles: true, button: 0, pointerType: 'mouse' }})), e.dispatchEvent(new PointerEvent('pointerup', {{ bubbles: true, button: 0, pointerType: 'mouse' }})), e.click()))([...document.querySelectorAll('[role=menu][data-state=open] [role=menuitem]')].find(e => e.innerText.trim().startsWith({json.dumps(words)})))""")
+        time.sleep(.6)
+    def picker(label):
+        return js(p, f"document.querySelector(\".chat-view [aria-label='{label}']\")?.innerText.trim() ?? ''") or ""
+    def chats():
+        return json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8"))
+    def used():
+        return js(p, "[...document.querySelectorAll('.ai-turn > .ai-actions')].pop()?.querySelector('.ai-used')?.innerText ?? ''")
+    send(p, "aiAdvanced", on=True)
+    send(p, "aiModel", harness="fake", model="fast-1", effort="low")
+    time.sleep(.5)
+    tab = rpc(p)["activeId"]
+    # The side chat: a new chat on the other app, started from a new tab, still working.
+    send(p, "new")
+    until(lambda: rpc(p)["activeId"] != tab, 5)
+    send(p, "aiNew")
+    send(p, "aiHarness", harness="fake2")
+    send(p, "aiToggle")
+    until(lambda: js(p, "!!document.querySelector('.ai-sidebar [aria-label=Message]')"), 10)
+    (BIN / "slow-started").unlink(missing_ok=True)
+    send(p, "aiSend", text="SLOW WORDSIDE in the side chat")
+    check(until(lambda: (BIN / "slow-started").exists(), 30) and any("WORDSIDE" in q["prompt"] and "--as" in q["args"] for q in prompts()),
+          "The side chat starts a long run on the other app")
+    side = next((c["Id"] for c in chats() if any("WORDSIDE" in m["Text"] for m in c["Messages"])), None)
+    send(p, "aiToggle")
+    send(p, "select", id=tab)
+    until(lambda: rpc(p)["activeId"] == tab and js(p, "!!document.querySelector(\".chat-view [aria-label='Model']\")"), 10)
+    time.sleep(.5)
+    menu("Model", "deep-2")
+    menu("Effort", "High")
+    shown = [picker("Model"), picker("Effort")]
+    check(shown == ["deep-2", "High effort"], f"In the chat on screen, the model and effort menus show the picks ({shown})")
+    runs = len(prompts())
+    edit_to(p, "WORDTHIRTEEN after picking in the menus")
+    check(until(lambda: any("WORDTHIRTEEN" in q["prompt"] for q in prompts()[runs:]), 30), "Edit and Send runs it again")
+    a = next((q["args"] for q in reversed(prompts()) if "WORDTHIRTEEN" in q["prompt"]), [])
+    got = ["--as" not in a] + [a[a.index(k) + 1] if k in a else "" for k in ("--model", "--effort")]
+    check(got == [True, "deep-2", "high"], f"...on this chat's app, with deep-2 and high effort as picked ({a})")
+    idle(p, 70)  # the side chat's run too
+    check(next((c.get("Harness") for c in chats() if c["Id"] == side), None) == "fake2", "The side chat's chat stays on its own app")
+    check(until(lambda: used() == "deep-2 · High effort", 10), f"The new reply says deep-2 and high effort ({used()!r})")
 
 
 def live_run(p):
@@ -372,6 +423,9 @@ def main():
         (PROFILE / "agents" / "fake.json").write_text(json.dumps({"id": "fake", "name": "Fake agent", "enabled": True, "command": str(BIN / "fakeagent"),
             "detect": ["status"], "expect": "signed in", "run": ["run", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json",
             "models": ["fast-1", "deep-2"], "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"]}))
+        (PROFILE / "agents" / "fake2.json").write_text(json.dumps({"id": "fake2", "name": "Other agent", "enabled": True, "command": str(BIN / "fakeagent"),
+            "detect": ["status"], "expect": "signed in", "run": ["run", "--as", "fake2", "--mcp", "{mcpConfig}"], "resume": ["--resume", "{session}"], "output": "stream-json",
+            "models": ["other-1"], "model": ["--model", "{model}"], "effort": ["--effort", "{effort}"]}))
     (PROFILE / "state.json").write_text(json.dumps(state))
     p = launch(EXE, PROFILE)
     try:
