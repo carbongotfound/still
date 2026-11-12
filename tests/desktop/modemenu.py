@@ -49,7 +49,8 @@ GEOM = r"""(chip => { const m = [...document.querySelectorAll('.mode-menu')].fil
  const cut = (a, b) => { const l = Math.max(a.left, b.left), t = Math.max(a.top, b.top), r = Math.min(a.right, b.right), bt = Math.min(a.bottom, b.bottom); return r > l && bt > t ? { left: l, top: t, right: r, bottom: bt } : null }
  const hit = (a, b) => a.left < b.right - 1 && b.left < a.right - 1 && a.top < b.bottom - 1 && b.top < a.bottom - 1
  const mates = m.querySelector('.mode-mates')
- const seen = e => { let v = cut(box(e), box(m)); if (v && mates && mates.contains(e)) v = cut(v, box(mates)); return v }  // the part not scrolled away
+ const foot = m.querySelector('.mode-foot'), above = foot && { left: -1e9, top: -1e9, right: 1e9, bottom: box(foot).top }  // Model settings… is pinned over the rows that scroll under it
+ const seen = e => { let v = cut(box(e), box(m)); if (v && mates && mates.contains(e)) v = cut(v, box(mates)); if (v && above && !foot.contains(e)) v = cut(v, above); return v }  // the part not scrolled away or under the pin
  const rows = [...m.querySelectorAll('[data-slot=dropdown-menu-item], [data-slot=dropdown-menu-label], .mode-find-row, .mode-none')].map(e => ({ e, r: box(e), v: seen(e) })).filter(x => x.v)
  const clash = [], spill = [], texts = []
  rows.forEach((a, i) => rows.slice(i + 1).forEach(b => hit(a.v, b.v) && clash.push(say(a.e) + ' over ' + say(b.e))))

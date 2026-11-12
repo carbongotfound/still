@@ -967,6 +967,8 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .mode-check { flex:none; margin-left:auto; width:17px !important; height:17px !important; color:var(--card) !important; fill:var(--foreground); }
 .mode-icon { width:16px !important; height:16px !important; margin-inline:3px; color:var(--foreground) !important; }
 .mode-settings .mode-icon { color:var(--muted-foreground) !important; }
+/* Model settings… stays pinned to the menu's bottom edge while the rows above it scroll. */
+.mode-menu .mode-foot { position:sticky; bottom:-6px; z-index:1; margin:0 -6px -6px; padding:0 6px 6px; background:var(--popover); }
 /* Six companions before it scrolls. Its bar sits in the menu's right padding (always there, a thumb only when there's
    more), so its rows are as wide as the rest and every check stays in one column. */
 .mode-mates { max-height:240px; overflow-y:scroll; margin-right:-6px; scrollbar-color:auto; } /* the menu's scrollbar-color is inherited and would swap this 6 px bar for a full-width one */

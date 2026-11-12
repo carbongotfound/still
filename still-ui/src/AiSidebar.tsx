@@ -392,8 +392,8 @@ function ModeMenu({ ai, send, companion, onCompanion, onOpen, disabled }: { ai: 
    <DropdownMenuLabel className="mode-label">{companion ? "Autonomy for " + companion.name : "Autonomy"}</DropdownMenuLabel>
    {(Object.keys(AUTONOMY) as Autonomy[]).map(id => { const Icon = AUTONOMY_ICON[id]; return <DropdownMenuItem key={id} className="mode-item" disabled={!companion} onSelect={() => { if (companion) send("companionAutonomy", { id: companion.id, level: id }) }}>
     <Icon className="mode-icon" /><span className="mode-text">{AUTONOMY[id].name}<small>{AUTONOMY[id].short}</small></span>{companion && autonomy === id && <CircleCheck className="mode-check" />}</DropdownMenuItem> })}
-   <DropdownMenuSeparator />
-   <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal className="mode-icon" />Model settings…</DropdownMenuItem>
+   <div className="mode-foot"><DropdownMenuSeparator />
+    <DropdownMenuItem className="mode-settings" onSelect={() => openModelSettings(send)}><SlidersHorizontal className="mode-icon" />Model settings…</DropdownMenuItem></div>
   </DropdownMenuContent>
  </DropdownMenu>
 }

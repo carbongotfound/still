@@ -4,8 +4,9 @@
 - The Model tab: Runs on is a styled picker with logos that lists only what can run now (an app that needs a key or
   isn't installed isn't there), picks for the companion, and ends with Model settings…, which opens Settings, Models with
   Your models. The tab also has the default mode, the model and effort for each mode, and the key.
-- Model settings… at the bottom of the message box's mode menu, model picker and effort picker (Advanced) opens Settings,
-  Models with Your models, in view without scrolling, from the new tab page and the side chat.
+- Model settings… at the bottom of the message box's mode menu (pinned there while it scrolls), model picker and effort
+  picker (Advanced) opens Settings, Models with Your models, in view without scrolling, from the new tab page and the
+  side chat.
 - The name menu only switches companions. The ... menu has only what isn't on screen already (Duplicate, Introduce
   yourself again, Open chat in a tab or Chat with, Clear chat, Fire, and Reset for a built-in one): no Model settings, Edit
   look, Rename or Close panel. Every item works, the panel's menus and confirms open above it, and Clear chat and Fire ask
@@ -121,6 +122,24 @@ def in_view(p, item_sel, words):
      const r = e.getBoundingClientRect(); let ok = r.height > 0 && r.top >= 0 && r.bottom <= innerHeight + 1
      for (let a = e.parentElement; a && a !== document.body; a = a.parentElement) {{ const s = getComputedStyle(a); if (/(auto|scroll|hidden)/.test(s.overflowY)) {{ const b = a.getBoundingClientRect(); ok = ok && r.top >= b.top - 1 && r.bottom <= b.bottom + 1 }} }}
      return ok ? 'ok' : 'cut off' }})()""")
+
+
+def pinned(p):
+    """Model settings… is pinned to the open mode menu's bottom edge: the menu scrolls (it does in the QA window), and at
+    the top, middle and end of the scroll the item is whole and at most 10 px above the bottom (its 6 px of padding)."""
+    menu = "document.querySelector('.mode-menu[data-state=open]')"
+    if not js(p, f"(m => !!m && m.scrollHeight > m.clientHeight + 1)({menu})"):
+        return "no scroll"
+    out = []
+    for f in (0, .5, 1):
+        js(p, f"(m => {{ m.scrollTop = {f} * (m.scrollHeight - m.clientHeight) }})({menu})")
+        time.sleep(.25)  # sticky boxes settle after the scroll
+        gap = js(p, f"""(m => {{ const e = [...m.querySelectorAll('[role=menuitem]')].find(e => e.innerText.trim().startsWith('Model settings')); if (!e) return null
+         const r = e.getBoundingClientRect(), b = m.getBoundingClientRect(); return r.top >= b.top - 1 && r.bottom <= b.bottom + 1 ? Math.round(b.bottom - r.bottom) : -1 }})({menu})""")
+        if gap is None or not 0 <= gap <= 10:
+            out.append(f"{f}: {'missing' if gap is None else 'cut off' if gap < 0 else str(gap) + ' px up'}")
+    js(p, f"(m => {{ m.scrollTop = 0 }})({menu})")
+    return ", ".join(out) or "pinned"
 
 
 def panel_tab(p):
@@ -290,9 +309,10 @@ def composer(p):
         press(p, sel)
         until(lambda: js(p, "!!document.querySelector('[role=menu][data-state=open]')"), 3)
         seen = in_view(p, "[role=menu] [role=menuitem]", "Model settings")
+        pin = pinned(p) if label == "mode menu" else "pinned"
         menu_item(p, "Model settings")
         ok = until(lambda: settings_models(p), 5)
-        check(seen == "ok" and ok, f"{where}: Model settings… at the bottom of the {label}, in view ({seen}), opens Settings, Models with Your models")
+        check(seen == "ok" and pin == "pinned" and ok, f"{where}: Model settings… pinned to the bottom of the {label}, in view ({seen}) and kept there while it scrolls ({pin}), opens Settings, Models with Your models")
         close_settings(p)
 
     escape(p)
