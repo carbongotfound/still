@@ -21,15 +21,15 @@ const ACTIONS: Record<string, string> = { read: "Read pages", navigate: "Open pa
 // every new chat, so it reads Ask every time.
 const MODES: Record<string, string> = { always: "Always allow", ask: "Ask every time" }
 // How much a companion does on its own: one pick per companion. Still holds what each level allows (Windows LevelOf, Mac
-// levelOf): clicking and typing on any site, new sites after reading the web, plugin programs, and a line in its instructions.
+// levelOf): clicking and typing on any site, new sites after reading the web, replacing files, and a line in its instructions.
 export const AUTONOMY = {
  ask: { name: "Ask more", short: "Checks in on choices and each site" },
- balanced: { name: "Balanced", short: "Asks once a chat on each site" },
+ balanced: { name: "Balanced", short: "Checks in on big choices and risky steps" },
  keepgoing: { name: "Keep going", short: "Asks only before risky steps" },
 } as const
 export type Autonomy = keyof typeof AUTONOMY
 export const levelOf = (c?: Companion): Autonomy => c?.autonomy ?? "keepgoing"
-export const ALWAYS_ASKS = "At every level, buying, sending, deleting, forms that send data, and password or payment fields ask first, and so do your own computer or network and a long address that carries data to a new site."
+export const ALWAYS_ASKS = "At every level, paying or buying, sending or posting, deleting, accepting terms, forms that send data, password or payment fields and a program it hasn't run before ask first, and so do your own computer or network and a long address that carries data to a new site. A card you don't answer in 2 minutes is skipped, and the companion carries on with the rest."
 
 // Buttons whose meaning just changed wait a moment before they take a click, so a press meant for the last card can't land on the next.
 export function useArmed(key: string) {
@@ -46,13 +46,17 @@ const elide = (path: string) => {
 
 // The cards above the message box: steps waiting for your OK, and countdowns. The bottom row always acts on one step, the oldest,
 // shown right above it, and each button keeps its place; a step that arrives later lands above and can't move anything under the
-// cursor. Approve all and Deny all sit at the top, away from that row, and Ctrl+Enter never presses them.
+// cursor. Approve all and Deny all sit at the top, away from that row, and Ctrl+Enter never presses them. Each card has two
+// choices, Not now and Allow (for this chat on a routine step, once on a risky one), and a small Always link where a rule fits.
 export function Approvals({ list, companion, companions, send, incognito }: { list: Approval[]; companion?: Companion; companions?: Companion[]; send: Send; incognito?: boolean }) {
  const asks = list.filter(a => !a.until), one = asks.length === 1 ? asks[0] : null, active = asks[0]
  const mate = (a?: Approval | null) => companions?.find(c => c.id === a?.who) ?? companion, name = mate(one)?.name ?? "Your AI"
  const ready = useArmed(active?.id ?? ""), readyAll = useArmed(asks.map(a => a.id).join())
  const byId = (id: string) => list.find(a => a.id === id)
  const answer = (id: string, a: string) => send("permAnswer", { id, run: byId(id)?.run, answer: a })
+ const routine = (a: Approval) => a.action === "see" || ["read", "navigate", "interact"].includes(a.action)
+ const always = (a: Approval) => a.action === "program" ? "Always allow this plugin's programs" : !incognito && a.site && ["read", "navigate", "interact", "sensitive"].includes(a.action)
+  ? `Always allow this on ${a.site}` + (a.action === "sensitive" ? ". It still waits 8 seconds, so you can cancel" : "") : ""
  return <>
   {list.filter(a => a.until).map(a => <Countdown key={a.id} card={a} send={send} />)}
   {asks.length > 0 && <div className="ask-card approve-card" role="group" aria-label={name + " needs your OK"}>
@@ -65,20 +69,11 @@ export function Approvals({ list, companion, companions, send, incognito }: { li
    </li>)}</ul>
    <div className="approve-actions">{active.action === "folder" // a working folder for this chat: asked every time, on every level
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "pick")}>Choose another folder</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow</Button></>
-    : active.action === "see" // a folder to look in, read-only: until this reply ends, or for this chat
-    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "chat")}>Allow for this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
     : active.action === "connect"
     ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "connect")}>{active.what}</Button></>
-    : active.action === "program" // a plugin's program: once, or from now on for that plugin
-    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" variant="outline" disabled={!ready} onClick={() => answer(active.id, "always")}>Always for this plugin</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
-    : active.action === "plugin" // the user's own apps, and a plugin's setup: once at a time, never "always"
-    ? <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
-    : <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Deny</Button>
-     {incognito || !active.site || active.action === "files" ? <span /> : <Button size="sm" variant="outline" disabled={!ready} title={active.action === "sensitive" ? "It still waits 8 seconds next time, so you can cancel" : undefined} onClick={() => answer(active.id, "always")}>Always on this site</Button>}
-     {active.action === "sensitive"
-      ? <><Button size="sm" variant="outline" disabled={!ready} title="It still waits 8 seconds next time, so you can cancel" onClick={() => answer(active.id, "chat")}>Allow in this chat</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>
-      : <><Button size="sm" disabled={!ready} onClick={() => answer(active.id, "chat")}>Allow in this chat</Button><Button size="sm" variant="outline" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, "once")}>Allow once</Button></>}</>}
+    : <><Button size="sm" variant="ghost" disabled={!ready} onClick={() => answer(active.id, "deny")}>Not now</Button><Button size="sm" data-approve title="Ctrl+Enter" disabled={!ready} onClick={() => answer(active.id, routine(active) ? "chat" : "once")}>Allow</Button></>}
    </div>
+   {always(active) && <button className="approve-always" disabled={!ready} title={always(active)} onClick={() => answer(active.id, "always")}>Always</button>}
   </div>}
  </>
 }

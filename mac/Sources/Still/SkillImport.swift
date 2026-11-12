@@ -249,16 +249,16 @@ extension Browser {
   if given.count > 40 || given.contains(where: { $0.count > 4000 }) { return agentFail("Too many or too long arguments: 40 at most, 4,000 characters each.") }
   let setup = regexMatch("(?i)setup|install", full.deletingPathExtension().lastPathComponent) != nil
   let shown = given.joined(separator: " "), what = "Run " + rel + (given.isEmpty ? "" : " " + (shown.count > 80 ? String(shown.prefix(79)) + "…" : shown))
-  let auto = keepGoing(run.chat)
-  if setup || !auto && !pref("PluginsAllowed", [String]()).contains(id) {
+  // A program it hasn't run before asks at every level; Always lets that plugin's programs run from then on. Setup asks every time.
+  if setup || !pref("PluginsAllowed", [String]()).contains(id) {
    let answer = await approve(run, what, skill.source, setup ? "plugin" : "program",
     setup ? "Setup can install other programs on your computer. It runs at your own risk." : "A program from a plugin you added. It runs on your computer with your access.", countdown: false)
-   audit(run.chat, what, skill.source, answer == "always" ? "You allowed this plugin" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no")
+   audit(run.chat, what, skill.source, answer == "always" ? "You allowed this plugin" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? noAnswer : "You said no")
    if answer == "always" && !setup && !pref("PluginsAllowed", [String]()).contains(id) { prefs["PluginsAllowed"] = pref("PluginsAllowed", [String]()) + [id]; saveLater() }
    publishAiEverywhere()
-   guard answer == "once" || answer == "always" else { return agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't run it again unless they ask.") }
-  } else { audit(run.chat, what, skill.source, "Ran without asking, as Keep going allows") }
-  let fromWeb = exchangeOf(run.chat).root; fromWeb.read = max(fromWeb.read, 1) // its output is someone else's text, like a page
+   guard answer == "once" || answer == "always" else { return answer == "timeout" ? skipped(what) : agentFail("The user said no to this. Don't run it again unless they ask.") }
+  } else { audit(run.chat, what, skill.source, "Ran without asking, as you always allow this plugin") }
+  let fromWeb = exchangeOf(run.chat).root; fromWeb.read = max(fromWeb.read, 1); fromWeb.web = max(fromWeb.web, 1) // its output is someone else's text, like a page
   chatStep(run.chat, "Ran " + rel); publishAiEverywhere()
   let seconds = min(max((args["timeout"] as? NSNumber)?.doubleValue ?? 120, 5), 600)
   var env = ProcessInfo.processInfo.environment.filter { !$0.key.uppercased().hasPrefix("STILL_") }

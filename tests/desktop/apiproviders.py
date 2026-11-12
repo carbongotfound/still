@@ -100,7 +100,7 @@ def main():
     ant = Fake(key=K2)
     PROFILE.mkdir(parents=True)
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True,
-        "Permissions": [{"Site": "", "Action": a, "Companion": "", "Mode": "always"} for a in ("read", "navigate")]},
+        "Permissions": [{"Site": "", "Action": a, "Companion": "", "Mode": m} for a, m in (("read", "always"), ("navigate", "always"), ("interact", "chat"))]},  # a chat with no companion clicks without asking now: this one asks
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     env = {**os.environ, "OPENAI_API_KEY": "sk-env-not-real", "ANTHROPIC_API_KEY": "sk-env-not-real", "STILL_QA_TITLES": "1"}
     p = launch(EXE, PROFILE, env)
@@ -171,8 +171,8 @@ def main():
         send(p, "aiSend", text='CALL open_tab {"url": "' + fake.url + '/page"}\nCALL click {"text": "Press me"}')
         card = " ".join(until(lambda: js(p, "[...document.querySelectorAll('.approve-card .approve-steps li')].map(e => e.innerText)"), 30) or [])
         check("Press me" in card and "127.0.0.1" in card, "A click waits on the approval card, naming the step and the site")
-        press_ready(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow once')")
-        check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "Allow once lets the click run")
+        press_ready(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow')")
+        check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "Allow lets the click run")
         idle(p)
 
         # While a step runs, its row shimmers and the line under it says how long it's been working.

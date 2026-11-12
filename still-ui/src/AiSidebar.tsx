@@ -1233,7 +1233,7 @@ export function RunningTasks({ ai, send, onOpen, tabs }: { ai: AiState; send: Se
     {r.asks?.map(a => <div key={a.id} className="tasks-ask"><p>{a.what} <small>on {a.site}{a.why ? " · " + a.why : ""}</small></p>
      {a.action === "sensitive" || a.action === "plugin"
       ? <button onClick={() => send("chatOpen", { id: r.id })}>Open to decide</button>
-      : <><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow once</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Deny</button></>}</div>)}
+      : <><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "once" })}>Allow</button><button onClick={() => send("permAnswer", { run: r.id, id: a.id, answer: "deny" })}>Not now</button></>}</div>)}
    </div> })}
    {apps.length > 0 && <><DropdownMenuSeparator /><DropdownMenuLabel>Other AI apps' tabs</DropdownMenuLabel>
     {apps.map(t => <div key={t.id} className="tasks-page is-app">{t.favicon ? <img src={t.favicon} alt="" /> : <Globe />}<span title={t.url}>{t.agent ? t.agent + ": " : ""}{t.title || host(t.url)}</span><button onClick={() => send("tabMine", { id: t.id })}>Move to my tabs</button></div>)}</>}

@@ -1,5 +1,5 @@
 """A step says it happened only once it did. A fake model (fakemodels.py) calls click on a local page, through Still's real
-permission card: while the card is open, after Deny, after Stop, and after Allow once. Also the Make your own form's words
+permission card: while the card is open, after Not now, after Stop, and after Allow. Also the Make your own form's words
 before a name is typed.
 
 Run: python tests/desktop/stepstate.py artifacts/Still-QA/Still.exe
@@ -62,7 +62,7 @@ def main():
     fake = Fake(key=KEY)
     PROFILE.mkdir(parents=True)
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": CREW, "AgentsEnabled": True,
-        "Permissions": [{"Site": "", "Action": a, "Companion": "", "Mode": "always"} for a in ("read", "navigate")]},
+        "Permissions": [{"Site": "", "Action": a, "Companion": "", "Mode": m} for a, m in (("read", "always"), ("navigate", "always"), ("interact", "chat"))]},  # a chat with no companion clicks without asking now: this one asks
         "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
     p = launch(EXE, PROFILE)
     try:
@@ -82,11 +82,11 @@ def main():
         check(r and r["line"] == "Clicking “Press me”" and r["spinning"] and not r["tick"], f"While the card is open the step is still going ({r})")
         check("Clicked" not in text(p), "and nothing says Clicked")
 
-        # Deny.
-        check(press(p, "Deny"), "Deny is pressed")
+        # Not now.
+        check(press(p, "Not now"), "Not now is pressed")
         idle(p)
         r = until(lambda: (x := row(p)) and x["failed"] and x, 15)
-        check(r and r["line"] == "Didn't click “Press me”" and not r["tick"], f"After Deny the step says it didn't happen, with no tick ({r})")
+        check(r and r["line"] == "Didn't click “Press me”" and not r["tick"], f"After Not now the step says it didn't happen, with no tick ({r})")
         check("Clicked" not in text(p), "and nothing says Clicked")
         check(not any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), "and the page wasn't clicked")
 
@@ -101,11 +101,11 @@ def main():
         check("Clicked" not in text(p), "and nothing says Clicked")
         check(not any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), "and the page wasn't clicked")
 
-        # Allow once: now it did happen.
+        # Allow: now it did happen.
         send(p, "aiNew")
         send(p, "aiSend", text="Allow this\n" + click)
         check(until(lambda: card(p), 30), "The card is open a third time")
-        check(press(p, "Allow once"), "Allow once is pressed")
+        check(press(p, "Allow"), "Allow is pressed")
         check(until(lambda: any(t["Title"] == "Pressed" for t in rpc(p)["tabs"]), 20), "The click runs")
         idle(p)
         r = until(lambda: (x := row(p)) and x["tick"] and x, 15)
@@ -115,7 +115,7 @@ def main():
         send(p, "aiNew")
         send(p, "aiSend", text="Allow this\n" + click.replace("Press me", "Do nothing"))
         check(until(lambda: card(p), 30), "The card is open for a button that does nothing")
-        check(press(p, "Allow once"), "Allow once is pressed")
+        check(press(p, "Allow"), "Allow is pressed")
         idle(p)
         r = until(lambda: (x := row(p)) and x["failed"] and x, 15)
         check(r and r["line"] == "No change after clicking “Do nothing”" and not r["tick"], f"A click that changed nothing says so, with no tick ({r})")

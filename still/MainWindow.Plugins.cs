@@ -366,9 +366,9 @@ public partial class MainWindow
   if (!PluginReads(info, action, slug)) {
    string what = (Str(info, "name") is { Length: > 0 } name ? name : action) + " in " + app;
    string answer = await Approve(run, what, app, "plugin", PluginWhy(arguments as JsonObject), countdown: false);
-   Audit(run.Chat, what, app, answer is "once" or "chat" or "always" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no");
+   Audit(run.Chat, what, app, answer is "once" or "chat" or "always" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? NoAnswer : "You said no");
    PublishAiEverywhere();
-   if (answer is not ("once" or "chat" or "always")) return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.");
+   if (answer is not ("once" or "chat" or "always")) return answer == "timeout" ? Skipped(what) : Fail("The user said no to this. Don't try it again unless they ask.");
   }
   var done = await Composio(HttpMethod.Post, "/tools/execute/" + Uri.EscapeDataString(action), new { user_id = PluginUser, connected_account_id = account.Id, arguments });
   if (done == null) return Fail("Composio isn't answering, so it didn't run. Tell the user.");

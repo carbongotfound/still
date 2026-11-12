@@ -1,9 +1,9 @@
 """Work in a folder: a companion's working folder, where its AI app lists, reads, creates and edits files with Still's tools.
 
 Any AI app gets list_files, read_file, write_file, edit_file and delete_file. Inside the folder it lists, reads, creates
-and edits without a card, and replaces or deletes a file it made in that chat. Replacing a file of the user's asks (Deny,
-Allow in this chat, Allow once) unless the companion is on Keep going; deleting one always asks and sends it to the
-Recycle Bin (the Trash on a Mac). Allow in this chat stops the asking in that folder. A path with "..", a full path
+and edits without a card, and replaces or deletes a file it made in that chat. Replacing a file of the user's asks (Not
+now, Allow) on Ask more, not on Balanced or Keep going; deleting one always asks, once at a time, and sends it to the
+Recycle Bin (the Trash on a Mac). A path with "..", a full path
 outside the folder and a link out of it are refused without a card; a full path inside works. A companion with no
 folder is told it has none.
 
@@ -202,7 +202,7 @@ def main():
     link(WORK / "door", OUTSIDE)
     (PROFILE / "ai").mkdir(parents=True)
     (PROFILE / "ai" / "chats.json").write_text(json.dumps([long_chat()]))
-    crew = [{"Id": "maya", "Name": "Maya", "Job": "Builder", "Mode": "default", "Folder": str(WORK), "Autonomy": "balanced"},
+    crew = [{"Id": "maya", "Name": "Maya", "Job": "Builder", "Mode": "default", "Folder": str(WORK), "Autonomy": "ask"},
             {"Id": "leo", "Name": "Leo", "Job": "Researcher", "Mode": "default", "Autonomy": "balanced"}]
     (PROFILE / "state.json").write_text(json.dumps({"UiVersion": 6, "Welcome": False, "Preferences": {"Companions": crew, "AgentsEnabled": True, "AiHarness": "fake",
         "Width": 1300, "Height": 860}, "Tabs": [{"Id": "home", "Title": "Home", "Url": "about:blank"}], "ActiveId": "home"}))
@@ -242,20 +242,20 @@ def main():
         # Replacing a file of the user's asks; Deny keeps it.
         cid, before = calls(p, cid, [["write_file", {"path": "mine.txt", "content": "changed"}]])
         asked = card(p)
-        check("Replace mine.txt" in asked.get("text", "") and "Work folder" in asked.get("text", "") and asked.get("buttons") == ["Deny", "Allow in this chat", "Allow once"],
-              f"Replacing a file of the user's asks, with no Always ({asked})")
-        press(p, "Deny")
+        check("Replace mine.txt" in asked.get("text", "") and "Work folder" in asked.get("text", "") and asked.get("buttons") == ["Not now", "Allow"] and "Always" not in asked.get("text", ""),
+              f"On Ask more, replacing a file of the user's asks, with no Always ({asked})")
+        press(p, "Not now")
         r = got(before, 1)
-        check(r and r[0]["error"] and "said no" in r[0]["text"] and read("mine.txt") == "keep me", "Deny keeps the file as it was")
+        check(r and r[0]["error"] and "said no" in r[0]["text"] and read("mine.txt") == "keep me", "Not now keeps the file as it was")
         idle(p, cid)
 
-        # Deleting asks; Allow once sends it to the Recycle Bin. Its own file it deletes without asking.
+        # Deleting asks; Allow sends it to the Recycle Bin. Its own file it deletes without asking.
         cid, before = calls(p, cid, [["delete_file", {"path": "still-qa-delete-1.txt"}], ["delete_file", {"path": "made/new.md"}]])
         asked = card(p)
         check("Delete still-qa-delete-1.txt" in asked.get("text", ""), f"Deleting a file of the user's asks ({asked.get('text', '')[:120]!r})")
-        press(p, "Allow once")
+        press(p, "Allow")
         r = got(before, 2)
-        check(r and not r[0]["error"] and not (WORK / "still-qa-delete-1.txt").exists(), f"Allow once deletes it ({r[0]['text'][:90] if r else None})")
+        check(r and not r[0]["error"] and not (WORK / "still-qa-delete-1.txt").exists(), f"Allow deletes it ({r[0]['text'][:90] if r else None})")
         check(len(r) > 1 and not r[1]["error"] and not (WORK / "made" / "new.md").exists(), "A file it made in this chat it deletes without asking")
         idle(p, cid)
 
@@ -273,7 +273,7 @@ def main():
         check(no_card(p) and (OUTSIDE / "secret.txt").exists() and not (OUTSIDE / "new.txt").exists(), "...with no card, and nothing outside changed")
         idle(p, cid)
 
-        # Keep going: replacing goes ahead, deleting still asks. Allow in this chat stops the asking, on Balanced too.
+        # Keep going and Balanced: replacing goes ahead, deleting still asks every time.
         send(p, "companionAutonomy", id="maya", level="keepgoing")
         time.sleep(1)
         cid, before = calls(p, cid, [["write_file", {"path": "mine.txt", "content": "auto"}], ["delete_file", {"path": "still-qa-delete-2.txt"}]])
@@ -281,19 +281,22 @@ def main():
         r = results()[before:]
         check(r and not r[0]["error"] and read("mine.txt") == "auto", "On Keep going replacing a file of the user's goes ahead")
         check("Delete still-qa-delete-2.txt" in asked.get("text", ""), "...but deleting one still asks")
-        press(p, "Allow in this chat")
+        press(p, "Allow")
         r = got(before, 2)
-        check(len(r) > 1 and not r[1]["error"] and not (WORK / "still-qa-delete-2.txt").exists(), "Allow in this chat deletes it")
+        check(len(r) > 1 and not r[1]["error"] and not (WORK / "still-qa-delete-2.txt").exists(), "Allow deletes it")
         idle(p, cid)
         send(p, "companionAutonomy", id="maya", level="balanced")
         time.sleep(1)
         cid, before = calls(p, cid, [["write_file", {"path": "mine.txt", "content": "after"}], ["delete_file", {"path": "still-qa-delete-3.txt"}]])
+        asked = card(p)
+        check(read("mine.txt") == "after" and "Delete still-qa-delete-3.txt" in asked.get("text", ""), "On Balanced too: replacing goes ahead, and deleting asks again")
+        press(p, "Not now")
         r = got(before, 2)
-        check(len(r) == 2 and not any(x["error"] for x in r) and read("mine.txt") == "after" and not (WORK / "still-qa-delete-3.txt").exists() and no_card(p),
-              "After Allow in this chat, that chat replaces and deletes in the folder without asking, on Balanced too")
+        check(len(r) == 2 and r[1]["error"] and (WORK / "still-qa-delete-3.txt").exists(), "Not now keeps it")
         idle(p, cid)
+        send(p, "companionAutonomy", id="maya", level="ask")
         audit = [a.get("Result", "") for c in chats() if c["Id"] == cid for a in c.get("Audit", [])]
-        check("You said no" in audit and "You allowed it once" in audit and any("Keep going" in a for a in audit) and "You allowed changes in this folder for this chat" in audit,
+        check("You said no" in audit and "You allowed it once" in audit and "Done without asking, as Balanced and Keep going allow" in audit,
               f"The chat's log says how each change was allowed ({audit})")
 
         # A chat's own folder: the box shows the active one; one picked before the chat starts goes with it.
@@ -444,7 +447,7 @@ def main():
         idle(p, cid4)
 
         # To see a folder outside its working folder (or with none): a card, then list_files and read_file by full path
-        # there, read-only. Allow once lasts until the reply ends; Allow for this chat, the rest of the chat.
+        # there, read-only, for the rest of the chat.
         clips = RUN / "clips"
         clips.mkdir()
         put(clips / "take1.txt", "first take")
@@ -452,25 +455,15 @@ def main():
                                         ["read_file", {"path": str(clips / "take1.txt")}], ["write_file", {"path": str(clips / "new.txt"), "content": "x"}]], companion="leo")
         asked = card(p)
         text = asked.get("text", "")
-        check(text.startswith("Let Leo see ") and "clips?" in text and str(clips) in text and "to look at the takes" in text and asked.get("buttons") == ["Not now", "Allow for this chat", "Allow once"],
-              f"Asking to see a folder shows a card: Let Leo see it, with Not now, Allow for this chat and Allow once ({asked})")
+        check(text.startswith("Let Leo see ") and "clips?" in text and str(clips) in text and "to look at the takes" in text and asked.get("buttons") == ["Not now", "Allow"],
+              f"Asking to see a folder shows a card: Let Leo see it, with Not now and Allow ({asked})")
         screens(p, PROFILE, "6-see-card")
-        press(p, "Allow once")
+        press(p, "Allow")
         r = got(before, 4)
-        check(len(r) == 4 and not r[0]["error"] and "until you finish this reply" in r[0]["text"] and out(r[1]).get("items") == ["take1.txt (10 B)"] and "first take" in r[2]["text"],
-              f"Allow once: it lists and reads the folder by full path ({[x['text'][:60] for x in r]})")
+        check(len(r) == 4 and not r[0]["error"] and "for the rest of this chat" in r[0]["text"] and out(r[1]).get("items") == ["take1.txt (10 B)"] and "first take" in r[2]["text"],
+              f"Allow: it lists and reads the folder by full path ({[x['text'][:60] for x in r]})")
         check(len(r) == 4 and r[3]["error"] and "only look" in r[3]["text"] and not (clips / "new.txt").exists(), f"...read-only: writing there is refused ({r[3]['text'][:80] if len(r) == 4 else None})")
         check(not next((c.get("Folder") for c in chats() if c["Id"] == cid5), None), "...and it isn't made the chat's working folder")
-        idle(p, cid5)
-        cid5, before = calls(p, cid5, [["list_files", {"path": str(clips)}]])
-        r = got(before, 1)
-        check(r and r[0]["error"] and no_card(p), f"Once lasts until that reply ends: the next one can't look ({r[0]['text'][:80] if r else None})")
-        idle(p, cid5)
-        cid5, before = calls(p, cid5, [["request_folder", {"path": str(clips)}]])
-        card(p)
-        press(p, "Allow for this chat")
-        r = got(before, 1)
-        check(r and not r[0]["error"] and "for the rest of this chat" in r[0]["text"], f"Allow for this chat ({r[0]['text'][:80] if r else None})")
         idle(p, cid5)
         cid5, before = calls(p, cid5, [["read_file", {"path": str(clips / "take1.txt")}], ["request_folder", {"path": str(clips)}]])
         r = got(before, 2)

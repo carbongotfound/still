@@ -77,7 +77,7 @@ SERVERS = [http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler), Server6((
 for s in SERVERS:
     threading.Thread(target=s.serve_forever, daemon=True).start()
 # Maya as in the launch video: her role's look (shipped heads, a file for each size) and Keep going, the default, so a
-# new site doesn't stop for an OK (the QA crew is Balanced for the suites that test asking).
+# new site doesn't stop for an OK (the QA crew is on Ask more for the suites that test asking).
 MAYA = [dict(c, Crew="research", Autonomy="keepgoing") if c["Id"] == "maya" else c for c in CREW]
 # Three hosts, so no page counts as a site already signed in to.
 URLS = {"white": f"http://127.0.0.1:{SERVERS[0].server_port}/white", "dark": f"http://localhost:{SERVERS[0].server_port}/dark",

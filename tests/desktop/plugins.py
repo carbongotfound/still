@@ -4,7 +4,7 @@ A fake AI app plays a companion that uses them.
   NOPLUG       loads Gmail's actions and runs one, with no key
   READMAIL     lists what's connected, loads Gmail's actions, then reads mail (a read: no card)
   FINDAPPS     looks apps up by name and category, asks for an app that doesn't exist and runs another app's action
-  SENDMAIL     sends an email (a write: a card, Deny or Allow once)
+  SENDMAIL     sends an email (a write: a card, Not now or Allow)
   SLACK        posts in Slack, which isn't connected (a card that connects it, then the write's card)
   PEEK         writes down its environment and Still's tool list, looking for the key
   WEB <site>   opens a page (the browser still works when Composio doesn't)
@@ -26,7 +26,7 @@ environment. Composio's whole catalog loads page by page and is cached, logos to
 says why and the saved list stays. The Composio connect flow: Connect opens Composio's sign-in in a Still window, which
 closes when it's done, and a connect Composio refuses shows on that app. Companions get four small lookups and no app's
 actions until they ask for one app: list_connected_plugins (names only), find_plugins, get_plugin_tools,
-run_plugin_action; reads go ahead, writes ask (Deny or Allow once, nothing else); per-companion switches under the
+run_plugin_action; reads go ahead, writes ask (Not now or Allow, nothing else); per-companion switches under the
 Connected check and in the profile; a missing app gets a card that connects it; Composio down; Disconnect. Settings
 shows the key only as set with its last four characters: Change checks a new key before it replaces the old one, and
 Delete turns plugins off. Setup has no plugins step since 2.10: plugins come up from the home page and Settings.
@@ -559,30 +559,30 @@ def reads_and_writes(process):
     ask(process, "SENDMAIL")
     card = until(lambda: cards(process), 20)
     check(card and "Send email in Gmail" in card[0] and "sam@example.com" in card[0], f"Sending an email waits on a card that says what and to whom ({card})")
-    check(buttons(process) == ["Deny", "Allow once"], f"Its only choices are Deny and Allow once ({buttons(process)})")
-    press(process, "Deny")
+    check(buttons(process) == ["Not now", "Allow"] and not js(process, "!!document.querySelector('.approve-card .approve-always')"), f"Its only choices are Not now and Allow ({buttons(process)})")
+    press(process, "Not now")
     idle(process)
     ask(process, "LONGMAIL")
     card = until(lambda: cards(process), 20)
     shown = " ".join(card or [])
     check("sam@example.com" in shown and "copy@example.com" in shown and "tries: 2" in shown and "more characters not shown" in shown, f"The card shows everything the action carries, and says when it can't ({shown[:160]})")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     ask(process, "SENDMAIL")
     until(lambda: cards(process), 20)
     check(not [e for e in MOCK["executed"] if e["tool"] == "GMAIL_SEND_EMAIL"], "Nothing is sent while it waits")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     check(calls("SENDMAIL")[-1]["ok"] is False and not [e for e in MOCK["executed"] if e["tool"] == "GMAIL_SEND_EMAIL"], "Deny: nothing is sent, and the companion is told no")
     ask(process, "SENDMAIL")
     until(lambda: cards(process), 20)
-    press(process, "Allow once")
+    press(process, "Allow")
     idle(process)
     sent = [e for e in MOCK["executed"] if e["tool"] == "GMAIL_SEND_EMAIL"]
-    check(len(sent) == 1 and sent[0]["arguments"]["to"] == "sam@example.com" and calls("SENDMAIL")[-1]["ok"], "Allow once: it's sent, once")
+    check(len(sent) == 1 and sent[0]["arguments"]["to"] == "sam@example.com" and calls("SENDMAIL")[-1]["ok"], "Allow: it's sent, once")
     ask(process, "SENDMAIL")
     check(until(lambda: cards(process), 20), "The next send asks again: no silent sends")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
 
     open_plugins(process)
@@ -633,7 +633,7 @@ def missing(process):
     sign_in(process, "Slack")
     card = until(lambda: (c := cards(process)) and "Send message in Slack" in c[0] and c, 20)
     check(card, "Once Slack is connected, the post itself still asks first")
-    press(process, "Allow once")
+    press(process, "Allow")
     idle(process)
     check(calls("SLACK")[-1]["ok"] and [e for e in MOCK["executed"] if e["tool"] == "SLACK_SEND_MESSAGE"], "Then it's posted")
 

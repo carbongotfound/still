@@ -48,8 +48,8 @@ public partial class MainWindow
   if (chat != null) { chat.Folder = path; SaveAiChats(); } else nextFolder = path;
   PublishAiEverywhere();
  }
- /// Everyone in the chain (the companion, and whoever it's helping) is on Keep going.
- bool KeepGoing(AiChat chat) => ExchangeOf(chat).Chain.All(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).Programs == "auto");
+ /// Everyone in the chain (the companion, and whoever it's helping) is on Balanced or Keep going: replacing a file goes ahead.
+ bool KeepGoing(AiChat chat) => ExchangeOf(chat).Chain.All(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).Files == "auto");
 
  /// A path the AI gave (relative, or full and inside), as a full path inside root; throws with why it can't be.
  internal static string Inside(string root, string given)
@@ -163,12 +163,12 @@ public partial class MainWindow
     return Reply(new { done = path + " is in your working folder: list_files and read_file reach it already." });
    if (SeenFolder(run, path) != null) return Reply(new { done = "You can look in " + path + " already: list_files and read_file with full paths there." });
    string seen = await Approve(run, "See " + name, path, "see", why, countdown: false);
-   Audit(run.Chat, "See " + path, name, seen switch { "once" => "You allowed it until this reply ends", "chat" => "You allowed it for this chat", "stop" => "Stopped", "timeout" => "No answer in 10 minutes", _ => "Not now" });
+   Audit(run.Chat, "See " + path, name, seen switch { "once" => "You allowed it until this reply ends", "chat" => "You allowed it for this chat", "stop" => "Stopped", "timeout" => NoAnswer, _ => "Not now" });
    if (seen == "chat") run.Chat.Allowed.Add("see " + path); else if (seen == "once") run.Seen.Add(path);
    PublishAiEverywhere();
    return seen is "once" or "chat"
     ? Reply(new { done = $"You can look in {path} {(seen == "chat" ? "for the rest of this chat" : "until you finish this reply")}: list_files and read_file with full paths there, like {Path.Combine(path, "notes.txt")}. It's read-only: to change files there, ask with request_folder and write: true." })
-    : Fail(seen == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without it, or ask them in your reply.");
+    : seen == "timeout" ? Skipped("See " + path) : Fail("The user said not now. Carry on without it, or ask them in your reply.");
   }
   if (path.Equals(work, StringComparison.OrdinalIgnoreCase)) return Reply(new { done = "You already work in " + path });
   string answer = await Approve(run, "Work in " + name, path, "folder", why, countdown: false);
@@ -176,8 +176,8 @@ public partial class MainWindow
    var pick = new Microsoft.Win32.OpenFolderDialog { Title = "Pick a folder for this chat", InitialDirectory = path };
    if (pick.ShowDialog(this) == true) { path = Path.TrimEndingDirectorySeparator(pick.FolderName); answer = "picked"; } else answer = "deny";
   }
-  Audit(run.Chat, "Work in " + path, name, answer switch { "once" => "You allowed it", "picked" => "You picked this folder", "stop" => "Stopped", "timeout" => "No answer in 10 minutes", _ => "Not now" });
-  if (answer is not ("once" or "picked")) { PublishAiEverywhere(); return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without the folder, or ask them in your reply."); }
+  Audit(run.Chat, "Work in " + path, name, answer switch { "once" => "You allowed it", "picked" => "You picked this folder", "stop" => "Stopped", "timeout" => NoAnswer, _ => "Not now" });
+  if (answer is not ("once" or "picked")) { PublishAiEverywhere(); return answer == "timeout" ? Skipped("Work in " + path) : Fail("The user said not now. Carry on without the folder, or ask them in your reply."); }
   run.Chat.Folder = path; run.Chat.FolderTold = path;
   SaveAiChats(); PublishAiEverywhere();
   return Reply(new { done = $"You work in {path} now" + (answer == "picked" ? ", the folder the user picked" : "") + ": list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it." });
@@ -200,12 +200,12 @@ public partial class MainWindow
  {
   string key = "files " + root, site = Path.GetFileName(root);
   if (run.Chat.Made.Contains(path) || run.Chat.Allowed.Contains(key)) return null;
-  if (!delete && KeepGoing(run.Chat)) { Audit(run.Chat, what, site, "Done without asking, as Keep going allows"); return null; }
+  if (!delete && KeepGoing(run.Chat)) { Audit(run.Chat, what, site, "Done without asking, as Balanced and Keep going allow"); return null; }
   string answer = await Approve(run, what, site, "files", why, countdown: false);
-  Audit(run.Chat, what, site, answer == "chat" ? "You allowed changes in this folder for this chat" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no");
+  Audit(run.Chat, what, site, answer == "chat" ? "You allowed changes in this folder for this chat" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? NoAnswer : "You said no");
   if (answer == "chat") run.Chat.Allowed.Add(key);
   PublishAiEverywhere();
-  return answer is "once" or "chat" ? null : Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.");
+  return answer is "once" or "chat" ? null : answer == "timeout" ? Skipped(what) : Fail("The user said no to this. Don't try it again unless they ask.");
  }
 
  [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]

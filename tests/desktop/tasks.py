@@ -192,7 +192,7 @@ try:
 
     ask(p, "CART")
     check(until(lambda: state("CART") == ("waiting", "approval"), 20), f"An approval card: waiting for approval ({state('CART')})")
-    press(p, "Allow once")
+    press(p, "Allow")
     check(until(lambda: state("CART") == ("completed", ""), 20), f"Allowed and done: completed ({state('CART')})")
     steps = [s["What"] for s in task(chat_id("CART")).get("Steps", [])]
     check(len(steps) == 2 and all(s["Ok"] for s in task(chat_id("CART"))["Steps"]), f"A checkpoint after each step ({steps})")
@@ -216,7 +216,7 @@ try:
     ask(p, "SLOW two")
     until(lambda: len(calls("SLOW two")) >= 1, 20)
     ask(p, "BUY")
-    until(lambda: press(p, "Allow in this chat"), 20)  # typing the name: allowed for this chat only
+    until(lambda: press(p, "Allow"), 20)  # typing the name: allowed for this chat only
     until(lambda: press(p, "Do it now", ".countdown-card"), 20)  # the standing rule for purchases counts down
     check(until(lambda: ORDERS, 20), "Place order reached the shop")
     unsure = [s for s in task(chat_id("BUY")).get("Sensitive", []) if s.get("Outcome") is None]
@@ -272,7 +272,7 @@ try:
     check("Click “Place order”" in brief and "may or may not have gone through" in brief and "Check the site first" in brief, "The new run is told what it did and to check the order first")
     card = until(lambda: js(p, "document.querySelector('.approve-card')?.innerText ?? ''"), 45) or ""  # opening the shop can take up to 15 s
     check("Place order" in card and not js(p, "!!document.querySelector('.countdown-card')"), f"Trying it again asks with a card, not a countdown ({card[:80]!r})")
-    press(p, "Deny")
+    press(p, "Not now")
     check(until(lambda: state("BUY")[0] == "completed", 20), f"The resumed task completes ({state('BUY')})")
     check(any("Already done:" in m.get("Text", "") for c in chats() if c["Id"] == buy for m in c["Messages"] if m["Role"] == "assistant"), "The reply says what was done and what was checked again")
     check(len(ORDERS) == 1, f"One order at the shop, not two ({len(ORDERS)})")

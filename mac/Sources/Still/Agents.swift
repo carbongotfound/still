@@ -175,15 +175,16 @@ func userAway() -> Bool {
 // down 8 seconds in the chat first. Outside AI apps keep today's behavior: allowed unless a rule for everyone or a
 // sensitive site says to ask, and then they ask in the bar at the top. Rules: prefs["Permissions"], [{Site, Action, Companion, Mode}].
 let permissionActions = ["read", "navigate", "interact", "sensitive"]
-func defaultPermission(_ action: String) -> String { action == "interact" ? "chat" : action == "sensitive" ? "ask" : "always" }
+func defaultPermission(_ action: String) -> String { action == "sensitive" ? "ask" : "always" }
 /// A companion's Autonomy (Permissions.tsx AUTONOMY; Windows: LevelOf): clicking and typing on any site, new sites after
-/// reading the web (reach), plugin programs, and the line that tells it how to work. Sensitive steps ask at every level.
-func levelOf(_ c: Companion?) -> (interact: String, newSites: String, programs: String, line: String) {
+/// reading the web (reach), replacing files in its folder, and the line that tells it how to work. Sensitive steps (paying,
+/// sending, deleting, personal data, terms) and new programs ask at every level; only Ask more asks about routine steps too.
+func levelOf(_ c: Companion?) -> (interact: String, newSites: String, files: String, line: String) {
  switch c?.autonomy {
- case nil: return ("", "balanced", "ask", "")
+ case nil: return ("", "fewer", "auto", "")
  case "ask": return ("chat", "ask", "ask", "The user set you to Ask more: check with them before choices that shape the result (which option, what to include, where to go next), not only before risky steps.")
- case "balanced": return ("chat", "balanced", "ask", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan or is hard to undo.")
- default: return ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working. Stop only before risky steps: paying, deleting their things, sending or posting to other people, submitting personal data or accepting terms.")
+ case "balanced": return ("always", "fewer", "auto", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan.")
+ default: return ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working until the task is done.")
  }
 }
 func onSite(_ rule: String, _ site: String) -> Bool { !rule.isEmpty && (site == rule || site.hasSuffix("." + rule)) }
@@ -239,15 +240,22 @@ func ruleText(_ rule: [String: Any], _ key: String) -> String { rule[key] as? St
 var sessionGrants = Set<String>() // outside apps: "who action site" allowed until Still closes
 
 var wentAhead: String? // the last countdown that ran out: a Cancel for it came too late, and the user hears that
+/// How long a card waits for the user. A run never sits on one: unanswered, the step is skipped, the chat says so, and the
+/// companion carries on with the rest (skipped). Tests can make it shorter.
+var cardWait: Double { isQa ? Double(ProcessInfo.processInfo.environment["STILL_QA_CARD_WAIT"] ?? "") ?? 120 : 120 }
+var waited: String { cardWait >= 60 ? "\(Int(cardWait / 60)) minutes" : "\(Int(cardWait)) seconds" }
+var noAnswer: String { "No answer in \(waited), so it was skipped" }
+func skipped(_ what: String) -> String { agentFail("The user didn't answer in \(waited), so Still skipped this step: \(what). Don't try it again. Carry on with everything else you can do, and end your reply with a line like “Skipped: \(what), needs your OK”.") }
 /// A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
 @MainActor func approve(_ run: ChatRun, _ what: String, _ site: String, _ action: String, _ why: String, countdown: Bool) async -> String {
  let card = Approval(id: String((0..<8).map { _ in "0123456789abcdef".randomElement()! }), what: what, site: site, action: action, why: why, until: countdown ? Date().addingTimeInterval(8) : nil)
  run.approvals.append(card); publishAiEverywhere()
  if !countdown { taskState(run, "waiting", "approval", what + " on " + site) }
  // The card's Cancel goes at 8 s. Half a second more, so a click already on its way still stops the step.
- await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in card.answer.wait(countdown ? 8.5 : 600) { _ in done.resume() } }
+ await withCheckedContinuation { (done: CheckedContinuation<Void, Never>) in card.answer.wait(countdown ? 8.5 : cardWait) { _ in done.resume() } }
  let answer = card.answer.value ?? (countdown ? "go" : "timeout")
  if answer == "go" { wentAhead = card.id }
+ if answer == "timeout" { chatStep(run.chat, "Skipped: " + (["read", "navigate", "interact", "sensitive"].contains(action) && !site.isEmpty && !what.contains(site) ? what + " on " + site : what) + ", needs your OK") }
  run.approvals.removeAll { $0 === card }; publishAiEverywhere()
  if !countdown && !run.approvals.contains(where: { $0.until == nil }) { taskState(run, "running") }
  return answer
@@ -1025,13 +1033,12 @@ extension Browser {
  @MainActor func reach(_ root: AiChat, _ chain: [String], _ tool: String, _ url: String, _ host: String) async -> (why: String, data: Bool)? {
   guard let u = URLComponents(string: url), ["http", "https"].contains(u.scheme?.lowercased() ?? "") else { return nil }
   let extra = (u.percentEncodedQuery?.count ?? 0) + (u.percentEncodedFragment?.count ?? 0)
-  let rank = ["ask": 0, "balanced": 1]
-  let known = beenTo(root, host), how = chain.map { c in levelOf(companions.first { $0.id == c }).newSites }.min { rank[$0, default: 2] < rank[$1, default: 2] } ?? "balanced"
+  let known = beenTo(root, host), how = chain.map { c in levelOf(companions.first { $0.id == c }).newSites }.contains("ask") ? "ask" : "fewer"
   if root.read > 0 && (extra > 200 || u.percentEncodedPath.count > 300) && (!known || how == "ask" || onward(u)) { return ("This address carries a lot of data: " + clipped(u.percentEncodedPath + (u.percentEncodedQuery.map { "?" + $0 } ?? "") + (u.percentEncodedFragment.map { "#" + $0 } ?? ""), 120), true) }
   if known { return nil }
   if await privateHost(host) { return ("This is on your own computer or network.", false) }
   // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
-  if how != "fewer" && root.read > 0 && (tool != "read_url" || root.read > 1 || extra > 60) { return ("A new site for this chat, after it read from the web.", false) }
+  if how == "ask" && root.web > 0 && (tool != "read_url" || root.web > 1 || extra > 60) { return ("A new site for this chat, after it read from the web.", false) }
   return nil
  }
  /// An address inside the address, the way a site's redirect sends what it carries on to another.
@@ -1040,7 +1047,8 @@ extension Browser {
   for _ in 0..<3 { s = s.removingPercentEncoding ?? s }
   return s.contains("//")
  }
- /// What this step adds to what the chat has read, and where it has been.
+ /// What this step adds to what the chat has read (read: anything, the user's files too), what of it others wrote (web: pages,
+ /// search results, apps), and where it has been.
  func exposed(_ run: ChatRun, _ tool: String, _ step: AgentStep) {
   let root = exchangeOf(run.chat).root
   let been = step.onTab ? step.site : step.signedOut ? "" : step.goes
@@ -1050,6 +1058,12 @@ extension Browser {
   case "read_page", "find", "screenshot", "wait_for", "click", "type", "press_key", "handle_dialog", "list_tabs", "run_plugin_action", "read_file", "list_files": root.read = max(root.read, signedIn) // the user's own files count as signed in
   case "read_url": root.read = max(root.read, step.signedOut ? 1 : signedIn)
   case "web_search", "read_attachment": root.read = max(root.read, 1)
+  default: break
+  }
+  switch tool { // memory, the user's files, attachments and the list of tabs are no one else's words
+  case "read_page", "find", "screenshot", "wait_for", "click", "type", "press_key", "handle_dialog", "run_plugin_action": root.web = max(root.web, signedIn)
+  case "read_url": root.web = max(root.web, step.signedOut ? 1 : signedIn)
+  case "web_search": root.web = max(root.web, 1)
   default: break
   }
  }
@@ -1146,7 +1160,7 @@ extension Browser {
   if let root = up?.root, answer == "chat" && !root.allowed.contains(key) { root.allowed.append(key) }
   step.allowed = ["always", "chat", "once"].contains(answer)
   let results = ["always": "You always allow this on " + site, "chat": "You allowed it in this chat", "once": "You allowed it once", "go": "Went ahead after 8 seconds",
-                 "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": "No answer in 10 minutes"]
+                 "now": "You let it go ahead", "cancel": "You cancelled it", "stop": "Stopped", "timeout": noAnswer]
   audit(run.chat, what, site, results[answer] ?? "You said no")
   publishAiEverywhere()
   if ["always", "chat", "once", "go", "now"].contains(answer) && action == "sensitive" {
@@ -1157,7 +1171,7 @@ extension Browser {
   case "always", "chat", "once", "go", "now": return nil
   case "cancel": return agentFail("The user cancelled this before it ran. Don't try it again unless they ask.")
   case "stop": return agentFail(stopText)
-  case "timeout": return agentFail("The user didn't answer within 10 minutes. Stop here and ask them in your reply.")
+  case "timeout": return skipped(what)
   default: return agentFail("The user said no to this. Don't try it again; if you need it, ask them in your reply.")
   }
  }
@@ -1179,7 +1193,7 @@ extension Browser {
     guard let run = runs[who], let mine = companions.first(where: { $0.id == run.chat.companion }), let skill = Skill.all.first(where: { $0.id == id && $0.usable(by: mine) }) else {
      return agentFail("You don't have a skill with the id \"\(id)\". Use an id from your skills listed at the start of the chat, or carry on without one.")
     }
-    if !skill.source.isEmpty { let root = exchangeOf(run.chat).root; root.read = max(root.read, 1) } // someone else's text, like a page
+    if !skill.source.isEmpty { let root = exchangeOf(run.chat).root; root.read = max(root.read, 1); root.web = max(root.web, 1) } // someone else's text, like a page
     chatStep(run.chat, "Used skill " + skill.name); publishAiEverywhere()
     if skill.plugin.isEmpty { return agentOk(["skill": skill.name, "instructions": skill.body]) }
     return agentOk(["skill": skill.name, "instructions": skill.body, "plugin": ["id": skill.plugin, "programs": pluginPrograms(skill.plugin),
@@ -1702,7 +1716,7 @@ enum Mcp {
   tool("run_plugin_program", "Run a program that comes with one of your plugins (load_skill lists them), like scripts/watch.py, with its arguments. It runs on the user's computer and Still may ask the user first, so wait for it. You get its exit code and output. Programs only: no shell commands.",
        [str("plugin", "The plugin's id, from load_skill"), str("program", "The program's path inside the plugin, from load_skill"),
         ("args", ["type": "array", "items": ["type": "string"], "description": "Its arguments, one per item (optional)"] as [String: Any]), num("timeout", "Seconds before Still stops it: 120 if left out, 600 at most")], ["plugin", "program"]),
-  tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 10 minutes). Use it when you need a decision you shouldn't make yourself, and before buying, sending or deleting anything. Offer 2-4 short options when you can; the user can also write their own answer.",
+  tool("ask_user", "Ask the user a question in Still's chat and wait for the answer (up to 2 minutes; unanswered, carry on without it). Use it when you need a decision you shouldn't make yourself, or before a risky step a page doesn't show (a Confirm or Continue that pays or sends); Still asks before the other risky steps itself. Offer 2-4 short options when you can; the user can also write their own answer.",
        [str("question", "The question, in one short sentence"), ("options", ["type": "array", "items": ["type": "string"], "description": "2-4 short answers to pick from"] as [String: Any]),
         str("tabId", "When a page needs the user (a captcha, a code, signing in): that tab, so the card can open it for them")], ["question"]),
   tool("offer_routine", "Offer to repeat something that clearly helped on a schedule. Still asks the user in the chat, and the routine is added to your profile only if they say yes. Offer it once, after a useful result.",

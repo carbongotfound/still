@@ -229,16 +229,16 @@ public partial class MainWindow
   if (given.Length > 40 || given.Any(x => x.Length > 4000)) return Fail("Too many or too long arguments: 40 at most, 4,000 characters each.");
   bool setup = Regex.IsMatch(Path.GetFileNameWithoutExtension(full), "setup|install", RegexOptions.IgnoreCase);
   string what = "Run " + rel + (given.Length > 0 ? " " + Clip(string.Join(" ", given), 80) : "");
-  bool auto = KeepGoing(run.Chat);
-  if (setup || !auto && !Prefs.PluginsAllowed.Contains(id)) {
+  // A program it hasn't run before asks at every level; Always lets that plugin's programs run from then on. Setup asks every time.
+  if (setup || !Prefs.PluginsAllowed.Contains(id)) {
    string answer = await Approve(run, what, skill.Source, setup ? "plugin" : "program",
     setup ? "Setup can install other programs on your computer. It runs at your own risk." : "A program from a plugin you added. It runs on your computer with your access.", countdown: false);
-   Audit(run.Chat, what, skill.Source, answer == "always" ? "You allowed this plugin" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no");
+   Audit(run.Chat, what, skill.Source, answer == "always" ? "You allowed this plugin" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? NoAnswer : "You said no");
    if (answer == "always" && !setup && !Prefs.PluginsAllowed.Contains(id)) { Prefs.PluginsAllowed.Add(id); SaveLater(); }
    PublishAiEverywhere();
-   if (answer is not ("once" or "always")) return Fail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't run it again unless they ask.");
-  } else Audit(run.Chat, what, skill.Source, "Ran without asking, as Keep going allows");
-  if (ExchangeOf(run.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // its output is someone else's text, like a page
+   if (answer is not ("once" or "always")) return answer == "timeout" ? Skipped(what) : Fail("The user said no to this. Don't run it again unless they ask.");
+  } else Audit(run.Chat, what, skill.Source, "Ran without asking, as you always allow this plugin");
+  if (ExchangeOf(run.Chat).Root is var fromWeb) { fromWeb.Read = Math.Max(fromWeb.Read, 1); fromWeb.Web = Math.Max(fromWeb.Web, 1); } // its output is someone else's text, like a page
   Step(run.Chat, "Ran " + rel); PublishAiEverywhere();
   int seconds = args.ValueKind == JsonValueKind.Object && args.TryGetProperty("timeout", out var t) && t.TryGetDouble(out var d) ? (int)Math.Clamp(d, 5, 600) : 120;
   var start = new System.Diagnostics.ProcessStartInfo(exe) { WorkingDirectory = mine.Folder is { Length: > 0 } f && Directory.Exists(f) ? f : root, UseShellExecute = false, CreateNoWindow = true,

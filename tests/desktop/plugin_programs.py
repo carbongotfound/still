@@ -1,11 +1,11 @@
 """A plugin's programs: a companion runs them with run_plugin_program, and Settings decides whether Still asks first.
 
 A companion with a plugin's skill gets its programs from load_skill and runs one with its arguments: the card asks first
-(Deny, Always for this plugin, Allow once) and shows where the plugin came from; Deny refuses it, Allow once runs it with
-CLAUDE_PLUGIN_ROOT set and its output and exit code coming back, and Always for this plugin stops asking for that one.
+(Not now, Allow, and a small Always) and shows where the plugin came from; Not now refuses it, Allow runs it with
+CLAUDE_PLUGIN_ROOT set and its output and exit code coming back, and Always stops asking for that plugin.
 Setup always asks, says it runs at your own risk and has no Always. A path outside the plugin, a file that isn't a
 program and a plugin the companion doesn't have are refused without a card. A program that runs too long is stopped.
-A companion on Keep going runs them without a card; back on Balanced, after Reset all, it asks again.
+A program it hasn't been allowed asks at every level, Keep going too; Reset all forgets Always.
 Deleting the plugin's last skill deletes its folder.
 
 Usage: python tests/desktop/plugin_programs.py <QA exe>
@@ -110,7 +110,7 @@ def card(p):
 
 
 def press(p, words):
-    return press_ready(p, f"[...document.querySelectorAll('.chat-view .approve-card .approve-actions button')].find(b => b.innerText.trim() === {json.dumps(words)})")
+    return press_ready(p, f"[...document.querySelectorAll('.chat-view .approve-card button')].find(b => b.innerText.trim() === {json.dumps(words)})")
 
 
 def idle(p, cid):
@@ -154,35 +154,35 @@ def main():
               f"load_skill names the plugin's programs and how to run them ({skill.get('plugin')})")
         asked = card(p)
         check("Run scripts/hello.py one two words" in asked.get("text", "") and "github.com/acme/video" in asked.get("text", "")
-              and asked.get("buttons") == ["Deny", "Always for this plugin", "Allow once"], f"It asks first, showing the program and where it came from ({asked})")
-        press(p, "Allow once")
+              and asked.get("buttons") == ["Not now", "Allow"] and "Always" in asked.get("text", ""), f"It asks first, showing the program and where it came from ({asked})")
+        press(p, "Allow")
         ran = got(before, 2)
         out = json.loads(ran[1]["text"]) if len(ran) > 1 else {}
         check(out.get("exitCode") == 0 and "hello one two words" in out.get("output", "") and f"root {PLUGIN}" in out.get("output", ""),
-              f"Allow once runs it with its arguments as given and CLAUDE_PLUGIN_ROOT set ({out})")
+              f"Allow runs it with its arguments as given and CLAUDE_PLUGIN_ROOT set ({out})")
         idle(p, cid)
         steps = [m["Text"] for c in chats() if c["Id"] == cid for m in c["Messages"] if m["Role"] == "tool"]
         check(any("Ran scripts/hello.py" in s for s in steps), f"The chat shows the step ({steps})")
 
-        # Deny refuses it.
+        # Not now refuses it.
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py"}]])
-        card(p); press(p, "Deny")
+        card(p); press(p, "Not now")
         r = got(before, 1)
-        check(r and r[0]["error"] and "said no" in r[0]["text"], f"Deny refuses it ({r[0]['text'][:90] if r else None})")
+        check(r and r[0]["error"] and "said no" in r[0]["text"], f"Not now refuses it ({r[0]['text'][:90] if r else None})")
         idle(p, cid)
 
-        # Always for this plugin: the next run doesn't ask. Its exit code comes back.
+        # Always: the next run doesn't ask. Its exit code comes back.
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py"}], ["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py", "args": ["fail"]}]])
-        card(p); press(p, "Always for this plugin")
+        card(p); press(p, "Always")
         r = got(before, 2)
-        check(len(r) == 2 and not r[0]["error"] and json.loads(r[1]["text"]).get("exitCode") == 3, "Always for this plugin runs it, and the next run goes ahead with its exit code")
+        check(len(r) == 2 and not r[0]["error"] and json.loads(r[1]["text"]).get("exitCode") == 3, "Always runs it, and the next run goes ahead with its exit code")
         idle(p, cid)
 
         # Setup still asks, at your own risk, with no Always.
         cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/setup.py"}]])
         asked = card(p)
-        check("own risk" in asked.get("text", "") and asked.get("buttons") == ["Deny", "Allow once"], f"Setup still asks, says it's at your own risk and has no Always ({asked})")
-        press(p, "Allow once")
+        check("own risk" in asked.get("text", "") and asked.get("buttons") == ["Not now", "Allow"] and "Always" not in asked.get("text", ""), f"Setup still asks, says it's at your own risk and has no Always ({asked})")
+        press(p, "Allow")
         r = got(before, 1)
         check(r and "set up" in r[0]["text"], "and runs once allowed")
         idle(p, cid)
@@ -203,7 +203,7 @@ def main():
         check(out.get("timedOut") is True and "woke" not in out.get("output", ""), f"A program that runs too long is stopped ({out})")
         idle(p, cid)
 
-        # Settings: Maya on Keep going, then back on Balanced and Reset all.
+        # Settings: Maya on Keep going after Reset all: a program still asks.
         send(p, "openPanel", name="settings")
         until(lambda: js(p, "!!document.querySelector('.set-shell')"), 10)
         js(p, "[...document.querySelectorAll('.set-nav-item')].find(t => t.innerText.trim() === 'Privacy & permissions')?.click()")
@@ -215,19 +215,15 @@ def main():
         check(until(lambda: "Keep going" in (js(p, auto) or ""), 5), "Keep going shows in Settings")
         send(p, "openPanel", name="settings")
         js(p, "dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))")
-        cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py", "args": ["auto"]}]])
-        r = got(before, 1)
-        check(r and "hello auto" in r[0]["text"] and not js(p, "!!document.querySelector('.chat-view .approve-card')"), "On Keep going it runs without a card")
-        idle(p, cid)
         audit = [a for c in chats() if c["Id"] == cid for a in c.get("Audit", [])]
-        check(any("without asking" in a.get("Result", "") for a in audit) and any(a.get("Result") == "You allowed this plugin" for a in audit), "The chat's log says how each run was allowed")
-        send(p, "companionAutonomy", id="maya", level="balanced")
-        send(p, "permReset")
-        cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py"}]])
-        check("Run scripts/hello.py" in card(p).get("text", ""), "Back on Balanced, after Reset all: it asks again, Always for this plugin forgotten too")
-        press(p, "Deny")
+        check(any(a.get("Result") == "Ran without asking, as you always allow this plugin" for a in audit) and any(a.get("Result") == "You allowed this plugin" for a in audit),
+              f"The chat's log says how each run was allowed ({[a.get('Result') for a in audit]})")
+        cid, before = calls(p, cid, [["run_plugin_program", {"plugin": "video", "program": "scripts/hello.py", "args": ["auto"]}]])
+        check("Run scripts/hello.py" in card(p).get("text", ""), "On Keep going, after Reset all, a program still asks: Always is forgotten and new programs always ask")
+        press(p, "Not now")
         got(before, 1)
         idle(p, cid)
+        send(p, "companionAutonomy", id="maya", level="ask")
 
         # The plugin goes with its last skill.
         send(p, "skillDelete", id="watch")

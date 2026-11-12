@@ -248,7 +248,7 @@ def fake_run(p, port):
     url = f"http://127.0.0.1:{port}/page"
     click = plan("WORDNINE", ["open_tab", {"url": url}], ["click", {"selector": "#go"}])
     send(p, "aiSend", text=click)
-    allow = "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow in this chat')"
+    allow = "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Allow')"
     check(press_ready(p, allow, 30), "The click asks")
     check(until(lambda: len(HITS) == 1, 15), "...and happens once you allow it")
     idle(p)
@@ -259,7 +259,7 @@ def fake_run(p, port):
     time.sleep(1)
     check(len(HITS) == 1, "Nothing was clicked again before you answered")
     def deny():
-        js(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Deny')?.click()")
+        js(p, "[...document.querySelectorAll('.approve-card button')].find(b => b.innerText.trim() === 'Not now')?.click()")
         return not running(p) and not js(p, "!!document.querySelector('.approve-card')")
     check(until(deny, 30, .5), "Deny ends the run")
     check(len(HITS) == 1, "...and leaves it at one")

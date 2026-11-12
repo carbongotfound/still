@@ -731,6 +731,7 @@ public partial class MainWindow
   else if (/\b(buy|purchase|place order|order now|pay|checkout|check out|subscribe|book now|reserve)\b/.test(words)) why = 'It looks like a purchase.';
   else if (/\b(send|post|publish|reply|tweet|comment)\b/.test(words)) why = 'It sends something in your name.';
   else if (/\b(delete|remove|discard|trash|unsubscribe|close account|cancel order|cancel subscription)\b/.test(words)) why = 'It deletes or cancels something.';
+  else if (/\b(agree|accept)/.test(words) && /\b(terms|conditions|agreement|eula|licen[cs]e)\b/.test(words) && !/cookie/.test(words)) why = 'It accepts terms.';
   else if (posts && control.matches('button:not([type=button]):not([type=reset]),input[type=submit],input[type=image]')) why = 'It sends a form.';
   return { label: label(e) || kind(e), why, secret: !!secret(e), password: secret(e) === 'password', print: print(e) };
  """;
@@ -897,14 +898,15 @@ public partial class MainWindow
  // down 8 seconds in the chat first. Outside AI apps keep today's behavior: allowed unless a rule for everyone or a
  // sensitive site says to ask, and then they ask in the bar at the top. Null: go ahead; otherwise the refusal for the AI.
  static readonly string[] PermissionActions = ["read", "navigate", "interact", "sensitive"];
- static string DefaultPermission(string action) => action switch { "interact" => "chat", "sensitive" => "ask", _ => "always" };
+ static string DefaultPermission(string action) => action == "sensitive" ? "ask" : "always";
  /// A companion's Autonomy (Permissions.tsx AUTONOMY): clicking and typing on any site, new sites after reading the web
- /// (Reach), plugin programs, and the line that tells it how to work. Sensitive steps ask at every level. No companion: none.
- static (string Interact, string NewSites, string Programs, string Line) LevelOf(Companion? c) => c?.Autonomy switch {
-  null => ("", "balanced", "ask", ""),
+ /// (Reach), replacing files in its folder, and the line that tells it how to work. Sensitive steps (paying, sending,
+ /// deleting, personal data, terms) and new programs ask at every level; only Ask more asks about routine steps too.
+ static (string Interact, string NewSites, string Files, string Line) LevelOf(Companion? c) => c?.Autonomy switch {
+  null => ("", "fewer", "auto", ""),
   "ask" => ("chat", "ask", "ask", "The user set you to Ask more: check with them before choices that shape the result (which option, what to include, where to go next), not only before risky steps."),
-  "balanced" => ("chat", "balanced", "ask", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan or is hard to undo."),
-  _ => ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working. Stop only before risky steps: paying, deleting their things, sending or posting to other people, submitting personal data or accepting terms.") };
+  "balanced" => ("always", "fewer", "auto", "The user set you to Balanced: make routine calls yourself, and check with them before a choice that changes the plan."),
+  _ => ("always", "fewer", "auto", "The user set you to Keep going: make the calls yourself and keep working until the task is done.") };
  static bool OnSite(string rule, string site) => rule.Length > 0 && (site == rule || site.EndsWith("." + rule, StringComparison.Ordinal));
  /// On this computer or its network, going by the name or address alone.
  internal static bool IsPrivateName(string host)
@@ -935,13 +937,12 @@ public partial class MainWindow
   || root.Messages.Any(m => m.Role == "user" && m.Who == null && HostWords.Matches(LinkTitles.Replace(m.Text.ToLowerInvariant(), "(")).Any(t => OnSite(t.Value.StartsWith("www.", StringComparison.Ordinal) ? t.Value[4..] : t.Value, host)));
  bool SiteAllows(string who, string site, string action) => Prefs.Permissions.Any(p => p.Action == action && p.Mode == "always" && OnSite(p.Site, site) && (p.Companion.Length == 0 || p.Companion == who));
  /// Page text can steer an AI: read something signed in, then carry it off in an address. So what a chat has read decides
- /// whether going somewhere takes a yes. Null: it doesn't. How careful is the strictest Autonomy in the chain: "ask" asks before
- /// any new site and any long address; "balanced" asks before a new site, and before a long address only off the sites the
- /// chat knows or when it carries another address on; "fewer" asks only before a long address off them. Your own network
- /// always asks.
+ /// whether going somewhere takes a yes. Null: it doesn't. How careful is the strictest Autonomy in the chain: "ask" (Ask more)
+ /// asks before a new site once the chat has read the web, and before any long address; "fewer" (Balanced, Keep going) asks
+ /// only before a long address off the sites the chat knows, or one carrying another address on. Your own network always asks.
  async Task<(string Why, bool Data)?> Reach(AiChat root, List<string> chain, string tool, string url, string host)
  {
-  string how = chain.Select(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).NewSites).MinBy(h => h switch { "ask" => 0, "balanced" => 1, _ => 2 }) ?? "balanced";
+  string how = chain.Select(c => LevelOf(Companions.FirstOrDefault(x => x.Id == c)).NewSites).MinBy(h => h == "ask" ? 0 : 1) ?? "fewer";
   if (!Uri.TryCreate(url, UriKind.Absolute, out var u) || u.Scheme is not ("http" or "https")) return null;
   int extra = u.Query.Length + u.Fragment.Length;
   bool known = BeenTo(root, host);
@@ -949,12 +950,13 @@ public partial class MainWindow
   if (known) return null;
   if (await PrivateHost(host)) return ("This is on your own computer or network.", false);
   // ponytail: a few short addresses can still carry a little, and a form on an allowed site isn't an address at all. Hosts by name, so a domain rebinding after this check gets through.
-  if (how != "fewer" && root.Read > 0 && (tool != "read_url" || root.Read > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
+  if (how == "ask" && root.Web > 0 && (tool != "read_url" || root.Web > 1 || extra > 60)) return ("A new site for this chat, after it read from the web.", false);
   return null;
  }
  /// An address inside the address, the way a site's redirect sends what it carries on to another.
  static bool Onward(Uri u) { string s = u.PathAndQuery + u.Fragment; for (int i = 0; i < 3; i++) s = Uri.UnescapeDataString(s); return s.Contains("//"); }
- /// What this step adds to what the chat has read, and where it has been.
+ /// What this step adds to what the chat has read (Read: anything, the user's files too), what of it others wrote (Web: pages,
+ /// search results, apps), and where it has been.
  static void Exposed(ChatRun run, string tool, AgentStep step)
  {
   var root = ExchangeOf(run.Chat).Root;
@@ -966,6 +968,11 @@ public partial class MainWindow
    "read_url" => step.SignedOut ? 1 : signedIn,
    "web_search" or "read_attachment" => 1,
    _ => 0 });
+  root.Web = Math.Max(root.Web, tool switch {
+   "read_page" or "find" or "screenshot" or "wait_for" or "click" or "type" or "press_key" or "handle_dialog" or "run_plugin_action" => signedIn,
+   "read_url" => step.SignedOut ? 1 : signedIn,
+   "web_search" => 1,
+   _ => 0 }); // memory, the user's files, attachments and the list of tabs are no one else's words
  }
  /// Once it's this call's turn, right before it runs: is this still what the gate saw? The same tab on the same site, and for
  /// a click or a key the same control, doing the same thing?
@@ -1071,7 +1078,7 @@ public partial class MainWindow
   Audit(run.Chat, what, site, answer switch {
    "always" => "You always allow this on " + site, "chat" => "You allowed it in this chat", "once" => "You allowed it once",
    "go" => "Went ahead after 8 seconds", "now" => "You let it go ahead", "cancel" => "You cancelled it", "stop" => "Stopped",
-   "timeout" => "No answer in 10 minutes", _ => "You said no" });
+   "timeout" => NoAnswer, _ => "You said no" });
   PublishAiEverywhere();
   if (answer is "always" or "chat" or "once" or "go" or "now" && action == "sensitive") {
    if (run.Recheck) { run.Recheck = false; foreach (var s in run.Task.Sensitive.Where(s => s.Outcome == null)) s.Outcome = "rechecked"; }
@@ -1081,10 +1088,16 @@ public partial class MainWindow
    "always" or "chat" or "once" or "go" or "now" => null,
    "cancel" => Fail("The user cancelled this before it ran. Don't try it again unless they ask."),
    "stop" => Fail("The user pressed Stop. Stop what you are doing and wait for the user's next message."),
-   "timeout" => Fail("The user didn't answer within 10 minutes. Stop here and ask them in your reply."),
+   "timeout" => Skipped(what),
    _ => Fail("The user said no to this. Don't try it again; if you need it, ask them in your reply.") };
  }
  static string? wentAhead; // the last countdown that ran out: a Cancel for it came too late, and the user hears that
+ /// How long a card waits for the user. A run never sits on one: unanswered, the step is skipped, the chat says so, and the
+ /// companion carries on with the rest (Skipped). Tests can make it shorter.
+ static TimeSpan CardWait => TimeSpan.FromSeconds(App.IsQa && int.TryParse(Environment.GetEnvironmentVariable("STILL_QA_CARD_WAIT"), out var s) ? s : 120);
+ static string Waited => CardWait.TotalSeconds >= 60 ? $"{CardWait.TotalMinutes:0} minutes" : $"{CardWait.TotalSeconds:0} seconds";
+ static string NoAnswer => $"No answer in {Waited}, so it was skipped";
+ static string Skipped(string what) => Fail($"The user didn't answer in {Waited}, so Still skipped this step: {what}. Don't try it again. Carry on with everything else you can do, and end your reply with a line like “Skipped: {what}, needs your OK”.");
  // A card in the chat's tray; for a sensitive step allowed without asking, 8 seconds to cancel it instead.
  static async Task<string> Approve(ChatRun run, string what, string site, string action, string why, bool countdown)
  {
@@ -1092,9 +1105,10 @@ public partial class MainWindow
   run.Approvals.Add(card); PublishAiEverywhere();
   if (!countdown) TaskState(run, "waiting", "approval", what + " on " + site);
   // The card's Cancel goes at 8 s. Half a second more, so a click already on its way still stops the step.
-  await Task.WhenAny(card.Answer.Task, Task.Delay(countdown ? TimeSpan.FromSeconds(8.5) : TimeSpan.FromMinutes(10)));
+  await Task.WhenAny(card.Answer.Task, Task.Delay(countdown ? TimeSpan.FromSeconds(8.5) : CardWait));
   string answer = card.Answer.Task.IsCompleted ? await card.Answer.Task : countdown ? "go" : "timeout";
   if (answer == "go") wentAhead = card.Id;
+  if (answer == "timeout") Step(run.Chat, "Skipped: " + (action is "read" or "navigate" or "interact" or "sensitive" && site.Length > 0 && !what.Contains(site) ? what + " on " + site : what) + ", needs your OK");
   run.Approvals.Remove(card); PublishAiEverywhere();
   if (!countdown && !run.Approvals.Any(a => a.Until == null)) TaskState(run, "running");
   return answer;
@@ -1299,7 +1313,7 @@ public partial class MainWindow
     string id = S(args, "id").Trim().TrimStart('/');
     if (mine == null || Skill.All.FirstOrDefault(k => k.Id == id && k.For(mine)) is not { } skill)
      return Fail($"You don't have a skill with the id \"{id}\". Use an id from your skills listed at the start of the chat, or carry on without one.");
-    if (skill.Source.Length > 0 && ExchangeOf(run!.Chat).Root is var fromWeb) fromWeb.Read = Math.Max(fromWeb.Read, 1); // someone else's text, like a page
+    if (skill.Source.Length > 0 && ExchangeOf(run!.Chat).Root is var fromWeb) { fromWeb.Read = Math.Max(fromWeb.Read, 1); fromWeb.Web = Math.Max(fromWeb.Web, 1); } // someone else's text, like a page
     Step(run!.Chat, "Used skill " + skill.Name); PublishAiEverywhere();
     return Reply(new { skill = skill.Name, instructions = skill.Body, plugin = skill.Plugin.Length == 0 ? null : new { id = skill.Plugin, programs = Programs(skill.Plugin),
      howTo = "Run these with run_plugin_program: this plugin id, the program's path from this list and its arguments. Where the steps run one in a terminal, like python3 \"${CLAUDE_PLUGIN_ROOT}/scripts/x.py\" <link>, call run_plugin_program with scripts/x.py and [\"<link>\"] instead. Other terminal commands aren't available." } });

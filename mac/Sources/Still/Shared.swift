@@ -69,9 +69,10 @@ final class AiChat: Codable {
  var folder: String? // its own working folder over its companion's ("": none in this chat); nil: the companion's
  var folderTold: String? // the folder its AI was last told about
  var known: [String] = [] // the sites this chat has been to
- var read = 0 // what it has read: 0 nothing, 1 the public web, 2 pages or apps the user is signed in to
+ var read = 0 // what it has read: 0 nothing, 1 the public web, 2 pages, apps or files of the user's
+ var web = 0 // what of that others wrote (pages, search results, apps), the same way: Ask more's new-site check
  var audit: [AiAudit] = [] // what the AI asked to do on sites, and what happened
- enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, known, read, audit, folder, folderTold }
+ enum CodingKeys: String, CodingKey { case team, sessions, from, profile, id, title, harness, session, started, companion, unread, archived, noMemory, routine, worked, running, updated, messages, allowed, known, read, web, audit, folder, folderTold }
  init() {}
  required init(from decoder: Decoder) throws {
   let c = try decoder.container(keyedBy: CodingKeys.self)
@@ -79,7 +80,7 @@ final class AiChat: Codable {
   title = c.value(.title, title); harness = c.value(.harness, harness); session = c.value(.session, session); started = c.value(.started, started)
   companion = c.value(.companion, companion); unread = c.value(.unread, unread); archived = c.value(.archived, archived); noMemory = c.value(.noMemory, noMemory); routine = c.value(.routine, routine)
   worked = c.value(.worked, worked); running = c.value(.running, running); updated = c.value(.updated, updated)
-  messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); known = c.value(.known, known); read = c.value(.read, read); audit = c.value(.audit, audit)
+  messages = c.value(.messages, messages); allowed = c.value(.allowed, allowed); known = c.value(.known, known); read = c.value(.read, read); web = c.value(.web, web); audit = c.value(.audit, audit)
   folder = c.value(.folder, folder); folderTold = c.value(.folderTold, folderTold)
  }
 }

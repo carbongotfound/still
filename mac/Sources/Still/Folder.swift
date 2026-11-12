@@ -20,7 +20,7 @@ func folderNote(_ chat: AiChat, _ work: String) -> String {
  return !chat.started || told == work ? "" : "[Still] " + (work.isEmpty ? "The user took away your working folder, so you can't reach their files now." : "The user changed your working folder to \(work): list_files, read_file, write_file, edit_file and delete_file reach the files there and nothing outside it.") + "\n\n"
 }
 /// Everyone in the chain (the companion, and whoever it's helping) is on Keep going.
-func keepGoing(_ chat: AiChat) -> Bool { exchangeOf(chat).chain.allSatisfy { c in levelOf(companions.first { $0.id == c }).programs == "auto" } }
+func keepGoing(_ chat: AiChat) -> Bool { exchangeOf(chat).chain.allSatisfy { c in levelOf(companions.first { $0.id == c }).files == "auto" } } // Balanced or Keep going: replacing a file goes ahead
 
 struct OutOfFolder: Error { let why: String }
 /// A path the AI gave (relative, or full and inside), as a full path inside root.
@@ -152,11 +152,11 @@ func seenFolder(_ run: ChatRun, _ given: String) -> String? {
   if !work.isEmpty && (path == work || path.hasPrefix(work + "/")) { return agentOk(["done": path + " is in your working folder: list_files and read_file reach it already."]) }
   if seenFolder(run, path) != nil { return agentOk(["done": "You can look in " + path + " already: list_files and read_file with full paths there."]) }
   let seen = await approve(run, "See " + name, path, "see", why, countdown: false)
-  audit(run.chat, "See " + path, name, seen == "once" ? "You allowed it until this reply ends" : seen == "chat" ? "You allowed it for this chat" : seen == "stop" ? "Stopped" : seen == "timeout" ? "No answer in 10 minutes" : "Not now")
+  audit(run.chat, "See " + path, name, seen == "once" ? "You allowed it until this reply ends" : seen == "chat" ? "You allowed it for this chat" : seen == "stop" ? "Stopped" : seen == "timeout" ? noAnswer : "Not now")
   if seen == "chat" { run.chat.allowed.append("see " + path) } else if seen == "once" { run.seen.insert(path) }
   publishAiEverywhere()
   guard seen == "once" || seen == "chat" else {
-   return agentFail(seen == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without it, or ask them in your reply.")
+   return seen == "timeout" ? skipped("See " + path) : agentFail("The user said not now. Carry on without it, or ask them in your reply.")
   }
   return agentOk(["done": "You can look in \(path) \(seen == "chat" ? "for the rest of this chat" : "until you finish this reply"): list_files and read_file with full paths there, like \(path)/notes.txt. It's read-only: to change files there, ask with request_folder and write: true."])
  }
@@ -172,10 +172,10 @@ func seenFolder(_ run: ChatRun, _ given: String) -> String? {
   }
   if let picked { path = picked.standardizedFileURL.path; answer = "picked" } else { answer = "deny" }
  }
- audit(run.chat, "Work in " + path, name, answer == "once" ? "You allowed it" : answer == "picked" ? "You picked this folder" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "Not now")
+ audit(run.chat, "Work in " + path, name, answer == "once" ? "You allowed it" : answer == "picked" ? "You picked this folder" : answer == "stop" ? "Stopped" : answer == "timeout" ? noAnswer : "Not now")
  guard answer == "once" || answer == "picked" else {
   publishAiEverywhere()
-  return agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said not now. Carry on without the folder, or ask them in your reply.")
+  return answer == "timeout" ? skipped("Work in " + path) : agentFail("The user said not now. Carry on without the folder, or ask them in your reply.")
  }
  run.chat.folder = path; run.chat.folderTold = path
  saveAiChats(run.chat); publishAiEverywhere()
@@ -196,12 +196,12 @@ func guarded(_ path: String) -> Bool {
 @MainActor func mayChange(_ run: ChatRun, _ root: String, _ path: String, _ what: String, _ why: String, delete: Bool) async -> String? {
  let key = "files " + root, site = (root as NSString).lastPathComponent
  if run.chat.made.contains(path) || run.chat.allowed.contains(key) { return nil }
- if !delete && keepGoing(run.chat) { audit(run.chat, what, site, "Done without asking, as Keep going allows"); return nil }
+ if !delete && keepGoing(run.chat) { audit(run.chat, what, site, "Done without asking, as Balanced and Keep going allow"); return nil }
  let answer = await approve(run, what, site, "files", why, countdown: false)
- audit(run.chat, what, site, answer == "chat" ? "You allowed changes in this folder for this chat" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no")
+ audit(run.chat, what, site, answer == "chat" ? "You allowed changes in this folder for this chat" : answer == "once" ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? noAnswer : "You said no")
  if answer == "chat" { run.chat.allowed.append(key) }
  publishAiEverywhere()
- return answer == "once" || answer == "chat" ? nil : agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.")
+ return answer == "once" || answer == "chat" ? nil : answer == "timeout" ? skipped(what) : agentFail("The user said no to this. Don't try it again unless they ask.")
 }
 
 extension Browser {

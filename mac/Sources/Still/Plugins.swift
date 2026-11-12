@@ -413,9 +413,9 @@ extension Browser {
    let name = pluginStr(info, "name"), what = (name.isEmpty ? action : name) + " in " + app
    let answer = await approve(run, what, app, "plugin", pluginWhy(arguments), countdown: false)
    let allowed = ["once", "chat", "always"].contains(answer)
-   audit(run.chat, what, app, allowed ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? "No answer in 10 minutes" : "You said no")
+   audit(run.chat, what, app, allowed ? "You allowed it once" : answer == "stop" ? "Stopped" : answer == "timeout" ? noAnswer : "You said no")
    publishAiEverywhere()
-   guard allowed else { return agentFail(answer == "timeout" ? "The user didn't answer within 10 minutes. Stop here and ask them in your reply." : "The user said no to this. Don't try it again unless they ask.") }
+   guard allowed else { return answer == "timeout" ? skipped(what) : agentFail("The user said no to this. Don't try it again unless they ask.") }
   }
   guard let account, let done = await composio("POST", "/tools/execute/" + pluginEscape(action), ["user_id": pluginUser, "connected_account_id": account.id, "arguments": arguments]) else {
    return agentFail("Composio isn't answering, so it didn't run. Tell the user.")

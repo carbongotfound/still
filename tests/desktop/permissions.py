@@ -375,6 +375,7 @@ def main():
             return live(process)
         once_per_chat(process)
         keep_going(process)
+        balanced(process)
         ask_every_time(process)
         sensitive(process)
         cancel_at_the_end(process)
@@ -444,7 +445,7 @@ def live(process):
     card = until(lambda: cards(process), 240, .5)
     check(card and "Place order" in " ".join(card), "Live: Place order waits on an approval card")
     capture(process, "live-approval-v01")
-    press(process, "Allow once")
+    press(process, "Allow")
 
     bought = until(lambda: next((o for o in ORDERS if o["path"] == "/buy" and o["body"].get("code") == [CODE]), None), 180, .5)
     done = until(lambda: not js(process, "!!document.querySelector('[aria-label=Stop]')"), 120, 1)
@@ -466,16 +467,16 @@ def once_per_chat(process):
     check(shown and "Add to cart" in shown[0] and "127.0.0.1" in shown[0], "A first click on a site shows a card with the step and the site")
     check(js(process, "/need you/.test(document.querySelector('.tasks-button')?.getAttribute('aria-label') ?? '')"), "The runner says the chat needs you")
     capture(process, "approval-v01")
-    press(process, "Allow in this chat")
+    press(process, "Allow")
     until(lambda: len(calls("CART " + SITE + " 2 a")) == 2, 30)
     done = calls("CART " + SITE + " 2 a")
-    check(len(done) == 2 and all(c["ok"] for c in done), "Allow in this chat lets both clicks run")
+    check(len(done) == 2 and all(c["ok"] for c in done), "Allow on a click lets both clicks run: it holds for this chat")
     check(until(lambda: audit("CART " + SITE + " 2 a") == ["You allowed it in this chat", "Allowed in this chat"], 10), "The second click didn't ask again, and both are in the log")
     idle(process)
 
     ask(process, f"CART {SITE} 1 b")
     check(until(lambda: cards(process), 30), "A new chat asks again")
-    press(process, "Deny")
+    press(process, "Not now")
     until(lambda: calls("CART " + SITE + " 1 b"), 30)
     denied = calls("CART " + SITE + " 1 b")
     check(denied and not denied[0]["ok"] and "said no" in denied[0]["text"], "Deny refuses the step and tells the AI")
@@ -483,7 +484,7 @@ def once_per_chat(process):
 
     ask(process, f"CART {SITE} 1 c")
     until(lambda: cards(process), 30)
-    press(process, "Always on this site")
+    press(process, "Always")
     check(until(lambda: any(r["Site"] == "127.0.0.1" and r["Action"] == "interact" and r["Mode"] == "always" for r in rules()), 10), "Always allow saves a rule for the site")
     check(all(r["Companion"] == "maya" for r in rules() if r["Mode"] == "always" and r["Site"] == "127.0.0.1"), f"...for the companion who asked, not everyone ({rules()})")
     idle(process)
@@ -495,7 +496,7 @@ def once_per_chat(process):
     ask(process, f"CART {OTHER} 1 e")
     shown = until(lambda: cards(process), 30)
     check(shown and "localhost" in shown[0], "The rule is for that site only: another site still asks")
-    press(process, "Allow once")
+    press(process, "Allow")
     idle(process)
 
 
@@ -510,8 +511,8 @@ def keep_going(process):
     check(all(c["ok"] for c in calls("CART " + OTHER + " 2 k")) and until(lambda: audit("CART " + OTHER + " 2 k") == ["Allowed by your settings"] * 2, 10),
           f"Keep going: clicks on a new site run with no card, and the log says why ({audit('CART ' + OTHER + ' 2 k')})")
     first = next((e["prompt"] for e in prompts()[n:] if e["companion"] == "maya"), "")
-    check("The user set you to Keep going" in first and "make a reasonable call" in first and "Always ask (ask_user) before risky steps" in first,
-          "Its instructions say to make reasonable calls and keep going, and to ask before risky steps")
+    check("The user set you to Keep going" in first and "keep working until the task is done" in first and "Still itself stops for the user's OK before risky steps" in first
+          and "Still skips that step" in first, "Its instructions say to keep going, that Still stops for risky steps itself, and that an unanswered card is skipped")
     idle(process)
     cid = chat_of("CART " + OTHER + " 2 k")["Id"]
     send(process, "companionAutonomy", id="maya", level="balanced")
@@ -528,23 +529,68 @@ def keep_going(process):
     ask(process, f"ORDER {OTHER} k")
     shown = until(lambda: cards(process), 30)
     check(shown and "Place order" in shown[0], f"Keep going: a sensitive step still asks ({shown})")
-    press(process, "Deny")
+    press(process, "Not now")
     until(lambda: len(calls("ORDER " + OTHER + " k")) == 2, 30)
     check(not ORDERS, "Denied, the order never reaches the shop")
     idle(process)
+    send(process, "companionAutonomy", id="maya", level="ask")
+    until(lambda: level("maya") == "ask", 10)
+
+
+def balanced(process):
+    """Balanced: opening sites, reading and clicking are routine, so they go ahead with no card however much the chat has
+    read; only risky steps ask, on a card with two choices. And only the web counts as reading it: after recall (memory)
+    and the list of tabs, even Ask more opens a new site with no card. The rules so far stay: sensitive() needs them."""
     send(process, "companionAutonomy", id="maya", level="balanced")
-    until(lambda: level("maya") == "balanced", 10)
+    check(until(lambda: level("maya") == "balanced", 10), "Balanced is saved for Maya")
+    port, run = SERVER.server_port, uuid.uuid4().hex[:6]
+    seen = lambda url: url[url.index("/who"):] in COOKIES
+    sites = [f"http://{n}.localhost:{port}/who?{run}-{n}" for n in "vwxyz"]  # five sites the chat hasn't been to
+    tag = plan("bal5", ["open_tab", {"url": sites[0]}], ["read_page", {}], ["open_tab", {"url": sites[1]}], ["read_page", {}],
+               ["open_tab", {"url": sites[2]}], ["read_page", {}], ["open_tab", {"url": sites[3]}], ["open_tab", {"url": sites[4]}])
+    ask(process, tag)
+    until(lambda: all(seen(u) for u in sites) or cards(process), 60)
+    check(all(seen(u) for u in sites) and not cards(process), f"Balanced: 5 new sites open and 3 pages are read with no card ({[seen(u) for u in sites]}, {cards(process)})")
+    done = until(lambda: len(calls(tag, True)) == 8 and calls(tag, True), 30) or []
+    check(len(done) == 8 and all(c["ok"] for c in done), f"...and every step goes through ({[(c['tool'], c['ok']) for c in done]})")
+    idle(process)
+
+    ask(process, f"CART {OTHER} 2 bz")
+    until(lambda: len(calls(f"CART {OTHER} 2 bz")) == 2 or cards(process), 30)
+    check(len(calls(f"CART {OTHER} 2 bz")) == 2 and all(c["ok"] for c in calls(f"CART {OTHER} 2 bz")) and not cards(process), "Balanced: clicks on a site go ahead with no card")
+    idle(process)
+    orders = len(ORDERS)
+    ask(process, f"ORDER {OTHER} bz")
+    shown = until(lambda: cards(process), 30)
+    check(shown and "Place order" in shown[0], f"Balanced: a purchase still asks ({shown})")
+    choices = js(process, "[...document.querySelectorAll('.approve-card .approve-actions button')].map(b => b.innerText.trim())") or []
+    always = js(process, "document.querySelector('.approve-card .approve-always')?.title ?? ''") or ""
+    check(choices == ["Not now", "Allow"] and always.startswith("Always allow this on localhost"), f"Its card has two choices, Not now and Allow, and a small Always ({choices}, {always!r})")
+    capture(process, "approval-two-v01")
+    press(process, "Not now")
+    until(lambda: len(calls(f"ORDER {OTHER} bz")) == 2, 30)
+    check(len(ORDERS) == orders, "Not now: the order never reaches the shop")
+    idle(process)
+
+    send(process, "companionAutonomy", id="maya", level="ask")
+    check(until(lambda: level("maya") == "ask", 10), "Back on Ask more")
+    url = f"http://q.localhost:{port}/who?{run}-q"
+    tag = plan("mem1", ["recall", {"query": "flights"}], ["list_tabs", {}], ["open_tab", {"url": url}])
+    ask(process, tag)
+    until(lambda: seen(url) or cards(process), 30)
+    check(seen(url) and not cards(process), f"After recall and the list of tabs, nothing was read from the web: a new site opens with no card, even on Ask more ({cards(process)})")
+    idle(process)
 
 
 def ask_every_time(process):
     send(process, "permSet", site="localhost", action="interact", companion="", mode="ask")
     ask(process, f"CART {OTHER} 2 f")
     until(lambda: cards(process), 30)
-    press(process, "Allow in this chat")
+    press(process, "Allow")
     until(lambda: calls("CART " + OTHER + " 2 f"), 30)
     again = until(lambda: cards(process), 15)
-    check(again, "Ask every time asks again, even after Allow in this chat")
-    press(process, "Allow once")
+    check(again, "Ask every time asks again, even after Allow")
+    press(process, "Allow")
     until(lambda: len(calls("CART " + OTHER + " 2 f")) == 2, 30)
     check(all(c["ok"] for c in calls("CART " + OTHER + " 2 f")), "Both asked clicks ran")
     idle(process)
@@ -558,7 +604,7 @@ def sensitive(process):
     check(js(process, "!!document.querySelector('.approve-steps li.is-sensitive')"), "The card marks it as sensitive")
     check(any(c["tool"] == "type" and c["ok"] for c in calls("ORDER " + SITE + " g")), "Typing the name didn't ask (clicks and typing are allowed there)")
     capture(process, "sensitive-v01")
-    press(process, "Deny")
+    press(process, "Not now")
     until(lambda: len(calls("ORDER " + SITE + " g")) == 2, 30)
     check(not ORDERS and not calls("ORDER " + SITE + " g")[-1]["ok"], "Deny: the order never reaches the shop")
     idle(process)
@@ -686,12 +732,12 @@ def site_spelling(process):
         ask(process, plan("spell", ["read_url", {"url": url}]))
         card = " ".join(until(lambda: cards(process), 20) or [])
         check(f"Read {name}" in card, f"{what} ({card[:80]!r})")
-        press(process, "Deny")
+        press(process, "Not now")
         idle(process)
     # An address without its slashes, which a browser takes as the same site: it asks like any other, or it's refused.
     ask(process, plan("spell", ["read_url", {"url": f"http:/localhost:{port}/who?spell-d"}]))
     if until(lambda: cards(process), 8):
-        press(process, "Deny")
+        press(process, "Not now")
     idle(process)
     check("/who?spell-d" not in COOKIES, "An address missing its slashes doesn't get past the rule either")
     send(process, "permReset")
@@ -699,7 +745,7 @@ def site_spelling(process):
 
 
 def no_site_no_rule(process):
-    # A page that made itself a blob: has no site, so there's nothing for "Always on this site" to mean.
+    # A page that made itself a blob: has no site, so there's nothing for Always (on this site) to mean.
     before = rules()
     blob = "location.href = URL.createObjectURL(new Blob(['<!doctype html><title>Blob</title><button id=buy>Buy</button>'], { type: 'text/html' }))"
     send(process, "new", url=SITE + "/shop")
@@ -710,8 +756,8 @@ def no_site_no_rule(process):
     ask(process, plan("blob", ["click", {"tabId": tab, "selector": "#buy"}]))
     card = until(lambda: cards(process), 20)
     choices = js(process, "[...document.querySelectorAll('.approve-card .approve-actions button')].map(b => b.innerText.trim())") or []
-    check(card and "Allow once" in choices and "Always on this site" not in choices, f"A page with no site doesn't offer Always on this site ({choices})")
-    press(process, "Deny")
+    check(card and choices == ["Not now", "Allow"] and not js(process, "!!document.querySelector('.approve-card .approve-always')"), f"A page with no site doesn't offer Always ({choices})")
+    press(process, "Not now")
     idle(process)
     check(rules() == before, "...and nothing was saved")
 
@@ -734,16 +780,16 @@ def only_what_was_shown(process):
         shown = until(lambda: cards(process), 30)
         return query, tag, shown
 
-    # Add to cart turns into a real Place order while the card waits, and you press Allow once.
+    # Add to cart turns into a real Place order while the card waits, and you press Allow.
     before = len(orders("tricky"))
     query, tag, shown = swap("order")
     check(shown and "Add to cart" in shown[0], "The card shows Add to cart")
     change(query)
-    press(process, "Allow once")
+    press(process, "Allow")
     again = until(lambda: any("Place order" in c for c in cards(process)) and cards(process), 15)
     check(again and "changed since you were asked" in again[0], "The page changed: Still asks again, naming the new button, and says why")
-    check(len(orders("tricky")) == before, "Allow once on Add to cart did not place the order")
-    press(process, "Deny")
+    check(len(orders("tricky")) == before, "Allow on Add to cart did not place the order")
+    press(process, "Not now")
     idle(process)
     check(len(orders("tricky")) == before, "Denying the new card places nothing")
     logged = lambda: any(a["Result"] == "The page changed, so Still asked again" for c in json.loads((PROFILE / "ai" / "chats.json").read_text(encoding="utf-8")) for a in c.get("Audit", []))
@@ -753,32 +799,32 @@ def only_what_was_shown(process):
     before = len(orders("tricky"))
     query, tag, shown = swap("quiet")
     change(query)
-    press(process, "Allow once")
+    press(process, "Allow")
     again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
     check(again, "A button that keeps its words but now submits a form asks again")
     check(len(orders("tricky")) == before, "...and nothing was sent")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
 
     # The tab goes to another site while the card waits.
     query, tag, shown = swap("away", "&to=" + urllib.parse.quote(OTHER + "/tricky?do=none&k=away"))
     GO[query] = True
     time.sleep(1.5)
-    press(process, "Allow once")
+    press(process, "Allow")
     again = until(lambda: [c for c in cards(process) if "localhost" in c and "changed since you were asked" in c], 15)
     check(again, "The tab went to another site while the card waited: Still asks again, naming that site")
-    check(not [h for h in HITS if "k=away" in h], "...and Allow once for the first site did nothing on the second")
-    press(process, "Deny")
+    check(not [h for h in HITS if "k=away" in h], "...and Allow for the first site did nothing on the second")
+    press(process, "Not now")
     idle(process)
 
     # The swap happens on the press itself, past every check before it: the guard in the page stops it.
     before = len(orders("tricky"))
     query, tag, shown = swap("press")
-    press(process, "Allow once")
+    press(process, "Allow")
     time.sleep(3)
     check(len(orders("tricky")) == before, "A button that swaps at the moment of the press doesn't get the click")
     if any("changed since you were asked" in c for c in cards(process)):
-        press(process, "Deny")
+        press(process, "Not now")
     idle(process)
 
     # A key: the page moves the focus while the card waits (a sensitive site, so Enter asks first).
@@ -789,10 +835,10 @@ def only_what_was_shown(process):
     shown = until(lambda: cards(process), 30)
     check(shown and "Press Enter" in shown[0], "The card shows the key")
     change(query)
-    press(process, "Allow once")
+    press(process, "Allow")
     again = until(lambda: any("changed since you were asked" in c for c in cards(process)), 15)
     check(again, "The focus moved while the card waited: Still asks again")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     send(process, "permSensitive", site="127.0.0.1", on=False)
 
@@ -828,19 +874,19 @@ def steady_buttons(process):
     check(fresh, "A card that has just appeared doesn't take a click yet")
     time.sleep(.7)
     alone = spot()
-    check(alone and alone[-1].startswith("Allow once@") and alone[-1].endswith("*"), f"Allow once is the last button, and the one Ctrl+Enter presses ({alone})")
+    check(alone and alone[-1].startswith("Allow@") and alone[-1].endswith("*"), f"Allow is the last button, and the one Ctrl+Enter presses ({alone})")
     until(lambda: len(cards(process)) == 2, 30, .05)
     time.sleep(.7)
     two = spot()
     check(two == alone, f"A second step arriving moves none of the buttons, and they're the same buttons ({two})")
     check(js(process, "!document.querySelector('.approve-all [data-approve]') && !![...document.querySelectorAll('.approve-all button')].find(b => b.innerText.trim() === 'Approve all (2)')"), "Approve all sits apart from them, and Ctrl+Enter can't press it")
-    # A double press on Allow once: the first answers the first step, the second lands on a button that isn't ready.
-    js(process, """(() => { const once = () => [...document.querySelectorAll('.approve-actions button')].find(b => b.innerText.trim() === 'Allow once'); once().click(); setTimeout(() => once()?.click(), 120); setTimeout(() => once()?.click(), 300); return true })()""")
+    # A double press on Allow: the first answers the first step, the second lands on a button that isn't ready.
+    js(process, """(() => { const once = () => [...document.querySelectorAll('.approve-actions button')].find(b => b.innerText.trim() === 'Allow'); once().click(); setTimeout(() => once()?.click(), 120); setTimeout(() => once()?.click(), 300); return true })()""")
     until(lambda: "/hit/cart?k=l" in HITS, 15)
     time.sleep(1.5)
     check("/hit/cart?k=l" in HITS and "/hit/wish?k=l" not in HITS, "A quick second press doesn't approve the next step")
     check(len(cards(process)) == 1 and "Save for later" in cards(process)[0], "The next step is still waiting, on its own card")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     check("/hit/wish?k=l" not in HITS, "Deny: it doesn't run")
 
@@ -850,9 +896,9 @@ def steady_buttons(process):
     rpc(process, "key", key="K", mods="Control, Shift")
     until(lambda: js(process, "!!document.querySelector('.tasks-menu')"), 5)
     menu = until(lambda: js(process, "[...document.querySelectorAll('.tasks-ask')].map(e => e.innerText).join(' ')"), 5) or ""
-    check("Open to decide" in menu and "Allow once" not in menu and "marked" in menu, f"The running tasks menu sends a sensitive step to its card, and says why ({menu})")
+    check("Open to decide" in menu and "Allow" not in menu.split() and "marked" in menu, f"The running tasks menu sends a sensitive step to its card, and says why ({menu})")
     rpc(process, "key", key="Escape", mods="None")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     send(process, "permSensitive", site="127.0.0.1", on=False)
 
@@ -1060,24 +1106,26 @@ def reach(process):
 
     first, then = who(SITE, "b1"), who(OTHER, "b2")
     ask(process, plan("b", read(first), go(then)))
-    check(until(lambda: "A new site" in why(), 30), f"After reading from the web, opening a new site asks first ({why()!r})")
-    press(process, "Deny")
+    check(until(lambda: "A new site" in why(), 30), f"Ask more: after reading from the web, opening a new site asks first ({why()!r})")
+    press(process, "Not now")
     idle(process)
     check(not seen(then), "Deny: the site is never reached")
 
     first, then, more = who(SITE, "c1"), who(OTHER, "c2"), who(OTHER, "c3")
     ask(process, plan("c", read(first), go(then), go(more)))
     until(lambda: "A new site" in why(), 30)
-    press(process, "Allow once")
+    press(process, "Allow")
     check(until(lambda: seen(more), 20) and seen(then), "Allowed: it goes, and that site needs no asking again in this chat")
     idle(process)
 
+    send(process, "companionAutonomy", id="maya", level="balanced")
+    check(until(lambda: level("maya") == "balanced", 10), "Balanced is saved for Maya")
     near, far, onward, short = who(OTHER, "d1"), long(who(OTHER, "d2")), long(who(OTHER, "d3")) + "&to=http://elsewhere.test/", who(OTHER, "d4")
     ask(process, plan("d", read(near), go(far), go(onward), go(short)) + " on localhost")
     check(until(lambda: seen(near), 30) and "sid=sam" in (COOKIES.get(path(near)) or ""), f"A site the user named reads signed in ({COOKIES.get(path(near))!r})")
     check(until(lambda: seen(far), 30), "Balanced: a long address on that site goes with no card")
     check(until(lambda: "a lot of data" in why(), 30), f"but one carrying another address on asks ({why()!r})")
-    press(process, "Deny")
+    press(process, "Not now")
     check(until(lambda: seen(short), 20) and not seen(onward), "Denied, it doesn't go; a short address on that site goes with no card")
     idle(process)
 
@@ -1086,10 +1134,10 @@ def reach(process):
     near, far, next_far = who(OTHER, "d5"), long(who(OTHER, "d6")), long(who(OTHER, "d7"))
     ask(process, plan("d5", read(near), go(far), go(next_far)) + " on localhost")
     check(until(lambda: "a lot of data" in why(), 30), f"Ask more: even on a site the user named, a long address asks ({why()!r})")
-    press(process, "Allow in this chat")
+    press(process, "Allow")
     check(until(lambda: seen(far), 20), "Allowed, it goes")
-    check(until(lambda: "a lot of data" in why(), 20), "Allow in this chat doesn't cover the next one")
-    press(process, "Deny")
+    check(until(lambda: "a lot of data" in why(), 20), "Allow doesn't cover the next one")
+    press(process, "Not now")
     idle(process)
     check(not seen(next_far), "Denied, it doesn't go")
 
@@ -1098,7 +1146,7 @@ def reach(process):
     first, heavy = who(SITE, "d8"), long(who(OTHER, "d9"))
     ask(process, plan("d8", read(first), go(heavy)))
     check(until(lambda: "a lot of data" in why(), 30), f"Keep going: a long address to a new site still asks ({why()!r})")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     check(not seen(heavy), "Denied, it doesn't go")
     first, then = who(SITE, "d10"), who(OTHER, "d11")
@@ -1107,13 +1155,13 @@ def reach(process):
     idle(process)
     send(process, "permReset")
     check(until(lambda: level("maya") == "keepgoing", 10) and until(lambda: not rules(), 10), "Reset all clears the rules and leaves Maya's level alone")
-    send(process, "companionAutonomy", id="maya", level="balanced")
-    until(lambda: level("maya") == "balanced", 10)
+    send(process, "companionAutonomy", id="maya", level="ask")
+    until(lambda: level("maya") == "ask", 10)
 
     tab, later = who(OTHER, "e1"), who(SITE, "e2")
     ask(process, plan("e", go(tab), ["read_page", {}], read(later)))
     check(until(lambda: seen(tab), 30) and until(lambda: "A new site" in why(), 30), f"After reading a page in a tab, even reading a new site asks first ({why()!r})")
-    press(process, "Allow once")
+    press(process, "Allow")
     check(until(lambda: seen(later), 20) and "sid=sam" in (COOKIES.get(path(later)) or ""), "Allowed, it reads signed in")
     idle(process)
 
@@ -1125,8 +1173,8 @@ def reach(process):
     first, then = who(SITE, "g1"), who(OTHER, "g2")
     ask(process, plan("g", read(first), go(then)))
     until(lambda: "A new site" in why(), 30)
-    press(process, "Always on this site")
-    check(until(lambda: seen(then), 20), "Always on this site: it goes")
+    press(process, "Always")
+    check(until(lambda: seen(then), 20), "Always: it goes")
     idle(process)
     first, then = who(SITE, "h1"), who(OTHER, "h2")
     ask(process, plan("h", read(first), go(then)))
@@ -1155,7 +1203,7 @@ def private_hosts(process):
     """A site on the user's own computer or network asks first, unless they named it. Starts over with localhost counted as private."""
     rpc(process, "quit")
     process.wait(timeout=20)
-    process = launch(EXE, PROFILE, {**os.environ, "STILL_QA_PRIVATE": "localhost"})
+    process = launch(EXE, PROFILE, {**os.environ, "STILL_QA_PRIVATE": "localhost", "STILL_QA_CARD_WAIT": "8"})
     for host, private in {"127.0.0.1": True, "10.1.2.3": True, "192.168.1.1": True, "172.16.0.1": True, "169.254.169.254": True, "100.64.0.1": True, "[::1]": True, "::1": True, "[fe80::1]": True, "[fc00::1]": True,
                           "[::ffff:192.168.1.1]": True, "2130706433": True, "localhost": True, "app.localhost": True, "printer.local": True, "nas.lan": True, "wiki.internal": True, "router": True, "router.": True,
                           "example.com": False, "8.8.8.8": False, "172.32.0.1": False, "100.63.0.1": False, "[2606:4700::1111]": False, "local.example.com": False}.items():
@@ -1169,14 +1217,14 @@ def private_hosts(process):
     url = who("l")
     ask(process, plan("l", ["read_url", {"url": url}]))
     check(until(lambda: "your own computer or network" in why(), 30), f"Reading a private site asks first, with nothing read yet ({why()!r})")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     check(not seen(url), "Deny: it's never reached")
 
     url = who("m")
     ask(process, plan("m", ["open_tab", {"url": url}]))
     check(until(lambda: "your own computer or network" in why(), 30), "Opening one asks too")
-    press(process, "Deny")
+    press(process, "Not now")
     idle(process)
     check(not seen(url), "Deny: it's never reached")
 
@@ -1188,6 +1236,19 @@ def private_hosts(process):
     url = who("o")
     ask(process, (tag := plan("o", ["read_url", {"url": f"{SITE}/jump?to=" + urllib.parse.quote(url, safe="")}])))
     check(until(lambda: calls(tag), 30) and not seen(url) and "sent Still to" in calls(tag)[0]["text"], f"A redirect to a private site stops there ({calls(tag)})")
+    idle(process)
+
+    # Nobody answers: after the wait (8 seconds here, 2 minutes for real) the step is skipped and the run carries on.
+    url = who("p")
+    ask(process, (tag := plan("skip1", ["read_url", {"url": url}])))
+    check(until(lambda: "your own computer or network" in why(), 30), "A card waits for an answer")
+    done = until(lambda: calls(tag), 30)
+    said = done[-1]["text"] if done else ""
+    check(done and not done[-1]["ok"] and "didn't answer in 8 seconds" in said and "Skipped: Read localhost, needs your OK" in said, f"Left unanswered, the step is skipped and the AI is told to carry on ({said[:200]!r})")
+    check(until(lambda: not cards(process), 5) and not seen(url), "The card goes, and the site is never reached")
+    note = until(lambda: next((m["Text"] for m in (chat_of(tag) or {}).get("Messages", []) if m["Text"].startswith("Skipped: ")), None), 10) or ""
+    check(note == "Skipped: Read localhost, needs your OK", f"The chat says what was skipped ({note!r})")
+    check(until(lambda: "No answer in 8 seconds, so it was skipped" in audit(tag), 10), f"and so does its log ({audit(tag)})")
     idle(process)
     rpc(process, "quit")
     process.wait(timeout=20)
@@ -1203,13 +1264,13 @@ def only_once(process):
     before = len(ORDERS)
     ask(process, f"ORDER {SITE} v")
     until(lambda: cards(process) and "Sam" in cards(process)[0], 30)
-    press(process, "Allow once")
+    press(process, "Allow")
     until(lambda: cards(process) and "Place order" in cards(process)[0], 30)
     time.sleep(.7)
-    js(process, many % (json.dumps(".approve-actions button"), json.dumps("Allow once")))
+    js(process, many % (json.dumps(".approve-actions button"), json.dumps("Allow")))
     until(lambda: len(ORDERS) > before, 15)
     idle(process)
-    check(len(ORDERS) == before + 1, f"Allow once pressed three times at once places one order ({len(ORDERS) - before})")
+    check(len(ORDERS) == before + 1, f"Allow pressed three times at once places one order ({len(ORDERS) - before})")
 
     ask(process, f"PAIR {SITE}/shop?k=d x")
     until(lambda: len(cards(process)) == 2, 30)
@@ -1253,14 +1314,14 @@ def check_comes_first(process):
         ask(process, tag)
         opened = until(lambda: cards(process), 30)
         if opened and "Open" in opened[0]:  # opening the site asks first in a new chat
-            press(process, "Allow in this chat")
+            press(process, "Allow")
             until(lambda: calls(tag, opens=True), 15)
         shown = until(lambda: [c for c in cards(process) if "Open" not in c], 30)
         hits = [h for h in HITS if query in h]
         check(bool(shown), f"{name}: it asks first")
         check(not hits and len(ORDERS) == before, f"{name}: nothing happened yet ({hits})")
         if shown:
-            press(process, "Deny")
+            press(process, "Not now")
         until(lambda: calls(tag), 30)
         idle(process)
         check(not [h for h in HITS if query in h and "changed" not in h] and len(ORDERS) == before, f"{name}: Deny, and nothing happened")
@@ -1289,7 +1350,7 @@ def check_comes_first(process):
     ask(process, tag)
     until(lambda: cards(process) or calls(tag), 30)
     if cards(process):
-        press(process, "Allow in this chat")
+        press(process, "Allow")
     done = until(lambda: calls(tag), 30)
     check(done and not done[-1]["ok"] and "find" in done[-1]["text"].lower(), f"A button that never shows up: the step fails ({done and done[-1]['text'][:80]})")
     check(not cards(process), "...with no card")
@@ -1486,7 +1547,7 @@ def settings(process):
     check("Any site" in table and "Sensitive steps" in table and "shop.example" in table and "Maya" in table, "Settings list the defaults and the rule for Maya on shop.example")
     check("mybank.example" in (js(process, "document.querySelector('.perm-sites')?.textContent ?? ''") or ""), "Settings list the sensitive sites")
     row = js(process, "[...document.querySelectorAll('.perm-settings .setting-row')].map(r => r.innerText).join(' | ')") or ""
-    check("Autonomy" in row and "Maya" in row and "Balanced" in row, f"Settings show each companion's Autonomy ({row[:160]!r})")
+    check("Autonomy" in row and "Maya" in row and "Ask more" in row, f"Settings show each companion's Autonomy ({row[:160]!r})")
     rosa = js(process, "document.querySelector('[aria-label=\"Autonomy for Rosa\"]')?.innerText ?? ''") or ""
     check(rosa == "Keep going", f"A companion with no level saved is on Keep going, the default ({rosa!r})")
     capture(process, "permissions-v01")
