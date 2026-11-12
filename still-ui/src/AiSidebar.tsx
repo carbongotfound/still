@@ -986,7 +986,10 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
   pinned.current = near || (pinned.current && el.scrollTop >= lastTop.current - 8)
   lastTop.current = near || !pinned.current ? el.scrollTop : Math.max(lastTop.current, el.scrollTop)
   const view = el.getBoundingClientRect().top, row = [...el.firstElementChild?.children ?? []].find(r => r.getBoundingClientRect().bottom > view)
-  anchor.current = row && { row, top: row.getBoundingClientRect().top - view }
+  // The same row a pixel or less from where it was keeps where it was, so the parts of a pixel left over each time the
+  // view is put back (or the browser anchors it) don't add up into a drift.
+  const top = row && row.getBoundingClientRect().top - view, was = anchor.current
+  anchor.current = row && (was?.row === row && Math.abs(was.top - top!) <= 1 ? was : { row, top: top! })
   // Kept only where the user scrolled up to: the chat's own scrolling (to its end, smooth or not) never leaves it unpinned.
   if (ai.chatId && opened.current === ai.chatId) { if (pinned.current) scrolls.delete(ai.chatId); else scrolls.set(ai.chatId, el.scrollTop) }
  }
