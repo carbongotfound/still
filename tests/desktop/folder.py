@@ -65,7 +65,11 @@ FAKE = textwrap.dedent(r'''
         for tool, arguments in json.loads(last[7:]):
             if tool == "sleep":  # a pause between steps, as a real model takes
                 time.sleep(arguments); continue
+            # the stream a real AI app prints around a call, so Still shows the step as it does for a real one
+            k = "t%d" % time.time_ns()
+            say({"type": "assistant", "message": {"content": [{"type": "tool_use", "id": k, "name": "mcp__still__" + tool, "input": arguments}]}})
             r = request("tools/call", {"name": tool, "arguments": arguments})["result"]
+            say({"type": "user", "message": {"content": [{"type": "tool_result", "tool_use_id": k, "is_error": bool(r.get("isError"))}]}})
             with open(os.path.join(here, "results.jsonl"), "a", encoding="utf-8") as f:
                 f.write(json.dumps({"tool": tool, "tools": tools, "error": bool(r.get("isError")), "text": r["content"][0].get("text", "")}) + "\n")
         still.stdin.close()
@@ -350,7 +354,7 @@ def main():
         js(p, """(() => {
          const w = [...document.querySelectorAll('.chat-view details.ai-work')].find(d => d.querySelector('summary').innerText.startsWith('42 steps'))
          w.open = true; w.querySelector('details.ai-work-fold').open = true
-         window.__rows = [...document.querySelectorAll('.chat-view .chat-column > *')].slice(-60, -2)
+         window.__rows = [...document.querySelectorAll('.chat-view .chat-column > *')].slice(-60, -2).filter(r => !r.querySelector('.ai-live')) // not the live line, which goes when it's done
          window.__fold = w
          const log = document.querySelector('.chat-view .ai-log')
          log.scrollTop += w.getBoundingClientRect().top - log.getBoundingClientRect().top - 40
@@ -402,6 +406,7 @@ def main():
         idle(p, cid2)
         data = lambda pic: "data:image/png;base64," + base64.b64encode(pic).decode()
         shown = lambda: js(p, "(d => d && { title: d.querySelector('h2').innerText, src: (d.querySelector('img') || {}).src || '', spinner: !!d.querySelector('[role=status], .animate-spin') })(document.querySelector('.file-preview'))") or {}
+        js(p, "document.querySelectorAll('.chat-view .ai-step-picture').forEach(b => { for (let d = b.closest('details'); d; d = d.parentElement.closest('details')) d.open = true })")  # its turn and its Read 2 files, opened as the user would
         rows = js(p, "[...document.querySelectorAll('.chat-view .ai-step-picture')].map(b => b.innerText.trim())") or []
         js(p, "[...document.querySelectorAll('.chat-view .ai-step-picture')].find(b => b.innerText.includes('f01.png')).click()")
         first = until(lambda: (s := shown()).get("src") and s, 10) or {}
@@ -420,10 +425,12 @@ def main():
         check(until(lambda: shown().get("src") == data(red), 10) and shown().get("title") == "f01.png · 1 of 2", "Left steps back")
         key("Escape")
         check(until(lambda: not js(p, "!!document.querySelector('.file-preview')"), 5), "Escape closes it")
-        asked = lambda step, chat: js(p, f"""new Promise(done => {{
-         const id = 'probe' + Math.random(), got = e => {{ if (e.detail.id === id) {{ removeEventListener('still-thumb', got); done(e.detail.data) }} }}
-         addEventListener('still-thumb', got); window.chrome.webview.postMessage({{ op: 'aiPicture', id, chat: {json.dumps(chat)}, step: {json.dumps(step)} }})
-         setTimeout(() => done(null), 5000) }})""")
+        def asked(step, chat):  # posted, then the answer polled for (Windows' script call doesn't wait for a promise)
+            js(p, f"""(() => {{ const id = 'probe' + Math.random(); window.__asked = undefined
+             const got = e => {{ if (e.detail.id === id) {{ removeEventListener('still-thumb', got); window.__asked = e.detail.data }} }}
+             addEventListener('still-thumb', got); window.chrome.webview.postMessage({{ op: 'aiPicture', id, chat: {json.dumps(chat)}, step: {json.dumps(step)} }}) }})()""")
+            until(lambda: js(p, "window.__asked !== undefined"), 5)
+            return js(p, "window.__asked")
         put(OUTSIDE / "secret.png", "not for the page")
         check(asked("Read f01.png", cid2) == data(red) and asked("Read ../outside/secret.png", cid2) == "" and asked("Read f01.png", "nope") == "",
               "Still only shows a picture its step in that chat names, from the chat's folder")
