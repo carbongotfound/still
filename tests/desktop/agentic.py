@@ -517,9 +517,12 @@ def queue_and_question(process):
     check(until(lambda: "ASK please" in bar(), 5), "A message sent while it works waits as Up next")
     check("[Still]" not in bar() and "queued-notes.txt" in (js(process, "document.querySelector('.ai-queued .ai-queued-file')?.innerText ?? ''") or ""),
           f"Up next shows only what was typed, with a chip for the file ({bar()[:140]!r})")
-    fit = js(process, """(() => { const q = document.querySelector('.ai-queued'), p = q.querySelector('p'), b = q.querySelector('[data-slot=button]'), x = q.querySelector('.ai-queued-x'), r = e => e.getBoundingClientRect()
-        return { cut: p.scrollWidth > p.clientWidth, clear: r(q.querySelector('.ai-queued-what')).right <= r(b).left + .5 && r(b).right <= r(x).left + .5, label: b.scrollWidth <= b.clientWidth + 1, chip: r(q.querySelector('.ai-queued-file > span:last-child')).width > 40 } })()""")
+    # narrow: the bar at 305 px, as wide as it is in the Mac's chat panel, where the chip once squeezed the text to 0 px.
+    fit = js(process, """(() => { const q = document.querySelector('.ai-queued'), p = q.querySelector('p'), b = q.querySelector('[data-slot=button]'), x = q.querySelector('.ai-queued-x'), r = e => e.getBoundingClientRect(), name = q.querySelector('.ai-queued-file > span:last-child')
+        const w = q.style.width; q.style.width = '305px'; const narrow = { text: Math.round(r(p).width), chip: Math.round(r(name).width) }; q.style.width = w
+        return { cut: p.scrollWidth > p.clientWidth, clear: r(q.querySelector('.ai-queued-what')).right <= r(b).left + .5 && r(b).right <= r(x).left + .5, label: b.scrollWidth <= b.clientWidth + 1, chip: r(name).width > 40, narrow } })()""")
     check(fit and fit["cut"] and fit["clear"] and fit["label"] and fit["chip"], f"Long text ends in an ellipsis and never runs under Send now or the X, and the file's chip keeps its name ({fit})")
+    check(fit and fit["narrow"]["text"] >= 36 and fit["narrow"]["chip"] > 40, f"In a narrow chat panel (a 305 px bar) both what was typed and the file's name still show ({fit and fit['narrow']})")
     time.sleep(.5); capture(process, "upnext-v01")  # once it has faded in
     check(js(process, "document.querySelector('.chat-pane [aria-label=Message]')?.getAttribute('aria-placeholder')") == "Add to what's up next…", "The box says it adds to what's up next")
     click(process, ".ai-queued [data-slot=button]")

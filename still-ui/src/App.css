@@ -621,7 +621,8 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 /* What was typed, cut short with an ellipsis, then a chip per file: it shrinks, the buttons never do. */
 .ai-queued-what { flex:1; min-width:0; display:flex; align-items:center; gap:6px; overflow:hidden; }
 .ai-queued-what p { flex:0 1 auto; min-width:0; margin:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.ai-queued-file { flex:none; max-width:150px; display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:999px; background:var(--background); color:var(--muted-foreground); font-size:11px; }
+/* The file's chip takes at most 60% of the row, so what was typed always keeps the rest (a narrow chat panel squeezed it to nothing). */
+.ai-queued-file { flex:none; max-width:min(150px,60%); display:inline-flex; align-items:center; gap:4px; padding:1px 7px; border-radius:999px; background:var(--background); color:var(--muted-foreground); font-size:11px; }
 .ai-queued-file > span:last-child { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ai-queued-file .file-icon { width:14px; height:14px; border-radius:0; background:none; } .ai-queued-file .file-icon svg { width:12px; height:12px; }
 .ai-queued-x { flex:none; display:grid; place-items:center; width:20px; height:20px; border-radius:6px; color:var(--muted-foreground); }
