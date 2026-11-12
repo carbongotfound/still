@@ -372,6 +372,7 @@ Paths: `still/` = Windows host (WPF, WebView2), `still-ui/src/` = the React inte
 - Started on another profile folder (`--profile`, as tests do), the Mac installs an update but doesn't reopen Still, since reopening would open the Default profile. Mac QA builds don't run Sparkle.
 - Chat titles is tested with a fake agent; a live title run (Claude) and the Mac build haven't been checked.
 - ChatGPT and Grok adapters ship but live tests cover Claude only; custom agent manifests are untested.
+- ChatGPT's Still-tools approval (Still's server approved in its settings for the run, and the plain message when it turns a tool down) is untested with a real, signed-in Codex: it was checked by reading the code and with a fake app only. It waits for someone with a signed-in Codex to try it.
 - A custom agent manifest with `jsonl` output reports tool calls but not results, so its steps keep the running wording after the run (Reading the page), with no tick.
 - Gemini's, OpenCode's, Qwen's, GitHub Copilot's, DeepSeek's and Amp's logos are path data from LobeHub Icons (MIT); the makers' own brand rules weren't checked.
 - Model settings' states come from each app's own files or status command, checked with fake apps only. GitHub Copilot and DeepSeek Harness can't say if they're signed in, so they're always Installed with Set up, and Runs on counts them as ready; Qwen Code signed in with an API key shows Installed. Set up's Sign in and Add's Install it for me weren't clicked for real apps.
