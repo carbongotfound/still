@@ -980,7 +980,11 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  }, [ai.chatId, (ai.messagesFrom ?? 0) + ai.messages.length, busy, !!ai.question])
  const keepScroll = (e: { currentTarget: HTMLDivElement }) => {
   fadeTop(e); const el = e.currentTarget
-  pinned.current = el.scrollHeight - el.scrollTop - el.clientHeight < 8 || (pinned.current && el.scrollTop >= lastTop.current); lastTop.current = el.scrollTop
+  // At the end, or following it: only 8 px up from the furthest it got unpins it, so the few pixels WebKit's layout nudges
+  // it back as a run starts (rows above it change) don't count as the user reading further up.
+  const near = el.scrollHeight - el.scrollTop - el.clientHeight < 8
+  pinned.current = near || (pinned.current && el.scrollTop >= lastTop.current - 8)
+  lastTop.current = near || !pinned.current ? el.scrollTop : Math.max(lastTop.current, el.scrollTop)
   const view = el.getBoundingClientRect().top, row = [...el.firstElementChild?.children ?? []].find(r => r.getBoundingClientRect().bottom > view)
   anchor.current = row && { row, top: row.getBoundingClientRect().top - view }
   // Kept only where the user scrolled up to: the chat's own scrolling (to its end, smooth or not) never leaves it unpinned.

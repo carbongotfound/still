@@ -184,6 +184,14 @@ def main():
         if not js(p, f"!!document.querySelector('{PANEL}')"):
             send(p, "aiToggle")
         open_in_panel(p, "chairs", "Chairs")
+        # As a run starts, WebKit's layout can nudge the view up a few pixels while rows come in: that isn't the user
+        # reading further up, so the chat still follows its end (it stopped short and stayed there).
+        js(p, f"""(el => {{ el.scrollTop -= 2; const d = document.createElement('div'); d.id = 'qa-grow'; d.style.height = '160px'; el.firstElementChild.append(d) }})(document.querySelector('{PANEL}'))""")
+        time.sleep(.8)
+        w = where(p, PANEL)
+        js(p, "document.getElementById('qa-grow')?.remove()")
+        check(at_end(w), f"Nudged up 2 px as rows come in, the chat still follows its end ({w})")
+        time.sleep(.5)
         send(p, "aiSend", text="WORDRUN SLOW25", companion="maya")
         check(until(lambda: (BIN / "slow-started").exists(), 30) and until(lambda: where(p, PANEL)["live"], 10), f"The chat works, its live step in sight ({where(p, PANEL)})")
         for n in range(3):
