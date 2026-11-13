@@ -29,10 +29,8 @@ public abstract class AgentAdapter
  public string Installer { get; init; } = "";    // the maker's install script; "" = Still never installs it
  public string InstallCommand { get; init; } = ""; // shown for the user to copy
  public string Site { get; init; } = "";
- public string[] SignIn { get; init; } = [];
- public string[] Domains { get; init; } = [];    // the only sites a sign-in page may be on
  public bool Secondary { get; init; }            // listed under "More agents": OpenCode and manifest agents
- public string TerminalSignIn { get; init; } = ""; // no sign-in command: the user runs this in a terminal to sign in
+ public string TerminalSignIn { get; init; } = ""; // the user runs this in a terminal to sign in; Still never runs it
  public bool Compatible { get; init; }           // built from the app's docs and package, not yet run live: labelled Compatible
  public virtual bool PromptOnStdin => true;
  /// Still picks the session id up front (so a stopped first run can still be resumed); otherwise the app reports it.
@@ -423,7 +421,7 @@ sealed class ManifestAdapter : AgentAdapter
  {
   public string Id { get; set; } = ""; public string Name { get; set; } = ""; public string Command { get; set; } = ""; public bool Enabled { get; set; }
   public string Site { get; set; } = ""; public string Install { get; set; } = "";
-  public string[] Detect { get; set; } = []; public string Expect { get; set; } = "."; public string[] Signin { get; set; } = []; public string[] Domains { get; set; } = [];
+  public string[] Detect { get; set; } = []; public string Expect { get; set; } = "."; public string[] Signin { get; set; } = [];
   public string[] Run { get; set; } = []; public string[] Resume { get; set; } = []; public string[] Model { get; set; } = []; public string[] Effort { get; set; } = [];
   public string[] Models { get; set; } = [];
   public string McpFile { get; set; } = ""; // also write Still's mcp.json here, relative to the run folder (for apps that read a fixed file)
@@ -439,7 +437,7 @@ sealed class ManifestAdapter : AgentAdapter
     "id": "cursor-agent", "name": "Cursor Agent", "enabled": false,
     "note": "Example, not tested by Still. Sign in with: cursor-agent login. Set enabled to true to use it.",
     "command": "cursor-agent", "site": "https://cursor.com/cli", "install": "See cursor.com/cli",
-    "detect": ["status"], "expect": "(?i)logged in", "signin": ["login"], "domains": ["cursor.com"],
+    "detect": ["status"], "expect": "(?i)logged in", "signin": ["login"],
     "mcpFile": ".cursor/mcp.json",
     "run": ["-p", "--output-format", "stream-json", "--approve-mcps", "--force"],
     "resume": ["--resume", "{session}"], "model": ["--model", "{model}"],
@@ -473,7 +471,8 @@ sealed class ManifestAdapter : AgentAdapter
      var s = JsonSerializer.Deserialize<Spec>(File.ReadAllText(file), new JsonSerializerOptions { PropertyNameCaseInsensitive = true, ReadCommentHandling = JsonCommentHandling.Skip, AllowTrailingCommas = true });
      if (s is not { Enabled: true } || !System.Text.RegularExpressions.Regex.IsMatch(s.Id, "^[a-z0-9-]{1,30}$") || s.Id is "claude" or "grok" or "chatgpt" or "codex" or "gemini" or "opencode" or "qwen" or "copilot" or "dsh" || s.Command.Length == 0 || s.Run.Length == 0) continue;
      found.Add(new ManifestAdapter { spec = s, Id = s.Id, Name = s.Name.Length > 0 ? s.Name : s.Id, App = s.Name.Length > 0 ? s.Name : s.Command, Command = s.Command,
-      Site = s.Site, InstallCommand = s.Install, SignIn = s.Signin, Domains = s.Domains, Secondary = true });
+      Site = s.Site, InstallCommand = s.Install, Secondary = true,
+      TerminalSignIn = s.Signin.Length > 0 ? string.Join(" ", s.Signin.Prepend(s.Command.Contains(' ') ? $"& \"{s.Command}\"" : s.Command)) : "" }); // shown to run in a terminal
     } catch (Exception ex) when (ex is JsonException or IOException or NotSupportedException) { Still.App.Log(ex); }
    }
   } catch (Exception ex) when (ex is IOException or UnauthorizedAccessException) { Still.App.Log(ex); }

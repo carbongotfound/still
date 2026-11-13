@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, History, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, ClipboardPaste, Coffee, Copy, Eye, FileText, Gauge, Globe, History, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -104,7 +104,6 @@ const host = (url: string) => { try { return new URL(url).hostname.replace(/^www
 /// What the user likes to be called, from what their companion remembers (setup saves it as the "name" fact).
 export const calledBy = (c?: Companion) => c?.memory?.find(f => f.key === "name")?.text.match(/^Likes to be called (.+?)\.?$/)?.[1]
 const SHELL = MAC ? "Terminal" : "PowerShell" // where install and sign-in commands run
-const settingUp = (s?: string) => s === "installing" || s === "signingIn"
 // "" = not checked yet, which never blocks a chat
 const statusOf = (h?: Harness) => !h ? "" : h.status || (h.installed ? "" : "missing")
 const ready = (h: Harness) => h.installed && !["missing", "signedOut", "needsKey", "badKey"].includes(statusOf(h))
@@ -219,10 +218,9 @@ function IconButton({ label, onClick, disabled, pressed, expanded, children }: {
 }
 
 // "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
-// and never by signing in. Add shows how to install one. Set up picks an app that signs in in the browser and goes to its
-// sign-in card (onSetUp leaves Settings for it); for one signed in from a terminal it shows the command. With send, the
-// Compatible API presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
-export function AiPicker({ ai, onPick, send, onSetUp }: { ai: AiState; onPick: (id: string) => void; send?: Send; onSetUp?: () => void }) {
+// and never by signing in. Add shows how to install one. Set up shows the terminal command that signs in to it: Still never
+// runs a sign-in. With send, the Compatible API presets too, each added right here. Picking a row makes it the model for new chats. Nothing is installed unless the user asks.
+export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: string) => void; send?: Send }) {
  const [howTo, setHowTo] = useState("")
  const [adding, setAdding] = useState<string | null>(null) // the API preset whose form is open ("": any other)
  useEffect(() => { send?.("aiStatus") }, [send]) // a fresh look at what's installed and logged in (at most every 30 s)
@@ -230,8 +228,8 @@ export function AiPicker({ ai, onPick, send, onSetUp }: { ai: AiState; onPick: (
  const row = (h: Harness) => {
   const s = statusOf(h), chosen = ai.harness === h.id, open = howTo === h.id
   // Signed out, or installed with no way to tell (GitHub Copilot) and signed in from a terminal.
-  const setUp = s === "signedOut" || (s === "" && !!h.terminalSignIn)
-  const state = settingUp(s) ? <><Spinner />{s === "installing" ? "Installing…" : "Signing in…"}</>
+  const setUp = s === "signedOut" || (s === "" && h.installed && !!ai.checked && !!h.terminalSignIn)
+  const state = s === "installing" ? <><Spinner />Installing…</>
    : s === "ready" ? <><span className="byo-ok">{h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "Compatible API, no key" : "Uses your API key") : h.billing ? "Ready" : "Logged in"}</span><Check aria-hidden /></>
    : s === "needsKey" ? "API provider · Needs a key"
    : s === "badKey" ? "API provider · Key not accepted"
@@ -243,18 +241,10 @@ export function AiPicker({ ai, onPick, send, onSetUp }: { ai: AiState; onPick: (
     <span className="byo-name"><strong>{h.name}{h.compatible && <> <Badge variant="outline" className="byo-tag" title="Built from its docs, not yet tested with the real app">Compatible</Badge></>}</strong><small>{state}</small></span>
     {chosen && <Check className="ai-pick-check" aria-label="Chosen" />}
    </button>
-   {setUp && h.terminalSignIn && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
-   {setUp && !h.terminalSignIn && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { send("aiHarness", { harness: h.id, waitToSignIn: true }); onSetUp?.() }}>Set up</Button>}
+   {setUp && send && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Set up<ChevronDown /></Button>}
    {(s === "needsKey" || s === "badKey") && send && <Button size="sm" variant="outline" className="byo-act" onClick={() => { const keys = document.getElementById("set-apis"); if (keys) keys.scrollIntoView({ behavior: "smooth", block: "start" }); else openModelSettings(send) }}>{s === "badKey" ? "Replace key" : "Add key"}</Button>}
    {s === "missing" && <Button size="sm" variant="outline" className="byo-act" aria-expanded={open} onClick={() => toggle(h.id)}>Add<ChevronDown /></Button>}
-   {open && setUp && h.terminalSignIn && <div className="byo-how">
-    <p>{h.app} signs in from a terminal. Run this in {SHELL}, finish signing in in the browser it opens, then come back:</p>
-    <code className="byo-cmd">{h.terminalSignIn}</code>
-    <div className="ai-row">
-     <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.terminalSignIn ?? "")}><Copy />Copy</Button>
-     {send && <Button size="sm" variant="ghost" onClick={() => send("aiCheck")}>I signed in</Button>}
-    </div>
-   </div>}
+   {open && setUp && <div className="byo-how"><SignInSteps h={h} send={send} /></div>}
    {!!h.billing && <p className="byo-gaps byo-billing">{h.billing}</p>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {open && s === "missing" && <div className="byo-how">
@@ -898,7 +888,21 @@ function ChoiceCard({ choice, answer, live, onPick }: { choice: Choice; answer?:
  </div>
 }
 
-// Install or sign in to the chat's AI. Null when it's ready to chat.
+/// Signing in to an AI app: the user runs its own sign-in in a terminal. Still and its companions never run sign-in or auth commands.
+export function SignInSteps({ h, send }: { h: Harness; send?: Send }) {
+ const cmd = h.terminalSignIn ?? ""
+ return <div className="signin-steps">
+  {cmd ? <>
+   <p>To connect your {h.name} plan, open a terminal and run:</p>
+   <div className="signin-cmd"><code className="byo-cmd">{cmd}</code>
+    <Button size="sm" variant="ghost" onClick={() => { if (send) send("copyText", { text: cmd }); else navigator.clipboard?.writeText(cmd); toast("Copied") }}><Copy />Copy</Button></div>
+   <p>Finish the sign-in in your browser, then tell me when you're done.</p>
+  </> : <p>To connect your {h.name} plan, sign in to {h.app} from a terminal, then tell me when you're done.</p>}
+  {send && <Button size="sm" className="signin-done" onClick={() => send("aiCheck", { signedIn: true })}>I'm done</Button>}
+ </div>
+}
+
+// Install the chat's AI, or how to sign in to it. Null when it's ready to chat.
 function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: () => void }) {
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
  const status = statusOf(current)
@@ -929,24 +933,12 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
   </>}
   {pending}
  </div>
- if (status === "signedOut" || status === "signingIn") return <div className="ai-pane ai-center">
-  <Face size={64} mood={status === "signingIn" ? "thinking" : "idle"} />
-  {status === "signingIn" ? <>
-   <h3>{ai.setup.url ? "Approve it in the new tab" : `Opening ${current.maker}'s sign-in…`}</h3>
-   {ai.setup.url && <p>Sign in on {current.maker}'s page and approve. This moves on by itself.</p>}
-   {ai.setup.code && <div className="ai-code"><small>The page should show this code</small><strong>{ai.setup.code}</strong></div>}
-   {ai.setup.url && <div className="ai-trust"><LockKeyhole /><span>You're signing in on <b>{host(ai.setup.url)}</b>, {current.maker}'s own site. Still never sees your password.</span></div>}
-   <div className="ai-row">
-    {ai.setup.url && <Button variant="link" size="sm" onClick={() => send("new", { url: ai.setup.url })}><ExternalLink />Open the page again</Button>}
-    <Button variant="link" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
-   </div>
-  </> : <>
-   <h3>Sign in to {current.name}</h3>
-   <p>{current.name} uses your own {current.maker} account. Sign in once and you're set.</p>
-   <Button className="ai-go" onClick={() => send("aiLogin")}>Sign in with {current.maker}</Button>
-   <div className="ai-trust"><LockKeyhole /><span>You sign in on {current.maker}'s own website, in a tab here. Still never sees your password.</span></div>
-   <Button variant="link" size="sm" onClick={onSettings}>Pick another model</Button>
-  </>}
+ if (status === "signedOut") return <div className="ai-pane ai-center">
+  <Face size={64} />
+  <h3>Connect {current.name}</h3>
+  <SignInSteps h={current} send={send} />
+  {ai.error && <p className="ai-fine signin-error" role="alert">{ai.error}</p>}
+  <Button variant="link" size="sm" onClick={onSettings}>Pick another model</Button>
   {pending}
  </div>
  return null
@@ -1114,7 +1106,7 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
     ? `Stopped: Still closed while ${name} was mid-task, and one step may not have finished. ${name} checks it first and asks you again.`
     : `Stopped: Still closed while ${name} was mid-task.`}</AlertDescription><Button size="sm" onClick={() => send("aiResume", { id: ai.chatId })}><Play aria-hidden />Continue</Button></Alert>}
   {!busy && ai.chatId && ai.task?.state === "waiting" && ai.task.reason === "signin" && <Alert className="task-bar"><AlertDescription>{name} is waiting: sign in to carry on.</AlertDescription>
-   <Button size="sm" variant="outline" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button><Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button></Alert>}
+   <Button size="sm" variant="outline" onClick={() => send("aiResume", { id: ai.chatId })}>Resume</Button><Button size="sm" onClick={() => send("aiCheck", { signedIn: true })}>I'm done</Button></Alert>}
   {ai.error && <Alert variant="destructive" className="ai-error"><AlertDescription>{ai.error}</AlertDescription><Button size="sm" variant="outline" className="ai-error-copy" onClick={() => { send("copyText", { text: ai.error }); toast("Details copied") }}><Copy />Copy details</Button>
    {!busy && ai.chatId && ai.task?.state === "failed" && !chat?.from && <Button size="sm" onClick={() => send("aiContinue", { id: ai.chatId })}><Play aria-hidden />Continue</Button>}</Alert>}
   {!setup && <div className="ai-compose"><div className="chat-column">

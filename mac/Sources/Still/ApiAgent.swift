@@ -668,7 +668,7 @@ extension Browser {
     aiClisCache = nil; aiModels[saved.id] = nil; saveApiProviders()
     if saved.models.isEmpty { await listApiModels(saved) }
     await checkAis(true)
-    if AgentStream.isTrue(data["use"]) { useAi(saved.id, signIn: false) }                                  // setup: the AI it connects
+    if AgentStream.isTrue(data["use"]) { useAi(saved.id) }                                  // setup: the AI it connects
     if AgentStream.isTrue(data["test"]), let first = saved.models.first { await testApi(saved, first.id) } // setup's Test connection saves first
    case "apiModels": if let p { await listApiModels(p) }
    case "apiKeyRemove":

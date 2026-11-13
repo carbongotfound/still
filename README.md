@@ -86,13 +86,13 @@ Deleting a chat, a companion, a memory, a key or your history asks first and say
 
 ## Supported AI apps
 
-Still runs the AI's own app in the background. It never asks for a key for these and never reads the app's login. Claude Code keeps its own sign-in and any API key, auth token or cloud provider set in your environment; when one of those is in use, Claude's card in **Settings > Models** says so, because that account gets billed. For the other apps, Still strips API-key settings from each run, so nothing gets billed to an API account.
+Still runs the AI's own app in the background. It never asks for a key for these, never reads the app's login and never runs its sign-in for you: you sign in from a terminal, with the command Still shows. Claude Code keeps its own sign-in and any API key, auth token or cloud provider set in your environment; when one of those is in use, Claude's card in **Settings > Models** says so, because that account gets billed. For the other apps, Still strips API-key settings from each run, so nothing gets billed to an API account.
 
 | AI | What Still runs | How it connects |
 |---|---|---|
-| **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. **Sign in with Anthropic** opens Claude's own sign-in. |
-| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. **Sign in with OpenAI** uses your ChatGPT account. API-key logins are ignored. |
-| **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. **Sign in with xAI** opens xAI's device sign-in. |
+| **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. To sign in, run `claude auth login` in a terminal: Still shows the command and checks again when you're done. |
+| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. To sign in with your ChatGPT account, run the sign-in command Still shows in a terminal. API-key logins are ignored. |
+| **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. To sign in, run `grok login --device-auth` in a terminal. |
 | **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
 | **OpenCode** | [OpenCode](https://opencode.ai) | It runs on the provider you set up inside OpenCode (`opencode providers login`). |
 | **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models**, under **More agents** (**DeepSeek** comes filled in). Labelled **Compatible**. |

@@ -5,8 +5,8 @@
 - ChatGPT, Grok, Gemini and OpenCode see none of the API keys, in their checks or their runs.
 - Claude's card in Settings > Models, and setup's card, say what a run will use and who's billed, from what Claude Code's
   own status says. A plain sign-in says nothing extra, and the chat stops saying "Your Claude plan" when it isn't one.
-- A refused key stays on screen as an error and starts no sign-in, because signing in wouldn't help: the key would still
-  win. An expired sign-in still starts one, then the message runs again by itself.
+- A refused key stays on screen as an error, because signing in wouldn't help: the key would still win. An expired
+  sign-in shows the command to sign in from a terminal and starts nothing; once signed in, I'm done runs the message again.
 
 Stand-in apps only (STILL_QA_CLIS puts them ahead of anything installed), with made-up values. No real AI runs and nothing
 signs in. The stand-in's status answers in the shape Claude Code 2.1.318 does; the suite stops before picking anything if
@@ -230,7 +230,7 @@ def other_logins():
 
 
 def plain_sign_in():
-    """Claude's own sign-in: nothing extra, and an expired one still signs in here and runs the message again."""
+    """Claude's own sign-in: nothing extra, and an expired one shows the terminal command, then I'm done runs the message again."""
     p, bin = start("plain")
     try:
         models(p, bin)
@@ -242,8 +242,13 @@ def plain_sign_in():
         usage = until(lambda: js(p, "document.querySelector('.ai-usage')?.innerText"), 5) or ""
         check("Your Claude plan" in usage, f"The chat says Your Claude plan ({usage!r})")
         ask(p, "EXPIRED this")
-        check(until(lambda: (bin / "relogged").exists(), 15), "An expired sign-in, reported only in the result line, starts Claude's own sign-in")
-        check(until(lambda: len([c for c in calls(bin) if c["run"]]) >= 3, 15) and until(lambda: "Stand-in reply" in (text(p) or "") and "Not logged in" not in (text(p) or ""), 15), "and the message runs again by itself")
+        check(until(lambda: js(p, "document.querySelector('.ai-sidebar .signin-steps code')?.textContent") == "claude auth login", 15),
+              "An expired sign-in, reported only in the result line, shows the command to sign in from a terminal")
+        time.sleep(1.5)
+        check(not (bin / "relogged").exists() and not [c for c in calls(bin) if {"login", "auth"} & set(c["args"]) and "status" not in c["args"]], "and starts no sign-in")
+        (bin / "relogged").write_text("")  # the user signs in again, in their own terminal
+        js(p, "document.querySelector('.ai-sidebar .signin-done')?.click()")
+        check(until(lambda: len([c for c in calls(bin) if c["run"]]) >= 3, 15) and until(lambda: "Stand-in reply" in (text(p) or "") and "Not logged in" not in (text(p) or ""), 15), "Then I'm done runs the message again")
     finally:
         stop(p)
     p, bin = start("out", login=False)

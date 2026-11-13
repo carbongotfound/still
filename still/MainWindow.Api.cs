@@ -64,7 +64,7 @@ public partial class MainWindow
     aiClis = null; aiModels.Remove(p.Id); SaveLater();
     if (p.Models.Count == 0) await ListModels(p);
     await CheckAis(true);
-    if (B("use")) UseAi(p.Id, false);                                  // setup: the AI it connects
+    if (B("use")) UseAi(p.Id);                                  // setup: the AI it connects
     if (B("test") && p.Models.Count > 0) await TestApi(p, p.Models[0].Id); // setup's Test connection saves first
     break; }
    case "apiModels" when p != null: await ListModels(p); break;

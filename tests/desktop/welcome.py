@@ -2,8 +2,8 @@
 
 A fresh profile starts with the intro (skipped with Space) and no companions. Then four steps, walked like a person
 would: Welcome (the headline, Create your companion and Just browse for now); Connect (an AI app on this computer: two
-made-up apps show Sign in, which waits for a click, and Install and sign in with no installer, then the fake one is
-ready; How this works);
+made-up apps show the command to sign in from a terminal (Still never runs it), and where to get one with no installer,
+then the fake one is ready; How this works);
 Create (a name, a starting look, Surprise me, Customize, what to help with and a reply length, then the instructions to
 check before Hire, and the joined card); and a first task, the sample page that ships with Still. The task runs on a
 fake AI app (a manifest in Still's agents folder): it opens the sample page beside the chat and reads it. The run is
@@ -94,10 +94,8 @@ FAKE = textwrap.dedent(r'''
     args = sys.argv[1:]
     if args[:1] == ["status"]: print("signed in"); sys.exit(0)
     if args[:1] == ["whoami"]: print("signed out"); sys.exit(0)  # the made-up app that isn't signed in
-    if args[:1] == ["login"]:  # its sign-in, which fails and says why, the way real apps do
-        open(os.path.join(here, "logins.txt"), "a").write("login\n")
-        print("Starting local login server on http://localhost:1455.", flush=True)
-        print("Error logging in: Port 127.0.0.1:1455 is already in use", file=sys.stderr); sys.exit(1)
+    if args[:1] == ["login"]:  # its sign-in: Still never runs it, the user does, in a terminal
+        open(os.path.join(here, "logins.txt"), "a").write("login\n"); sys.exit(1)
     prompt = sys.stdin.read()
     with open(os.path.join(here, "prompts.jsonl"), "a", encoding="utf-8") as f: f.write(json.dumps({"prompt": prompt}) + "\n")
     site = open(os.path.join(here, "site.txt")).read().strip()
@@ -581,7 +579,7 @@ def connect(process, copy):
     shell = "Terminal" if MAC else "PowerShell"
     buttons = lambda: js(process, "[...document.querySelectorAll('.ob-connect button')].map(b => b.innerText.trim())") or []
     pick_ai(process, "Offline agent")
-    check(until(lambda: "Install and sign in" in card(process), 8) and "Offline agent isn't on this computer yet, and Still can't install it for you" in card(process)
+    check(until(lambda: "Install Offline agent" in card(process), 8) and "Offline agent isn't on this computer yet, and Still can't install it for you" in card(process)
           and f"offline-agent.example or run this in {shell}" in card(process) and "pipx install offline-agent" in card(process) and buttons() == ["Check again"],
           f"Not installed, with no installer: where to get it, the {shell} command, and Check again ({card(process)!r}, {buttons()})")
     seen = "(() => { const c = document.querySelector('.ob-connect')?.getBoundingClientRect(), t = document.querySelector('.ob-talk')?.getBoundingClientRect(); return !!c && !!t && c.bottom <= t.bottom + 2 })()"
@@ -590,20 +588,20 @@ def connect(process, copy):
     calls = rpc(process).get("aiCalls")
     click_text(process, ".ob-connect button", "Check again")
     time.sleep(1.5)
-    check("Install and sign in" in card(process) and rpc(process).get("aiCalls") == calls, "Check again looks again and stays put")
+    check("Install Offline agent" in card(process) and rpc(process).get("aiCalls") == calls, "Check again looks again and stays put")
     rpc(process, "capture", name="connect-missing.png")
     pick_ai(process, "Signed-out agent")
-    check(until(lambda: card(process).startswith("Sign in"), 8) and "Signed-out agent is installed. Sign in once." in card(process) and buttons() == ["Sign in"],
-          f"Installed but signed out: Sign in ({card(process)!r})")
+    command = js(process, "document.querySelector('.ob-connect .signin-steps code')?.textContent") if until(lambda: js(process, "!!document.querySelector('.ob-connect .signin-steps code')"), 8) else ""
+    check("To connect your Signed-out agent plan, open a terminal and run:" in card(process) and command == f"{BIN / 'fakeagent'} login" and buttons() == ["Copy", "I'm done"],
+          f"Installed but signed out: the command to run in a terminal, Copy and I'm done ({command!r}, {buttons()})")
     time.sleep(3)
-    check(card(process).startswith("Sign in") and not (BIN / "logins.txt").exists(), f"Picking it doesn't start its sign-in ({card(process)!r})")
+    check(not (BIN / "logins.txt").exists(), "Picking it doesn't start its sign-in")
     check(foot(process)[-1] == "Continue (off)", "Continue still waits")
-    click_text(process, ".ob-connect button", "Sign in")
-    check(until(lambda: (BIN / "logins.txt").exists(), 8), "Sign in starts it")
-    check(until(lambda: "didn't finish" in card(process), 10) and buttons() == ["Sign in", "Retry"],
-          f"A sign-in that doesn't finish stays here, with Retry ({card(process)!r}, {buttons()})")
-    check("didn't finish: Port 127.0.0.1:1455 is already in use. Try again." in card(process) and "Error logging in" not in card(process),
-          f"...and says the app's own reason ({card(process)!r})")
+    click_text(process, ".ob-connect button", "I'm done")
+    check(until(lambda: "Signed-out agent isn't signed in yet. Finish the sign-in in your browser, then tell me again." in card(process), 10),
+          f"I'm done checks again and says it isn't signed in yet ({card(process)!r})")
+    time.sleep(1.5)
+    check(not (BIN / "logins.txt").exists() and foot(process)[-1] == "Continue (off)", "...starting nothing, and Continue still waits")
     pick_ai(process, "Fake agent")
     check(until(lambda: "Fake agent is ready, signed in." in card(process), 10) and foot(process)[-1] == "Continue", "Ready: a check, and Continue")
     check(not js(process, "document.querySelector('.ob-how')?.open"), "How this works starts closed")

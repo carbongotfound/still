@@ -655,9 +655,18 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-trust { display:flex; gap:9px; align-items:flex-start; max-width:300px; padding:10px 12px; border-radius:12px; background:var(--muted); color:var(--muted-foreground); font-size:12px; line-height:1.45; text-align:left; }
 .ai-trust svg { width:15px; height:15px; flex:none; margin-top:1px; color:#2f7d4a; } .dark .ai-trust svg { color:#6fd394; }
 .ai-trust b { color:var(--foreground); font-weight:600; }
-.ai-code { display:flex; flex-direction:column; align-items:center; gap:7px; padding:12px 20px; border-radius:14px; border:1.5px dashed color-mix(in oklab,var(--foreground) 30%,transparent); }
-.ai-code small { color:var(--muted-foreground); font-size:11.5px; }
-.ai-code strong { font:600 22px/1 ui-monospace,"Cascadia Mono",Consolas,monospace; letter-spacing:.14em; user-select:text; }
+/* Signing in from a terminal: the command to copy, then I'm done */
+.signin-steps { display:flex; flex-direction:column; gap:8px; max-width:100%; }
+.signin-steps p { margin:0; }
+.signin-cmd { display:flex; align-items:center; gap:6px; min-width:0; }
+.signin-cmd .byo-cmd { flex:1; min-width:0; text-align:left; }
+.ai-center .signin-steps { align-items:center; }
+.ai-center .signin-cmd { align-self:stretch; }
+.byo-how .signin-steps .signin-done { align-self:flex-start; }
+.ob-signin .signin-steps { flex:1; font-size:13px; color:var(--ob-soft); }
+.ob-signin .signin-done { align-self:flex-start; color:var(--primary-foreground); }
+.ob-signin .byo-cmd { padding:8px 10px; border-radius:10px; font-size:13px; }
+.signin-error { color:var(--destructive); }
 .ai-setup-line { max-width:100%; padding:6px 10px; border-radius:8px; background:var(--muted); color:var(--muted-foreground); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ai-row { display:flex; gap:6px; justify-content:center; }
 .ai-history { gap:2px; padding:6px 10px; }

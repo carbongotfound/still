@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowUp, Check, CornerDownLeft, Dices, Download, FileSearch,
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { cn, fadeTop, MAC } from "@/lib/utils"
-import { AiPicker, type AiState } from "./AiSidebar"
+import { AiPicker, SignInSteps, type AiState } from "./AiSidebar"
 import { QuickApi } from "./ApiProviders"
 import { lookOf, type Companion, type ReplyLength } from "./Buddy"
 import { useDraft } from "./drafts"
@@ -74,32 +74,28 @@ function useWindowSize() {
  return size
 }
 
-/// Connect: the AI app picked in the list, and what it needs next. Nothing installs or signs in until the user asks, and a cancelled
-/// or failed install or sign-in stays here with Retry.
+/// Connect: the AI app picked in the list, and what it needs next. Nothing installs until the user asks, and a cancelled
+/// or failed install stays here with Retry. The user signs in themselves, in a terminal: Still never runs a sign-in.
 function Connect({ ai, send }: { ai: AiState; send: Send }) {
- const h = ai.harnesses.find(x => x.id === ai.harness), s = statusOf(h), maker = h?.maker || h?.app // apps added by hand have no maker
+ const h = ai.harnesses.find(x => x.id === ai.harness), s = statusOf(h)
  const cancel = <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
  // A long list pushes the card below the fold: picking an app, or its state changing, brings the card into view.
  const card = useRef<HTMLDivElement>(null), seen = useRef(`${ai.harness}:${s}`)
  useEffect(() => { if (seen.current !== `${ai.harness}:${s}`) { seen.current = `${ai.harness}:${s}`; reveal(card.current) } }, [ai.harness, s])
  return <>
-  <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id, waitToSignIn: true })} />
+  <AiPicker ai={ai} onPick={id => send("aiHarness", { harness: id })} />
   <div className="ob-connect" aria-live="polite" ref={card}>
    {!h ? <p className="ob-note">Pick the AI app you use.</p>
-    : s === "installing" ? <div className="ob-status" role="status"><Spinner /><span><b>Installing {h.app}…</b><small>{ai.setup.line || "This usually takes about a minute. Then it opens the sign-in."}</small></span>{cancel}</div>
-    : s === "signingIn" ? <div className="ob-status" role="status"><Spinner /><span><b>{ai.setup.url ? "Approve it in the new window" : `Opening ${maker}'s sign-in…`}</b>
-      <small>{ai.setup.code ? `The page should show this code: ${ai.setup.code}` : `You sign in on ${maker}'s own site. Still never sees your password.`}</small></span>{cancel}</div>
-    : s === "missing" ? <div className="ob-status is-ask"><span><b>Install and sign in</b>
-      {h.installer ? <small>{h.name} needs {h.maker}'s app, {h.app}. Still can install it for you with {h.maker}'s official installer from {host(h.installer)}, then open {h.maker}'s sign-in. Or run this in {MAC ? "Terminal" : "PowerShell"} yourself: <code>{h.installCommand}</code></small>
+    : s === "installing" ? <div className="ob-status" role="status"><Spinner /><span><b>Installing {h.app}…</b><small>{ai.setup.line || "This usually takes about a minute."}</small></span>{cancel}</div>
+    : s === "missing" ? <div className="ob-status is-ask"><span><b>Install {h.app}</b>
+      {h.installer ? <small>{h.name} needs {h.maker}'s app, {h.app}. Still can install it for you with {h.maker}'s official installer from {host(h.installer)}. Or run this in {MAC ? "Terminal" : "PowerShell"} yourself: <code>{h.installCommand}</code></small>
        : <small>{h.app} isn't on this computer yet, and Still can't install it for you. Get it from {host(h.site)}{h.installCommand ? <> or run this in {MAC ? "Terminal" : "PowerShell"}: <code>{h.installCommand}</code></> : ""}, then check again.</small>}</span>
-      {h.installer ? <Button size="sm" onClick={() => send("aiInstall")}>Install and sign in</Button> : <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button>}</div>
-    : s === "signedOut" ? <div className="ob-status is-ask"><span><b>Sign in</b>
-      <small>{h.terminalSignIn ? <>{h.app} signs in from a terminal. Run this in {MAC ? "Terminal" : "PowerShell"}, sign in, then check again: <code>{h.terminalSignIn}</code></> : h.maker ? `${h.app} is installed. Sign in once, on ${h.maker}'s own site.` : `${h.app} is installed. Sign in once.`}</small></span>
-      {h.terminalSignIn ? <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button> : <Button size="sm" onClick={() => send("aiLogin")}>Sign in</Button>}</div>
+      {h.installer ? <Button size="sm" onClick={() => send("aiInstall")}>Install it</Button> : <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button>}</div>
+    : s === "signedOut" ? <div className="ob-status is-ask ob-signin"><SignInSteps h={h} send={send} /></div>
     : s === "needsKey" || s === "badKey" ? <p className="ob-note">{h.name} uses an API key. Add it in Settings, under Models, after setup, or pick an app you're signed in to.</p>
     : h.billing ? <p className="ob-ready"><Check />{h.name} is ready. {h.billing}</p>
     : <p className="ob-ready"><Check />{h.name} is ready, {h.api ? (ai.apis?.providers.find(p => p.id === h.id)?.noKey ? "with no key needed" : "with your API key") : "signed in"}.</p>}
-   {ai.error && <div className="ob-status is-error" role="alert"><span><small>{ai.error}</small></span><Button size="sm" variant="outline" onClick={() => send(s === "missing" && h?.installer ? "aiInstall" : s === "signedOut" && !h?.terminalSignIn ? "aiLogin" : "aiCheck")}><RotateCw />Retry</Button></div>}
+   {ai.error && <div className="ob-status is-error" role="alert"><span><small>{ai.error}</small></span><Button size="sm" variant="outline" onClick={() => send(s === "missing" && h?.installer ? "aiInstall" : "aiCheck")}><RotateCw />Retry</Button></div>}
   </div>
   <details className="ob-api"><summary>Use an API instead</summary><QuickApi api={ai.apis} send={send} /></details>
   <details className="ob-how"><summary>How this works</summary>

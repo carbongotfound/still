@@ -100,10 +100,8 @@ class AgentAdapter {
  var installer = ""       // the maker's install script; "" = Still never installs it
  var installCommand = ""  // shown for the user to copy
  var site = ""
- var signIn: [String] = []
- var domains: [String] = [] // the only sites a sign-in page may be on
  var secondary = false      // a manifest agent: listed under "More agents"
- var terminalSignIn = ""    // no sign-in command: the user runs this in a terminal to sign in
+ var terminalSignIn = ""    // the user runs this in a terminal to sign in; Still never runs it
  var compatible = false     // built from the app's docs and package, not yet run live: labelled Compatible
 
  init(id: String, name: String, app: String, command: String) { self.id = id; self.name = name; self.app = app; self.command = command }
@@ -185,19 +183,19 @@ class AgentAdapter {
  }
 
  // Installer: the maker's own install script, at a fixed address shown to the user before they press Install.
- // Domains: the only sites a sign-in page may be on; anything else the app prints is never opened.
+ // terminalSignIn: what the user runs in a terminal to sign in. Still never runs a sign-in or auth command itself.
  static let builtIn: [AgentAdapter] = [
   ClaudeAdapter(id: "claude", name: "Claude", app: "Claude Code", command: "claude").with {
    $0.maker = "Anthropic"; $0.installer = "https://claude.ai/install.sh"; $0.installCommand = "curl -fsSL https://claude.ai/install.sh | bash"
-   $0.site = "https://claude.com/product/claude-code"; $0.signIn = ["auth", "login"]; $0.domains = ["claude.ai", "claude.com", "anthropic.com"]
+   $0.site = "https://claude.com/product/claude-code"; $0.terminalSignIn = "claude auth login"
   },
   // Never installed by Still: the user installs it themselves if they want it.
   ChatGptAdapter(id: "chatgpt", name: "ChatGPT", app: "ChatGPT", command: "codex").with {
-   $0.maker = "OpenAI"; $0.installCommand = "npm install -g @openai/codex"; $0.site = "https://chatgpt.com"; $0.signIn = ["login"]; $0.domains = ["openai.com", "chatgpt.com"]
+   $0.maker = "OpenAI"; $0.installCommand = "npm install -g @openai/codex"; $0.site = "https://chatgpt.com"; $0.terminalSignIn = "codex login"
   },
   GrokAdapter(id: "grok", name: "Grok", app: "Grok Build", command: "grok").with {
    $0.maker = "xAI"; $0.installer = "https://x.ai/cli/install.sh"; $0.installCommand = "curl -fsSL https://x.ai/cli/install.sh | bash"
-   $0.site = "https://x.ai/cli"; $0.signIn = ["login", "--device-auth"]; $0.domains = ["x.ai"]
+   $0.site = "https://x.ai/cli"; $0.terminalSignIn = "grok login --device-auth"
   },
   // Signed in from a terminal: Gemini CLI has no sign-in command of its own.
   GeminiAdapter(id: "gemini", name: "Gemini", app: "Gemini CLI", command: "gemini").with {
@@ -549,7 +547,7 @@ final class ManifestAdapter: AgentAdapter {
  struct Spec {
   var id = "", name = "", command = "", site = "", install = "", expect = ".", mcpFile = "", output = "plain"
   var enabled = false
-  var detect: [String] = [], signin: [String] = [], domains: [String] = [], run: [String] = [], resume: [String] = [], model: [String] = [], effort: [String] = [], models: [String] = []
+  var detect: [String] = [], signin: [String] = [], run: [String] = [], resume: [String] = [], model: [String] = [], effort: [String] = [], models: [String] = []
   var fields: [String: String] = [:]
   init(_ json: [String: Any]) {
    var keyed: [String: Any] = [:]
@@ -558,7 +556,7 @@ final class ManifestAdapter: AgentAdapter {
    func list(_ key: String) -> [String] { (keyed[key.lowercased()] as? [Any] ?? []).compactMap { $0 as? String } }
    id = text("id", ""); name = text("name", ""); command = text("command", ""); site = text("site", ""); install = text("install", "")
    expect = text("expect", "."); mcpFile = text("mcpFile", ""); output = text("output", "plain"); enabled = keyed["enabled"] as? Bool ?? false
-   detect = list("detect"); signin = list("signin"); domains = list("domains"); run = list("run"); resume = list("resume")
+   detect = list("detect"); signin = list("signin"); run = list("run"); resume = list("resume")
    model = list("model"); effort = list("effort"); models = list("models")
    fields = (keyed["fields"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }
   }
@@ -587,7 +585,7 @@ final class ManifestAdapter: AgentAdapter {
     "id": "cursor-agent", "name": "Cursor Agent", "enabled": false,
     "note": "Example, not tested by Still. Sign in with: cursor-agent login. Set enabled to true to use it.",
     "command": "cursor-agent", "site": "https://cursor.com/cli", "install": "See cursor.com/cli",
-    "detect": ["status"], "expect": "(?i)logged in", "signin": ["login"], "domains": ["cursor.com"],
+    "detect": ["status"], "expect": "(?i)logged in", "signin": ["login"],
     "mcpFile": ".cursor/mcp.json",
     "run": ["-p", "--output-format", "stream-json", "--approve-mcps", "--force"],
     "resume": ["--resume", "{session}"], "model": ["--model", "{model}"],
@@ -633,7 +631,8 @@ final class ManifestAdapter: AgentAdapter {
    guard s.enabled, s.id.range(of: "^[a-z0-9-]{1,30}$", options: .regularExpression) != nil, !["claude", "grok", "chatgpt", "codex", "gemini", "opencode", "qwen", "copilot", "amp", "dsh"].contains(s.id),
          !s.command.isEmpty, !s.run.isEmpty else { continue }
    let adapter = ManifestAdapter(id: s.id, name: s.name.isEmpty ? s.id : s.name, app: s.name.isEmpty ? s.command : s.name, command: s.command)
-   adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.signIn = s.signin; adapter.domains = s.domains; adapter.secondary = true
+   adapter.spec = s; adapter.site = s.site; adapter.installCommand = s.install; adapter.secondary = true
+   if !s.signin.isEmpty { adapter.terminalSignIn = ([s.command.contains(" ") ? "'\(s.command)'" : s.command] + s.signin).joined(separator: " ") } // shown to run in a terminal
    found.append(adapter)
   }
   return found
