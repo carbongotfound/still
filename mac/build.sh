@@ -9,7 +9,7 @@ version=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' "$repo/still/Still.cspro
 # still/Shell ships as committed, so it must be built from this still-ui: the hash of still-ui's files (as vite.config.ts
 # works it out) has to match the one the interface build left in still/Shell/source.txt.
 ui=$(cd "$repo/still-ui" && find . \( -name node_modules -o -name dist \) -prune -o -type f -print | LC_ALL=C sort |
- while IFS= read -r f; do printf '%s\n' "$f"; tr -d '\r' < "$f"; done | shasum -a 256 | cut -c1-64)
+ while IFS= read -r f; do printf '%s\n' "$f"; LC_ALL=C tr -d '\r' < "$f"; done | shasum -a 256 | cut -c1-64) # bytes, not UTF-8: sounds and images
 if [ "$ui" != "$(tr -d '\r\n' < "$repo/still/Shell/source.txt" 2>/dev/null)" ]; then
  echo "still/Shell is older than still-ui: run npm run build in still-ui and commit still/Shell" >&2; exit 1
 fi
