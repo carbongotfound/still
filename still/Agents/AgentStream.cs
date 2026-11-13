@@ -81,7 +81,7 @@ public static class AgentStream
  /// "user cancelled MCP tool call", or "requires approval, but approval policy is never"), in words that say what to do.
  /// Its run has Still's tools pre-approved (default_tools_approval_mode); this is for an older app or a config that overrides it.
  public static string? CodexBlocked(string tool, string? why) => why != null && System.Text.RegularExpressions.Regex.IsMatch(why, "cancel|approv|reject", System.Text.RegularExpressions.RegexOptions.IgnoreCase)
-  ? $"it stopped Still's {tool} tool before it ran, waiting for its own approval, which it can't ask for inside Still ({why}). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools." : null;
+  ? $"it stopped Still's {tool} tool before it ran, waiting for its own approval, which it can't ask for inside Still ({why}). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (it needs Node.js 18 or newer, from https://nodejs.org; check with node --version, then run npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools." : null;
 
  /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
  /// tool_result, error and a closing result. Still's tools come as mcp_still_<tool>.

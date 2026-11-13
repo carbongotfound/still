@@ -91,12 +91,14 @@ Still runs the AI's own app in the background. It never asks for a key for these
 | AI | What Still runs | How it connects |
 |---|---|---|
 | **Claude** | [Claude Code](https://claude.com/product/claude-code) | **Install it for me** runs Anthropic's official installer. To sign in, run `claude auth login` in a terminal: Still shows the command and checks again when you're done. |
-| **ChatGPT** | OpenAI's agent CLI | **Install it for me** installs it from npm. To sign in with your ChatGPT account, run the sign-in command Still shows in a terminal. API-key logins are ignored. |
+| **ChatGPT** | OpenAI's agent CLI | Install it from npm with the command Still shows (it needs Node.js, see below). To sign in with your ChatGPT account, run the sign-in command Still shows in a terminal. API-key logins are ignored. |
 | **Grok** | [Grok Build](https://x.ai/cli) | **Install it for me** runs xAI's official installer. To sign in, run `grok login --device-auth` in a terminal. |
-| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | **Install it for me** installs it from npm. To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
+| **Gemini** | [Gemini CLI](https://github.com/google-gemini/gemini-cli) | Install it with `npm install -g @google/gemini-cli` (it needs Node.js, see below). To sign in, run `gemini` in a terminal and pick **Sign in with Google**. |
 | **OpenCode** | [OpenCode](https://opencode.ai) | It runs on the provider you set up inside OpenCode (`opencode providers login`). |
 | **OpenAI-compatible API** | Still's own agent | Base URL, model and an optional key, in setup (**Use an API instead**) or **Settings > Models**, under **More agents** (**DeepSeek** comes filled in). Labelled **Compatible**. |
 | **Claude-compatible API** | Still's own agent | Same as above, for services that speak the Anthropic Messages format. Labelled **Compatible**. |
+
+**Node.js for npm installs:** ChatGPT, Gemini, OpenCode, Qwen Code, GitHub Copilot and DeepSeek Harness install with npm, which needs Node.js 18 or newer, from https://nodejs.org. Check with `node --version` before you run the npm command. When Still can't find Node.js on your computer, it says so next to the command.
 
 Qwen Code, GitHub Copilot CLI, [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness) (DeepSeek's own agent, a developer preview) and Amp (Mac only) are there too, labelled **Compatible**.
 

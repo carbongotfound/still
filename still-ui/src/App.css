@@ -667,6 +667,7 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ob-signin .signin-done { align-self:flex-start; color:var(--primary-foreground); }
 .ob-signin .byo-cmd { padding:8px 10px; border-radius:10px; font-size:13px; }
 .signin-error { color:var(--destructive); }
+.node-missing { font-weight:600; }
 .ai-setup-line { max-width:100%; padding:6px 10px; border-radius:8px; background:var(--muted); color:var(--muted-foreground); font-size:11px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .ai-row { display:flex; gap:6px; justify-content:center; }
 .ai-history { gap:2px; padding:6px 10px; }

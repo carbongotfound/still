@@ -34,6 +34,7 @@ type ChatRow = { id: string; title: string; harness: string; updated: string; co
 /// A chat by id: a saved one, or one of this incognito window's own.
 export const chatOf = (ai: AiState | undefined, id?: string | null) => id ? ai?.chats.find(c => c.id === id) ?? ai?.privateChats?.find(c => c.id === id) : undefined
 export type AiState = {
+ node?: boolean // Node.js found on this computer (npm installs need it)
  open: boolean; harness: string; busy: boolean; error: string; profile: string; harnesses: Harness[]
  checked?: boolean // the first status check is done, so an empty status means the app can't say
  runs?: Run[]; interrupted?: { id: string; title: string; unsure: boolean }[]; task?: { state: string; reason: string; pending: string; steps: number; unsure: number } | null; queued?: { text: string; files?: { name: string; size: number }[] }[]; files?: LibFile[]; worked?: number
@@ -248,7 +249,7 @@ export function AiPicker({ ai, onPick, send }: { ai: AiState; onPick: (id: strin
    {!!h.billing && <p className="byo-gaps byo-billing">{h.billing}</p>}
    {!!h.gaps?.length && (s === "ready" || chosen) && <p className="byo-gaps">{h.gaps.join(" ")}</p>}
    {open && s === "missing" && <div className="byo-how">
-    <p>Run this in {SHELL}, then come back:</p>
+    <p><NodeNote cmd={h.installCommand} node={ai.node} />Run this in {SHELL}, then come back:</p>
     <code className="byo-cmd">{h.installCommand}</code>
     <div className="ai-row">
      <Button size="sm" variant="ghost" onClick={() => navigator.clipboard?.writeText(h.installCommand)}><Copy />Copy</Button>
@@ -902,6 +903,14 @@ export function SignInSteps({ h, send }: { h: Harness; send?: Send }) {
  </div>
 }
 
+/// An npm install needs Node.js: said before the command, and up front when Still can't find Node.js on this computer.
+export function NodeNote({ cmd, node }: { cmd?: string; node?: boolean }) {
+ if (!/^npm\s/.test(cmd ?? "")) return null
+ return <><span className={node === false ? "node-note node-missing" : "node-note"}>{node === false
+  ? "Still can't find Node.js, which this command needs. Install Node.js 18 or newer from https://nodejs.org first, then check with "
+  : "Node.js 18 or newer is required (from https://nodejs.org). Check with "}<code>node --version</code>.</span>{" "}</>
+}
+
 // Install the chat's AI, or how to sign in to it. Null when it's ready to chat.
 function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: () => void }) {
  const current = ai.harnesses.find(h => h.id === (ai.chatHarness || ai.harness))
@@ -923,7 +932,7 @@ function Setup({ ai, send, onSettings }: { ai: AiState; send: Send; onSettings: 
    <Button variant="ghost" size="sm" onClick={() => send("aiSetupCancel")}>Cancel</Button>
   </> : <>
    <h3>Let's get {current.name}</h3>
-   <p>{current.name} needs {current.maker}'s app on this {MAC ? "Mac" : "PC"}. Run this in {SHELL}, then sign in.</p>
+   <p>{current.name} needs {current.maker ? `${current.maker}'s app` : "its app"} on this {MAC ? "Mac" : "PC"}. <NodeNote cmd={current.installCommand} node={ai.node} />Run this in {SHELL}, then sign in.</p>
    <code className="byo-cmd">{current.installCommand}</code>
    {current.installer && <>
     <Button className="ai-go" onClick={() => send("aiInstall")}>Install it for me</Button>

@@ -976,7 +976,7 @@ enum AgentStream {
  /// a run Still started. Its run has Still's tools pre-approved; this is for an older app or a config that overrides it.
  static func codexBlocked(_ tool: String, _ why: String?) -> String? {
   guard let why, why.range(of: "cancel|approv|reject", options: [.regularExpression, .caseInsensitive]) != nil else { return nil }
-  return "it stopped Still's \(tool) tool before it ran, waiting for its own approval, which it can't ask for inside Still (\(why)). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools."
+  return "it stopped Still's \(tool) tool before it ran, waiting for its own approval, which it can't ask for inside Still (\(why)). Still asks you itself before anything sensitive, so the ChatGPT app's approval should be off for Still: update the app (it needs Node.js 18 or newer, from https://nodejs.org; check with node --version, then run npm install -g @openai/codex) and make sure ~/.codex/config.toml doesn't set approval_mode for the still server or its tools."
  }
 
  /// Gemini CLI (`--output-format stream-json`, checked with 0.66.0): init, the reply in message deltas, tool_use,
@@ -1119,3 +1119,6 @@ func findCli(_ name: String) -> String? {
  if name.contains("/") { let path = (name as NSString).expandingTildeInPath; return runnable(path) ? path : nil }
  return cliDirs().lazy.map { $0 + "/" + name }.first(where: runnable)
 }
+
+/// npm installs need Node.js: Still says so before an npm command, and up front when it can't find it. Tests set STILL_QA_NODE to 0 or 1.
+func hasNode() -> Bool { qaEnv("STILL_QA_NODE").map { $0 == "1" } ?? (findCli("node") != nil) }

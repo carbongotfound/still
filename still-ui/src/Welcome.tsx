@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowUp, Check, CornerDownLeft, Dices, Download, FileSearch,
 import { Button } from "@/components/ui/button"
 import { Spinner } from "@/components/ui/spinner"
 import { cn, fadeTop, MAC } from "@/lib/utils"
-import { AiPicker, SignInSteps, type AiState } from "./AiSidebar"
+import { AiPicker, NodeNote, SignInSteps, type AiState } from "./AiSidebar"
 import { QuickApi } from "./ApiProviders"
 import { lookOf, type Companion, type ReplyLength } from "./Buddy"
 import { useDraft } from "./drafts"
@@ -89,7 +89,7 @@ function Connect({ ai, send }: { ai: AiState; send: Send }) {
     : s === "installing" ? <div className="ob-status" role="status"><Spinner /><span><b>Installing {h.app}…</b><small>{ai.setup.line || "This usually takes about a minute."}</small></span>{cancel}</div>
     : s === "missing" ? <div className="ob-status is-ask"><span><b>Install {h.app}</b>
       {h.installer ? <small>{h.name} needs {h.maker}'s app, {h.app}. Still can install it for you with {h.maker}'s official installer from {host(h.installer)}. Or run this in {MAC ? "Terminal" : "PowerShell"} yourself: <code>{h.installCommand}</code></small>
-       : <small>{h.app} isn't on this computer yet, and Still can't install it for you. Get it from {host(h.site)}{h.installCommand ? <> or run this in {MAC ? "Terminal" : "PowerShell"}: <code>{h.installCommand}</code></> : ""}, then check again.</small>}</span>
+       : <small>{h.app} isn't on this computer yet, and Still can't install it for you. <NodeNote cmd={h.installCommand} node={ai.node} />Get it from {host(h.site)}{h.installCommand ? <> or run this in {MAC ? "Terminal" : "PowerShell"}: <code>{h.installCommand}</code></> : ""}, then check again.</small>}</span>
       {h.installer ? <Button size="sm" onClick={() => send("aiInstall")}>Install it</Button> : <Button size="sm" variant="outline" onClick={() => send("aiCheck")}>Check again</Button>}</div>
     : s === "signedOut" ? <div className="ob-status is-ask ob-signin"><SignInSteps h={h} send={send} /></div>
     : s === "needsKey" || s === "badKey" ? <p className="ob-note">{h.name} uses an API key. Add it in Settings, under Models, after setup, or pick an app you're signed in to.</p>
