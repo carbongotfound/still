@@ -1,7 +1,8 @@
 """Switching chats: each opens at its end (where a running chat's live step is), or where you scrolled up to in it
 yourself, in the side panel and on the full chat page alike. A run keeps going in the background through chat, page and
-tab switches, a sign-in handoff and an interface reload, and the side panel follows the tab a chat works in. A run that
-dies says so, with Continue. A fake app stands in for the AI.
+tab switches, a sign-in handoff and an interface reload. Each tab's side panel keeps its own chat: another chat opened
+full-page in another tab, or working there, never changes it, and a chat at work in a tab only shows in that tab's panel
+when it had no chat yet. A run that dies says so, with Continue. A fake app stands in for the AI.
 
 Run: python tests/desktop/chat_switch.py artifacts/Still-QA/Still.exe
 Out: artifacts/chat-switch-*/
@@ -207,8 +208,8 @@ def main():
         open_in_panel(p, "chairs", "Chairs")
         check(at_end(where(p, PANEL)), f"The chat's own scrolling to its answer isn't kept as yours ({where(p, PANEL)})")
 
-        # A run keeps going through chat, page and tab switches, a sign-in handoff and an interface reload, and the side
-        # panel follows it to the tab it works in.
+        # A run keeps going through chat, page and tab switches, a sign-in handoff and an interface reload. The tab it
+        # works in had no chat in its side panel, so the panel shows it there.
         site = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Site)
         threading.Thread(target=site.serve_forever, daemon=True).start()
         mine = rpc(p)["activeId"]
@@ -222,12 +223,11 @@ def main():
         check(until(lambda: rpc(p)["activeId"] == mine, 5) and shows(p, PANEL, "Lamps"), "You go back to your own tab and another chat")
         signin = until(lambda: any("sign-in page" in json.dumps(r[2]) for r in map(json.loads, (BIN / "replies.jsonl").read_text(encoding="utf-8").splitlines())) if (BIN / "replies.jsonl").exists() else False, 30)
         check(signin and until(lambda: rpc(p)["activeId"] == work, 5), "A sign-in page brings the chat's tab to the front")
-        check(until(lambda: shows(p, PANEL, "Chairs"), 5) and (progress(p, PANEL) or {}).get("live"), f"...and the side panel follows, to the chat at work there ({progress(p, PANEL)})")
+        check(until(lambda: shows(p, PANEL, "Chairs"), 5) and (progress(p, PANEL) or {}).get("live"), f"...and its side panel, which had no chat, shows the chat at work there ({progress(p, PANEL)})")
         last, timer = progress(p, PANEL) or {"step": 0}, 0
         for n in range(3):
-            open_in_panel(p, "lamps", "Lamps")
             send(p, "select", id=mine)
-            check(until(lambda: rpc(p)["activeId"] == mine, 5) and shows(p, PANEL, "Lamps"), f"Away {n + 1}: your tab, another chat in the panel")
+            check(until(lambda: rpc(p)["activeId"] == mine, 5) and until(lambda: shows(p, PANEL, "Lamps"), 3), f"Away {n + 1}: your tab, its own chat in the panel")
             time.sleep(1.5)
             send(p, "select", id=work)
             ok = until(lambda: rpc(p)["activeId"] == work and shows(p, PANEL, "Chairs"), 5)
@@ -250,6 +250,28 @@ def main():
         done = progress(p, PANEL) or {"step": 0}
         check(done["step"] == 40 and len(prompts("STEPS40")) == 1, f"...with all 40 steps, from one start: never restarted ({done}, {len(prompts('STEPS40'))} starts)")
         site.shutdown()
+
+        # Each tab's side panel keeps its own chat: another chat opened full-page in another tab, and working there in the
+        # background, never changes it.
+        send(p, "select", id=mine)
+        check(until(lambda: rpc(p)["activeId"] == mine, 5) and open_in_panel(p, "lamps", "Lamps"), "Your tab's side panel on one chat")
+        send(p, "chatOpen", id="chairs", newTab=True)
+        check(until(lambda: shows(p, PAGE, "Chairs"), 10) and rpc(p)["activeId"] != mine, "Another chat opens full-page in another tab")
+        page = rpc(p)["activeId"]
+        (BIN / "slow-started").unlink(missing_ok=True)
+        send(p, "aiSend", text="WORDBACK SLOW20", companion="maya")
+        check(until(lambda: (BIN / "slow-started").exists(), 30), "...and works there")
+        for n in range(5):
+            send(p, "select", id=mine)
+            ok = until(lambda: rpc(p)["activeId"] == mine, 5) and until(lambda: shows(p, PANEL, "Lamps"), 3)
+            time.sleep(.4)
+            check(ok and shows(p, PANEL, "Lamps") and not shows(p, PANEL, "Chairs"), f"Back to your tab {n + 1}: its panel still shows its own chat, with the other at work in the background")
+            send(p, "select", id=page)
+            until(lambda: rpc(p)["activeId"] == page, 5)
+            time.sleep(.4)
+        check(until(lambda: "Answered WORDBACK" in (js(p, f"document.querySelector('{PAGE}')?.innerText ?? ''") or ""), 40), "The background run finishes")
+        send(p, "select", id=mine)
+        check(until(lambda: rpc(p)["activeId"] == mine, 5) and until(lambda: shows(p, PANEL, "Lamps"), 3), "...and your tab's panel still shows its own chat")
 
         # A run that dies says so in the chat, with Continue.
         open_in_panel(p, "lamps", "Lamps")

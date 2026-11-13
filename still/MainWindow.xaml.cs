@@ -309,9 +309,11 @@ public partial class MainWindow : Window
   Greeting.Text = tab.Private ? "A little privacy." : "Where to?";
   RenderTabs(); UpdateChrome(); SaveLater();
   if (tab.ChatId is { } chat) { aiChat = MyChats.FirstOrDefault(c => c.Id == chat); aiError = ""; }
-  var working = tab.ChatId == null ? WorkingIn(tab) : null; // the side panel follows a chat at work to the tab it works in
-  if (working != null && working != aiChat) { aiChat = working; aiError = ""; }
-  if (tab.ChatId != null || leaving?.ChatId != null || working != null) PublishAi();
+  // A chat at work in this tab claims its side panel, only while the panel has no chat of its own.
+  var working = tab.ChatId == null && aiChat == null ? WorkingIn(tab) : null;
+  if (working != null) { aiChat = working; aiError = ""; }
+  if (leaving?.Side != tab.Side) aiError = "";
+  if (tab.ChatId != null || leaving?.ChatId != null || working != null || leaving?.Side != tab.Side) PublishAi();
   if (Shown is { Url.Length: > 0 } page) await EnsureView(page);
   if (active == tab && Shown is { View: { } view } shown && panel == "") { view.Visibility = Visibility.Visible;LayoutSplit();RestorePageWindow(); if (shown == tab) view.Focus(); }
   if (active == tab && Partner is { } partner) { await EnsureView(partner); LayoutSplit(); RestorePageWindow(); }

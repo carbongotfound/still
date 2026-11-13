@@ -185,6 +185,7 @@ final class Tab: NSObject {
  var back: [String] = [], forward: [String] = [] // an app tab's own back and forward: "chat:<id>" or "home:<page>" (see go)
  var inChat: String? // a page an AI opened for this chat: it lives in the chat, beside the conversation, not in the tab strip
  var agentKey: String? // which AI run is at work here
+ var side: AiChat? // this tab's side panel chat (AiView.chat); nil: a new, empty chat
  var runChat: String? // an ordinary tab Still's chat AI opened: "Open chat" opens that chat
  var engine: String? // "Companion": the page is in the companion profile (Where companions browse); nil: the user's own
  var favicon = ""
@@ -752,8 +753,11 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
   leaving?.lastSeen = Date()
   active = tab
   tab.lastSeen = Date()
-  if tab.chatId != nil || leaving?.chatId != nil { publishAi() }
-  if tab.chatId == nil, let working = workingIn(tab) { if aiView.chat !== working { aiView.chat = working; aiView.error = "" }; publishAi() } // the side panel follows a chat at work to the tab it works in
+  if let id = tab.chatId { tab.side = myChats.first { $0.id == id }; aiView.error = "" } // a chat tab's own chat
+  if leaving?.side !== tab.side { aiView.error = "" }
+  if tab.chatId != nil || leaving?.chatId != nil || leaving?.side !== tab.side { publishAi() }
+  // A chat at work in this tab claims its side panel, only while the panel has no chat of its own.
+  if tab.chatId == nil, aiView.chat == nil, let working = workingIn(tab) { aiView.chat = working; aiView.error = ""; publishAi() }
   if tab.view != nil { tab.restoreScroll = 0 } // still loaded: it shows exactly as it was left
   for page in [shown, partner] { if let page, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } }
   layoutPages()

@@ -291,7 +291,7 @@ public partial class MainWindow
  void EndIncognito()
  {
   foreach (var r in runs.Values.Where(r => privateChats.Contains(r.Chat)).ToList()) { r.Queue.Clear(); StopRun(r); }
-  privateChats.Clear(); aiChat = null;
+  Unside(privateChats.Contains); privateChats.Clear();
   string folder = PrivateFolder;
   _ = Task.Run(async () => { // a stopped app can hold its folder for a moment; what a quit cuts short, the next start sweeps
    for (int tries = 0; tries < 40 && Directory.Exists(folder); tries++)
@@ -511,7 +511,18 @@ public partial class MainWindow
   .Where(id => id != null && runs.ContainsKey(id)).Select(id => MyChats.FirstOrDefault(c => c.Id == id)).FirstOrDefault(c => c != null);
  bool aiOpen;
  string aiError = "";
- AiChat? aiChat; // null = a new, empty chat
+ // Each tab's side panel keeps its own chat until the user picks another one there (New chat, Chat history, a chat link
+ // meant for it). Opening or switching chats in another tab or on the full chat page never changes it. null: a new, empty chat.
+ AiChat? aiChat { get => active is { } a ? a.Side : noTabChat; set { if (active is { } a) a.Side = value; else noTabChat = value; } }
+ AiChat? noTabChat;
+ /// Chats that are gone leave every side panel that showed them, in every window.
+ static void Unside(Func<AiChat, bool> gone)
+ {
+  foreach (var w in Windows) {
+   if (w.noTabChat is { } n && gone(n)) w.noTabChat = null;
+   foreach (var t in w.tabs) if (t.Side is { } s && gone(s)) t.Side = null;
+  }
+ }
 
  /// Finds an installed CLI on the user's current PATH (re-read, so a fresh install is found without restarting Still).
  static string? FindCli(string name)
@@ -599,12 +610,12 @@ public partial class MainWindow
     foreach (var id in doomed) ForgetTask(id);
     foreach (var gone in MyChats.Where(c => doomed.Contains(c.Id)).SelectMany(c => c.Messages).SelectMany(m => m.Files ?? [])) try { Directory.Delete(Path.Combine(AttachmentsHere, gone.Id), true); } catch (IOException) { }
     foreach (var c in MyChats.Where(c => doomed.Contains(c.Id) && c.Companion.Length > 0)) CompanionMemory.DropSummary(c.Companion, c.Id);
-    MyChats.RemoveAll(c => doomed.Contains(c.Id)); if (aiChat != null && doomed.Contains(aiChat.Id)) aiChat = null; SaveAiChats();
+    MyChats.RemoveAll(c => doomed.Contains(c.Id)); Unside(c => doomed.Contains(c.Id)); SaveAiChats();
     foreach (var t in tabs.Where(t => t.ChatId != null && doomed.Contains(t.ChatId)).ToList()) await CloseTab(t, true);
     break; }
    case "aiDeleteAll" when runs.Count == 0:
     foreach (var c in MyChats) ForgetTask(c.Id);
-    MyChats.Clear(); aiChat = null; SaveAiChats();
+    Unside(MyChats.Contains); MyChats.Clear(); SaveAiChats();
     try { Directory.Delete(AttachmentsHere, true); } catch (IOException) { }
     foreach (var t in tabs.Where(t => t.ChatId != null).ToList()) await CloseTab(t, true);
     break;
@@ -667,7 +678,7 @@ public partial class MainWindow
    case "aiKickoff" when !incognito && Companions.FirstOrDefault(c => c.Id == S("companion")) is { Setup: "pending" } fresh && (fresh.Ai.Length > 0 || Prefs.AiHarness.Length > 0)
     && !AiChats.Any(c => c.Companion == fresh.Id && c.From == null && !c.Routine && (kickoffs.Contains(c.Id) || c.Messages.Any(m => m.Role == "user"))): {
     // A new companion starts its first chat itself, once: from the joined card, opening its chat, or the end of setup.
-    var kick = aiChat = new AiChat { Companion = fresh.Id, Title = fresh.Name, Profile = NewChatProfile(false), Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
+    var kick = new AiChat { Companion = fresh.Id, Title = fresh.Name, Profile = NewChatProfile(false), Harness = fresh.Ai.Length > 0 ? fresh.Ai : Prefs.AiHarness };
     AiChats.Insert(0, kick); SaveAiChats(); kickoffs.Add(kick.Id);
     await Go(await AppTab(), "chat:" + kick.Id);
     await RunAi(kick, Activation(fresh, true), ""); // the title comes from its hello
@@ -736,7 +747,7 @@ public partial class MainWindow
    case "tabHand" when tabs.FirstOrDefault(t => t.Id == S("id") && t.ChatId == null && t.InChat == null && !t.Private && t.Url.Length > 0) is { } given: { // "Hand to …": a tab of the user's becomes a chat's page
     var to = MyChats.FirstOrDefault(c => c.Id == S("chat"));
     if (to == null) { var with = Companions.FirstOrDefault(c => c.Id == S("companion")) ?? Companions.FirstOrDefault(); AiChats.Insert(0, to = new AiChat { Harness = with is { Ai.Length: > 0 } ? with.Ai : Prefs.AiHarness, Title = given.Title, Companion = with?.Id ?? "" }); SaveAiChats(); }
-    given.InChat = to.Id; given.RunChat = null; given.AgentGroup = false; aiChat = to;
+    given.InChat = to.Id; given.RunChat = null; given.AgentGroup = false;
     await SelectTab(given); PublishAiEverywhere(); break;
    }
    case "agentChat" when tabs.FirstOrDefault(t => t.Id == S("id"))?.RunChat is { } run && MyChats.FirstOrDefault(c => c.Id == run) is { } runChat: // the pill's "Open chat"
@@ -1128,9 +1139,9 @@ public partial class MainWindow
   if (chat.Ephemeral) CompanionMemory.Incognito.Add(chat.Id); // its stores refuse anything from it, whatever asks
   if (chat.Ephemeral && OwnerOf(chat) != this) { if (OwnerOf(chat) is { closing: false } owner) await owner.RunAi(chat, text, shown, into, companion, noMemory, asker, files); return; }
   if (chat.Harness.Length == 0) chat.Harness = Companions.FirstOrDefault(c => c.Id == chat.Companion) is { Ai.Length: > 0 } own ? own.Ai : Prefs.AiHarness;
-  if (chat.Harness.Length == 0) { aiPending = text; return; } // asked before picking an AI: runs once it's set up
+  if (chat.Harness.Length == 0) { aiPending = text; aiPendingChat = chat; return; } // asked before picking an AI: runs once it's set up
   var cli = AiClis.FirstOrDefault(c => c.Id == chat.Harness) ?? AiClis[0];
-  if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; aiPending = shown ?? text; return; }
+  if (FindCli(cli.Command) is not { } exe) { aiStatus[cli.Id] = "missing"; aiPending = shown ?? text; aiPendingChat = chat; return; }
   if (runs.ContainsKey(chat.Id)) return;
   var me = runs[chat.Id] = new ChatRun(chat, cli.Name);
   if (chat.Ephemeral && cli.Forgets) { chat.Session = null; chat.Started = false; } // its app saved nothing: each turn brings the chat so far
@@ -1262,7 +1273,7 @@ public partial class MainWindow
   }
   if (!said && await NeedsSignIn(cli, chat.Error)) {
    // Signed out: sign in right here, then the message runs again by itself.
-   chat.Error = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text; aiChat = chat;
+   chat.Error = ""; aiStatus[cli.Id] = "signedOut"; aiPending = shown ?? text; aiPendingChat = chat;
    TaskState(me, "waiting", "signin");
    if (chat.Messages.LastOrDefault()?.Role == "user") chat.Messages.RemoveAt(chat.Messages.Count - 1);
    _ = AiSignIn(cli);
@@ -1297,6 +1308,7 @@ public partial class MainWindow
  static bool aiSetupCancelled;
  static string aiSetupLine = "", aiSignInUrl = "", aiSignInCode = "", aiSignInSaid = "";
  string aiPending = ""; // asked before the AI was ready: runs once setup finishes
+ AiChat? aiPendingChat; // the chat it was asked in
  /// Adds a companion, or saves the changes to one: the profile panel, the library and setup's hires. Returns it.
  Companion SaveCompanion(JsonElement data)
  {
@@ -1446,10 +1458,11 @@ public partial class MainWindow
 
  async Task RunPending()
  {
-  if (aiPending.Length == 0 || Busy(aiChat)) return;
-  string ask = aiPending; aiPending = "";
-  if (aiChat == null) aiOpen = true; // a chat tab shows it itself
-  await RunAi(aiChat, ask); PublishAi();
+  var chat = aiPendingChat ?? aiChat;
+  if (aiPending.Length == 0 || Busy(chat)) return;
+  string ask = aiPending; aiPending = ""; aiPendingChat = null;
+  if (chat == null) aiOpen = true; // a chat tab shows it itself
+  await RunAi(chat, ask); PublishAi();
  }
 
  /// The AI app's own reason when its sign-in fails ("Error logging in: Port 127.0.0.1:1455 is already in use"), shown with

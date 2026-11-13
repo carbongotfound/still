@@ -66,7 +66,6 @@ extension Browser {
     let id = String(to.dropFirst(5))
     let chat = myChats.first { $0.id == id }
     tab.chatId = id; tab.home = ""; tab.title = chat.map { $0.title.isEmpty ? "Chat" : $0.title } ?? "Chat"
-    if let chat { aiView.chat = chat; aiView.error = "" }
    } else { tab.chatId = nil; tab.home = String(to.dropFirst(5)); tab.title = tab.isPrivate ? "Private tab" : "New tab" }
    tab.pageOpen = false
   }

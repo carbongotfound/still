@@ -242,7 +242,17 @@ var chatsLoaded = false
 
 /// One window's AI state: the sidebar, the chat it shows (nil = a new, empty chat), and what was asked before the AI was ready.
 /// privateChats: an incognito window's chats, kept nowhere else.
-final class AiView { var open = false, published = false, error = "", pending = ""; var chat: AiChat?; var privateChats: [AiChat] = [] }
+final class AiView {
+ var open = false, published = false, error = "", pending = ""; var privateChats: [AiChat] = []
+ var pendingChat: AiChat? // the chat what's pending was asked in
+ weak var owner: Browser?; var noTab: AiChat?
+ /// Each tab's side panel keeps its own chat until the user picks another one there (New chat, Chat history, a chat link
+ /// meant for it). Opening or switching chats in another tab or on the full chat page never changes it. nil: a new, empty chat.
+ var chat: AiChat? {
+  get { if let t = owner?.active { return t.side }; return noTab }
+  set { if let t = owner?.active { t.side = newValue } else { noTab = newValue } }
+ }
+}
 var aiViews: [ObjectIdentifier: AiView] = [:]
 
 var chatsFile: URL { URL(fileURLWithPath: aiFolder).appendingPathComponent("chats.json") }
@@ -788,7 +798,14 @@ extension Browser {
 extension Browser {
  var aiView: AiView {
   if let view = aiViews[ObjectIdentifier(self)] { return view }
-  let view = AiView(); aiViews[ObjectIdentifier(self)] = view; return view
+  let view = AiView(); view.owner = self; aiViews[ObjectIdentifier(self)] = view; return view
+ }
+ /// Chats that are gone leave every side panel that showed them, in every window.
+ func unside(_ gone: (AiChat) -> Bool) {
+  for b in browsers {
+   if let n = b.aiView.noTab, gone(n) { b.aiView.noTab = nil }
+   for t in b.tabs { if let s = t.side, gone(s) { t.side = nil } }
+  }
  }
  /// The chat at work in a tab: the run driving it, or the one that opened it, while it runs.
  func workingIn(_ t: Tab) -> AiChat? {
@@ -807,7 +824,7 @@ extension Browser {
  func endIncognito() {
   let ids = aiView.privateChats.map(\.id), folder = privateFolder
   for id in ids { if let r = runs[id] { r.queue.removeAll(); stopRun(r) } }
-  aiView.privateChats.removeAll(); aiView.chat = nil
+  let mine = aiView.privateChats; unside { c in mine.contains { $0 === c } }; aiView.privateChats.removeAll()
   func sweep(_ tries: Int) { // again until the AI apps have ended and nothing came back
    try? FileManager.default.removeItem(atPath: folder)
    if tries > 0 && (FileManager.default.fileExists(atPath: folder) || ids.contains { runs[$0] != nil }) { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { sweep(tries - 1) } }
@@ -1078,14 +1095,15 @@ extension Browser {
    doomed.forEach(forgetTask)
    for c in myChats where doomed.contains(c.id) && !c.companion.isEmpty { CompanionMemory.dropSummary(c.companion, c.id) }
    if incognito { v.privateChats.removeAll { doomed.contains($0.id) } } else { aiChats.removeAll { doomed.contains($0.id) } }
-   if let c = v.chat, doomed.contains(c.id) { v.chat = nil }
+   unside { doomed.contains($0.id) }
    if !incognito { saveAiChats() }
    for t in tabs where t.chatId.map(doomed.contains) == true { close(t) }
   case "aiDeleteAll":
    guard runs.isEmpty else { break }
    for c in myChats { forgetTask(c.id) }
+   let all = myChats; unside { c in all.contains { $0 === c } }
    if incognito { v.privateChats.removeAll() } else { aiChats.removeAll() }
-   v.chat = nil; if !incognito { saveAiChats() }
+   if !incognito { saveAiChats() }
    try? FileManager.default.removeItem(atPath: attachmentsHere)
    for t in tabs where t.chatId != nil { close(t) }
   case "aiStop": if let stopping = runs[s("id").isEmpty ? shownChat?.id ?? "" : s("id")] { stopping.queue.removeAll(); stopRun(stopping) }
@@ -1194,7 +1212,7 @@ extension Browser {
    q.answer.set(answer.isEmpty ? "The user skipped this question. Use your best judgment and say what you assumed." : "The user answered: " + answer)
   case "chatOpen":
    guard let chat = myChats.first(where: { $0.id == s("id") }) else { break }
-   openChat(chat.id, newTab: b("newTab")); v.chat = chat; v.error = ""
+   openChat(chat.id, newTab: b("newTab")); v.error = ""
   case "appHome":
    let page = s("view")
    guard ["", "home", "chats", "companions", "library", "skills", "plugins"].contains(page) else { break }
@@ -1232,7 +1250,7 @@ extension Browser {
     aiChats.insert(chat, at: 0); saveAiChats()
     return chat
    }()
-   given.inChat = to.id; given.runChat = nil; given.aiGroup = false; given.lastSeen = Date(); v.chat = to
+   given.inChat = to.id; given.runChat = nil; given.aiGroup = false; given.lastSeen = Date()
    openChatTab(to.id)?.pageOpen = true // an AI's page opens in its chat
    showChatPage(); publishAiEverywhere()
   case "agentChat": // the pill's "Open chat"
@@ -1397,10 +1415,11 @@ extension Browser {
  }
  func runPending() {
   let v = aiView
-  if v.pending.isEmpty || v.chat.map({ runs[$0.id] != nil }) == true { return }
-  let ask = v.pending; v.pending = ""
-  if v.chat == nil { v.open = true } // a chat tab shows it itself
-  runAi(v.chat, ask); publishAi()
+  let chat = v.pendingChat ?? v.chat
+  if v.pending.isEmpty || chat.map({ runs[$0.id] != nil }) == true { return }
+  let ask = v.pending; v.pending = ""; v.pendingChat = nil
+  if chat == nil { v.open = true } // a chat tab shows it itself
+  runAi(chat, ask); publishAi()
  }
 
  /// Signs in with the AI app's own sign-in. Its official page opens in a tab here and the app itself receives the
@@ -1497,9 +1516,9 @@ extension Browser {
   }()
   if chat.ephemeral { CompanionMemory.incognito.insert(chat.id) } // its stores refuse anything from it, whatever asks
   if chat.harness.isEmpty { chat.harness = companions.first(where: { $0.id == chat.companion }).map { $0.ai.isEmpty ? pref("AiHarness", "") : $0.ai } ?? pref("AiHarness", "") }
-  if chat.harness.isEmpty { v.pending = text; return } // asked before picking an AI: runs once it's set up
+  if chat.harness.isEmpty { v.pending = text; v.pendingChat = chat; return } // asked before picking an AI: runs once it's set up
   let cli = aiClis.first { $0.id == chat.harness } ?? aiClis[0]
-  guard let exe = findCli(cli.command) else { aiStatus[cli.id] = "missing"; v.pending = shown ?? text; return }
+  guard let exe = findCli(cli.command) else { aiStatus[cli.id] = "missing"; v.pending = shown ?? text; v.pendingChat = chat; return }
   if runs[chat.id] != nil { return }
   let me = ChatRun(chat, cli.name)
   runs[chat.id] = me
@@ -1641,7 +1660,7 @@ extension Browser {
   finish()
   if !said, await needsSignIn(cli, chat.error) {
    // Signed out: sign in right here, then the message runs again by itself.
-   chat.error = ""; aiStatus[cli.id] = "signedOut"; aiView.pending = shown; aiView.chat = chat
+   chat.error = ""; aiStatus[cli.id] = "signedOut"; aiView.pending = shown; aiView.pendingChat = chat
    taskState(me, "waiting", "signin")
    if chat.messages.last?.role == "user" { chat.messages.removeLast() }
    Task { await aiSignIn(cli) }

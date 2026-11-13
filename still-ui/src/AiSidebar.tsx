@@ -971,7 +971,9 @@ export function ChatView({ ai, send, mode, tabs = [], activeTab, onSettings, onF
  useLayoutEffect(() => {
   const el = log.current; if (!el) return
   if (opened.current !== (ai.chatId ?? "")) {
-   if (!ai.messages.length) return
+   // An empty chat isn't the one it had open: back to that one (a tab's side panel shows its own chat, a new tab's starts
+   // empty), it opens where the user left it again, not where the empty view's scrolling left this view.
+   if (!ai.messages.length) { opened.current = undefined; return }
    const back = ai.chatId ? scrolls.get(ai.chatId) : undefined
    opened.current = ai.chatId ?? ""; anchor.current = undefined
    el.scrollTop = back ?? el.scrollHeight; pinned.current = back == null; lastTop.current = el.scrollTop
