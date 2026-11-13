@@ -1097,7 +1097,9 @@ let loginPath: String = {
 /// Where AI apps get installed, re-read each time so a fresh install is found without restarting Still.
 func cliDirs() -> [String] {
  let home = NSHomeDirectory()
- var dirs = (qaEnv("STILL_QA_CLIS").map { [$0] } ?? []) + loginPath.split(separator: ":").map(String.init) + (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
+ var dirs: [String] = qaEnv("STILL_QA_CLIS").map { [$0] } ?? [] // one step per line: older compilers time out on the whole sum
+ dirs += loginPath.split(separator: ":").map(String.init)
+ dirs += (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
  dirs += ["\(home)/.local/bin", "\(home)/.grok/bin", "\(home)/.claude/local", "\(home)/.npm-global/bin", "\(home)/.bun/bin", "\(home)/.volta/bin",
           "/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
  let nvm = "\(home)/.nvm/versions/node"
