@@ -430,7 +430,16 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 
 /* The chat panel, docked right of the page */
 .ai-sidebar { width:400px; flex-shrink:0; display:flex; flex-direction:column; min-height:0; border-left:1px solid var(--border); font-size:13px; background:var(--background); }
-.ai-head { display:flex; align-items:center; gap:2px; height:46px; flex:none; padding:0 8px 0 14px; }
+.ai-head { position:relative; display:flex; align-items:center; gap:2px; height:46px; flex:none; padding:0 8px 0 14px; }
+/* The side panel's Chat history: drops from the header over the chat, its rows like the Chat History page's */
+.chat-picker { position:absolute; z-index:30; top:calc(100% - 4px); left:8px; right:8px; display:flex; flex-direction:column; max-height:min(460px, calc(100vh - 150px)); border:1px solid var(--border); border-radius:14px; background:var(--popover); color:var(--popover-foreground); box-shadow:0 14px 36px rgb(0 0 0 / .18); overflow:hidden; }
+.chat-picker [data-slot=command] { flex:1; min-height:0; border-radius:0 !important; background:none; }
+.chat-picker [data-slot=command-list] { flex:1; min-height:0; max-height:none; }
+.chat-picker [data-slot=command-item] { gap:10px; min-height:42px; padding:4px 8px; border-radius:10px; }
+.chat-picker [data-slot=command-item] b { flex:1; min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:13.5px; font-weight:450; }
+.chat-picker [data-slot=command-item] small { font-size:12px; color:var(--muted-foreground); }
+.chat-picker [data-slot=command-item] .history-needs { padding:2px 8px; font-size:11.5px; }
+.chat-picker [data-slot=command-item] [data-slot=spinner] { color:#3fb950; }
 .ai-head-buddy { margin-right:9px; }
 .ai-head [data-slot=button] { color:var(--muted-foreground); } .ai-head [data-slot=button]:hover { color:var(--foreground); }
 .ai-title { flex:1; min-width:0; display:flex; align-items:center; gap:8px; }

@@ -8,7 +8,7 @@ import { ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuTrigger } 
 import { AiLogo } from "./AiLogo"
 import { Face, hueOf, type Companion } from "./Buddy"
 import { lookKey, surprise } from "./look"
-import { companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
+import { ago, byDay, companionOf, isRunning, needsYou, type AiState, type Skill } from "./AiSidebar"
 import { FileIcon, nameOf } from "./Files"
 import { CrewCards, KIT_SKILLS, SharedReview, fromPremade, fromShared } from "./crew"
 import { deleteAllChats, deleteChat, destroy, fire } from "./Undo"
@@ -54,8 +54,6 @@ export function CompanionSwitch({ ai, companion, onPick, onEdit }: { ai: AiState
  </div>
 }
 
-const ago = (iso: string) => { const m = (Date.now() - Date.parse(iso)) / 6e4; return m < 60 ? Math.max(1, Math.round(m)) + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d" }
-const dayOf = (iso: string) => { const d = new Date(iso), now = new Date(); const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5); return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "This week" : "Earlier" }
 
 /// A chat in a list: a click opens it in this Still tab; a middle click or the menu's Open in new tab opens it in a tab of its own.
 export function ChatLink({ id, send, className, title, children }: { id: string; send: Send; className: string; title?: string; children: ReactNode }) {
@@ -75,7 +73,7 @@ export function ChatHistory({ ai, send, onNew }: { ai: AiState; send: Send; onNe
  const chats = ai.chats.filter(c => !c.from && (only === "archived") === !!c.archived && (only !== "unread" || c.unread) && (only !== "needs" || needs(c.id))
   && (!who || (c.companion || first) === who) && c.title.toLowerCase().includes(find.trim().toLowerCase()))
  if (oldest) chats.reverse()
- const groups = chats.reduce<[string, typeof chats][]>((all, c) => { const day = dayOf(c.updated); if (all.at(-1)?.[0] === day) all.at(-1)![1].push(c); else all.push([day, [c]]); return all }, [])
+ const groups = byDay(chats)
  const chip = (key: typeof only, label: string, dot?: string) => <button className="history-chip" aria-pressed={only === key} onClick={() => setOnly(only === key ? "" : key)}>{label}{dot && <i className={dot} />}</button>
  const mate = companionOf(ai, who)
  return <section className="home-page" aria-label="Chat History">

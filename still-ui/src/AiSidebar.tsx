@@ -1,5 +1,5 @@
 import { createElement, Fragment, useEffect, useId, useLayoutEffect, useRef, useState, type ClipboardEvent as PasteEvent, type CSSProperties, type ReactElement, type ReactNode } from "react"
-import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
+import { ArrowDownRight, ArrowLeft, ArrowRight, ArrowUp, ArrowUpRight, Ban, BookOpen, Paperclip, Brain, Camera, Check, ChevronDown, ChevronLeft, ChevronRight, CircleCheck, ClipboardPaste, Coffee, Copy, ExternalLink, Eye, FileText, Gauge, Globe, History, Keyboard, Lightbulb, ListTodo, LockKeyhole, Luggage, MousePointer2, MoveVertical, Pencil, Plus, Rabbit, RotateCcw, Save, Search, Tag, Maximize2, MessageSquarePlus, Settings2, ShieldCheck, SlidersHorizontal, Square, X, Scale, Zap, type LucideIcon, Download, Ellipsis, RefreshCw, Share, Trash2, FolderOpen, FolderX, Pause, Play } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Alert, AlertDescription } from "@/components/ui/alert"
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Spinner } from "@/components/ui/spinner"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { CollisionBoundary } from "@/components/ui/collision"
+import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from "@/components/ui/command"
 import { fadeTop, MAC } from "@/lib/utils"
 import { AiLogo } from "./AiLogo"
 import { destroy } from "./Undo"
@@ -85,6 +86,11 @@ export const isRunning = (ai: AiState | undefined, id?: string) => !!id && !!ai?
 const waits = (r: Run) => !!r.question || !!r.asks?.length
 export const needsYou = (ai: AiState | undefined, id?: string) => !!id && !!ai?.runs?.some(r => (r.id === id || r.root === id) && waits(r))
 type Send = (op: string, payload?: Record<string, unknown>) => void
+/// How long ago, short: 5m, 3h, 2d.
+export const ago = (iso: string) => { const m = (Date.now() - Date.parse(iso)) / 6e4; return m < 60 ? Math.max(1, Math.round(m)) + "m" : m < 1440 ? Math.round(m / 60) + "h" : Math.round(m / 1440) + "d" }
+const dayOf = (iso: string) => { const d = new Date(iso), now = new Date(); const days = Math.round((new Date(now.toDateString()).getTime() - new Date(d.toDateString()).getTime()) / 864e5); return days <= 0 ? "Today" : days === 1 ? "Yesterday" : days < 7 ? "This week" : "Earlier" }
+/// Chats in a row of day groups (Today, Yesterday, This week, Earlier), in the order they come.
+export const byDay = <T extends { updated: string }>(chats: T[]) => chats.reduce<[string, T[]][]>((all, c) => { const day = dayOf(c.updated); if (all.at(-1)?.[0] === day) all.at(-1)![1].push(c); else all.push([day, [c]]); return all }, [])
 type TabRef = { id: string; title: string; url: string; inChat?: string; chatId?: string; isPrivate?: boolean; favicon?: string }
 const TabIcon = ({ tab }: { tab: TabRef }) => tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" /> : <Globe />
 
@@ -208,8 +214,8 @@ function Tip({ label, children }: { label: ReactNode; children: ReactElement }) 
  return <Tooltip><TooltipTrigger asChild>{children}</TooltipTrigger><TooltipContent>{label}</TooltipContent></Tooltip>
 }
 
-function IconButton({ label, onClick, disabled, pressed, children }: { label: string; onClick: () => void; disabled?: boolean; pressed?: boolean; children: ReactNode }) {
- return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} aria-pressed={pressed} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
+function IconButton({ label, onClick, disabled, pressed, expanded, children }: { label: string; onClick: () => void; disabled?: boolean; pressed?: boolean; expanded?: boolean; children: ReactNode }) {
+ return <Tip label={label}><Button variant="ghost" size="icon-sm" aria-label={label} aria-pressed={pressed} aria-expanded={expanded} aria-haspopup={expanded === undefined ? undefined : "dialog"} disabled={disabled} onClick={onClick}>{children}</Button></Tip>
 }
 
 // "Your models": every agent app Still supports, with its logo and its state on this computer, read from the app itself
@@ -1174,19 +1180,52 @@ function DelegationRow({ m, ai, send, mode, onLink }: { m: Message; ai: AiState;
  </div>
 }
 
+/// The side panel's Chat history: recent chats to search and pick, as on the Chat History page. Arrows and Enter pick,
+/// Esc or a click outside closes. A pick opens the chat in this tab's side panel.
+function ChatPicker({ ai, send, onClose }: { ai: AiState; send: Send; onClose: (back?: boolean) => void }) {
+ const [find, setFind] = useState("")
+ const box = useRef<HTMLDivElement>(null)
+ useEffect(() => {
+  const out = (e: PointerEvent) => { const t = e.target as Node; if (!box.current?.contains(t) && !box.current?.parentElement?.querySelector("[aria-expanded=true]")?.contains(t)) onClose() }
+  const away = () => onClose() // a click in the page, which is another view: the interface loses focus
+  addEventListener("pointerdown", out, true); addEventListener("blur", away)
+  return () => { removeEventListener("pointerdown", out, true); removeEventListener("blur", away) }
+ }, [onClose])
+ const groups = byDay(ai.chats.filter(c => !c.from && !c.archived && c.title.toLowerCase().includes(find.trim().toLowerCase())))
+ return <div ref={box} className="chat-picker" role="dialog" aria-label="Chat history" onKeyDown={e => { if (e.key === "Escape") { e.preventDefault(); e.stopPropagation(); onClose(true) } }}>
+  <Command shouldFilter={false} loop>
+   <CommandInput autoFocus aria-label="Search chats" placeholder="Search chats..." value={find} onValueChange={setFind} />
+   <CommandList>
+    <CommandEmpty>{find ? "No chats match." : "Your chats show up here."}</CommandEmpty>
+    {groups.map(([day, list]) => <CommandGroup key={day} heading={day}>
+     {list.map(c => <CommandItem key={c.id} value={c.id} data-chat={c.id} data-checked={c.id === ai.chatId || undefined} onSelect={() => { send("aiOpenChat", { id: c.id }); onClose(true) }}>
+      <Face companion={companionOf(ai, c.companion)} size={24} mood={isRunning(ai, c.id) ? "working" : "idle"} /><b>{c.title}</b>
+      {needsYou(ai, c.id) ? <span className="history-needs">Needs input</span> : isRunning(ai, c.id) ? <Spinner aria-label="Working" /> : c.unread ? <i className="is-unread" aria-label="Unread" /> : <small>{ago(c.updated)}</small>}
+     </CommandItem>)}
+    </CommandGroup>)}
+   </CommandList>
+  </Command>
+ </div>
+}
+
 // The chat panel beside an ordinary page (the Chat button). Its gear opens Settings, Models.
 export function AiPanel({ ai, send, tabs, activeTab, onFile }: { ai: AiState; send: Send; tabs: TabRef[]; activeTab?: TabRef; onFile: (path: string) => void }) {
  const companion = companionOf(ai, ai.chatCompanion)
  const mood = useRunMood(ai)
  const [panel, setPanel] = useState<HTMLElement | null>(null)
+ const [history, setHistory] = useState(false)
+ const head = useRef<HTMLDivElement>(null)
+ const closeHistory = (back?: boolean) => { setHistory(false); if (back) head.current?.querySelector<HTMLElement>("[aria-haspopup=dialog]")?.focus() }
  return <aside className="ai-sidebar" aria-label="Chat" ref={setPanel}><CollisionBoundary.Provider value={panel}>
-  <div className="ai-head">
+  <div className="ai-head" ref={head}>
    <button type="button" className="profile-open ai-head-buddy" title={companion?.name} aria-label={`${companion?.name ?? "Companion"}'s profile`} onClick={() => showProfile(companion)}><Face companion={companion} size={22} mood={mood} /></button>
    <div className="ai-title"><strong>{chatOf(ai, ai.chatId)?.title || companion?.name || "Chat"}</strong></div>
    <IconButton label="Open as a tab" disabled={!ai.chatId} onClick={() => send("chatOpen", { id: ai.chatId })}><Maximize2 /></IconButton>
+   <IconButton label="Chat history" expanded={history} onClick={() => setHistory(!history)}><History /></IconButton>
    <IconButton label="New chat" disabled={!ai.chatId} onClick={() => send("aiNew")}><MessageSquarePlus /></IconButton>
    <IconButton label="Model settings" onClick={() => openModelSettings(send)}><Settings2 /></IconButton>
    <IconButton label="Close chat" onClick={() => send("aiToggle")}><X /></IconButton>
+   {history && <ChatPicker ai={ai} send={send} onClose={closeHistory} />}
   </div>
   <ChatView ai={ai} send={send} mode="panel" tabs={tabs} activeTab={activeTab} onSettings={() => openModelSettings(send)} onFile={onFile} />
  </CollisionBoundary.Provider></aside>
