@@ -239,6 +239,7 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
   const marked = state.bookmarks.some(b => b.url === tab.url)
   const chat = tab.chatId ? companionOf(ai, chatOf(ai, tab.chatId)?.companion) : undefined
   const driver = tab.agent && !state.agent?.pending && state.working?.includes(tab.id) ? driverOf(ai, tab) : undefined // only while it is at work here
+  const more = (state.working?.filter(id => id === tab.id).length ?? 1) - 1 // others at work in this tab too
   const [tearing, setTearing] = useState(false)
   // Pointer-driven drag: drop on another tab to reorder; drop outside the tab list to open a new window.
   const drag = useRef<{ sx: number; sy: number; active: boolean } | null>(null)
@@ -288,7 +289,8 @@ const UICtx = createContext<{state:State;ai?:AiState;setContext:(v:boolean)=>voi
      onAuxClick={e => { if (e.button === 1) { e.preventDefault(); send("closeTab", { id: tab.id }) } }}>
      {selected && <motion.div className="selected-tab" layoutId={tab.pinned ? "pin-selected" : "tab-selected"} transition={FLOW} />}
      <Button variant="ghost" className="tab-main" aria-current={selected ? "page" : undefined} aria-label={(tab.pinned ? "Pinned " : "Tab ") + tab.title} title={tab.url || tab.title} onClick={() => send("select", { id: tab.id })}>
-      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{driver ? <span className="tab-agent" data-kind={agentFace(driver.face) || "claude"} style={driver.id ? { "--drive": hueOf(driver) } as CSSProperties : undefined} title={driver.name + " is using this tab"}><Face companion={driver} size={18} mood={state.agent?.tab === tab.id && state.agent.paused ? "idle" : "working"} /></span> : tab.chatId ? <Face companion={chat} size={18} mood={isRunning(ai, tab.chatId) ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}</span>
+      <span className={cn("tab-letter", tab.sleeping && "is-sleeping")}>{tab.chatId ? <Face companion={chat} size={18} mood={isRunning(ai, tab.chatId) ? "working" : "idle"} /> : tab.loading ? <Loader2 className="spin" /> : tab.isPrivate ? <LockKeyhole /> : tab.muted ? <VolumeX /> : (tab.favicon ? <img className="tab-favicon" src={tab.favicon} alt="" onError={e=>{e.currentTarget.style.visibility="hidden"}} /> : <Globe2 />)}
+       {driver && <span className="tab-agent" title={driver.name + (more > 0 ? ` and ${more} more are` : " is") + " using this tab"}><Face companion={driver} size={10} mood={state.agent?.tab === tab.id && state.agent.paused ? "idle" : "working"} />{more > 0 && <b>+{more}</b>}</span>}</span>
       {!tab.pinned && <span className="tab-label">{tab.title}</span>}
      </Button>
      {!tab.pinned && <Button variant="ghost" size="icon-xs" className="close-tab" aria-label={"Close " + tab.title} onClick={() => send("closeTab", { id: tab.id })}><X /></Button>}

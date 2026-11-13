@@ -420,8 +420,12 @@ kbd { font-family:inherit;font-size:10px;color:var(--muted-foreground);white-spa
 .ai-logo.is-letter { border-radius:50%; box-shadow:inset 0 0 0 1.25px color-mix(in oklab,currentColor 35%,transparent); font-weight:650; color:var(--muted-foreground); }
 .ai-logo.is-letter::before { content:attr(data-letter); } /* drawn, not text: names next to it read cleanly */
 .permission-bar > .ai-logo { flex:none; }
-.tab-agent { display:grid;place-items:center;position:relative; }
-.tab-agent::after { content:"";position:absolute;inset:-3px;border-radius:50%;border:1.5px solid transparent;border-top-color:var(--drive,#da7756);border-right-color:var(--drive,#da7756);animation:spin 1.1s linear infinite; }
+/* A companion at work in a tab: its face on the icon's bottom-right corner, ringed in the tab's own colour, +N to its left for others working there too */
+.tab-row { --tab-bg:var(--sidebar); }
+:root:not(.pointer-away) .tab-row:hover:not(.is-selected) { --tab-bg:color-mix(in srgb,var(--muted) 55%,var(--sidebar)); }
+.tab-row.is-selected { --tab-bg:var(--sidebar-accent); }
+.tab-agent { position:absolute;right:-3px;bottom:-3px;display:flex;flex-direction:row-reverse;align-items:center;gap:1px;border-radius:999px;background:var(--tab-bg);box-shadow:0 0 0 1px var(--tab-bg); }
+.tab-agent b { padding-left:2px;font-size:8.5px;font-weight:600;line-height:10px;color:var(--foreground); }
 .is-driven .tab-letter { overflow:visible; }
 .ai-tab-group { flex:none;display:flex;align-items:center;gap:2px;margin-left:4px;padding:2px;border-radius:12px;background:color-mix(in srgb,var(--foreground) 5%,transparent); }
 .ai-tab-group-label { flex:none;display:flex;align-items:center;gap:6px;height:30px;padding:0 8px 0 6px;font-size:11.5px;font-weight:600;color:var(--muted-foreground); }
@@ -896,7 +900,7 @@ button.chat-chip { transition:border-color .15s,color .15s; } button.chat-chip:h
 .page-others { display:flex;align-items:center;height:36px;padding:0 10px 0 6px;border-radius:999px;background:var(--popover);border:1px solid var(--border);color:var(--popover-foreground);box-shadow:0 6px 18px rgb(0 0 0/var(--shade));font-size:12px;font-weight:500;flex:none; }
 .page-others .mascot + .mascot { margin-left:-6px; } .page-others b { margin-left:5px; }
 @media (max-width:520px) { .page-take span, .page-chat span { display:none; } .page-take, .page-chat { width:32px;padding:0 !important; } .page-control-text { max-width:150px; } }
-@media (prefers-reduced-motion: reduce) { .page-glow, .tab-agent::after, .page-head::before, .page-control-text b, .page-tabs i { animation:none; } .page-count { display:inline; } }
+@media (prefers-reduced-motion: reduce) { .page-glow, .page-head::before, .page-control-text b, .page-tabs i { animation:none; } .page-count { display:inline; } }
 
 /* The home (new tab): a slim rail, the companion switcher, the face, the message box, chips and ideas. Pages swap in on the right. */
 .home-rail { width:56px; flex:none; display:flex; flex-direction:column; align-items:center; gap:4px; padding:14px 0 12px; border-right:1px solid var(--border); background:color-mix(in oklab,var(--muted) 45%,var(--background)); }
