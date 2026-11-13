@@ -149,6 +149,7 @@ extension Browser {
  /// Moves a tab with its live page to another window, or to a new one (target nil) at point.
  func moveTab(_ tab: Tab, to target: Browser?, at point: NSPoint?) {
   guard let index = tabs.firstIndex(where: { $0 === tab }), target !== self else { return }
+  let place = tabs.filter { $0.inChat == nil }.firstIndex { $0 === tab } ?? 0 // its place in the strip
   // Tabs stay with windows of their kind, and an incognito chat and its pages stay in the window that holds the chat.
   if let target, target.incognito != incognito { return }
   if incognito && (tab.chatId ?? tab.inChat ?? tab.runChat) != nil { return }
@@ -162,7 +163,7 @@ extension Browser {
   tab.view?.removeFromSuperview()
   let rest = tabs.filter { $0.inChat == nil }
   if rest.isEmpty { if secondary { window.close() } else { newTab(prompt: false) } }
-  else if active === tab { select(rest[min(index, rest.count - 1)]) }
+  else if active === tab { selectNext(rest[min(place, rest.count - 1)]) }
   layoutPages(); saveLater(); schedulePublish()
   if let target { target.acceptTab(tab) } else { _ = Browser(moving: tab, at: point, incognito: tab.isPrivate && incognito) }
  }

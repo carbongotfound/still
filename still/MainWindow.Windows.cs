@@ -104,15 +104,16 @@ public partial class MainWindow
   // The live page goes with the tab: no reload, so it keeps its scroll, forms, sign-ins and video.
   // Leave this window (not a real close: nothing goes to "reopen closed tab").
   var moved = tab;
-  int index = tabs.IndexOf(tab);
+  int index = tabs.Where(t => t.InChat == null).ToList().IndexOf(tab); // its place in the strip
   if (tab == splitLeft || tab == splitRight) { splitLeft = splitRight = null; LayoutSplit(); }
   DropPermissions(tab); tab.Group = "";
   tabs.Remove(tab);
   if (tab.View is { } view) { view.Visibility = Visibility.Hidden; WebHost.Children.Remove(view); if (view.CoreWebView2 == null) { view.Dispose(); tab.View = null; } }
-  if (tabs.Count == 0) {
+  var rest = tabs.Where(t => t.InChat == null).ToList();
+  if (rest.Count == 0) {
    if (secondary) { Close(); }
    else await NewTab("", false, false);
-  } else if (active == tab) await SelectTab(tabs[Math.Min(index, tabs.Count - 1)]);
+  } else if (active == tab) await SelectNext(rest[Math.Clamp(index, 0, rest.Count - 1)]);
   RenderTabs(); SaveLater();
 
   if (target == null) {

@@ -76,7 +76,7 @@ public partial class MainWindow : Window
     var shell = InitializeShell();
     ApplyTheme();
     if (LaunchUrl is { Length: > 0 } link) firstPage = NewTab(link, false, false);
-    else { if (tabs.Count == 0) tabs.Add(new BrowserTab()); firstPage = SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId) ?? tabs.First()); }
+    else { if (tabs.Count == 0) tabs.Add(new BrowserTab()); firstPage = SelectTab(tabs.FirstOrDefault(t => t.Id == state.ActiveId && t.InChat == null) ?? tabs.FirstOrDefault(t => t.InChat == null) ?? tabs.First()); }
     await Task.WhenAll(shell, firstPage);
    }
    catch(Exception ex) { if(closing)return;App.Log(ex);MessageBox.Show(this,"Still couldn't start its interface.\n\n"+(ex is WebView2RuntimeNotFoundException ? "Install Microsoft's WebView2 Evergreen Runtime, then reopen Still." : ex.Message),"Still");Close();return; }
@@ -321,21 +321,25 @@ public partial class MainWindow : Window
  async Task CloseTab(BrowserTab tab, bool removePin = false)
  {
   if (tab.Pinned && !removePin) {
+   if (tab == splitLeft || tab == splitRight) { splitLeft = splitRight = null; LayoutSplit(); } // asleep, it leaves its split: it doesn't wake as the other half
    DisposeView(tab);
-   if (tab == active) { var next = tabs.FirstOrDefault(t => t != tab && !t.Pinned); if (next != null) await SelectTab(next); else await NewTab("", false, false); }
+   if (tab == active) { var next = tabs.FirstOrDefault(t => t != tab && !t.Pinned && t.InChat == null); if (next != null) await SelectNext(next); else await NewTab("", false, false); }
    Toast("Pinned tab put to sleep."); RenderTabs(); SaveLater(); return;
   }
-  var index = tabs.IndexOf(tab);
-  if (index < 0) return;
+  if (!tabs.Contains(tab)) return;
+  var index = tabs.Where(t => t.InChat == null).ToList().IndexOf(tab); // its place in the strip: the next tab is its neighbor there
   if (!tab.Private && tab.InChat == null) { closedTabs.Push(new BrowserTab { Url = tab.Url, Title = tab.Title, Pinned = tab.Pinned }); while (closedTabs.Count > 25) { var keep = closedTabs.Take(25).Reverse().ToArray(); closedTabs.Clear(); foreach (var t in keep) closedTabs.Push(t); } }
   if (tab == splitLeft || tab == splitRight) { splitLeft = splitRight = null; LayoutSplit(); }
   tab.Closed = true; DisposeView(tab); tabs.Remove(tab);
   if (tab.ChatId is { } chat) foreach (var page in tabs.Where(t => t.InChat == chat).ToList()) { page.Closed = true; DisposeView(page); tabs.Remove(page); } // its pages go with it
   var rest = tabs.Where(t => t.InChat == null).ToList();
   if (rest.Count == 0) await NewTab("", false, false);
-  else if (active == tab) await SelectTab(rest[Math.Min(index, rest.Count - 1)]);
+  else if (active == tab) await SelectNext(rest[Math.Clamp(index, 0, rest.Count - 1)]);
+  else { if (Shown is { Url.Length: > 0 } page) await EnsureView(page); ShowPage(); LayoutSplit(); } // it may have been the page beside the chat in view: the next one shows
   RenderTabs(); SaveLater();
  }
+ /// The tab a close or a move leaves you on. A chat shows on its own: its companion's page opens beside it only when you open it.
+ Task SelectNext(BrowserTab next) { next.PageOpen = false; return SelectTab(next); }
  // The WPF WebView2 control closes the whole app window when a page calls window.close() (e.g. a Google
  // sign-in pop-up finishing). Still closes just that tab instead (WindowCloseRequested below), so remove the control's handler.
  static void DetachWindowClose(WebView2 view, CoreWebView2 core)

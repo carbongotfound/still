@@ -789,24 +789,30 @@ final class Browser: NSObject, NSWindowDelegate, WKScriptMessageHandler, WKNavig
  /// Closing a pinned tab puts it to sleep unless forced. A chat tab takes its pages with it.
  func close(_ tab: Tab, force: Bool = false) {
   if tab.pinned && !force {
+   if tab === splitLeft || tab === splitRight { splitLeft = nil; splitRight = nil } // asleep, it leaves its split: it doesn't wake as the other half
    unload(tab)
-   if tab === active { if let next = tabs.first(where: { $0 !== tab && !$0.pinned && $0.inChat == nil }) { select(next) } else { newTab(prompt: false) } }
-   toast("Pinned tab put to sleep."); saveLater(); schedulePublish()
+   if tab === active { if let next = tabs.first(where: { $0 !== tab && !$0.pinned && $0.inChat == nil }) { selectNext(next) } else { newTab(prompt: false) } }
+   toast("Pinned tab put to sleep."); layoutPages(); saveLater(); schedulePublish()
    return
   }
-  guard let index = tabs.firstIndex(where: { $0 === tab }) else { return }
+  guard tabs.contains(where: { $0 === tab }) else { return }
+  let index = tabs.filter { $0.inChat == nil }.firstIndex { $0 === tab } ?? 0 // its place in the strip: the next tab is its neighbor there
   if !tab.isPrivate && tab.inChat == nil && !tab.url.isEmpty { closed.append(tab.url); if closed.count > 25 { closed.removeFirst() } }
   if tab === splitLeft || tab === splitRight { splitLeft = nil; splitRight = nil }
   tab.closed = true
   unload(tab)
-  tabs.remove(at: index)
+  tabs.removeAll { $0 === tab }
   if let chat = tab.chatId { for page in tabs where page.inChat == chat { page.closed = true; unload(page) }; tabs.removeAll { $0.inChat == chat } }
   let rest = tabs.filter { $0.inChat == nil }
-  if rest.isEmpty { newTab(prompt: false) } else if active === tab { select(rest[min(index, rest.count - 1)]) }
+  if rest.isEmpty { newTab(prompt: false) } else if active === tab { selectNext(rest[min(index, rest.count - 1)]) }
+  else if let page = shown, page.view == nil, !page.url.isEmpty, let url = URL(string: page.url) { load(url, in: createView(page)) } // it may have been the page beside the chat in view: the next one shows
   layoutPages()
   saveLater()
   schedulePublish()
  }
+
+ /// The tab a close or a move leaves you on. A chat shows on its own: its companion's page opens beside it only when you open it.
+ func selectNext(_ next: Tab) { next.pageOpen = false; select(next) }
 
  func unload(_ tab: Tab) {
   releasePage(tab)

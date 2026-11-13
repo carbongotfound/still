@@ -217,7 +217,7 @@ public partial class MainWindow
   else if (key == Key.N && shift) OpenIncognito();
   else if (key == Key.W && active != null) await CloseTab(active);
   else if (key == Key.Tab) await SwitchRecent(shift ? -1 : 1);
-  else if (key >= Key.D1 && key <= Key.D9 && tabs.Count > 0) { int index = key == Key.D9 ? tabs.Count - 1 : Math.Min((int)key - (int)Key.D1, tabs.Count - 1); await SelectTab(tabs[index]); }
+  else if (key >= Key.D1 && key <= Key.D9 && tabs.Where(t => t.InChat == null).ToList() is { Count: > 0 } strip) await SelectTab(strip[key == Key.D9 ? strip.Count - 1 : Math.Min((int)key - (int)Key.D1, strip.Count - 1)]); // the strip's tabs, not a companion's background tab
   else if (key == Key.R && shift) await ToggleReader();
   else if (key == Key.R) ReloadClick(this, new());
   else if (key == Key.D) ToggleBookmark();
